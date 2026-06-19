@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Share, Text, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
 import QRCode from 'react-native-qrcode-svg';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
@@ -23,12 +22,13 @@ import {
   useDismissRegistrationMutation,
   useSubmitRegistrationMutation,
 } from '@/features/queries';
+import { useAssessmentId } from '@/features/useAssessmentId';
 import { RegistrationForm } from '@/components/assessment/RegistrationForm';
 
 type RegTab = 'pending' | 'all' | 'dismissed';
 
 export default function RegistrationsScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const id = useAssessmentId();
   const colors = useThemeColors();
   const tryoutQuery = useTryoutQuery(id);
   const regsQuery = useRegistrationsQuery(id!);

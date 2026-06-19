@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Dimensions, Text, View } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -15,13 +15,14 @@ import {
   Screen,
 } from '@/components/ui';
 import { useTryoutQuery, useSaveEvaluationMutation } from '@/features/queries';
+import { useAssessmentId } from '@/features/useAssessmentId';
 import { useSessionStore } from '@/state/sessionStore';
 import { getPlayerRubrics, playerDisplayName, weightedOverall } from '@/data/rubrics';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function RinksideScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const id = useAssessmentId();
   const colors = useThemeColors();
   const router = useRouter();
   const tryoutQuery = useTryoutQuery(id);

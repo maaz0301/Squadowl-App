@@ -20,12 +20,15 @@ import {
   useDeletePlayerMutation,
   useAiPlayerSummaryMutation,
 } from '@/features/queries';
+import { useAssessmentId } from '@/features/useAssessmentId';
 import { playerDisplayName } from '@/data/rubrics';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { PlanGate } from '@/components/PlanGate';
 
 export default function PlayerHubScreen() {
-  const { id, playerId } = useLocalSearchParams<{ id: string; playerId: string }>();
+  const assessmentId = useAssessmentId();
+  const { playerId } = useLocalSearchParams<{ playerId: string }>();
+  const id = assessmentId;
   const colors = useThemeColors();
   const router = useRouter();
   const tryoutQuery = useTryoutQuery(id);

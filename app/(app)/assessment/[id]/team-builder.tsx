@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Text, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
   Badge,
@@ -13,10 +12,11 @@ import {
 } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
 import { useTryoutQuery, useGenerateTeamBuilderMutation } from '@/features/queries';
+import { useAssessmentId } from '@/features/useAssessmentId';
 import { getPlayerNameMap, type TeamBuilderState } from '@/data/teamBuilder';
 
 export default function TeamBuilderScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const id = useAssessmentId();
   const colors = useThemeColors();
   const tryoutQuery = useTryoutQuery(id);
   const generate = useGenerateTeamBuilderMutation(id!);

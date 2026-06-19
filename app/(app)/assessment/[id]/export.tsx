@@ -1,23 +1,24 @@
 import { useState } from 'react';
 import { Share, Text, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
   Badge,
   Button,
   Card,
+  ErrorState,
   Header,
   LoadingState,
   Screen,
 } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
 import { useTryoutQuery, useExportTryoutMutation, useShareLinkMutation } from '@/features/queries';
+import { useAssessmentId } from '@/features/useAssessmentId';
 import { canUseFeature } from '@/data/plans';
 import { useUser } from '@/state/authStore';
 import type { ExportFormat } from '@/data/types';
 
 export default function ExportScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const id = useAssessmentId();
   const colors = useThemeColors();
   const user = useUser();
   const tryoutQuery = useTryoutQuery(id);
@@ -25,9 +26,12 @@ export default function ExportScreen() {
   const shareMut = useShareLinkMutation(id!);
   const [lastExport, setLastExport] = useState<string | null>(null);
 
-  if (tryoutQuery.isLoading) return <LoadingState />;
+  if (tryoutQuery.isLoading || !id) return <LoadingState />;
+  if (tryoutQuery.isError || !tryoutQuery.data) {
+    return <ErrorState message="Could not load export." onRetry={() => tryoutQuery.refetch()} />;
+  }
 
-  const tryout = tryoutQuery.data!;
+  const tryout = tryoutQuery.data;
   const tier = user?.planTier ?? 'free';
   const exportsAllowed = canUseFeature(tier, 'exports') || tier !== 'free';
 

@@ -1,5 +1,5 @@
 import { FlatList, Text, View } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { themeTokens } from '@/theme/tokens';
 import {
@@ -13,10 +13,11 @@ import {
   Screen,
 } from '@/components/ui';
 import { useResultsQuery } from '@/features/queries';
+import { useAssessmentId } from '@/features/useAssessmentId';
 import { getScoreHeatLevel, playerDisplayName } from '@/data/rubrics';
 
 export default function ResultsScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const id = useAssessmentId();
   const colors = useThemeColors();
   const router = useRouter();
   const { data: tryout, results, assessorProgress, isLoading, isError, refetch } = useResultsQuery(id);

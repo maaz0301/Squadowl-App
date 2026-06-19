@@ -15,6 +15,7 @@ import {
   Screen,
 } from '@/components/ui';
 import { useTryoutQuery, useAddPlayerMutation, useImportLibraryPlayersMutation } from '@/features/queries';
+import { useAssessmentId } from '@/features/useAssessmentId';
 import { useSessionStore } from '@/state/sessionStore';
 import { useUser } from '@/state/authStore';
 import { playerDisplayName } from '@/data/rubrics';
@@ -22,7 +23,7 @@ import { isAtPlayerLimit } from '@/data/plans';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 
 export default function RosterScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const id = useAssessmentId();
   const colors = useThemeColors();
   const router = useRouter();
   const tryoutQuery = useTryoutQuery(id);

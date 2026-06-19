@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
   Badge,
@@ -12,10 +11,11 @@ import {
 } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
 import { useTryoutQuery, useAiCompareMutation } from '@/features/queries';
+import { useAssessmentId } from '@/features/useAssessmentId';
 import { playerDisplayName } from '@/data/rubrics';
 
 export default function CompareScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const id = useAssessmentId();
   const colors = useThemeColors();
   const tryoutQuery = useTryoutQuery(id);
   const aiCompare = useAiCompareMutation(id!);

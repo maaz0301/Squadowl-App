@@ -16,11 +16,13 @@ import {
   Screen,
 } from '@/components/ui';
 import { useTryoutQuery, useSaveEvaluationMutation } from '@/features/queries';
+import { useAssessmentId } from '@/features/useAssessmentId';
 import { useSessionStore } from '@/state/sessionStore';
 import { getPlayerRubrics, playerDisplayName, weightedOverall } from '@/data/rubrics';
 
 export default function ScoreScreen() {
-  const { id, playerId, evalId } = useLocalSearchParams<{ id: string; playerId: string; evalId?: string }>();
+  const id = useAssessmentId();
+  const { playerId, evalId } = useLocalSearchParams<{ playerId: string; evalId?: string }>();
   const colors = useThemeColors();
   const router = useRouter();
   const tryoutQuery = useTryoutQuery(id);

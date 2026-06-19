@@ -1,16 +1,16 @@
 import { useState } from 'react';
 import { Text, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Button, Card, Chip, Input, LoadingState, Screen } from '@/components/ui';
+import { Button, Card, Chip, ErrorState, Input, LoadingState, Screen } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
 import { useTryoutQuery, useUpdateTryoutMutation } from '@/features/queries';
+import { useAssessmentId } from '@/features/useAssessmentId';
 import { getDefaultRubrics, buildDefaultWeights } from '@/data/rubrics';
 import { useUser } from '@/state/authStore';
 import { getPlanDefinition } from '@/data/plans';
 
 export default function RubricsScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const id = useAssessmentId();
   const colors = useThemeColors();
   const user = useUser();
   const tryoutQuery = useTryoutQuery(id);
@@ -19,8 +19,14 @@ export default function RubricsScreen() {
   const [label, setLabel] = useState('');
   const [scale, setScale] = useState<'1-5' | '1-10'>('1-5');
 
-  if (tryoutQuery.isLoading) return <LoadingState message="Loading rubrics..." />;
-  const tryout = tryoutQuery.data!;
+  if (tryoutQuery.isLoading || !id) return <LoadingState message="Loading rubrics..." />;
+  if (tryoutQuery.isError || !tryoutQuery.data) {
+    return (
+      <ErrorState message="Could not load rubrics." onRetry={() => tryoutQuery.refetch()} />
+    );
+  }
+
+  const tryout = tryoutQuery.data;
 
   const defaults = getDefaultRubrics(tryout.sport);
   const custom = tryout.settings.customRubrics ?? [];

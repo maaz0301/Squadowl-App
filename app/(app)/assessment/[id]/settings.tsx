@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ScrollView, Share, Text, View } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
   Badge,
@@ -18,10 +18,11 @@ import {
   useArchiveTryoutMutation,
   useCopyTryoutMutation,
 } from '@/features/queries';
+import { useAssessmentId } from '@/features/useAssessmentId';
 import { getDefaultRubrics } from '@/data/rubrics';
 
 export default function SettingsScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const id = useAssessmentId();
   const colors = useThemeColors();
   const router = useRouter();
   const tryoutQuery = useTryoutQuery(id);

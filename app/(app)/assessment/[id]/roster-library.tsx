@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, EmptyState, LoadingState, Screen } from '@/components/ui';
 import { useImportLibraryPlayersMutation, useTryoutsQuery } from '@/features/queries';
+import { useAssessmentId } from '@/features/useAssessmentId';
 import { buildRosterLibrary } from '@/data/extras';
 
 export default function RosterLibraryScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const id = useAssessmentId();
   const colors = useThemeColors();
   const router = useRouter();
   const tryoutsQuery = useTryoutsQuery(true);
