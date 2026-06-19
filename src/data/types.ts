@@ -1,0 +1,471 @@
+import { z } from 'zod';
+
+export const SPORTS = [
+  'Hockey',
+  'Soccer',
+  'Football',
+  'Basketball',
+  'Tennis',
+  'Volleyball',
+  'Lacrosse',
+  'Baseball',
+  'Other',
+] as const;
+
+export type Sport = (typeof SPORTS)[number];
+
+export const EVENT_TYPES = ['Tryout', 'Assessment', 'Sort Out', 'Combine'] as const;
+export type EventType = (typeof EVENT_TYPES)[number];
+
+export const PLAN_TIERS = ['free', 'coach', 'club', 'pro', 'association'] as const;
+export type PlanTier = (typeof PLAN_TIERS)[number];
+
+export const RECOMMENDATIONS = ['Make', 'Keep', 'Bubble', 'Release', ''] as const;
+export type Recommendation = (typeof RECOMMENDATIONS)[number];
+
+export const SCORE_SCALES = ['1-5', '1-10', 'speed', 'distance', 'height', 'time'] as const;
+export type ScoreScale = (typeof SCORE_SCALES)[number];
+
+export const POSITIONS = ['FWD', 'DEF', 'GTL', 'Other'] as const;
+export type Position = (typeof POSITIONS)[number];
+
+export const AssessorSchema = z.object({
+  name: z.string(),
+  email: z.string().email().optional().or(z.literal('')),
+  role: z.enum(['lead', 'assistant', 'assessor']).default('assessor'),
+});
+
+export type Assessor = z.infer<typeof AssessorSchema>;
+
+export const CustomRubricSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  scale: z.enum(SCORE_SCALES).default('1-5'),
+  role: z.enum(['skater', 'goalie', 'all']).optional(),
+});
+
+export type CustomRubric = z.infer<typeof CustomRubricSchema>;
+
+export const TryoutSettingsSchema = z.object({
+  skaterWeights: z.record(z.string(), z.number()),
+  goalieWeights: z.record(z.string(), z.number()),
+  customRubrics: z.array(CustomRubricSchema).default([]),
+});
+
+export type TryoutSettings = z.infer<typeof TryoutSettingsSchema>;
+
+export const CloudSessionSchema = z.object({
+  id: z.string(),
+  enabled: z.boolean(),
+  dirty: z.boolean().optional(),
+  lastSyncAt: z.number().optional(),
+  lastPushAt: z.number().optional(),
+  lastError: z.string().optional(),
+});
+
+export type CloudSession = z.infer<typeof CloudSessionSchema>;
+
+export const PlayerSchema = z.object({
+  id: z.string(),
+  athleteId: z.string().optional(),
+  first: z.string(),
+  last: z.string(),
+  anonymous: z.boolean().optional(),
+  jersey: z.string().optional(),
+  jerseyColour: z.string().optional(),
+  pos: z.string().optional(),
+  shoots: z.string().optional(),
+  assignedAssessor: z.string().optional(),
+  guardianName: z.string().optional(),
+  guardianEmail: z.string().optional(),
+  guardianPhone: z.string().optional(),
+  yearOfBirth: z.string().optional(),
+  currentPosition: z.string().optional(),
+  currentTeam: z.string().optional(),
+  currentLevel: z.string().optional(),
+  positionTryingOutFor: z.string().optional(),
+  aboutChild: z.string().optional(),
+  medicalInfo: z.string().optional(),
+  friend1Name: z.string().optional(),
+  friend2Name: z.string().optional(),
+  sortOut: z.boolean().optional(),
+  waiverAcceptedAt: z.number().optional(),
+  registrationSource: z.enum(['manual', 'qr', 'import']).optional(),
+  createdAt: z.number(),
+  updatedAt: z.number().optional(),
+});
+
+export type Player = z.infer<typeof PlayerSchema>;
+
+export const EvaluationSchema = z.object({
+  id: z.string(),
+  playerId: z.string(),
+  date: z.string(),
+  evaluator: z.string(),
+  session: z.string().default('Session 1'),
+  strengths: z.string().optional(),
+  improve: z.string().optional(),
+  recommendation: z.enum(RECOMMENDATIONS).default(''),
+  scores: z.record(z.string(), z.number()),
+  source: z.enum(['manual', 'scan']).optional(),
+  createdAt: z.number(),
+  updatedAt: z.number().optional(),
+});
+
+export type Evaluation = z.infer<typeof EvaluationSchema>;
+
+export const RegistrationSchema = z.object({
+  id: z.string(),
+  eventId: z.string(),
+  firstName: z.string(),
+  lastName: z.string(),
+  yearOfBirth: z.string().optional(),
+  positionTryingOutFor: z.string().optional(),
+  guardianName: z.string(),
+  guardianEmail: z.string(),
+  guardianPhone: z.string().optional(),
+  currentTeam: z.string().optional(),
+  currentLevel: z.string().optional(),
+  aboutPlayer: z.string().optional(),
+  medicalInfo: z.string().optional(),
+  friend1Name: z.string().optional(),
+  friend2Name: z.string().optional(),
+  status: z.enum(['pending', 'added', 'dismissed']).default('pending'),
+  paymentStatus: z.enum(['paid', 'partial', 'unpaid']).optional(),
+  createdAt: z.number(),
+});
+
+export type Registration = z.infer<typeof RegistrationSchema>;
+
+export const TryoutSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  teamId: z.string().optional(),
+  seasonId: z.string().optional(),
+  orgId: z.string().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  eventType: z.enum(EVENT_TYPES).default('Tryout'),
+  tryoutDate: z.string().optional(),
+  startTime: z.string().optional(),
+  rink: z.string().optional(),
+  sport: z.enum(SPORTS).default('Hockey'),
+  sportOther: z.string().optional(),
+  defaultPosition: z.string().optional(),
+  headAssessor: z.string().optional(),
+  headCoach: z.string().optional(),
+  headAssessorEmail: z.string().optional(),
+  assessors: z.array(AssessorSchema).default([]),
+  roster: z.array(PlayerSchema).default([]),
+  evals: z.array(EvaluationSchema).default([]),
+  registrations: z.array(RegistrationSchema).optional(),
+  settings: TryoutSettingsSchema,
+  cloud: CloudSessionSchema.optional(),
+  archived: z.boolean().default(false),
+  teamBuilder: z.any().optional(),
+  friendPackages: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    playerIds: z.array(z.string()),
+    highlighted: z.boolean().optional(),
+  })).optional(),
+  aiAssessments: z.record(z.string(), z.any()).optional(),
+});
+
+export type Tryout = z.infer<typeof TryoutSchema>;
+
+export const TeamSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  season: z.string().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number().optional(),
+  tombstone: z.boolean().optional(),
+});
+
+export type Team = z.infer<typeof TeamSchema>;
+
+export const UserProfileSchema = z.object({
+  id: z.string(),
+  email: z.string().email(),
+  displayName: z.string(),
+  organization: z.string().optional(),
+  planTier: z.enum(PLAN_TIERS).default('coach'),
+  createdAt: z.number(),
+  onboardingCompleted: z.boolean().default(false),
+  onboardingSteps: z
+    .object({
+      createTeam: z.boolean(),
+      createAssessment: z.boolean(),
+      inviteAssessors: z.boolean(),
+      addPlayers: z.boolean(),
+      scorePlayers: z.boolean(),
+    })
+    .default({
+      createTeam: false,
+      createAssessment: false,
+      inviteAssessors: false,
+      addPlayers: false,
+      scorePlayers: false,
+    }),
+});
+
+export type UserProfile = z.infer<typeof UserProfileSchema>;
+
+export const AuthSessionSchema = z.object({
+  token: z.string(),
+  user: UserProfileSchema,
+  expiresAt: z.number(),
+});
+
+export type AuthSession = z.infer<typeof AuthSessionSchema>;
+
+/** Login form */
+export const LoginFormSchema = z.object({
+  email: z.string().email('Valid email required'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+});
+
+/** Signup form */
+export const SignupFormSchema = z.object({
+  displayName: z.string().min(2, 'Name required'),
+  email: z.string().email('Valid email required'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+});
+
+/** Create assessment form */
+export const CreateAssessmentFormSchema = z.object({
+  name: z.string().min(2, 'Assessment name required'),
+  sport: z.enum(SPORTS),
+  sportOther: z.string().optional(),
+  eventType: z.enum(EVENT_TYPES),
+  tryoutDate: z.string().optional(),
+  startTime: z.string().optional(),
+  rink: z.string().optional(),
+  teamId: z.string().optional(),
+  headAssessor: z.string().optional(),
+  headCoach: z.string().optional(),
+});
+
+export type CreateAssessmentForm = z.infer<typeof CreateAssessmentFormSchema>;
+
+/** Add player form */
+export const AddPlayerFormSchema = z.object({
+  first: z.string().min(1, 'First name required'),
+  last: z.string().min(1, 'Last name required'),
+  jersey: z.string().optional(),
+  pos: z.string().optional(),
+  shoots: z.string().optional(),
+  yearOfBirth: z.string().optional(),
+  positionTryingOutFor: z.string().optional(),
+  guardianName: z.string().optional(),
+  guardianEmail: z.string().email().optional().or(z.literal('')),
+  guardianPhone: z.string().optional(),
+  currentTeam: z.string().optional(),
+  currentLevel: z.string().optional(),
+  aboutChild: z.string().optional(),
+  medicalInfo: z.string().optional(),
+  friend1Name: z.string().optional(),
+  friend2Name: z.string().optional(),
+});
+
+export type AddPlayerForm = z.infer<typeof AddPlayerFormSchema>;
+
+/** Registration submit (simulated QR form) */
+export const RegistrationSubmitSchema = z.object({
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  yearOfBirth: z.string().optional(),
+  positionTryingOutFor: z.string().optional(),
+  guardianName: z.string().min(1),
+  guardianEmail: z.string().email(),
+  guardianPhone: z.string().optional(),
+  currentTeam: z.string().optional(),
+  currentLevel: z.string().optional(),
+  aboutPlayer: z.string().optional(),
+  medicalInfo: z.string().optional(),
+  friend1Name: z.string().optional(),
+  friend2Name: z.string().optional(),
+});
+
+export type RegistrationSubmit = z.infer<typeof RegistrationSubmitSchema>;
+
+/** Score form */
+export const ScoreFormSchema = z.object({
+  session: z.string(),
+  strengths: z.string().optional(),
+  improve: z.string().optional(),
+  recommendation: z.enum(RECOMMENDATIONS),
+  scores: z.record(z.string(), z.number()),
+});
+
+export type ScoreForm = z.infer<typeof ScoreFormSchema>;
+
+export interface PlayerResult {
+  player: Player;
+  overall: number;
+  evalCount: number;
+  latestRecommendation: Recommendation;
+  categoryScores: Record<string, number>;
+}
+
+export interface AssessorProgress {
+  name: string;
+  scored: number;
+  total: number;
+}
+
+// ---- Phase 2: Team Builder & AI ----
+export interface AiPlayerSummary {
+  summary: string;
+  key_strengths: string[];
+  key_growth: string[];
+  role_fit: string;
+  confidence: number;
+  trend: 'improving' | 'steady' | 'inconsistent' | 'insufficient_data';
+}
+
+export interface AiCompareSummary {
+  summary: string;
+  edge: string;
+  best_fit: string;
+  watch_list: string[];
+  recommendation: string;
+}
+
+export type ExportFormat = 'csv' | 'pdf' | 'xlsx';
+
+// ---- Phase 3: Seasons / Team Hub ----
+export const EVENT_KINDS = ['Game', 'Practice', 'Event'] as const;
+export type EventKind = (typeof EVENT_KINDS)[number];
+
+export const AVAILABILITY_OPTIONS = ['yes', 'maybe', 'no', 'pending'] as const;
+export type AvailabilityOption = (typeof AVAILABILITY_OPTIONS)[number];
+
+export const SeasonPlayerSchema = z.object({
+  id: z.string(),
+  firstName: z.string(),
+  lastName: z.string(),
+  jersey: z.string().optional(),
+  guardianEmail: z.string().optional(),
+  guardianPhone: z.string().optional(),
+  playerEmail: z.string().optional(),
+  portalInviteEmails: z.array(z.string()).optional(),
+  portalInviteSentAt: z.number().optional(),
+});
+
+export type SeasonPlayer = z.infer<typeof SeasonPlayerSchema>;
+
+export const SeasonEventSchema = z.object({
+  id: z.string(),
+  type: z.enum(EVENT_KINDS),
+  title: z.string(),
+  date: z.string(),
+  startTime: z.string().optional(),
+  endTime: z.string().optional(),
+  location: z.string().optional(),
+  notes: z.string().optional(),
+  availability: z.record(z.string(), z.enum(['yes', 'maybe', 'no', 'pending'])).optional(),
+  createdAt: z.number(),
+  updatedAt: z.number().optional(),
+});
+
+export type SeasonEvent = z.infer<typeof SeasonEventSchema>;
+
+export const SeasonSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  teamName: z.string(),
+  sport: z.enum(SPORTS).default('Hockey'),
+  year: z.string().optional(),
+  division: z.string().optional(),
+  coach: z.string().optional(),
+  teamId: z.string().optional(),
+  orgId: z.string().optional(),
+  events: z.array(SeasonEventSchema).default([]),
+  roster: z.array(SeasonPlayerSchema).default([]),
+  scheduleShareToken: z.string().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  archived: z.boolean().optional(),
+});
+
+export type Season = z.infer<typeof SeasonSchema>;
+
+export const CreateSeasonFormSchema = z.object({
+  name: z.string().min(2),
+  teamName: z.string().min(2),
+  sport: z.enum(SPORTS),
+  year: z.string().optional(),
+  division: z.string().optional(),
+  coach: z.string().optional(),
+  teamId: z.string().optional(),
+});
+
+export type CreateSeasonForm = z.infer<typeof CreateSeasonFormSchema>;
+
+export const CreateEventFormSchema = z.object({
+  type: z.enum(EVENT_KINDS),
+  title: z.string().min(1),
+  date: z.string().min(1),
+  startTime: z.string().optional(),
+  endTime: z.string().optional(),
+  location: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export type CreateEventForm = z.infer<typeof CreateEventFormSchema>;
+
+// ---- Phase 4: Enterprise & Admin ----
+export const OrgSchema = z.object({
+  id: z.string(),
+  orgSlug: z.string(),
+  orgName: z.string(),
+  sport: z.string().optional(),
+  memberCount: z.number().default(0),
+  assessmentCount: z.number().default(0),
+  playerCount: z.number().default(0),
+  planTier: z.enum(PLAN_TIERS).default('association'),
+  createdAt: z.number(),
+});
+
+export type Org = z.infer<typeof OrgSchema>;
+
+export interface AdminStats {
+  totalUsers: number;
+  activeUsers: number;
+  totalAssessments: number;
+  totalRegistrations: number;
+  planDistribution: Record<PlanTier, number>;
+  revenueMtd: number;
+}
+
+export interface AdminUserRow {
+  id: string;
+  email: string;
+  displayName: string;
+  planTier: PlanTier;
+  teamCount: number;
+  assessmentCount: number;
+  lastActiveAt: number;
+}
+
+export interface EnterprisePayment {
+  id: string;
+  playerName: string;
+  assessmentName: string;
+  amount: number;
+  status: 'paid' | 'pending' | 'refunded';
+  receivedAt: number;
+}
+
+export const DatabaseSchema = z.object({
+  version: z.number().default(2),
+  tryouts: z.record(z.string(), TryoutSchema),
+  teams: z.array(TeamSchema).default([]),
+  seasons: z.record(z.string(), SeasonSchema).default({}),
+  orgs: z.record(z.string(), OrgSchema).default({}),
+  profile: UserProfileSchema.optional(),
+});
+
+export type Database = z.infer<typeof DatabaseSchema>;
