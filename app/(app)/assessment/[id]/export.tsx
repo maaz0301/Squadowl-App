@@ -1,0 +1,91 @@
+import { useState } from 'react';
+import { Share, Text, View } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
+import { useThemeColors } from '@/theme/ThemeProvider';
+import {
+  Badge,
+  Button,
+  Card,
+  Header,
+  LoadingState,
+  Screen,
+} from '@/components/ui';
+import { PlanGate } from '@/components/PlanGate';
+import { useTryoutQuery, useExportTryoutMutation, useShareLinkMutation } from '@/features/queries';
+import { canUseFeature } from '@/data/plans';
+import { useUser } from '@/state/authStore';
+import type { ExportFormat } from '@/data/types';
+
+export default function ExportScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const colors = useThemeColors();
+  const user = useUser();
+  const tryoutQuery = useTryoutQuery(id);
+  const exportMut = useExportTryoutMutation(id!);
+  const shareMut = useShareLinkMutation(id!);
+  const [lastExport, setLastExport] = useState<string | null>(null);
+
+  if (tryoutQuery.isLoading) return <LoadingState />;
+
+  const tryout = tryoutQuery.data!;
+  const tier = user?.planTier ?? 'free';
+  const exportsAllowed = canUseFeature(tier, 'exports') || tier !== 'free';
+
+  const handleExport = async (format: ExportFormat) => {
+    const result = await exportMut.mutateAsync(format);
+    setLastExport(result.filename);
+    await Share.share({ message: result.content, title: result.filename });
+  };
+
+  const handleShare = async () => {
+    const link = await shareMut.mutateAsync(tryout.name);
+    await Share.share({
+      message: `Team results for ${tryout.name}: https://aas-tryout.app/?share=${link.token}\nExpires: ${new Date(link.expiresAt).toLocaleDateString()}`,
+    });
+  };
+
+  return (
+    <Screen scroll>
+      <Header title="Export & Share" showBack />
+
+      <Card className="mb-4 gap-2">
+        <Text className="font-display font-bold" style={{ color: colors.ink }}>
+          {tryout.name}
+        </Text>
+        <Text style={{ color: colors.inkMuted }}>
+          {tryout.roster.length} players · {tryout.evals.length} evaluations
+        </Text>
+      </Card>
+
+      {exportsAllowed ? (
+        <View className="gap-3 mb-6">
+          <Text className="text-sm font-bold uppercase" style={{ color: colors.inkMuted }}>
+            Export Formats
+          </Text>
+          <Button label="Export CSV" variant="secondary" onPress={() => handleExport('csv')} loading={exportMut.isPending} />
+          <PlanGate feature="exports">
+            <Button label="Export PDF" variant="secondary" onPress={() => handleExport('pdf')} />
+            <Button label="Export XLSX" variant="secondary" onPress={() => handleExport('xlsx')} className="mt-2" />
+          </PlanGate>
+          {lastExport ? <Badge label={`Exported: ${lastExport}`} variant="success" /> : null}
+        </View>
+      ) : (
+        <PlanGate feature="exports" title="Exports require Coach plan+">
+          <View />
+        </PlanGate>
+      )}
+
+      <PlanGate feature="shareLinks" title="Share Links (Club+)">
+        <Card accent className="gap-3">
+          <Text className="font-display font-bold" style={{ color: colors.ink }}>
+            Shareable Results Link
+          </Text>
+          <Text className="text-sm" style={{ color: colors.inkMuted }}>
+            Create a 7-day read-only link for team assignments or results.
+          </Text>
+          <Button label="Create Share Link" onPress={handleShare} loading={shareMut.isPending} />
+        </Card>
+      </PlanGate>
+    </Screen>
+  );
+}
