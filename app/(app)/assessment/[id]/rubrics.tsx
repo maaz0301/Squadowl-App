@@ -57,18 +57,18 @@ export default function RubricsScreen() {
   };
 
   const resetWeights = async (forRole: 'skater' | 'goalie') => {
-    const rubrics = forRole === 'goalie' ? defaults.goalie : defaults.skater;
-    const customForRole = custom.filter((r) => r.role === forRole || r.role === 'all');
-    const all = [
-      ...rubrics,
-      ...customForRole.map((r) => ({
+    const baseCats = forRole === 'goalie' ? defaults.goalie : defaults.skater;
+    const customCats = custom
+      .filter((r) => r.role === forRole || r.role === 'all' || !r.role)
+      .map((r) => ({
         key: r.key,
         label: r.label,
-        scale: (r.scale === '1-10' ? '1-10' : '1-5') as '1-5' | '1-10',
         role: forRole,
-      })),
-    ];
-    const weights = buildDefaultWeights(all);
+        subskills: [
+          { key: r.key, label: r.label, scale: (r.scale === '1-10' ? '1-10' : '1-5') as '1-5' | '1-10' },
+        ],
+      }));
+    const weights = buildDefaultWeights([...baseCats, ...customCats]);
     await updateTryout.mutateAsync({
       id: tryout.id,
       updates: {
@@ -98,7 +98,7 @@ export default function RubricsScreen() {
         </Text>
         {defaults.skater.map((r) => (
           <Text key={r.key} style={{ color: colors.ink }}>
-            {r.label} ({r.scale})
+            {r.label} · {r.subskills.length} skills
           </Text>
         ))}
         <Button label="Reset Skater Weights" size="sm" variant="ghost" onPress={() => resetWeights('skater')} />
@@ -111,7 +111,7 @@ export default function RubricsScreen() {
           </Text>
           {defaults.goalie.map((r) => (
             <Text key={r.key} style={{ color: colors.ink }}>
-              {r.label} ({r.scale})
+              {r.label} · {r.subskills.length} skills
             </Text>
           ))}
           <Button label="Reset Goalie Weights" size="sm" variant="ghost" onPress={() => resetWeights('goalie')} />

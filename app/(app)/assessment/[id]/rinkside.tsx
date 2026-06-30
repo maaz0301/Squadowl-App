@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Dimensions, Text, View } from 'react-native';
+import { Dimensions, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -17,7 +17,13 @@ import {
 import { useTryoutQuery, useSaveEvaluationMutation } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { useSessionStore } from '@/state/sessionStore';
-import { getPlayerRubrics, playerDisplayName, weightedOverall } from '@/data/rubrics';
+import {
+  categoryAverage,
+  getPlayerCategories,
+  isGoaliePosition,
+  playerDisplayName,
+  weightedOverall,
+} from '@/data/rubrics';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -38,9 +44,9 @@ export default function RinksideScreen() {
   const roster = tryoutQuery.data?.roster ?? [];
   const player = roster[rinksideIndex];
 
-  const rubrics = useMemo(() => {
+  const categories = useMemo(() => {
     if (!tryoutQuery.data || !player) return [];
-    return getPlayerRubrics(
+    return getPlayerCategories(
       tryoutQuery.data.sport,
       player.pos,
       tryoutQuery.data.settings.customRubrics,
@@ -49,7 +55,7 @@ export default function RinksideScreen() {
 
   const weights = useMemo(() => {
     if (!tryoutQuery.data || !player) return {};
-    return player.pos?.toUpperCase() === 'GTL'
+    return isGoaliePosition(player.pos)
       ? tryoutQuery.data.settings.goalieWeights
       : tryoutQuery.data.settings.skaterWeights;
   }, [tryoutQuery.data, player]);
@@ -89,11 +95,7 @@ export default function RinksideScreen() {
     );
   }
 
-  const overall = weightedOverall(
-    workingScores,
-    weights,
-    rubrics.map((r) => r.key),
-  );
+  const overall = weightedOverall(workingScores, categories, weights);
 
   const saveAndNext = async () => {
     if (!player) return;
@@ -124,6 +126,11 @@ export default function RinksideScreen() {
         <Animated.View
           style={{ transform: [{ translateX }], width: SCREEN_WIDTH, flex: 1, paddingHorizontal: 16 }}
         >
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 16 }}
+            keyboardShouldPersistTaps="handled"
+          >
           <View className="items-center py-4 gap-1">
             <Text className="text-2xl font-display font-bold" style={{ color: colors.ink }}>
               {player ? playerDisplayName(player) : '—'}
@@ -136,16 +143,32 @@ export default function RinksideScreen() {
             </Text>
           </View>
 
-          {rubrics.map((r) => (
-            <ScorePad
-              key={r.key}
-              rubricKey={r.key}
-              label={r.label}
-              scale={r.scale}
-              value={workingScores[r.key]}
-              onChange={(v) => setWorkingScores({ ...workingScores, [r.key]: v })}
-            />
-          ))}
+          {categories.map((cat) => {
+            const catAvg = categoryAverage(workingScores, cat.subskills);
+            return (
+              <View key={cat.key} className="mb-4">
+                <View className="flex-row items-center justify-between mb-2">
+                  <Text className="text-base font-display font-bold" style={{ color: colors.ink }}>
+                    {cat.label}
+                  </Text>
+                  <Text className="text-sm font-bold" style={{ color: colors.primary }}>
+                    {catAvg !== null ? catAvg.toFixed(1) : '—'}
+                  </Text>
+                </View>
+                {cat.subskills.map((s) => (
+                  <ScorePad
+                    key={s.key}
+                    rubricKey={s.key}
+                    label={s.label}
+                    scale={s.scale}
+                    value={workingScores[s.key]}
+                    onChange={(v) => setWorkingScores({ ...workingScores, [s.key]: v })}
+                  />
+                ))}
+              </View>
+            );
+          })}
+          </ScrollView>
         </Animated.View>
       </GestureDetector>
 

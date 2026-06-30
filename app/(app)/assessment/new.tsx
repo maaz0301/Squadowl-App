@@ -5,7 +5,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CreateAssessmentFormSchema, SPORTS, EVENT_TYPES, type CreateAssessmentForm } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Button, Chip, Input, Screen, Header } from '@/components/ui';
+import { Button, Chip, DateField, TimeField, Input, Screen, Header } from '@/components/ui';
 import { useCreateTryoutMutation, useTeamsQuery, useTryoutsQuery } from '@/features/queries';
 import { useSessionStore } from '@/state/sessionStore';
 import { useUser } from '@/state/authStore';
@@ -34,6 +34,7 @@ export default function NewAssessmentScreen() {
 
   const sport = watch('sport');
   const eventType = watch('eventType');
+  const teamId = watch('teamId');
 
   const onSubmit = handleSubmit(async (data) => {
     const count = tryoutsQuery.data?.length ?? 0;
@@ -43,7 +44,7 @@ export default function NewAssessmentScreen() {
     }
     const tryout = await createTryout.mutateAsync(data);
     setCurrentTryout(tryout.id);
-    router.replace(`/(app)/assessment/${tryout.id}/roster`);
+    router.replace(`/(app)/assessment/${tryout.id}/settings?welcome=1`);
   });
 
   return (
@@ -90,7 +91,10 @@ export default function NewAssessmentScreen() {
                 <Chip
                   key={team.id}
                   label={team.name}
-                  onPress={() => setValue('teamId', team.id)}
+                  active={teamId === team.id}
+                  onPress={() =>
+                    setValue('teamId', teamId === team.id ? undefined : team.id)
+                  }
                 />
               ))}
             </ScrollView>
@@ -100,15 +104,15 @@ export default function NewAssessmentScreen() {
         <Controller
           control={control}
           name="tryoutDate"
-          render={({ field: { onChange, onBlur, value } }) => (
-            <Input label="Date" placeholder="2026-03-15" onBlur={onBlur} onChangeText={onChange} value={value} />
+          render={({ field: { onChange, value } }) => (
+            <DateField label="Date" value={value} onChange={onChange} placeholder="Select a date" />
           )}
         />
         <Controller
           control={control}
           name="startTime"
-          render={({ field: { onChange, onBlur, value } }) => (
-            <Input label="Start Time" placeholder="09:00" onBlur={onBlur} onChangeText={onChange} value={value} />
+          render={({ field: { onChange, value } }) => (
+            <TimeField label="Start Time" value={value} onChange={onChange} placeholder="Select a time" />
           )}
         />
         <Controller

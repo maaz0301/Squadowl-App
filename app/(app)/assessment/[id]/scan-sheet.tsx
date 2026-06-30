@@ -5,7 +5,7 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Header, LoadingState, Screen } from '@/components/ui';
 import { useImportScanScoresMutation, useTryoutQuery } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
-import { getPlayerRubrics, playerDisplayName } from '@/data/rubrics';
+import { getPlayerSubskills, playerDisplayName } from '@/data/rubrics';
 
 export default function ScanSheetScreen() {
   const id = useAssessmentId();
@@ -18,8 +18,8 @@ export default function ScanSheetScreen() {
   const preview = useMemo(() => {
     if (!tryoutQuery.data) return [];
     return tryoutQuery.data.roster.slice(0, 5).map((p) => {
-      const rubrics = getPlayerRubrics(tryoutQuery.data!.sport, p.pos, tryoutQuery.data!.settings.customRubrics);
-      const scores = rubrics.slice(0, 3).map((r) => ({
+      const subskills = getPlayerSubskills(tryoutQuery.data!.sport, p.pos, tryoutQuery.data!.settings.customRubrics);
+      const scores = subskills.slice(0, 3).map((r) => ({
         rubricKey: r.key,
         value: 3 + Math.floor(Math.random() * 2),
       }));

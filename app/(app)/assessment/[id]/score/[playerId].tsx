@@ -18,7 +18,13 @@ import {
 import { useTryoutQuery, useSaveEvaluationMutation } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { useSessionStore } from '@/state/sessionStore';
-import { getPlayerRubrics, playerDisplayName, weightedOverall } from '@/data/rubrics';
+import {
+  categoryAverage,
+  getPlayerCategories,
+  isGoaliePosition,
+  playerDisplayName,
+  weightedOverall,
+} from '@/data/rubrics';
 
 export default function ScoreScreen() {
   const id = useAssessmentId();
@@ -40,9 +46,9 @@ export default function ScoreScreen() {
         .filter((e) => e.playerId === playerId)
         .sort((a, b) => b.createdAt - a.createdAt)[0];
 
-  const rubrics = useMemo(() => {
+  const categories = useMemo(() => {
     if (!tryoutQuery.data || !player) return [];
-    return getPlayerRubrics(
+    return getPlayerCategories(
       tryoutQuery.data.sport,
       player.pos,
       tryoutQuery.data.settings.customRubrics,
@@ -51,7 +57,7 @@ export default function ScoreScreen() {
 
   const weights = useMemo(() => {
     if (!tryoutQuery.data || !player) return {};
-    return player.pos?.toUpperCase() === 'GTL'
+    return isGoaliePosition(player.pos)
       ? tryoutQuery.data.settings.goalieWeights
       : tryoutQuery.data.settings.skaterWeights;
   }, [tryoutQuery.data, player]);
@@ -83,11 +89,7 @@ export default function ScoreScreen() {
     return <ErrorState message="Player not found." onRetry={() => tryoutQuery.refetch()} />;
   }
 
-  const overall = weightedOverall(
-    scores ?? {},
-    weights,
-    rubrics.map((r) => r.key),
-  );
+  const overall = weightedOverall(scores ?? {}, categories, weights);
 
   const onSubmit = handleSubmit(async (data) => {
     await saveEval.mutateAsync({
@@ -137,18 +139,33 @@ export default function ScoreScreen() {
         ))}
       </View>
 
-      {rubrics.map((r) => (
-        <ScorePad
-          key={r.key}
-          rubricKey={r.key}
-          label={r.label}
-          scale={r.scale}
-          value={scores?.[r.key]}
-          onChange={(v) => {
-            setWorkingScores({ ...workingScores, [r.key]: v });
-          }}
-        />
-      ))}
+      {categories.map((cat) => {
+        const catAvg = categoryAverage(scores ?? {}, cat.subskills);
+        return (
+          <View key={cat.key} className="mb-4">
+            <View className="flex-row items-center justify-between mb-2">
+              <Text className="text-base font-display font-bold" style={{ color: colors.ink }}>
+                {cat.label}
+              </Text>
+              <Text className="text-sm font-bold" style={{ color: colors.primary }}>
+                {catAvg !== null ? catAvg.toFixed(1) : '—'}
+              </Text>
+            </View>
+            {cat.subskills.map((s) => (
+              <ScorePad
+                key={s.key}
+                rubricKey={s.key}
+                label={s.label}
+                scale={s.scale}
+                value={scores?.[s.key]}
+                onChange={(v) => {
+                  setWorkingScores({ ...workingScores, [s.key]: v });
+                }}
+              />
+            ))}
+          </View>
+        );
+      })}
 
       <Text className="text-sm font-bold uppercase mb-2" style={{ color: colors.inkMuted }}>
         Recommendation

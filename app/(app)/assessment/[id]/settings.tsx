@@ -1,16 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ScrollView, Share, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
   Badge,
   Button,
   Card,
+  DateField,
   ErrorState,
   Input,
   LoadingState,
   Modal,
   Screen,
+  TimeField,
 } from '@/components/ui';
 import {
   useTryoutQuery,
@@ -23,8 +25,10 @@ import { getDefaultRubrics } from '@/data/rubrics';
 
 export default function SettingsScreen() {
   const id = useAssessmentId();
+  const { welcome } = useLocalSearchParams<{ welcome?: string }>();
   const colors = useThemeColors();
   const router = useRouter();
+  const welcomedRef = useRef(false);
   const tryoutQuery = useTryoutQuery(id);
   const updateTryout = useUpdateTryoutMutation();
   const archiveTryout = useArchiveTryoutMutation();
@@ -38,6 +42,13 @@ export default function SettingsScreen() {
   const [tryoutDate, setTryoutDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [rink, setRink] = useState('');
+
+  useEffect(() => {
+    if (welcome === '1' && !welcomedRef.current) {
+      welcomedRef.current = true;
+      setShowAssessor(true);
+    }
+  }, [welcome]);
 
   if (tryoutQuery.isLoading) return <LoadingState message="Loading settings..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
@@ -170,8 +181,8 @@ export default function SettingsScreen() {
       <Modal visible={showEdit} title="Edit Assessment" onClose={() => setShowEdit(false)}>
         <View className="gap-3">
           <Input label="Name" value={name} onChangeText={setName} />
-          <Input label="Date" value={tryoutDate} onChangeText={setTryoutDate} placeholder="2026-03-15" />
-          <Input label="Start Time" value={startTime} onChangeText={setStartTime} placeholder="09:00" />
+          <DateField label="Date" value={tryoutDate} onChange={setTryoutDate} placeholder="Select a date" />
+          <TimeField label="Start Time" value={startTime} onChange={setStartTime} placeholder="Select a time" />
           <Input label="Location" value={rink} onChangeText={setRink} placeholder="Rink A" />
           <Button label="Save" onPress={saveEdit} loading={updateTryout.isPending} />
         </View>
@@ -183,9 +194,14 @@ export default function SettingsScreen() {
             Skater Categories
           </Text>
           {rubrics.skater.map((r) => (
-            <Text key={r.key} className="text-base mb-1" style={{ color: colors.ink }}>
-              {r.label} ({r.scale})
-            </Text>
+            <View key={r.key} className="mb-2">
+              <Text className="text-base" style={{ color: colors.ink }}>
+                {r.label}
+              </Text>
+              <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                {r.subskills.map((s) => s.label).join(', ')}
+              </Text>
+            </View>
           ))}
           {rubrics.goalie.length > 0 ? (
             <>
@@ -193,9 +209,14 @@ export default function SettingsScreen() {
                 Goalie Categories
               </Text>
               {rubrics.goalie.map((r) => (
-                <Text key={r.key} className="text-base mb-1" style={{ color: colors.ink }}>
-                  {r.label} ({r.scale})
-                </Text>
+                <View key={r.key} className="mb-2">
+                  <Text className="text-base" style={{ color: colors.ink }}>
+                    {r.label}
+                  </Text>
+                  <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                    {r.subskills.map((s) => s.label).join(', ')}
+                  </Text>
+                </View>
               ))}
             </>
           ) : null}

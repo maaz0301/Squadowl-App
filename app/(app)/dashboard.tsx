@@ -3,6 +3,7 @@ import { FlatList, Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
+  Avatar,
   Badge,
   Button,
   Card,
@@ -16,7 +17,12 @@ import {
 import { PlanGate } from '@/components/PlanGate';
 import { useAuthStore, useUser } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
-import { useTeamsQuery, useTryoutsQuery, useSeasonsQuery } from '@/features/queries';
+import {
+  useTeamsQuery,
+  useTryoutsQuery,
+  useSeasonsQuery,
+  useAssignedTryoutsQuery,
+} from '@/features/queries';
 import { APP_CONFIG } from '@/config/app';
 import { canUseFeature, isAtAssessmentLimit } from '@/data/plans';
 
@@ -95,6 +101,7 @@ export default function DashboardScreen() {
   const router = useRouter();
   const user = useUser();
   const setCurrentTryout = useSessionStore((s) => s.setCurrentTryout);
+  const setActiveAssessor = useSessionStore((s) => s.setActiveAssessor);
   const combineIds = useSessionStore((s) => s.combineTryoutIds);
   const toggleCombineTryout = useSessionStore((s) => s.toggleCombineTryout);
   const [tab, setTab] = useState('assessments');
@@ -103,6 +110,13 @@ export default function DashboardScreen() {
   const teamsQuery = useTeamsQuery();
   const tryoutsQuery = useTryoutsQuery(false);
   const seasonsQuery = useSeasonsQuery();
+  const assignedQuery = useAssignedTryoutsQuery();
+
+  const openAssigned = (id: string) => {
+    setCurrentTryout(id);
+    setActiveAssessor(user?.displayName ?? null);
+    router.push(`/(app)/assessment/${id}/rinkside`);
+  };
 
   if (teamsQuery.isLoading || tryoutsQuery.isLoading || seasonsQuery.isLoading) {
     return <LoadingState message="Loading dashboard..." />;
@@ -153,17 +167,50 @@ export default function DashboardScreen() {
           title={APP_CONFIG.appName}
           subtitle={`Hi, ${user?.displayName ?? 'Coach'}`}
           right={
-            <View className="flex-row gap-2">
+            <View className="flex-row items-center gap-2">
               <Pressable onPress={() => router.push('/(app)/search')} hitSlop={8}>
                 <Badge label="Search" variant="info" />
               </Pressable>
-              <Pressable onPress={() => router.push('/(app)/profile')} hitSlop={8}>
-                <Badge label={(user?.planTier ?? 'coach').toUpperCase()} variant="brand" />
+              <Pressable
+                onPress={() => router.push('/(app)/profile')}
+                hitSlop={8}
+                accessibilityLabel="Profile and settings"
+              >
+                <Avatar
+                  first={(user?.displayName ?? 'Coach').split(' ')[0] ?? 'C'}
+                  last={(user?.displayName ?? '').split(' ')[1] ?? ''}
+                  size={40}
+                />
               </Pressable>
             </View>
           }
         />
         <OnboardingChecklist />
+        {assignedQuery.data && assignedQuery.data.length > 0 ? (
+          <View className="mb-4">
+            <Text
+              className="text-xs font-bold uppercase tracking-wider mb-2"
+              style={{ color: colors.inkMuted }}
+            >
+              Assigned to me
+            </Text>
+            {assignedQuery.data.map((t) => (
+              <Pressable key={t.id} onPress={() => openAssigned(t.id)}>
+                <Card className="mb-2 flex-row justify-between items-center">
+                  <View className="flex-1">
+                    <Text className="text-base font-display font-bold" style={{ color: colors.ink }}>
+                      {t.name}
+                    </Text>
+                    <Text className="text-sm mt-1" style={{ color: colors.inkMuted }}>
+                      {t.sport} · {t.roster.length} players
+                    </Text>
+                  </View>
+                  <Badge label="Score" variant="brand" />
+                </Card>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
         <Tabs
           tabs={[
             { key: 'assessments', label: 'Assessments', badge: tryoutsQuery.data?.length },
