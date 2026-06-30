@@ -1,29 +1,26 @@
 import type { AssessorProgress, PlayerResult, Recommendation, Tryout } from './types';
-import { getPlayerRubrics, weightedOverall } from './rubrics';
+import {
+  categoryAveragesAcrossEvals,
+  getPlayerCategories,
+  isGoaliePosition,
+  weightedOverallAcrossEvals,
+} from './rubrics';
 
 export function computePlayerResults(tryout: Tryout): PlayerResult[] {
   return tryout.roster.map((player) => {
     const playerEvals = tryout.evals.filter((e) => e.playerId === player.id);
-    const rubrics = getPlayerRubrics(tryout.sport, player.pos, tryout.settings.customRubrics);
-    const weights =
-      player.pos?.toUpperCase() === 'GTL'
-        ? tryout.settings.goalieWeights
-        : tryout.settings.skaterWeights;
+    const categories = getPlayerCategories(tryout.sport, player.pos, tryout.settings.customRubrics);
+    const weights = isGoaliePosition(player.pos)
+      ? tryout.settings.goalieWeights
+      : tryout.settings.skaterWeights;
 
-    const categoryScores: Record<string, number> = {};
-    for (const rubric of rubrics) {
-      const scores = playerEvals.map((e) => e.scores[rubric.key]).filter((s) => s != null);
-      if (scores.length) {
-        categoryScores[rubric.key] =
-          Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100;
-      }
-    }
+    // Scores pool across every evaluation/session, matching the web prototype.
+    const categoryScores = categoryAveragesAcrossEvals(playerEvals, categories);
+    const overall = playerEvals.length
+      ? weightedOverallAcrossEvals(playerEvals, categories, weights)
+      : 0;
 
-    const latestEval = playerEvals.sort((a, b) => b.createdAt - a.createdAt)[0];
-    const overall =
-      latestEval != null
-        ? weightedOverall(latestEval.scores, weights, rubrics.map((r) => r.key))
-        : 0;
+    const latestEval = [...playerEvals].sort((a, b) => b.createdAt - a.createdAt)[0];
 
     return {
       player,

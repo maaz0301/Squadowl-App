@@ -204,6 +204,12 @@ export class MockDataSource implements DataSource {
     return loadDb().tryouts[id] ?? null;
   }
 
+  async listAssignedTryouts(): Promise<Tryout[]> {
+    await delay();
+    // Single-user mock has no cross-account assessor assignments.
+    return [];
+  }
+
   async createTryout(form: CreateAssessmentForm): Promise<Tryout> {
     await delay();
     const db = loadDb();

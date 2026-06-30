@@ -45,6 +45,8 @@ export interface DataSource {
 
   // Tryouts
   listTryouts(includeArchived?: boolean): Promise<Tryout[]>;
+  /** Tryouts the current user is invited to as an assessor (not owned by their account). */
+  listAssignedTryouts(): Promise<Tryout[]>;
   getTryout(id: string): Promise<Tryout | null>;
   createTryout(form: CreateAssessmentForm): Promise<Tryout>;
   updateTryout(id: string, updates: Partial<Tryout>): Promise<Tryout>;

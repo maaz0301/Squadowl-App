@@ -1,6 +1,7 @@
 import { APP_CONFIG } from '@/config/app';
 import type { DataSource } from './datasource';
 import { mockDataSource } from './mock/MockDataSource';
+import { supabaseDataSource } from './supabase/SupabaseDataSource';
 
 let instance: DataSource | null = null;
 
@@ -11,7 +12,8 @@ export function getDataSource(): DataSource {
         instance = mockDataSource;
         break;
       case 'supabase':
-        throw new Error('Supabase data source not yet implemented. Set dataSource to "mock".');
+        instance = supabaseDataSource;
+        break;
       default:
         instance = mockDataSource;
     }
@@ -19,4 +21,4 @@ export function getDataSource(): DataSource {
   return instance;
 }
 
-export { mockDataSource };
+export { mockDataSource, supabaseDataSource };

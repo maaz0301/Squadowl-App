@@ -1,6 +1,11 @@
 import type { Player, Tryout } from './types';
-import { generateId, playerDisplayName, weightedOverall } from './rubrics';
-import { getPlayerRubrics } from './rubrics';
+import {
+  generateId,
+  getPlayerCategories,
+  isGoaliePosition,
+  playerDisplayName,
+  weightedOverallAcrossEvals,
+} from './rubrics';
 import { computePlayerResults } from '@/data/scoring';
 
 export interface FriendPackage {
@@ -216,15 +221,12 @@ export function mockAiPlayerSummary(tryout: Tryout, playerId: string) {
   const player = tryout.roster.find((p) => p.id === playerId);
   const evals = tryout.evals.filter((e) => e.playerId === playerId);
   if (!player) throw new Error('Player not found');
-  const rubrics = getPlayerRubrics(tryout.sport, player.pos, tryout.settings.customRubrics);
-  const weights =
-    player.pos?.toUpperCase() === 'GTL'
-      ? tryout.settings.goalieWeights
-      : tryout.settings.skaterWeights;
-  const latest = evals.sort((a, b) => b.createdAt - a.createdAt)[0];
-  const overall = latest
-    ? weightedOverall(latest.scores, weights, rubrics.map((r) => r.key))
-    : 0;
+  const categories = getPlayerCategories(tryout.sport, player.pos, tryout.settings.customRubrics);
+  const weights = isGoaliePosition(player.pos)
+    ? tryout.settings.goalieWeights
+    : tryout.settings.skaterWeights;
+  const latest = [...evals].sort((a, b) => b.createdAt - a.createdAt)[0];
+  const overall = evals.length ? weightedOverallAcrossEvals(evals, categories, weights) : 0;
 
   return {
     summary: `${playerDisplayName(player)} shows ${overall >= 4 ? 'strong' : overall >= 3 ? 'solid' : 'developing'} overall performance as a ${player.pos ?? 'player'}.`,

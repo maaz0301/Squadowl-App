@@ -1,5 +1,5 @@
 import type { Database, Org, Season, Team, Tryout, UserProfile } from '../types';
-import { buildDefaultWeights, generateCloudCode, generateId, getDefaultRubrics } from '../rubrics';
+import { generateCloudCode, generateId, getDefaultWeights } from '../rubrics';
 
 export const DEMO_USER: UserProfile = {
   id: 'user_demo',
@@ -106,7 +106,7 @@ function makeDemoSeason(): Season {
 
 function makeDemoTryout(): Tryout {
   const sport = 'Hockey' as const;
-  const rubrics = getDefaultRubrics(sport);
+  const weights = getDefaultWeights(sport);
   const now = Date.now();
   const tryoutId = 'tryout_demo_1';
 
@@ -168,7 +168,17 @@ function makeDemoTryout(): Tryout {
       strengths: 'Strong skating, good puck control',
       improve: 'Needs work on backchecking',
       recommendation: 'Make' as const,
-      scores: { skating: 4, puck: 4, compete: 5, hockeyIQ: 3, physical: 4 },
+      scores: {
+        'SK1 Accel': 4,
+        'SK2 Speed': 5,
+        'SK3 Edges': 4,
+        'PA1 Accuracy': 4,
+        'PA3 Vision': 4,
+        'SH1 Power': 3,
+        'SH2 Accuracy': 4,
+        'IQ1 HockeyIQ': 4,
+        'IQ3 Compete': 5,
+      },
       createdAt: now - 3600000,
     },
   ];
@@ -192,8 +202,8 @@ function makeDemoTryout(): Tryout {
     evals,
     registrations: [],
     settings: {
-      skaterWeights: buildDefaultWeights(rubrics.skater),
-      goalieWeights: buildDefaultWeights(rubrics.goalie),
+      skaterWeights: weights.skater,
+      goalieWeights: weights.goalie,
       customRubrics: [],
     },
     cloud: { id: generateCloudCode(), enabled: true },
@@ -252,7 +262,7 @@ export function createTryoutFromForm(
   profile: UserProfile,
 ): Tryout {
   const now = Date.now();
-  const rubrics = getDefaultRubrics(form.sport);
+  const weights = getDefaultWeights(form.sport);
   return {
     id: generateId('tryout'),
     name: form.name,
@@ -273,8 +283,8 @@ export function createTryoutFromForm(
     evals: [],
     registrations: [],
     settings: {
-      skaterWeights: buildDefaultWeights(rubrics.skater),
-      goalieWeights: buildDefaultWeights(rubrics.goalie),
+      skaterWeights: weights.skater,
+      goalieWeights: weights.goalie,
       customRubrics: [],
     },
     archived: false,
