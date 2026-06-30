@@ -1,0 +1,233 @@
+import { useState } from 'react';
+import { Pressable, Text, View } from 'react-native';
+import { useThemeColors } from '@/theme/ThemeProvider';
+import { Modal } from './Modal';
+import { Button } from './Button';
+
+interface TimeFieldProps {
+  label?: string;
+  value?: string; // 24h "HH:MM"
+  onChange: (value: string) => void;
+  placeholder?: string;
+}
+
+const pad = (n: number) => String(n).padStart(2, '0');
+
+function parse(value?: string): { h24: number; min: number } | null {
+  if (!value) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  const h24 = Number(m[1]);
+  const min = Number(m[2]);
+  if (h24 > 23 || min > 59) return null;
+  return { h24, min };
+}
+
+function to12(h24: number): { hour: number; period: 'AM' | 'PM' } {
+  const period = h24 >= 12 ? 'PM' : 'AM';
+  const hour = h24 % 12 === 0 ? 12 : h24 % 12;
+  return { hour, period };
+}
+function to24(hour: number, period: 'AM' | 'PM'): number {
+  if (period === 'AM') return hour === 12 ? 0 : hour;
+  return hour === 12 ? 12 : hour + 12;
+}
+
+function formatDisplay(value?: string): string | null {
+  const p = parse(value);
+  if (!p) return null;
+  const { hour, period } = to12(p.h24);
+  return `${hour}:${pad(p.min)} ${period}`;
+}
+
+const FACE = 248;
+const CENTER = FACE / 2;
+const RADIUS = CENTER - 26;
+const CELL = 40;
+
+export function TimeField({ label, value, onChange, placeholder = 'Select a time' }: TimeFieldProps) {
+  const colors = useThemeColors();
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<'hour' | 'minute'>('hour');
+  const parsed = parse(value);
+  const init = parsed ? to12(parsed.h24) : { hour: 9, period: 'AM' as const };
+  const [hour, setHour] = useState(init.hour);
+  const [minute, setMinute] = useState(parsed?.min ?? 0);
+  const [period, setPeriod] = useState<'AM' | 'PM'>(init.period);
+
+  const display = formatDisplay(value);
+
+  const openPicker = () => {
+    const p = parse(value);
+    const t = p ? to12(p.h24) : { hour: 9, period: 'AM' as const };
+    setHour(t.hour);
+    setMinute(p?.min ?? 0);
+    setPeriod(t.period);
+    setMode('hour');
+    setOpen(true);
+  };
+
+  const confirm = (h = hour, m = minute, pd = period) => {
+    onChange(`${pad(to24(h, pd))}:${pad(m)}`);
+    setOpen(false);
+  };
+
+  // hand angle in degrees, 0 = pointing up
+  const handAngle = mode === 'hour' ? (hour % 12) * 30 : minute * 6;
+
+  const numbers = mode === 'hour'
+    ? Array.from({ length: 12 }, (_, i) => i + 1)
+    : Array.from({ length: 12 }, (_, i) => i * 5);
+
+  const angleFor = (n: number) => (mode === 'hour' ? (n % 12) * 30 : n * 6);
+
+  return (
+    <View className="gap-1">
+      {label ? (
+        <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+          {label}
+        </Text>
+      ) : null}
+      <Pressable
+        onPress={openPicker}
+        className="rounded-md px-4 py-3 border min-h-[48px] flex-row items-center justify-between"
+        style={{ backgroundColor: colors.field, borderColor: colors.border }}
+      >
+        <Text className="text-base" style={{ color: display ? colors.ink : colors.placeholder }}>
+          {display ?? placeholder}
+        </Text>
+        <Text style={{ color: colors.inkMuted, fontSize: 14 }}>▾</Text>
+      </Pressable>
+
+      <Modal
+        visible={open}
+        title="Select time"
+        onClose={() => setOpen(false)}
+        footer={
+          <View className="flex-row gap-2 mt-4">
+            <Button label="Cancel" variant="ghost" className="flex-1" onPress={() => setOpen(false)} />
+            <Button label="Done" className="flex-1" onPress={() => confirm()} />
+          </View>
+        }
+      >
+        <View className="items-center">
+          {/* Digital readout */}
+          <View className="flex-row items-center gap-2 mb-4">
+            <Pressable onPress={() => setMode('hour')}>
+              <Text
+                className="text-3xl font-display font-bold"
+                style={{ color: mode === 'hour' ? colors.primary : colors.ink }}
+              >
+                {hour}
+              </Text>
+            </Pressable>
+            <Text className="text-3xl font-display font-bold" style={{ color: colors.ink }}>
+              :
+            </Text>
+            <Pressable onPress={() => setMode('minute')}>
+              <Text
+                className="text-3xl font-display font-bold"
+                style={{ color: mode === 'minute' ? colors.primary : colors.ink }}
+              >
+                {pad(minute)}
+              </Text>
+            </Pressable>
+            <View className="ml-3 rounded-md overflow-hidden border" style={{ borderColor: colors.border }}>
+              {(['AM', 'PM'] as const).map((p) => (
+                <Pressable
+                  key={p}
+                  onPress={() => setPeriod(p)}
+                  className="px-3 py-1"
+                  style={{ backgroundColor: period === p ? colors.primary : 'transparent' }}
+                >
+                  <Text
+                    className="text-sm font-bold"
+                    style={{ color: period === p ? '#fff' : colors.inkMuted }}
+                  >
+                    {p}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          {/* Clock face */}
+          <View
+            style={{
+              width: FACE,
+              height: FACE,
+              borderRadius: FACE / 2,
+              backgroundColor: colors.tile,
+            }}
+          >
+            {/* hand */}
+            <View
+              style={{
+                position: 'absolute',
+                left: CENTER - 1,
+                top: CENTER - RADIUS,
+                width: 2,
+                height: RADIUS,
+                backgroundColor: colors.primary,
+                transform: [{ rotate: `${handAngle}deg` }],
+                transformOrigin: '50% 100%',
+              }}
+            />
+            {/* center dot */}
+            <View
+              style={{
+                position: 'absolute',
+                left: CENTER - 4,
+                top: CENTER - 4,
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                backgroundColor: colors.primary,
+              }}
+            />
+            {numbers.map((n) => {
+              const theta = (angleFor(n) * Math.PI) / 180;
+              const x = CENTER + RADIUS * Math.sin(theta) - CELL / 2;
+              const y = CENTER - RADIUS * Math.cos(theta) - CELL / 2;
+              const selected = mode === 'hour' ? n === hour : n === minute;
+              return (
+                <Pressable
+                  key={n}
+                  onPress={() => {
+                    if (mode === 'hour') {
+                      setHour(n);
+                      setMode('minute');
+                    } else {
+                      setMinute(n);
+                    }
+                  }}
+                  style={{
+                    position: 'absolute',
+                    left: x,
+                    top: y,
+                    width: CELL,
+                    height: CELL,
+                    borderRadius: CELL / 2,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: selected ? colors.primary : 'transparent',
+                  }}
+                >
+                  <Text
+                    className="text-base"
+                    style={{
+                      color: selected ? '#fff' : colors.ink,
+                      fontWeight: selected ? '700' : '400',
+                    }}
+                  >
+                    {mode === 'minute' ? pad(n) : n}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}

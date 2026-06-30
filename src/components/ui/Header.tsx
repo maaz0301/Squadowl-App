@@ -1,4 +1,5 @@
 import { Pressable, Text, View } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
@@ -22,7 +23,15 @@ export function Header({ title, subtitle, showBack, right }: HeaderProps) {
             style={{ backgroundColor: colors.tile }}
             hitSlop={8}
           >
-            <Text style={{ color: colors.ink, fontSize: 20 }}>←</Text>
+            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+              <Path
+                d="M15 19l-7-7 7-7"
+                stroke={colors.ink}
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
           </Pressable>
         ) : null}
         <View className="flex-1">
