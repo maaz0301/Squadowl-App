@@ -18,6 +18,7 @@ export const queryKeys = {
   profile: ['profile'] as const,
   teams: ['teams'] as const,
   tryouts: (archived?: boolean) => ['tryouts', { archived }] as const,
+  assignedTryouts: ['tryouts', 'assigned'] as const,
   tryout: (id: string) => ['tryout', id] as const,
   registrations: (tryoutId: string) => ['registrations', tryoutId] as const,
   results: (tryoutId: string) => ['results', tryoutId] as const,

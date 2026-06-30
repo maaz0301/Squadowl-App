@@ -50,6 +50,13 @@ export function useTryoutsQuery(includeArchived = false) {
   });
 }
 
+export function useAssignedTryoutsQuery() {
+  return useQuery({
+    queryKey: queryKeys.assignedTryouts,
+    queryFn: () => getDataSource().listAssignedTryouts(),
+  });
+}
+
 export function useTryoutQuery(id: string | undefined) {
   return useQuery({
     queryKey: queryKeys.tryout(id ?? ''),
