@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, EmptyState, Input, LoadingState, Modal, Screen } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, ErrorState, Input, LoadingState, Modal, Screen } from '@/components/ui';
 import { useSeasonQuery, useAddSeasonPlayerMutation } from '@/features/queries';
 
 export default function SeasonRosterScreen() {
@@ -18,8 +18,11 @@ export default function SeasonRosterScreen() {
   const [guardianEmail, setGuardianEmail] = useState('');
 
   if (seasonQuery.isLoading) return <LoadingState message="Loading roster..." />;
+  if (seasonQuery.isError || !seasonQuery.data) {
+    return <ErrorState message="Could not load roster." onRetry={() => seasonQuery.refetch()} />;
+  }
 
-  const season = seasonQuery.data!;
+  const season = seasonQuery.data;
 
   const handleAdd = async () => {
     if (!firstName.trim() || !lastName.trim()) return;

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { FlatList, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, EmptyState, Header, LoadingState, Screen } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
 import { useTryoutsQuery } from '@/features/queries';
 import { useSessionStore } from '@/state/sessionStore';
 import { computePlayerResults } from '@/data/scoring';
@@ -29,6 +29,17 @@ export default function CombineScreen() {
   }, [tryoutsQuery.data, combineIds]);
 
   if (tryoutsQuery.isLoading) return <LoadingState message="Loading..." />;
+  if (tryoutsQuery.isError) {
+    return (
+      <Screen scroll>
+        <Header title="Combine Assessments" showBack />
+        <ErrorState
+          message="Could not load assessments."
+          onRetry={() => tryoutsQuery.refetch()}
+        />
+      </Screen>
+    );
+  }
 
   if (combineIds.length < 2) {
     return (

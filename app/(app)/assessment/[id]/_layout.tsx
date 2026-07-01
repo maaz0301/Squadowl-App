@@ -3,9 +3,11 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { useTryoutQuery } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { useSessionStore } from '@/state/sessionStore';
-import { LoadingState } from '@/components/ui';
+import { ErrorState, LoadingState } from '@/components/ui';
 import { useEffect } from 'react';
-import { Text, type ColorValue } from 'react-native';
+import { Text, Pressable, type ColorValue } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
+import { useRouter } from 'expo-router';
 
 function TabIcon({ label, color }: { label: string; color: ColorValue }) {
   return <Text style={{ color, fontSize: 16, fontWeight: '700' }}>{label}</Text>;
@@ -23,6 +25,7 @@ export default function AssessmentLayout() {
 
   if (!id) return <Redirect href="/(app)/dashboard" />;
   if (tryoutQuery.isLoading) return <LoadingState message="Loading assessment..." />;
+  if (tryoutQuery.isError) return <ErrorState message="Could not load assessment." onRetry={() => tryoutQuery.refetch()} />;
   if (!tryoutQuery.data) return <Redirect href="/(app)/dashboard" />;
 
   const pendingRegs =
@@ -44,6 +47,34 @@ export default function AssessmentLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.inkMuted,
         tabBarLabelStyle: { fontSize: 10, fontWeight: '700' },
+        headerLeft: () => {
+          const router = useRouter();
+          return (
+            <Pressable
+              onPress={() => router.push('/(app)/dashboard')}
+              style={{
+                marginLeft: 16,
+                marginRight: 8,
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                backgroundColor: colors.tile || '#f0f0f0',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                <Path
+                  d="M15 19l-7-7 7-7"
+                  stroke={colors.ink}
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </Svg>
+            </Pressable>
+          );
+        },
       }}
     >
       <Tabs.Screen

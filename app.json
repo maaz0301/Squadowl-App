@@ -43,7 +43,8 @@
         {
           "cameraPermission": "Allow AAS Tryout to scan athlete registration QR codes."
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true

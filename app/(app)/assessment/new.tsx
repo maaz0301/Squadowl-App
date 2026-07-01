@@ -5,7 +5,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CreateAssessmentFormSchema, SPORTS, EVENT_TYPES, type CreateAssessmentForm } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Button, Chip, DateField, TimeField, Input, Screen, Header } from '@/components/ui';
+import { Button, Chip, DateField, TimeField, Input, Screen, Header, ErrorState, LoadingState } from '@/components/ui';
 import { useCreateTryoutMutation, useTeamsQuery, useTryoutsQuery } from '@/features/queries';
 import { useSessionStore } from '@/state/sessionStore';
 import { useUser } from '@/state/authStore';
@@ -46,6 +46,22 @@ export default function NewAssessmentScreen() {
     setCurrentTryout(tryout.id);
     router.replace(`/(app)/assessment/${tryout.id}/settings?welcome=1`);
   });
+
+  if (teamsQuery.isLoading || tryoutsQuery.isLoading) return <LoadingState message="Loading..." />;
+  if (teamsQuery.isError || tryoutsQuery.isError) {
+    return (
+      <Screen scroll>
+        <Header title="New Assessment" showBack />
+        <ErrorState
+          message="Could not load required data."
+          onRetry={() => {
+            teamsQuery.refetch();
+            tryoutsQuery.refetch();
+          }}
+        />
+      </Screen>
+    );
+  }
 
   return (
     <Screen scroll>

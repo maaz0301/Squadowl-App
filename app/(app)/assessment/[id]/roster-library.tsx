@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, EmptyState, LoadingState, Screen } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
 import { useImportLibraryPlayersMutation, useTryoutsQuery } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { buildRosterLibrary } from '@/data/extras';
@@ -21,6 +21,14 @@ export default function RosterLibraryScreen() {
   }, [tryoutsQuery.data, id]);
 
   if (tryoutsQuery.isLoading) return <LoadingState message="Loading library..." />;
+  if (tryoutsQuery.isError || !tryoutsQuery.data) {
+    return (
+      <Screen padded>
+        <Header title="Roster Library" showBack />
+        <ErrorState message="Could not load library." onRetry={() => tryoutsQuery.refetch()} />
+      </Screen>
+    );
+  }
 
   const toggle = (key: string) => {
     setSelected((prev) => {

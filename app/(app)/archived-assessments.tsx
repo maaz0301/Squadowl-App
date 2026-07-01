@@ -1,7 +1,7 @@
 import { FlatList, Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, EmptyState, Header, LoadingState, Screen } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
 import { useRestoreTryoutMutation, useTryoutsQuery } from '@/features/queries';
 
 export default function ArchivedAssessmentsScreen() {
@@ -11,6 +11,17 @@ export default function ArchivedAssessmentsScreen() {
   const restore = useRestoreTryoutMutation();
 
   if (tryoutsQuery.isLoading) return <LoadingState message="Loading archived..." />;
+  if (tryoutsQuery.isError) {
+    return (
+      <Screen padded>
+        <Header title="Archived Assessments" showBack />
+        <ErrorState
+          message="Could not load archived assessments."
+          onRetry={() => tryoutsQuery.refetch()}
+        />
+      </Screen>
+    );
+  }
 
   const archived = (tryoutsQuery.data ?? []).filter((t) => t.archived);
 

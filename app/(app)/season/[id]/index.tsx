@@ -1,7 +1,7 @@
 import { Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, Header, LoadingState, Screen } from '@/components/ui';
+import { Badge, Button, Card, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
 import { useSeasonQuery } from '@/features/queries';
 
 export default function SeasonHubScreen() {
@@ -11,7 +11,15 @@ export default function SeasonHubScreen() {
   const seasonQuery = useSeasonQuery(id);
 
   if (seasonQuery.isLoading) return <LoadingState />;
-  const season = seasonQuery.data!;
+  if (seasonQuery.isError || !seasonQuery.data) {
+    return (
+      <Screen scroll>
+        <Header title="Season" showBack />
+        <ErrorState message="Could not load season hub." onRetry={() => seasonQuery.refetch()} />
+      </Screen>
+    );
+  }
+  const season = seasonQuery.data;
 
   const upcoming = [...season.events]
     .filter((e) => e.date >= new Date().toISOString().split('T')[0])

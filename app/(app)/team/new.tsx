@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Button, Header, Input, Screen } from '@/components/ui';
+import { Button, ErrorState, Header, Input, LoadingState, Screen } from '@/components/ui';
 import { useCreateTeamMutation, useTeamsQuery } from '@/features/queries';
 import { useUser } from '@/state/authStore';
 import { isAtTeamLimit } from '@/data/plans';
@@ -37,6 +37,16 @@ export default function NewTeamScreen() {
     await createTeam.mutateAsync({ name: data.name, season: data.season });
     router.back();
   });
+
+  if (teamsQuery.isLoading) return <LoadingState message="Loading..." />;
+  if (teamsQuery.isError) {
+    return (
+      <Screen scroll>
+        <Header title="New Team" showBack />
+        <ErrorState message="Could not load teams." onRetry={() => teamsQuery.refetch()} />
+      </Screen>
+    );
+  }
 
   return (
     <Screen scroll>

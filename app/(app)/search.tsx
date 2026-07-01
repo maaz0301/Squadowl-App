@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Card, EmptyState, Header, Input, LoadingState, Screen } from '@/components/ui';
+import { Card, EmptyState, ErrorState, Header, Input, LoadingState, Screen } from '@/components/ui';
 import { useSeasonsQuery, useTryoutsQuery } from '@/features/queries';
 import { globalSearch } from '@/data/extras';
 import { useSessionStore } from '@/state/sessionStore';
@@ -25,7 +25,21 @@ export default function SearchScreen() {
     return globalSearch(tryoutsQuery.data, seasons, query);
   }, [tryoutsQuery.data, seasonsQuery.data, query]);
 
-  if (tryoutsQuery.isLoading) return <LoadingState message="Loading..." />;
+  if (tryoutsQuery.isLoading || seasonsQuery.isLoading) return <LoadingState message="Loading..." />;
+  if (tryoutsQuery.isError || seasonsQuery.isError) {
+    return (
+      <Screen padded>
+        <Header title="Search" showBack />
+        <ErrorState
+          message="Could not load search data."
+          onRetry={() => {
+            tryoutsQuery.refetch();
+            seasonsQuery.refetch();
+          }}
+        />
+      </Screen>
+    );
+  }
 
   const hasQuery = query.trim().length > 0;
   const empty = !results.assessments.length && !results.players.length && !results.seasons.length;

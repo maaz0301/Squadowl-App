@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { FlatList, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, Header, LoadingState, Screen } from '@/components/ui';
+import { Badge, Button, Card, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
 import { useImportScanScoresMutation, useTryoutQuery } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { getPlayerSubskills, playerDisplayName } from '@/data/rubrics';
@@ -28,8 +28,16 @@ export default function ScanSheetScreen() {
   }, [tryoutQuery.data]);
 
   if (tryoutQuery.isLoading) return <LoadingState message="Loading scan sheet..." />;
+  if (tryoutQuery.isError || !tryoutQuery.data) {
+    return (
+      <Screen scroll>
+        <Header title="Scan Sheet" showBack />
+        <ErrorState message="Could not load scan sheet." onRetry={() => tryoutQuery.refetch()} />
+      </Screen>
+    );
+  }
 
-  const tryout = tryoutQuery.data!;
+  const tryout = tryoutQuery.data;
 
   const simulateImport = async () => {
     const scores = preview.flatMap(({ player, scores: s }) =>

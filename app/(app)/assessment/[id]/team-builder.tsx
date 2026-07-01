@@ -8,6 +8,7 @@ import {
   Chip,
   Header,
   LoadingState,
+  ErrorState,
   Screen,
 } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
@@ -24,8 +25,16 @@ export default function TeamBuilderScreen() {
   const [sortMethod, setSortMethod] = useState<'snake' | 'balanced'>('snake');
 
   if (tryoutQuery.isLoading) return <LoadingState message="Loading..." />;
+  if (tryoutQuery.isError || !tryoutQuery.data) {
+    return (
+      <Screen scroll>
+        <Header title="Team Builder" showBack />
+        <ErrorState message="Could not load team builder." onRetry={() => tryoutQuery.refetch()} />
+      </Screen>
+    );
+  }
 
-  const tryout = tryoutQuery.data!;
+  const tryout = tryoutQuery.data;
   const teamBuilder = tryout.teamBuilder as TeamBuilderState | undefined;
   const nameMap = getPlayerNameMap(tryout);
 

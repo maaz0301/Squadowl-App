@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { ScrollView, Text, View } from 'react-native';
 import { CreateSeasonFormSchema, SPORTS, type CreateSeasonForm } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Button, Chip, Input, Header, Screen } from '@/components/ui';
+import { Button, Chip, Input, Header, ErrorState, LoadingState, Screen } from '@/components/ui';
 import { useCreateSeasonMutation, useTeamsQuery } from '@/features/queries';
 import { PlanGate } from '@/components/PlanGate';
 
@@ -25,6 +25,16 @@ export default function NewSeasonScreen() {
     const season = await createSeason.mutateAsync(data);
     router.replace(`/(app)/season/${season.id}`);
   });
+
+  if (teamsQuery.isLoading) return <LoadingState message="Loading..." />;
+  if (teamsQuery.isError) {
+    return (
+      <Screen scroll>
+        <Header title="New Season" showBack />
+        <ErrorState message="Could not load teams." onRetry={() => teamsQuery.refetch()} />
+      </Screen>
+    );
+  }
 
   return (
     <Screen scroll>

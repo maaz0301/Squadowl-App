@@ -2,7 +2,7 @@ import { Tabs, Redirect } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { useSeasonQuery } from '@/features/queries';
-import { LoadingState } from '@/components/ui';
+import { ErrorState, LoadingState } from '@/components/ui';
 
 export default function SeasonLayout() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -11,6 +11,7 @@ export default function SeasonLayout() {
 
   if (!id) return <Redirect href="/(app)/dashboard" />;
   if (seasonQuery.isLoading) return <LoadingState message="Loading season..." />;
+  if (seasonQuery.isError) return <ErrorState message="Could not load season." onRetry={() => seasonQuery.refetch()} />;
   if (!seasonQuery.data) return <Redirect href="/(app)/dashboard" />;
 
   return (

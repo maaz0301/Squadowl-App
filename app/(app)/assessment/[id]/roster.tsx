@@ -214,6 +214,16 @@ export default function RosterScreen() {
               desc: 'Auto-split scored players into balanced teams.',
               go: () => router.push(`/(app)/assessment/${id}/team-builder`),
             },
+            {
+              label: 'Roster Library',
+              desc: 'Import players from past seasons or other assessments.',
+              go: () => router.push(`/(app)/assessment/${id}/roster-library`),
+            },
+            {
+              label: 'Scan Sheet Import',
+              desc: 'Import scores from printed OCR scanning sheets.',
+              go: () => router.push(`/(app)/assessment/${id}/scan-sheet`),
+            },
           ] as const
         ).map((t) => (
           <Pressable

@@ -16,7 +16,21 @@ export default function TeamDetailScreen() {
   const [name, setName] = useState('');
   const [season, setSeason] = useState('');
 
-  if (teamsQuery.isLoading) return <LoadingState message="Loading team..." />;
+  if (teamsQuery.isLoading || tryoutsQuery.isLoading) return <LoadingState message="Loading team..." />;
+  if (teamsQuery.isError || tryoutsQuery.isError) {
+    return (
+      <Screen scroll>
+        <Header title="Team" showBack />
+        <ErrorState
+          message="Could not load team."
+          onRetry={() => {
+            teamsQuery.refetch();
+            tryoutsQuery.refetch();
+          }}
+        />
+      </Screen>
+    );
+  }
 
   const team = teamsQuery.data?.find((t) => t.id === id);
   if (!team) {

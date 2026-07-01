@@ -5,7 +5,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, Chip, Input, Modal, Screen } from '@/components/ui';
+import { Badge, Button, Card, Chip, EmptyState, ErrorState, Input, LoadingState, Modal, Screen } from '@/components/ui';
 import { useSeasonQuery, useAddSeasonEventMutation, useDeleteSeasonEventMutation } from '@/features/queries';
 
 export default function SeasonScheduleScreen() {
@@ -21,8 +21,11 @@ export default function SeasonScheduleScreen() {
     defaultValues: { type: 'Practice', title: '', date: '', startTime: '', location: '' },
   });
 
-  if (seasonQuery.isLoading) return null;
-  const season = seasonQuery.data!;
+  if (seasonQuery.isLoading) return <LoadingState message="Loading schedule..." />;
+  if (seasonQuery.isError || !seasonQuery.data) {
+    return <ErrorState message="Could not load schedule." onRetry={() => seasonQuery.refetch()} />;
+  }
+  const season = seasonQuery.data;
   const eventType = watch('type');
 
   const onSubmit = handleSubmit(async (data) => {
@@ -39,7 +42,8 @@ export default function SeasonScheduleScreen() {
       <FlatList
         data={[...season.events].sort((a, b) => a.date.localeCompare(b.date))}
         keyExtractor={(e) => e.id}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24, flexGrow: 1 }}
+        ListEmptyComponent={<EmptyState title="No events" message="Add your first event." />}
         renderItem={({ item }) => (
           <Card className="mb-2 gap-1">
             <View className="flex-row justify-between">

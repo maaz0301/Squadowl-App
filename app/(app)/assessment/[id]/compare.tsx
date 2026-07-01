@@ -7,6 +7,7 @@ import {
   Card,
   Header,
   LoadingState,
+  ErrorState,
   Screen,
 } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
@@ -22,8 +23,16 @@ export default function CompareScreen() {
   const [selected, setSelected] = useState<string[]>([]);
 
   if (tryoutQuery.isLoading) return <LoadingState />;
+  if (tryoutQuery.isError || !tryoutQuery.data) {
+    return (
+      <Screen scroll>
+        <Header title="Compare Players" showBack />
+        <ErrorState message="Could not load compare data." onRetry={() => tryoutQuery.refetch()} />
+      </Screen>
+    );
+  }
 
-  const tryout = tryoutQuery.data!;
+  const tryout = tryoutQuery.data;
   const toggle = (playerId: string) => {
     setSelected((prev) =>
       prev.includes(playerId) ? prev.filter((p) => p !== playerId) : prev.length < 4 ? [...prev, playerId] : prev,

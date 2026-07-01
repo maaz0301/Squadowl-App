@@ -85,6 +85,14 @@ export default function ScoreScreen() {
   }, [workingScores]);
 
   if (tryoutQuery.isLoading) return <LoadingState message="Loading..." />;
+  if (tryoutQuery.isError) {
+    return (
+      <Screen scroll>
+        <Header title="Score" showBack />
+        <ErrorState message="Could not load required data." onRetry={() => tryoutQuery.refetch()} />
+      </Screen>
+    );
+  }
   if (!player || !tryoutQuery.data) {
     return <ErrorState message="Player not found." onRetry={() => tryoutQuery.refetch()} />;
   }

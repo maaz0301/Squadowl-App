@@ -1,7 +1,7 @@
 import { Share, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, Header, LoadingState, Screen } from '@/components/ui';
+import { Badge, Button, Card, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
 import { useSeasonQuery, useUpdateSeasonMutation } from '@/features/queries';
 
 export default function SeasonSettingsScreen() {
@@ -12,7 +12,15 @@ export default function SeasonSettingsScreen() {
   const updateSeason = useUpdateSeasonMutation();
 
   if (seasonQuery.isLoading) return <LoadingState />;
-  const season = seasonQuery.data!;
+  if (seasonQuery.isError || !seasonQuery.data) {
+    return (
+      <Screen scroll>
+        <Header title="Settings" showBack />
+        <ErrorState message="Could not load settings." onRetry={() => seasonQuery.refetch()} />
+      </Screen>
+    );
+  }
+  const season = seasonQuery.data;
 
   const shareSchedule = () => {
     Share.share({

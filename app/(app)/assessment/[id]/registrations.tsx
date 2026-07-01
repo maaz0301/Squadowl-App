@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, Share, Text, View } from 'react-native';
+import { FlatList, Share, Text, View, Platform } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
+import * as Sharing from 'expo-sharing';
+import { File, Paths } from 'expo-file-system';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
   Badge,
@@ -61,7 +63,7 @@ export default function RegistrationsScreen() {
 
   const tryout = tryoutQuery.data;
   const cloudCode = tryout.cloud?.id ?? '------';
-  const registrationUrl = `https://aas-tryout.app/register?event=${cloudCode}&type=${tryout.eventType}`;
+  const registrationUrl = `https://aas-tryout.app/register/${cloudCode}`;
   const pendingCount = (regsQuery.data ?? []).filter((r) => r.status === 'pending').length;
 
   const shareQr = async () => {
@@ -87,12 +89,38 @@ export default function RegistrationsScreen() {
   };
 
   const exportCsv = async () => {
-    const rows = (regsQuery.data ?? []).map(
+    const data = regsQuery.data ?? [];
+    if (data.length === 0) return;
+    
+    const rows = data.map(
       (r) =>
         `${r.firstName},${r.lastName},${r.guardianEmail},${r.status},${r.paymentStatus ?? 'unpaid'}`,
     );
     const csv = `first,last,email,status,payment\n${rows.join('\n')}`;
-    await Share.share({ message: csv, title: 'Registrations CSV' });
+    const filename = `${tryout?.name ?? 'registrations'}_regs.csv`.replace(/\s+/g, '_').toLowerCase();
+
+    if (Platform.OS === 'web') {
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      const file = new File(Paths.cache, filename);
+      await file.write(csv);
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(file.uri, {
+          mimeType: 'text/csv',
+          dialogTitle: `Export ${filename}`,
+          UTI: 'public.comma-separated-values-text',
+        });
+      } else {
+        await Share.share({ message: csv, title: filename });
+      }
+    }
   };
 
   return (
@@ -127,7 +155,7 @@ export default function RegistrationsScreen() {
         {tab === 'pending' && selected.size > 0 ? (
           <Button label={`Add ${selected.size} to Roster`} onPress={bulkAdd} loading={addToRoster.isPending} />
         ) : null}
-        <Button label="Export CSV (copy)" variant="ghost" size="sm" onPress={exportCsv} />
+        <Button label="Export CSV" variant="ghost" size="sm" onPress={exportCsv} />
       </View>
 
       <FlatList

@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Share, Text, View } from 'react-native';
+import { Share, Text, View, Platform } from 'react-native';
+import * as Sharing from 'expo-sharing';
+import { File, Paths } from 'expo-file-system';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
   Badge,
@@ -38,7 +40,33 @@ export default function ExportScreen() {
   const handleExport = async (format: ExportFormat) => {
     const result = await exportMut.mutateAsync(format);
     setLastExport(result.filename);
-    await Share.share({ message: result.content, title: result.filename });
+    
+    if (format === 'csv') {
+      if (Platform.OS === 'web') {
+        const blob = new Blob([result.content], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', result.filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        const file = new File(Paths.cache, result.filename);
+        await file.write(result.content);
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(file.uri, {
+            mimeType: 'text/csv',
+            dialogTitle: `Export ${result.filename}`,
+            UTI: 'public.comma-separated-values-text',
+          });
+        } else {
+          await Share.share({ message: result.content, title: result.filename });
+        }
+      }
+    } else {
+      await Share.share({ message: result.content, title: result.filename });
+    }
   };
 
   const handleShare = async () => {

@@ -1,7 +1,7 @@
 import { FlatList, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, LoadingState, Screen } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, ErrorState, LoadingState, Screen } from '@/components/ui';
 import { useSeasonQuery, useSetAvailabilityMutation } from '@/features/queries';
 
 const RESPONSE_VARIANT = {
@@ -18,14 +18,18 @@ export default function SeasonAvailabilityScreen() {
   const setAvailability = useSetAvailabilityMutation(id!);
 
   if (seasonQuery.isLoading) return <LoadingState />;
-  const season = seasonQuery.data!;
+  if (seasonQuery.isError || !seasonQuery.data) {
+    return <ErrorState message="Could not load availability." onRetry={() => seasonQuery.refetch()} />;
+  }
+  const season = seasonQuery.data;
 
   return (
     <Screen padded={false}>
       <FlatList
         data={season.events}
         keyExtractor={(e) => e.id}
-        contentContainerStyle={{ padding: 16 }}
+        contentContainerStyle={{ padding: 16, flexGrow: 1 }}
+        ListEmptyComponent={<EmptyState title="No events" message="Add an event to track availability." />}
         renderItem={({ item: event }) => (
           <Card className="mb-4 gap-3">
             <Text className="font-display font-bold" style={{ color: colors.ink }}>

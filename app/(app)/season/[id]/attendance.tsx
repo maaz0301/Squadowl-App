@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { FlatList, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Card, EmptyState, LoadingState, Screen } from '@/components/ui';
+import { Badge, Card, EmptyState, ErrorState, LoadingState, Screen } from '@/components/ui';
 import { useSeasonQuery } from '@/features/queries';
 
 export default function SeasonAttendanceScreen() {
@@ -32,8 +32,11 @@ export default function SeasonAttendanceScreen() {
   }, [seasonQuery.data]);
 
   if (seasonQuery.isLoading) return <LoadingState message="Loading attendance..." />;
+  if (seasonQuery.isError || !seasonQuery.data) {
+    return <ErrorState message="Could not load attendance." onRetry={() => seasonQuery.refetch()} />;
+  }
 
-  const season = seasonQuery.data!;
+  const season = seasonQuery.data;
 
   return (
     <Screen padded={false}>

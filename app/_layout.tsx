@@ -40,6 +40,8 @@ function RootNavigator() {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
         <Stack.Screen name="index" />
+        <Stack.Screen name="register/[eventId]" />
+        <Stack.Screen name="test-components" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(onboarding)" />
         <Stack.Screen name="(app)" />

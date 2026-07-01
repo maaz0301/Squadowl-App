@@ -971,6 +971,21 @@ export class SupabaseDataSource implements DataSource {
     return this.rowToRegistration(row);
   }
 
+  async submitPublicRegistration(eventIdOrCode: string, form: RegistrationSubmit): Promise<Registration> {
+    const supabase = getSupabase();
+    
+    const { data, error } = await supabase.rpc('submit_public_registration', {
+      code: eventIdOrCode,
+      payload: form,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return this.rowToRegistration(data as Row);
+  }
+
   async addRegistrationToRoster(tryoutId: string, registrationId: string): Promise<Player> {
     const { supabase, accountId } = await this.ctx();
     const reg = unwrap(
