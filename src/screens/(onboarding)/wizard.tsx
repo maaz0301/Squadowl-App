@@ -60,7 +60,7 @@ export default function WizardScreen() {
     } else if (step === 2) {
       const tryoutId = useSessionStore.getState().currentTryoutId ?? tryoutsQuery.data?.[0]?.id;
       if (tryoutId) {
-        navigation.replace('AssessmentRoster', { id: tryoutId });
+        navigation.replace('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: tryoutId } });
         return;
       }
     } else if (step === 3) {
@@ -68,7 +68,7 @@ export default function WizardScreen() {
       if (tryoutId) {
         await updateProfile({ onboardingCompleted: true });
         completeWizard();
-        navigation.replace('AssessmentRinkside', { id: tryoutId });
+        navigation.replace('AssessmentFlow', { screen: 'AssessmentRinkside', params: { id: tryoutId } });
         return;
       }
     }
@@ -76,7 +76,7 @@ export default function WizardScreen() {
     if (step >= STEPS.length - 1) {
       await updateProfile({ onboardingCompleted: true });
       completeWizard();
-      navigation.replace('Dashboard');
+      navigation.replace('DashboardMain');
       return;
     }
     setStep((s) => s + 1);
@@ -116,7 +116,7 @@ export default function WizardScreen() {
           onPress={async () => {
             completeWizard();
             await updateProfile({ onboardingCompleted: true });
-            navigation.replace('Dashboard');
+            navigation.replace('DashboardMain');
           }}
         />
       </View>

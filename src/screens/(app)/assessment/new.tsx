@@ -45,7 +45,7 @@ export default function NewAssessmentScreen() {
     }
     const tryout = await createTryout.mutateAsync(data);
     setCurrentTryout(tryout.id);
-    navigation.replace('AssessmentSettings', { id: tryout.id, welcome: 1 });
+    navigation.replace('AssessmentFlow', { screen: 'AssessmentSettings', params: { id: tryout.id, welcome: 1 } });
   });
 
   if (teamsQuery.isLoading || tryoutsQuery.isLoading) return <LoadingState message="Loading..." />;

@@ -83,7 +83,7 @@ export default function RosterScreen() {
           <View className="flex-row gap-2">
             <Button
               label="Score Players"
-              onPress={() => navigation.navigate('AssessmentRinkside', { id: id })}
+              onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentRinkside', params: { id: id } })}
               className="flex-1"
             />
             <Button label="+ Add" variant="secondary" onPress={openAdd} />
@@ -163,7 +163,7 @@ export default function RosterScreen() {
             <Pressable
               onPress={() => {
                 setCurrentPlayer(item.id);
-                navigation.navigate('AssessmentPlayer', { id: id, playerId: item.id });
+                navigation.navigate('AssessmentFlow', { screen: 'AssessmentPlayer', params: { id: id, playerId: item.id } });
               }}
             >
               <View
@@ -216,17 +216,17 @@ export default function RosterScreen() {
             {
               label: 'Team Builder',
               desc: 'Auto-split scored players into balanced teams.',
-              go: () => navigation.navigate('AssessmentTeamBuilder', { id: id }),
+              go: () => navigation.navigate('AssessmentFlow', { screen: 'AssessmentTeamBuilder', params: { id: id } }),
             },
             {
               label: 'Roster Library',
               desc: 'Import players from past seasons or other assessments.',
-              go: () => navigation.navigate('AssessmentRosterLibrary', { id: id }),
+              go: () => navigation.navigate('AssessmentFlow', { screen: 'AssessmentRosterLibrary', params: { id: id } }),
             },
             {
               label: 'Scan Sheet Import',
               desc: 'Import scores from printed OCR scanning sheets.',
-              go: () => navigation.navigate('AssessmentScanSheet', { id: id }),
+              go: () => navigation.navigate('AssessmentFlow', { screen: 'AssessmentScanSheet', params: { id: id } }),
             },
           ] as const
         ).map((t) => (

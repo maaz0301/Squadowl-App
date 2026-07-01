@@ -96,7 +96,7 @@ export default function TeamDetailScreen() {
             <Button
               label={t.name}
               variant="ghost"
-              onPress={() => navigation.navigate('AssessmentRoster', { id: t.id })}
+              onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: t.id } })}
             />
           </Card>
         ))

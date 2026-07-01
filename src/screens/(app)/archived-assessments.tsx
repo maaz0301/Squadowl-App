@@ -40,7 +40,7 @@ export default function ArchivedAssessmentsScreen() {
         }
         renderItem={({ item }) => (
           <Card className="mb-3 gap-2">
-            <Pressable onPress={() => navigation.navigate('AssessmentSettings', { id: item.id })}>
+            <Pressable onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentSettings', params: { id: item.id } })}>
               <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
                 {item.name}
               </Text>

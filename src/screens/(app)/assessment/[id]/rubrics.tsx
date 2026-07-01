@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Button, Card, Chip, ErrorState, Input, LoadingState, Screen } from '@/components/ui';
+import { Button, Card, Chip, ErrorState, Header, Input, LoadingState, Screen } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
 import { useTryoutQuery, useUpdateTryoutMutation } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
@@ -82,6 +82,7 @@ export default function RubricsScreen() {
 
   return (
     <Screen scroll>
+      <Header title="Assessment Rubrics" showBack />
       <Card accent className="mb-4 gap-2">
         <Text className="font-display font-bold" style={{ color: colors.ink }}>
           Rubric Builder

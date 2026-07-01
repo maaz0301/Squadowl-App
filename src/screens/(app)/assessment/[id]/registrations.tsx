@@ -2,19 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Share, Text, View, Platform } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import RNFS from 'react-native-fs';
+import RNShare from 'react-native-share';
 import { EXPO_PUBLIC_WEB_URL } from '@env';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import {
-  Badge,
-  Button,
-  Card,
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  Modal,
-  Screen,
-  Tabs,
-} from '@/components/ui';
+import { Avatar, Badge, Button, Card, ErrorState, Header, LoadingState, Screen, Modal, EmptyState, Tabs } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
 import {
   useTryoutQuery,
@@ -113,7 +104,7 @@ export default function RegistrationsScreen() {
       const path = `${RNFS.CachesDirectoryPath}/${filename}`;
       await RNFS.writeFile(path, csv, 'utf8');
       try {
-        await Share.open({
+        await RNShare.open({
           url: `file://${path}`,
           type: 'text/csv',
           filename: filename,
@@ -129,7 +120,10 @@ export default function RegistrationsScreen() {
 
   return (
     <Screen padded={false}>
-      <View className="px-4 py-3 gap-3">
+      <Header title="Registrations" showBack />
+      
+      {/* Overview Stats */}
+      <View className="px-4 pb-2 pt-2 flex-row gap-2">
         <PlanGate feature="qrRegistration" title="QR Registration (Coach+)">
           <Card accent className="items-center gap-3">
             <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>

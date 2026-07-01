@@ -33,7 +33,7 @@ export default function SeasonSettingsScreen() {
 
   const archive = async () => {
     await updateSeason.mutateAsync({ id: id!, updates: { archived: true } });
-    navigation.replace('Dashboard');
+    navigation.replace('DashboardMain');
   };
 
   return (

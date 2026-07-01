@@ -80,10 +80,10 @@ export default function SearchScreen() {
               onPress={() => {
                 if (item.type === 'assessment') {
                   setCurrentTryout(item.id);
-                  navigation.navigate('AssessmentRoster', { id: item.id });
+                  navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: item.id } });
                 } else if (item.type === 'player') {
                   setCurrentTryout(item.tryoutId);
-                  navigation.navigate('AssessmentPlayer', { id: item.tryoutId, playerId: item.id });
+                  navigation.navigate('AssessmentFlow', { screen: 'AssessmentPlayer', params: { id: item.tryoutId, playerId: item.id } });
                 } else {
                   navigation.navigate('SeasonDetail', { id: item.id });
                 }

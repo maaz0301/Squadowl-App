@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Share, Text, View, Platform } from 'react-native';
 import RNFS from 'react-native-fs';
+import RNShare from 'react-native-share';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
   Badge,
@@ -54,7 +55,7 @@ export default function ExportScreen() {
         const path = `${RNFS.CachesDirectoryPath}/${result.filename}`;
         await RNFS.writeFile(path, result.content, 'utf8');
         try {
-          await Share.open({
+          await RNShare.open({
             url: `file://${path}`,
             type: 'text/csv',
             filename: result.filename,

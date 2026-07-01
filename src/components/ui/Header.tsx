@@ -13,12 +13,21 @@ interface HeaderProps {
 export function Header({ title, subtitle, showBack, right }: HeaderProps) {
   const colors = useThemeColors();
   const navigation = useNavigation();
+  const handleBack = () => {
+    // Try parent navigator first (for nested tab navigators), fallback to current
+    const parent = navigation.getParent();
+    if (parent?.canGoBack()) {
+      parent.goBack();
+    } else if (navigation.canGoBack()) {
+      navigation.goBack();
+    }
+  };
   return (
     <View className="flex-row items-center justify-between py-4 gap-3">
       <View className="flex-row items-center flex-1 gap-3">
         {showBack ? (
           <Pressable
-            onPress={() => navigation.goBack()}
+            onPress={handleBack}
             className="w-10 h-10 rounded-full items-center justify-center"
             style={{ backgroundColor: colors.tile }}
             hitSlop={8}

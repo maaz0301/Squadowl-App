@@ -10,6 +10,7 @@ import {
   Card,
   DateField,
   ErrorState,
+  Header,
   Input,
   LoadingState,
   Modal,
@@ -112,11 +113,12 @@ export default function SettingsScreen() {
 
   const handleArchive = async () => {
     await archiveTryout.mutateAsync(tryout.id);
-    navigation.replace('Dashboard');
+    navigation.replace('DashboardMain');
   };
 
   return (
     <Screen scroll>
+      <Header title="Assessment Settings" showBack />
       <Card accent className="mb-4 gap-2">
         <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
           {tryout.name}

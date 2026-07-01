@@ -52,7 +52,7 @@ function OnboardingChecklist() {
       done: user.onboardingSteps.inviteAssessors,
       action: () => {
         const tryout = useSessionStore.getState().currentTryoutId;
-        if (tryout) navigation.navigate('AssessmentSettings', { id: tryout });
+        if (tryout) navigation.navigate('AssessmentFlow', { screen: 'AssessmentSettings', params: { id: tryout } });
         else navigation.navigate('NewAssessment');
       },
     },
@@ -62,7 +62,7 @@ function OnboardingChecklist() {
       done: user.onboardingSteps.addPlayers,
       action: () => {
         const tryout = useSessionStore.getState().currentTryoutId;
-        if (tryout) navigation.navigate('AssessmentRoster', { id: tryout });
+        if (tryout) navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: tryout } });
         else navigation.navigate('NewAssessment');
       },
     },
@@ -72,7 +72,7 @@ function OnboardingChecklist() {
       done: user.onboardingSteps.scorePlayers,
       action: () => {
         const tryout = useSessionStore.getState().currentTryoutId;
-        if (tryout) navigation.navigate('AssessmentRinkside', { id: tryout });
+        if (tryout) navigation.navigate('AssessmentFlow', { screen: 'AssessmentRinkside', params: { id: tryout } });
         else navigation.navigate('NewAssessment');
       },
     },
@@ -116,7 +116,7 @@ export default function DashboardScreen() {
   const openAssigned = (id: string) => {
     setCurrentTryout(id);
     setActiveAssessor(user?.displayName ?? null);
-    navigation.navigate('AssessmentRinkside', { id: id });
+    navigation.navigate('AssessmentFlow', { screen: 'AssessmentRinkside', params: { id: id } });
   };
 
   if (teamsQuery.isLoading || tryoutsQuery.isLoading || seasonsQuery.isLoading) {
@@ -142,7 +142,7 @@ export default function DashboardScreen() {
       return;
     }
     setCurrentTryout(id);
-    navigation.navigate('AssessmentRoster', { id: id });
+    navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: id } });
   };
 
   const fabAction = () => {

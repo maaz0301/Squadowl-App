@@ -51,7 +51,7 @@ export default function WelcomeScreen() {
           variant="ghost"
           onPress={() => {
             skipWizard();
-            navigation.replace('Dashboard');
+            navigation.replace('DashboardMain');
           }}
         />
       </View>

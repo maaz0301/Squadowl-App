@@ -10,6 +10,7 @@ import {
   Card,
   EmptyState,
   ErrorState,
+  Header,
   LoadingState,
   Screen,
 } from '@/components/ui';
@@ -34,6 +35,7 @@ export default function ResultsScreen() {
 
   return (
     <Screen padded={false}>
+      <Header title="Assessment Results" showBack />
       <View className="px-4 py-3 gap-3">
         <Card className="gap-2">
           <Text className="text-md font-display font-bold" style={{ color: colors.ink }}>
@@ -49,9 +51,9 @@ export default function ResultsScreen() {
           ))}
         </Card>
         <View className="flex-row flex-wrap gap-2">
-          <Button label="Team Builder" size="sm" onPress={() => navigation.navigate('AssessmentTeamBuilder', { id: id })} />
-          <Button label="Compare" size="sm" variant="secondary" onPress={() => navigation.navigate('AssessmentCompare', { id: id })} />
-          <Button label="Export" size="sm" variant="secondary" onPress={() => navigation.navigate('AssessmentExport', { id: id })} />
+          <Button label="Team Builder" size="sm" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentTeamBuilder', params: { id: id } })} />
+          <Button label="Compare" size="sm" variant="secondary" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentCompare', params: { id: id } })} />
+          <Button label="Export" size="sm" variant="secondary" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentExport', params: { id: id } })} />
         </View>
       </View>
 

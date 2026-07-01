@@ -41,8 +41,8 @@ export default function ScanSheetScreen() {
   const tryout = tryoutQuery.data;
 
   const simulateImport = async () => {
-    const scores = preview.flatMap(({ player, scores: s }) =>
-      s.map((sc) => ({ playerId: player.id, rubricKey: sc.rubricKey, value: sc.value })),
+    const scores = preview.flatMap((item: any) =>
+      item.scores.map((sc: any) => ({ playerId: item.player.id, rubricKey: sc.rubricKey, value: sc.value })),
     );
     await importScores.mutateAsync({ tryoutId: id!, scores });
     setImported(true);
@@ -87,7 +87,7 @@ export default function ScanSheetScreen() {
                 <Text className="font-display font-bold" style={{ color: colors.success }}>
                   Scores imported successfully
                 </Text>
-                <Button label="View Results" onPress={() => navigation.navigate('AssessmentResults', { id: id })} />
+                <Button label="View Results" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentResults', params: { id: id } })} />
               </Card>
             ) : (
               <Button label="Simulate Scan Import" loading={importScores.isPending} onPress={simulateImport} />
