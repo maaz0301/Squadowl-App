@@ -123,10 +123,15 @@ export default function DashboardScreen() {
     return <LoadingState message="Loading dashboard..." />;
   }
 
-  if (teamsQuery.isError || tryoutsQuery.isError) {
+  if (teamsQuery.isError || tryoutsQuery.isError || seasonsQuery.isError) {
+    const errorMsg =
+      teamsQuery.error?.message ||
+      tryoutsQuery.error?.message ||
+      seasonsQuery.error?.message ||
+      'Unknown error';
     return (
       <ErrorState
-        message="Could not load dashboard data."
+        message={`Could not load dashboard data: ${errorMsg}`}
         onRetry={() => {
           teamsQuery.refetch();
           tryoutsQuery.refetch();

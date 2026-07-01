@@ -1,0 +1,3 @@
+npx serve dist -l 8082 -s. for wwb register 
+
+npm start -- --reset-cache   
