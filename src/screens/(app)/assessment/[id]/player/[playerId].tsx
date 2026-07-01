@@ -67,7 +67,7 @@ export default function PlayerHubScreen() {
         <Button
           label="Score Player"
           className="flex-1"
-          onPress={() => navigation.navigate(`/(app)/assessment/${id}/score/${playerId}`)}
+          onPress={() => navigation.navigate('AssessmentScore', { id: id, playerId: playerId })}
         />
         <Button label="Edit" variant="secondary" className="flex-1" onPress={() => setShowEdit(true)} />
       </View>
@@ -149,7 +149,7 @@ export default function PlayerHubScreen() {
               size="sm"
               variant="ghost"
               onPress={() =>
-                navigation.navigate(`/(app)/assessment/${id}/score/${playerId}?evalId=${ev.id}`)
+                navigation.navigate('AssessmentScore', { id: id, playerId: playerId, evalId: ev.id })
               }
             />
           </Card>

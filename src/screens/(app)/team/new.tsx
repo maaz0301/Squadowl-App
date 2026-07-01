@@ -54,7 +54,7 @@ export default function NewTeamScreen() {
       <Header title="New Team" showBack />
       <View className="gap-4 mt-2">
         {limitHit ? (
-          <Button label="Team limit reached — View Plans" variant="secondary" onPress={() => navigation.navigate('/(app)/upgrade')} />
+          <Button label="Team limit reached — View Plans" variant="secondary" onPress={() => navigation.navigate('Upgrade')} />
         ) : null}
         <Controller
           control={control}

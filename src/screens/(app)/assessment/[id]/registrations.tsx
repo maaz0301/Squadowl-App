@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Share, Text, View, Platform } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import RNFS from 'react-native-fs';
+import { EXPO_PUBLIC_WEB_URL } from '@env';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
   Badge,
@@ -62,7 +63,7 @@ export default function RegistrationsScreen() {
 
   const tryout = tryoutQuery.data;
   const cloudCode = tryout.cloud?.id ?? '------';
-  const baseUrl = process.env.EXPO_PUBLIC_WEB_URL || 'https://aas-tryout.app';
+  const baseUrl = EXPO_PUBLIC_WEB_URL || 'https://aas-tryout.app';
   const registrationUrl = `${baseUrl}/register/${cloudCode}`;
   const pendingCount = (regsQuery.data ?? []).filter((r) => r.status === 'pending').length;
 

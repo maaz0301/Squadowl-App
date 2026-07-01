@@ -87,7 +87,7 @@ export default function ScanSheetScreen() {
                 <Text className="font-display font-bold" style={{ color: colors.success }}>
                   Scores imported successfully
                 </Text>
-                <Button label="View Results" onPress={() => navigation.navigate(`/(app)/assessment/${id}/results`)} />
+                <Button label="View Results" onPress={() => navigation.navigate('AssessmentResults', { id: id })} />
               </Card>
             ) : (
               <Button label="Simulate Scan Import" loading={importScores.isPending} onPress={simulateImport} />

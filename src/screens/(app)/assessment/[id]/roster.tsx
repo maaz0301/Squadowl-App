@@ -11,6 +11,7 @@ import {
   Chip,
   EmptyState,
   ErrorState,
+  Header,
   LoadingState,
   Modal,
   Screen,
@@ -65,7 +66,7 @@ export default function RosterScreen() {
 
   const openAdd = () => {
     if (isAtPlayerLimit(user?.planTier ?? 'free', tryout.roster.length)) {
-      navigation.navigate('/(app)/upgrade');
+      navigation.navigate('Upgrade');
       return;
     }
     setShowAdd(true);
@@ -75,13 +76,14 @@ export default function RosterScreen() {
   const scoredCount = new Set(tryout.evals.map((e) => e.playerId)).size;
 
   return (
-    <Screen padded={false} edges={['left', 'right']}>
+    <Screen padded={false}>
+      <Header title="Assessment Roster" showBack />
       {hasPlayers ? (
         <View className="px-4 pt-2 pb-3 gap-3">
           <View className="flex-row gap-2">
             <Button
               label="Score Players"
-              onPress={() => navigation.navigate(`/(app)/assessment/${id}/rinkside`)}
+              onPress={() => navigation.navigate('AssessmentRinkside', { id: id })}
               className="flex-1"
             />
             <Button label="+ Add" variant="secondary" onPress={openAdd} />
@@ -161,7 +163,7 @@ export default function RosterScreen() {
             <Pressable
               onPress={() => {
                 setCurrentPlayer(item.id);
-                navigation.navigate(`/(app)/assessment/${id}/player/${item.id}`);
+                navigation.navigate('AssessmentPlayer', { id: id, playerId: item.id });
               }}
             >
               <View
@@ -214,17 +216,17 @@ export default function RosterScreen() {
             {
               label: 'Team Builder',
               desc: 'Auto-split scored players into balanced teams.',
-              go: () => navigation.navigate(`/(app)/assessment/${id}/team-builder`),
+              go: () => navigation.navigate('AssessmentTeamBuilder', { id: id }),
             },
             {
               label: 'Roster Library',
               desc: 'Import players from past seasons or other assessments.',
-              go: () => navigation.navigate(`/(app)/assessment/${id}/roster-library`),
+              go: () => navigation.navigate('AssessmentRosterLibrary', { id: id }),
             },
             {
               label: 'Scan Sheet Import',
               desc: 'Import scores from printed OCR scanning sheets.',
-              go: () => navigation.navigate(`/(app)/assessment/${id}/scan-sheet`),
+              go: () => navigation.navigate('AssessmentScanSheet', { id: id }),
             },
           ] as const
         ).map((t) => (

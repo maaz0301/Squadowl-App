@@ -42,12 +42,15 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@babel/plugin-transform-export-namespace-from": "^7.29.7",
     "@react-native-community/cli": "^20.2.0",
     "@react-native-community/cli-platform-android": "^20.2.0",
     "@react-native-community/cli-platform-ios": "^20.2.0",
     "@react-native/typescript-config": "^0.86.0",
     "@types/react": "~19.2.2",
     "@types/uuid": "^10.0.0",
+    "babel-plugin-module-resolver": "^5.0.3",
+    "react-native-dotenv": "^3.4.11",
     "typescript": "~6.0.3"
   },
   "scripts": {

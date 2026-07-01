@@ -60,7 +60,7 @@ export default function SeasonRosterScreen() {
           />
         }
         renderItem={({ item }) => (
-          <Pressable onPress={() => navigation.navigate(`/(app)/season/${id}/player/${item.id}`)}>
+          <Pressable onPress={() => navigation.navigate('SeasonPlayer', { id: id, playerId: item.id })}>
             <Card className="mb-2 flex-row justify-between items-center">
               <View>
                 <Text className="font-bold" style={{ color: colors.ink }}>

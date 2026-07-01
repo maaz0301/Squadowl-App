@@ -1,5 +1,5 @@
 import { Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useNavigation } from '@react-navigation/native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Button, Card } from '@/components/ui';
 import { canUseFeature, getPlanDefinition } from '@/data/plans';
@@ -14,7 +14,7 @@ interface Props {
 
 export function PlanGate({ feature, children, title }: Props) {
   const colors = useThemeColors();
-  const router = useRouter();
+  const navigation = useNavigation<any>();
   const user = useUser();
   const tier = user?.planTier ?? 'free';
 
@@ -31,7 +31,7 @@ export function PlanGate({ feature, children, title }: Props) {
         This feature requires the {required.charAt(0).toUpperCase() + required.slice(1)} plan or
         higher. You're on {tier}.
       </Text>
-      <Button label="View Plans" onPress={() => router.push('/(app)/upgrade')} />
+      <Button label="View Plans" onPress={() => navigation.navigate('Upgrade')} />
     </Card>
   );
 }

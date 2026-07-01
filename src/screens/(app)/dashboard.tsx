@@ -38,13 +38,13 @@ function OnboardingChecklist() {
       key: 'createTeam',
       label: 'Create a team',
       done: user.onboardingSteps.createTeam,
-      action: () => navigation.navigate('/(app)/team/new'),
+      action: () => navigation.navigate('NewTeam'),
     },
     {
       key: 'createAssessment',
       label: 'Create an assessment',
       done: user.onboardingSteps.createAssessment,
-      action: () => navigation.navigate('/(app)/assessment/new'),
+      action: () => navigation.navigate('NewAssessment'),
     },
     {
       key: 'inviteAssessors',
@@ -52,8 +52,8 @@ function OnboardingChecklist() {
       done: user.onboardingSteps.inviteAssessors,
       action: () => {
         const tryout = useSessionStore.getState().currentTryoutId;
-        if (tryout) navigation.navigate(`/(app)/assessment/${tryout}/settings`);
-        else navigation.navigate('/(app)/assessment/new');
+        if (tryout) navigation.navigate('AssessmentSettings', { id: tryout });
+        else navigation.navigate('NewAssessment');
       },
     },
     {
@@ -62,8 +62,8 @@ function OnboardingChecklist() {
       done: user.onboardingSteps.addPlayers,
       action: () => {
         const tryout = useSessionStore.getState().currentTryoutId;
-        if (tryout) navigation.navigate(`/(app)/assessment/${tryout}/roster`);
-        else navigation.navigate('/(app)/assessment/new');
+        if (tryout) navigation.navigate('AssessmentRoster', { id: tryout });
+        else navigation.navigate('NewAssessment');
       },
     },
     {
@@ -72,8 +72,8 @@ function OnboardingChecklist() {
       done: user.onboardingSteps.scorePlayers,
       action: () => {
         const tryout = useSessionStore.getState().currentTryoutId;
-        if (tryout) navigation.navigate(`/(app)/assessment/${tryout}/rinkside`);
-        else navigation.navigate('/(app)/assessment/new');
+        if (tryout) navigation.navigate('AssessmentRinkside', { id: tryout });
+        else navigation.navigate('NewAssessment');
       },
     },
   ];
@@ -116,7 +116,7 @@ export default function DashboardScreen() {
   const openAssigned = (id: string) => {
     setCurrentTryout(id);
     setActiveAssessor(user?.displayName ?? null);
-    navigation.navigate(`/(app)/assessment/${id}/rinkside`);
+    navigation.navigate('AssessmentRinkside', { id: id });
   };
 
   if (teamsQuery.isLoading || tryoutsQuery.isLoading || seasonsQuery.isLoading) {
@@ -142,19 +142,19 @@ export default function DashboardScreen() {
       return;
     }
     setCurrentTryout(id);
-    navigation.navigate(`/(app)/assessment/${id}/roster`);
+    navigation.navigate('AssessmentRoster', { id: id });
   };
 
   const fabAction = () => {
-    if (tab === 'seasons') navigation.navigate('/(app)/season/new');
-    else if (tab === 'teams') navigation.navigate('/(app)/team/new');
+    if (tab === 'seasons') navigation.navigate('NewSeason');
+    else if (tab === 'teams') navigation.navigate('NewTeam');
     else {
       const count = tryoutsQuery.data?.length ?? 0;
       if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
-        navigation.navigate('/(app)/upgrade');
+        navigation.navigate('Upgrade');
         return;
       }
-      navigation.navigate('/(app)/assessment/new');
+      navigation.navigate('NewAssessment');
     }
   };
 
@@ -169,11 +169,11 @@ export default function DashboardScreen() {
           subtitle={`Hi, ${user?.displayName ?? 'Coach'}`}
           right={
             <View className="flex-row items-center gap-2">
-              <Pressable onPress={() => navigation.navigate('/(app)/search')} hitSlop={8}>
+              <Pressable onPress={() => navigation.navigate('Search')} hitSlop={8}>
                 <Badge label="Search" variant="info" />
               </Pressable>
               <Pressable
-                onPress={() => navigation.navigate('/(app)/profile')}
+                onPress={() => navigation.navigate('Profile')}
                 hitSlop={8}
                 accessibilityLabel="Profile and settings"
               >
@@ -231,13 +231,13 @@ export default function DashboardScreen() {
               onPress={() => setCombineMode((m) => !m)}
             />
             {combineMode && combineIds.length >= 2 ? (
-              <Button label="View Combined" size="sm" onPress={() => navigation.navigate('/(app)/combine')} />
+              <Button label="View Combined" size="sm" onPress={() => navigation.navigate('Combine')} />
             ) : null}
             <Button
               label="Archived"
               size="sm"
               variant="ghost"
-              onPress={() => navigation.navigate('/(app)/archived-assessments')}
+              onPress={() => navigation.navigate('ArchivedAssessments')}
             />
           </View>
         ) : null}
@@ -259,13 +259,13 @@ export default function DashboardScreen() {
               actionLabel={canUseFeature(user?.planTier ?? 'free', 'seasonHub') ? 'Create Season' : 'View Plans'}
               onAction={() =>
                 canUseFeature(user?.planTier ?? 'free', 'seasonHub')
-                  ? navigation.navigate('/(app)/season/new')
-                  : navigation.navigate('/(app)/upgrade')
+                  ? navigation.navigate('NewSeason')
+                  : navigation.navigate('Upgrade')
               }
             />
           }
           renderItem={({ item }) => (
-            <Pressable onPress={() => navigation.navigate(`/(app)/season/${item.id}`)}>
+            <Pressable onPress={() => navigation.navigate('SeasonDetail', { id: item.id })}>
               <Card accent className="mb-3">
                 <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
                   {item.name}
@@ -291,11 +291,11 @@ export default function DashboardScreen() {
               title="No teams yet"
               message="Create a team to organize your assessments."
               actionLabel="Create Team"
-              onAction={() => navigation.navigate('/(app)/team/new')}
+              onAction={() => navigation.navigate('NewTeam')}
             />
           }
           renderItem={({ item }) => (
-            <Pressable onPress={() => navigation.navigate(`/(app)/team/${item.id}`)}>
+            <Pressable onPress={() => navigation.navigate('TeamDetail', { id: item.id })}>
               <Card className="mb-3">
                 <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
                   {item.name}
@@ -319,7 +319,7 @@ export default function DashboardScreen() {
               title="No assessments yet"
               message="Create your first tryout or assessment to get started."
               actionLabel="Create Assessment"
-              onAction={() => navigation.navigate('/(app)/assessment/new')}
+              onAction={() => navigation.navigate('NewAssessment')}
             />
           }
           renderItem={({ item }) => {

@@ -19,7 +19,7 @@ export default function LoginScreen() {
 
   const { control, handleSubmit } = useForm({
     resolver: zodResolver(LoginFormSchema),
-    defaultValues: { email: 'coach@example.com', password: 'password123' },
+    defaultValues: { email: '', password: '' },
   });
 
   const onSubmit = handleSubmit(async (data) => {
@@ -27,7 +27,7 @@ export default function LoginScreen() {
     setError(null);
     try {
       await login(data.email, data.password);
-      navigation.replace('/');
+      // RootNavigator will automatically unmount AuthNavigator and show AppNavigator
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Login failed');
     } finally {
@@ -90,9 +90,6 @@ export default function LoginScreen() {
             </Text>
           </Pressable>
         </View>
-        <Text className="text-xs text-center" style={{ color: colors.inkFaint }}>
-          Demo: coach@example.com / password123
-        </Text>
       </View>
     </Screen>
   );

@@ -1,3 +1,5 @@
+import { EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY } from '@env';
+
 export const APP_CONFIG = {
   /** Switch to 'supabase' when backend is ready */
   dataSource: 'supabase' as 'mock' | 'supabase',
@@ -6,6 +8,6 @@ export const APP_CONFIG = {
   syncIntervalMs: 30_000,
   registrationPollMs: 20_000,
   /** Supabase — provided via EXPO_PUBLIC_* env vars (see .env.example) */
-  supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? '',
-  supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',
+  supabaseUrl: EXPO_PUBLIC_SUPABASE_URL ?? '',
+  supabaseAnonKey: EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',
 } as const;

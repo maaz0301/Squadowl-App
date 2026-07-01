@@ -184,7 +184,7 @@ export default function RinksideScreen() {
         <Button
           label="Full Score Form"
           variant="ghost"
-          onPress={() => navigation.navigate(`/(app)/assessment/${id}/score/${player?.id}`)}
+          onPress={() => navigation.navigate('AssessmentScore', { id, playerId: player?.id })}
         />
       </View>
     </Screen>

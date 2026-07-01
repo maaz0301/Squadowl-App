@@ -67,7 +67,7 @@ export default function SeasonHubScreen() {
         ))
       )}
 
-      <Button label="Add Event" variant="secondary" onPress={() => navigation.navigate(`/(app)/season/${id}/schedule`)} />
+      <Button label="Add Event" variant="secondary" onPress={() => navigation.navigate('SeasonSchedule', { id: id })} />
     </Screen>
   );
 }

@@ -1,4 +1,4 @@
-import { useGlobalSearchParams } from 'expo-router';
+import { useRoute } from '@react-navigation/native';
 import { useSessionStore } from '@/state/sessionStore';
 
 function normalizeParam(value: string | string[] | undefined): string | undefined {
@@ -8,7 +8,8 @@ function normalizeParam(value: string | string[] | undefined): string | undefine
 
 /** Resolves assessment id on tab screens where useLocalSearchParams may omit parent [id]. */
 export function useAssessmentId(): string | undefined {
-  const { id } = useGlobalSearchParams<{ id?: string | string[] }>();
+  const route = useRoute();
+  const id = (route.params as any)?.id;
   const sessionId = useSessionStore((s) => s.currentTryoutId);
   return normalizeParam(id) ?? sessionId ?? undefined;
 }

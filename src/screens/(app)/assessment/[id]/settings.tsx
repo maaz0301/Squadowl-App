@@ -107,12 +107,12 @@ export default function SettingsScreen() {
 
   const handleCopy = async () => {
     const copy = await copyTryout.mutateAsync(tryout.id);
-    navigation.navigate(`/(app)/assessment/${copy.id}/roster`);
+    navigation.navigate('AssessmentRoster', { id: copy.id });
   };
 
   const handleArchive = async () => {
     await archiveTryout.mutateAsync(tryout.id);
-    navigation.replace('/(app)/dashboard');
+    navigation.replace('Dashboard');
   };
 
   return (
@@ -163,7 +163,7 @@ export default function SettingsScreen() {
         <Text className="text-sm" style={{ color: colors.inkMuted }}>
           {rubrics.skater.length} skater + {rubrics.goalie.length} goalie categories
         </Text>
-        <Button label="Open Rubric Builder" variant="secondary" size="sm" onPress={() => navigation.navigate(`/(app)/assessment/${id}/rubrics`)} />
+        <Button label="Open Rubric Builder" variant="secondary" size="sm" onPress={() => navigation.navigate('AssessmentRubrics', { id: id })} />
         <Button label="View Reference" variant="ghost" size="sm" onPress={() => setShowRubrics(true)} />
       </Card>
 

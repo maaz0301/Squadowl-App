@@ -75,17 +75,17 @@ export default function ProfileScreen() {
           Assessments: {plan.limits.assessments} · Players: {plan.limits.players} · Teams:{' '}
           {plan.limits.teams}
         </Text>
-        <Button label="Upgrade Plan" variant="secondary" onPress={() => navigation.navigate('/(app)/upgrade')} />
+        <Button label="Upgrade Plan" variant="secondary" onPress={() => navigation.navigate('Upgrade')} />
       </Card>
 
       <Card className="mb-4 gap-2">
         <Text className="font-display font-bold" style={{ color: colors.ink }}>
           Quick Links
         </Text>
-        <Button label="Search" variant="ghost" onPress={() => navigation.navigate('/(app)/search')} />
-        <Button label="Archived Assessments" variant="ghost" onPress={() => navigation.navigate('/(app)/archived-assessments')} />
-        <Button label="Send Feedback" variant="ghost" onPress={() => navigation.navigate('/(app)/feedback')} />
-        <Button label="Gift a Coach" variant="ghost" onPress={() => navigation.navigate('/(app)/friend-packages')} />
+        <Button label="Search" variant="ghost" onPress={() => navigation.navigate('Search')} />
+        <Button label="Archived Assessments" variant="ghost" onPress={() => navigation.navigate('ArchivedAssessments')} />
+        <Button label="Send Feedback" variant="ghost" onPress={() => navigation.navigate('Feedback')} />
+        <Button label="Gift a Coach" variant="ghost" onPress={() => navigation.navigate('FriendPackages')} />
       </Card>
 
       <Card className="mb-4 gap-2">
@@ -98,11 +98,11 @@ export default function ProfileScreen() {
 
       {canUseFeature(user?.planTier ?? 'free', 'enterprise') ? (
         <>
-          <Button label="Enterprise Dashboard" onPress={() => navigation.navigate('/(app)/enterprise')} className="mb-3" />
+          <Button label="Enterprise Dashboard" onPress={() => navigation.navigate('Enterprise')} className="mb-3" />
           <Button
             label="Admin Portal (Demo)"
             variant="secondary"
-            onPress={() => navigation.navigate('/(app)/admin')}
+            onPress={() => navigation.navigate('Admin')}
             className="mb-3"
           />
         </>

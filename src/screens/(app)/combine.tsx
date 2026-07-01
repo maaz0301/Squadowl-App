@@ -50,7 +50,7 @@ export default function CombineScreen() {
           title="Select 2+ assessments"
           message="From the dashboard, tap Combine mode and select assessments to compare side-by-side."
           actionLabel="Go to Dashboard"
-          onAction={() => navigation.replace('/(app)/dashboard')}
+          onAction={() => navigation.replace('Dashboard')}
         />
       </Screen>
     );

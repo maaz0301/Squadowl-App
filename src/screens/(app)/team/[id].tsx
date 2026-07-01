@@ -96,7 +96,7 @@ export default function TeamDetailScreen() {
             <Button
               label={t.name}
               variant="ghost"
-              onPress={() => navigation.navigate(`/(app)/assessment/${t.id}/roster`)}
+              onPress={() => navigation.navigate('AssessmentRoster', { id: t.id })}
             />
           </Card>
         ))
@@ -105,7 +105,7 @@ export default function TeamDetailScreen() {
       <Button
         label="Create Assessment for Team"
         className="mt-4"
-        onPress={() => navigation.navigate('/(app)/assessment/new')}
+        onPress={() => navigation.navigate('NewAssessment')}
       />
     </Screen>
   );

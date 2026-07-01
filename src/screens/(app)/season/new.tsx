@@ -24,7 +24,7 @@ export default function NewSeasonScreen() {
 
   const onSubmit = handleSubmit(async (data) => {
     const season = await createSeason.mutateAsync(data);
-    navigation.replace(`/(app)/season/${season.id}`);
+    navigation.replace('SeasonDetail', { id: season.id });
   });
 
   if (teamsQuery.isLoading) return <LoadingState message="Loading..." />;

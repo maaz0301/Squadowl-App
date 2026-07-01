@@ -80,12 +80,12 @@ export default function SearchScreen() {
               onPress={() => {
                 if (item.type === 'assessment') {
                   setCurrentTryout(item.id);
-                  navigation.navigate(`/(app)/assessment/${item.id}/roster`);
+                  navigation.navigate('AssessmentRoster', { id: item.id });
                 } else if (item.type === 'player') {
                   setCurrentTryout(item.tryoutId);
-                  navigation.navigate(`/(app)/assessment/${item.tryoutId}/player/${item.id}`);
+                  navigation.navigate('AssessmentPlayer', { id: item.tryoutId, playerId: item.id });
                 } else {
-                  navigation.navigate(`/(app)/season/${item.id}`);
+                  navigation.navigate('SeasonDetail', { id: item.id });
                 }
               }}
             >

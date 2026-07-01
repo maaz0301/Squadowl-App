@@ -49,9 +49,9 @@ export default function ResultsScreen() {
           ))}
         </Card>
         <View className="flex-row flex-wrap gap-2">
-          <Button label="Team Builder" size="sm" onPress={() => navigation.navigate(`/(app)/assessment/${id}/team-builder`)} />
-          <Button label="Compare" size="sm" variant="secondary" onPress={() => navigation.navigate(`/(app)/assessment/${id}/compare`)} />
-          <Button label="Export" size="sm" variant="secondary" onPress={() => navigation.navigate(`/(app)/assessment/${id}/export`)} />
+          <Button label="Team Builder" size="sm" onPress={() => navigation.navigate('AssessmentTeamBuilder', { id: id })} />
+          <Button label="Compare" size="sm" variant="secondary" onPress={() => navigation.navigate('AssessmentCompare', { id: id })} />
+          <Button label="Export" size="sm" variant="secondary" onPress={() => navigation.navigate('AssessmentExport', { id: id })} />
         </View>
       </View>
 

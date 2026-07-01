@@ -40,12 +40,12 @@ export default function NewAssessmentScreen() {
   const onSubmit = handleSubmit(async (data) => {
     const count = tryoutsQuery.data?.length ?? 0;
     if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
-      navigation.navigate('/(app)/upgrade');
+      navigation.navigate('Upgrade');
       return;
     }
     const tryout = await createTryout.mutateAsync(data);
     setCurrentTryout(tryout.id);
-    navigation.replace(`/(app)/assessment/${tryout.id}/settings?welcome=1`);
+    navigation.replace('AssessmentSettings', { id: tryout.id, welcome: 1 });
   });
 
   if (teamsQuery.isLoading || tryoutsQuery.isLoading) return <LoadingState message="Loading..." />;

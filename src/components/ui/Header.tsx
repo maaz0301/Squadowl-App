@@ -1,6 +1,6 @@
 import { Pressable, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import { useRouter } from 'expo-router';
+import { useNavigation } from '@react-navigation/native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 interface HeaderProps {
@@ -12,13 +12,13 @@ interface HeaderProps {
 
 export function Header({ title, subtitle, showBack, right }: HeaderProps) {
   const colors = useThemeColors();
-  const router = useRouter();
+  const navigation = useNavigation();
   return (
     <View className="flex-row items-center justify-between py-4 gap-3">
       <View className="flex-row items-center flex-1 gap-3">
         {showBack ? (
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => navigation.goBack()}
             className="w-10 h-10 rounded-full items-center justify-center"
             style={{ backgroundColor: colors.tile }}
             hitSlop={8}
