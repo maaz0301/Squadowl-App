@@ -18,7 +18,7 @@ begin
   -- 1. Look up the tryout ID safely
   select id into t_id 
     from public.tryouts
-   where registration_code = code 
+   where upper(registration_code) = upper(code) 
      and registration_open = true;
 
   -- 2. Reject if not found or closed

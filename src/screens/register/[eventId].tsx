@@ -45,7 +45,7 @@ export default function PublicRegistration() {
 
     setIsSubmitting(true);
     try {
-      await ds.submitPublicRegistration(eventId, data);
+      await ds.submitPublicRegistration(eventId.toUpperCase(), data);
       setIsSuccess(true);
     } catch (err) {
       console.error(err);
