@@ -1,5 +1,5 @@
-// using inline require for expo-file-system
-import * as Sharing from 'expo-sharing';
+import RNFS from 'react-native-fs';
+import Share from 'react-native-share';
 import { Platform } from 'react-native';
 import { Tryout } from '@/data/types';
 import { formatExportCsv } from '@/data/teamBuilder';
@@ -20,18 +20,20 @@ export async function exportTryoutToCsv(tryout: Tryout): Promise<void> {
     document.body.removeChild(link);
   } else {
     // Mobile: Save to local filesystem and share
-    const { File, Paths } = require('expo-file-system');
-    const file = new File(Paths.cache, fileName);
-    await file.write(csvString);
+    const path = `${RNFS.CachesDirectoryPath}/${fileName}`;
+    await RNFS.writeFile(path, csvString, 'utf8');
 
-    if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(file.uri, {
-        mimeType: 'text/csv',
-        dialogTitle: 'Export Tryout Results',
-        UTI: 'public.comma-separated-values-text',
+    try {
+      await Share.open({
+        url: `file://${path}`,
+        type: 'text/csv',
+        filename: fileName,
+        title: 'Export Tryout Results'
       });
-    } else {
-      throw new Error('Sharing is not available on this device');
+    } catch (e: any) {
+      if (e.message !== 'User did not share') {
+        throw new Error('Sharing failed: ' + e.message);
+      }
     }
   }
 }
