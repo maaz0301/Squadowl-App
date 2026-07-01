@@ -63,7 +63,8 @@ export default function RegistrationsScreen() {
 
   const tryout = tryoutQuery.data;
   const cloudCode = tryout.cloud?.id ?? '------';
-  const registrationUrl = `https://aas-tryout.app/register/${cloudCode}`;
+  const baseUrl = process.env.EXPO_PUBLIC_WEB_URL || 'https://aas-tryout.app';
+  const registrationUrl = `${baseUrl}/register/${cloudCode}`;
   const pendingCount = (regsQuery.data ?? []).filter((r) => r.status === 'pending').length;
 
   const shareQr = async () => {
