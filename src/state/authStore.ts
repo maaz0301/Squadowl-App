@@ -36,8 +36,13 @@ export const useAuthStore = create<AuthState>()(
         set({ session: null });
       },
       restoreSession: async () => {
-        const session = await getDataSource().getSession();
-        set({ session, isHydrated: true });
+        try {
+          const session = await getDataSource().getSession();
+          set({ session, isHydrated: true });
+        } catch (e) {
+          console.error('Failed to restore session:', e);
+          set({ session: null, isHydrated: true });
+        }
       },
       updateProfile: async (updates) => {
         const profile = await getDataSource().updateProfile(updates);

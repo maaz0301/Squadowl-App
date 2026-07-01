@@ -363,10 +363,16 @@ export class SupabaseDataSource implements DataSource {
 
   async getSession(): Promise<AuthSession | null> {
     const supabase = getSupabase();
-    const { data } = await supabase.auth.getSession();
-    if (!data.session) return null;
-    const user = await this.loadUserProfile(data.session.user.id);
-    return this.toAuthSession(data.session, user);
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session) return null;
+    try {
+      const user = await this.loadUserProfile(data.session.user.id);
+      return this.toAuthSession(data.session, user);
+    } catch (e) {
+      console.warn('Failed to restore session profile, signing out:', e);
+      await supabase.auth.signOut();
+      return null;
+    }
   }
 
   async getProfile(): Promise<UserProfile | null> {
