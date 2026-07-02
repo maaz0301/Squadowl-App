@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FlatList, Text, View } from 'react-native';
+import { FlatList, Text, View, Alert } from 'react-native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Header, Input, Screen, Tabs, Modal } from '@/components/ui';
 import {
@@ -33,8 +33,12 @@ export default function OrganizationMembersScreen() {
 
   const handleInvite = async () => {
     if (!inviteEmail) return;
-    await inviteMut.mutateAsync({ email: inviteEmail, role: inviteRole });
-    setInviteEmail('');
+    try {
+      await inviteMut.mutateAsync({ email: inviteEmail, role: inviteRole });
+      setInviteEmail('');
+    } catch (error: any) {
+      Alert.alert('Invite Failed', error.message || 'Could not invite user.');
+    }
   };
 
   // Removed handleRoleChange since it's now handled by the modal
