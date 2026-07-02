@@ -83,6 +83,7 @@ export default function ProfileScreen() {
           Quick Links
         </Text>
         <Button label="Search" variant="ghost" onPress={() => navigation.navigate('Search')} />
+        <Button label="Manage Organization Members" variant="ghost" onPress={() => navigation.navigate('OrganizationMembers')} />
         <Button label="Archived Assessments" variant="ghost" onPress={() => navigation.navigate('ArchivedAssessments')} />
         <Button label="Send Feedback" variant="ghost" onPress={() => navigation.navigate('Feedback')} />
         <Button label="Gift a Coach" variant="ghost" onPress={() => navigation.navigate('FriendPackages')} />
@@ -111,7 +112,7 @@ export default function ProfileScreen() {
       <Button
         label="Log Out"
         variant="danger"
-        onPress={() => logout().then(() => navigation.replace('/(auth)/login'))}
+        onPress={() => logout()}
       />
     </Screen>
   );

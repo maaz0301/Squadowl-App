@@ -13,6 +13,8 @@ import type {
   Evaluation,
   ExportFormat,
   Org,
+  OrgMember,
+  OrgRole,
   Player,
   Registration,
   RegistrationSubmit,
@@ -33,6 +35,7 @@ export interface DataSource {
   getSession(): Promise<AuthSession | null>;
   getProfile(): Promise<UserProfile | null>;
   updateProfile(updates: Partial<UserProfile>): Promise<UserProfile>;
+  checkUserExistsByEmail(email: string): Promise<boolean>;
 
   // Database
   getDatabase(): Promise<Database>;
@@ -94,6 +97,13 @@ export interface DataSource {
   getAdminStats(): Promise<AdminStats>;
   listAdminUsers(): Promise<AdminUserRow[]>;
   overrideUserPlan(userId: string, planTier: UserProfile['planTier']): Promise<void>;
+
+  // Org Members & Permissions
+  listOrgMembers(): Promise<OrgMember[]>;
+  inviteOrgMember(email: string, role: OrgRole): Promise<OrgMember>;
+  updateOrgMemberRole(memberId: string, role: OrgRole): Promise<OrgMember>;
+  removeOrgMember(memberId: string): Promise<void>;
+  linkGuardianToAthlete(guardianId: string, tryoutId: string, playerId: string): Promise<Player>;
 
   // Extended UI operations
   copyTryout(id: string): Promise<Tryout>;

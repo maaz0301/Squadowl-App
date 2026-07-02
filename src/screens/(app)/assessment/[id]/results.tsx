@@ -41,8 +41,8 @@ export default function ResultsScreen() {
           <Text className="text-md font-display font-bold" style={{ color: colors.ink }}>
             Assessor Progress
           </Text>
-          {assessorProgress.map((a) => (
-            <View key={a.name} className="flex-row justify-between">
+          {assessorProgress.map((a, i) => (
+            <View key={`${a.name}-${i}`} className="flex-row justify-between">
               <Text style={{ color: colors.inkMuted }}>{a.name}</Text>
               <Text className="font-bold" style={{ color: colors.ink }}>
                 {a.scored}/{a.total}

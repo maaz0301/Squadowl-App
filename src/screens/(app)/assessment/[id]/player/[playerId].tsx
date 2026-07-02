@@ -21,6 +21,9 @@ import {
   useUpdatePlayerMutation,
   useDeletePlayerMutation,
   useAiPlayerSummaryMutation,
+  useLinkGuardianMutation,
+  useInviteMemberMutation,
+  useOrgMembersQuery,
 } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { playerDisplayName } from '@/data/rubrics';
@@ -38,7 +41,13 @@ export default function PlayerHubScreen() {
   const updatePlayer = useUpdatePlayerMutation(id!);
   const deletePlayer = useDeletePlayerMutation(id!);
   const aiSummary = useAiPlayerSummaryMutation(id!);
+  
+  const linkGuardianMut = useLinkGuardianMutation();
+  const inviteMut = useInviteMemberMutation();
+  const { data: members = [] } = useOrgMembersQuery();
+
   const [showEdit, setShowEdit] = useState(false);
+  const [showGuardianLink, setShowGuardianLink] = useState(false);
 
   if (tryoutQuery.isLoading) return <LoadingState />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
@@ -72,17 +81,34 @@ export default function PlayerHubScreen() {
         <Button label="Edit" variant="secondary" className="flex-1" onPress={() => setShowEdit(true)} />
       </View>
 
-      {player.guardianName ? (
-        <Card className="mb-4 gap-1">
+      <Card className="mb-4 gap-1">
+        <View className="flex-row justify-between items-center mb-1">
           <Text className="text-sm font-bold uppercase" style={{ color: colors.inkMuted }}>
-            Guardian
+            Guardian Access
           </Text>
-          <Text style={{ color: colors.ink }}>{player.guardianName}</Text>
-          {player.guardianEmail ? (
-            <Text style={{ color: colors.inkMuted }}>{player.guardianEmail}</Text>
-          ) : null}
-        </Card>
-      ) : null}
+          {player.linkedGuardianId ? (
+            <Badge label="Linked" variant="success" />
+          ) : (
+            <Button
+              label="Link Account"
+              variant="secondary"
+              size="sm"
+              onPress={() => setShowGuardianLink(true)}
+            />
+          )}
+        </View>
+
+        {player.guardianName ? (
+          <>
+            <Text style={{ color: colors.ink }}>{player.guardianName}</Text>
+            {player.guardianEmail ? (
+              <Text style={{ color: colors.inkMuted }}>{player.guardianEmail}</Text>
+            ) : null}
+          </>
+        ) : (
+          <Text style={{ color: colors.inkFaint }}>No guardian info provided.</Text>
+        )}
+      </Card>
 
       <PlanGate feature="aiSummaries" title="AI Player Summary (Club+)">
         <Card accent className="mb-4 gap-2">
@@ -176,6 +202,34 @@ export default function PlayerHubScreen() {
             setShowEdit(false);
           }}
         />
+      </Modal>
+
+      <Modal visible={showGuardianLink} title="Link Guardian" onClose={() => setShowGuardianLink(false)}>
+        <View className="gap-3">
+          <Text style={{ color: colors.ink }}>
+            Link {player.first} to a guardian account to grant them portal access.
+          </Text>
+          {player.guardianEmail && !player.linkedGuardianId ? (
+            <Button
+              label={`Invite ${player.guardianEmail}`}
+              onPress={async () => {
+                const member = await inviteMut.mutateAsync({ email: player.guardianEmail!, role: 'guardian' });
+                await linkGuardianMut.mutateAsync({
+                  guardianId: member.id,
+                  tryoutId: id!,
+                  playerId: playerId!,
+                });
+                setShowGuardianLink(false);
+              }}
+              loading={inviteMut.isPending || linkGuardianMut.isPending}
+            />
+          ) : (
+            <Text style={{ color: colors.inkMuted }}>
+              No email on file. Edit player profile to add a guardian email first.
+            </Text>
+          )}
+          <Button label="Cancel" variant="ghost" onPress={() => setShowGuardianLink(false)} />
+        </View>
       </Modal>
     </Screen>
   );

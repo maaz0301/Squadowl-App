@@ -44,6 +44,7 @@ export default function AppNavigator() {
       <Stack.Screen name="Feedback" component={require('../screens/(app)/feedback').default} />
       <Stack.Screen name="FriendPackages" component={require('../screens/(app)/friend-packages').default} />
       <Stack.Screen name="Enterprise" component={require('../screens/(app)/enterprise').default} />
+      <Stack.Screen name="OrganizationMembers" component={require('../screens/(app)/organization/members').default} />
       <Stack.Screen name="Admin" component={require('../screens/(app)/admin').default} />
       <Stack.Screen name="Combine" component={require('../screens/(app)/combine').default} />
     </Stack.Navigator>

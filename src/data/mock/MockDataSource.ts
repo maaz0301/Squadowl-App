@@ -15,6 +15,8 @@ import type {
   Evaluation,
   ExportFormat,
   Org,
+  OrgMember,
+  OrgRole,
   Player,
   Registration,
   RegistrationSubmit,
@@ -53,6 +55,7 @@ function loadDb(): Database {
   const db = getJson<Database>(DB_KEY, createEmptyDatabase());
   if (!db.seasons) db.seasons = {};
   if (!db.orgs) db.orgs = {};
+  if (!db.orgMembers) db.orgMembers = {};
   return db;
 }
 
@@ -664,6 +667,62 @@ export class MockDataSource implements DataSource {
     }
   }
 
+  // ---- Org Members & Permissions ----
+  async listOrgMembers(): Promise<OrgMember[]> {
+    await delay();
+    const db = loadDb();
+    return Object.values(db.orgMembers || {});
+  }
+
+  async inviteOrgMember(email: string, role: OrgRole): Promise<OrgMember> {
+    await delay();
+    const db = loadDb();
+    if (!db.orgMembers) db.orgMembers = {};
+    const member: OrgMember = {
+      id: generateId('member'),
+      orgId: db.profile?.organization || 'default_org',
+      email: email.toLowerCase(),
+      role,
+      status: 'pending',
+      createdAt: Date.now(),
+    };
+    db.orgMembers[member.id] = member;
+    saveDb(db);
+    return member;
+  }
+
+  async updateOrgMemberRole(memberId: string, role: OrgRole): Promise<OrgMember> {
+    await delay();
+    const db = loadDb();
+    const member = db.orgMembers?.[memberId];
+    if (!member) throw new Error('Member not found');
+    member.role = role;
+    saveDb(db);
+    return member;
+  }
+
+  async removeOrgMember(memberId: string): Promise<void> {
+    await delay();
+    const db = loadDb();
+    if (db.orgMembers) {
+      delete db.orgMembers[memberId];
+      saveDb(db);
+    }
+  }
+
+  async linkGuardianToAthlete(guardianId: string, tryoutId: string, playerId: string): Promise<Player> {
+    await delay();
+    const db = loadDb();
+    const tryout = db.tryouts[tryoutId];
+    if (!tryout) throw new Error('Tryout not found');
+    const player = tryout.roster.find((p) => p.id === playerId);
+    if (!player) throw new Error('Player not found');
+    player.linkedGuardianId = guardianId;
+    tryout.updatedAt = Date.now();
+    saveDb(db);
+    return player;
+  }
+
   async copyTryout(id: string): Promise<Tryout> {
     await delay();
     const db = loadDb();
@@ -724,6 +783,15 @@ export class MockDataSource implements DataSource {
     season.updatedAt = Date.now();
     saveDb(db);
     return sp;
+  }
+
+  async checkUserExistsByEmail(email: string): Promise<boolean> {
+    await delay();
+    // In the mock environment, for testing purposes we can just pretend
+    // any email that doesn't start with "fake" exists.
+    // Real validation happens in Supabase.
+    if (email.toLowerCase().startsWith('fake')) return false;
+    return true;
   }
 
   async updateTeam(id: string, updates: Partial<Team>): Promise<Team> {

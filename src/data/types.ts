@@ -33,6 +33,7 @@ export const AssessorSchema = z.object({
   name: z.string(),
   email: z.string().email().optional().or(z.literal('')),
   role: z.enum(['lead', 'assistant', 'assessor']).default('assessor'),
+  status: z.enum(['pending', 'accepted', 'declined']).optional().default('pending'),
 });
 
 export type Assessor = z.infer<typeof AssessorSchema>;
@@ -79,6 +80,7 @@ export const PlayerSchema = z.object({
   guardianName: z.string().optional(),
   guardianEmail: z.string().optional(),
   guardianPhone: z.string().optional(),
+  linkedGuardianId: z.string().optional(),
   yearOfBirth: z.string().optional(),
   currentPosition: z.string().optional(),
   currentTeam: z.string().optional(),
@@ -431,6 +433,21 @@ export const OrgSchema = z.object({
 
 export type Org = z.infer<typeof OrgSchema>;
 
+export const ORG_ROLES = ['admin', 'coach', 'assessor', 'guardian'] as const;
+export type OrgRole = (typeof ORG_ROLES)[number];
+
+export const OrgMemberSchema = z.object({
+  id: z.string(),
+  orgId: z.string(),
+  userId: z.string().optional(),
+  email: z.string().email(),
+  role: z.enum(ORG_ROLES),
+  status: z.enum(['pending', 'active', 'declined']).default('pending'),
+  createdAt: z.number(),
+});
+
+export type OrgMember = z.infer<typeof OrgMemberSchema>;
+
 export interface AdminStats {
   totalUsers: number;
   activeUsers: number;
@@ -465,6 +482,7 @@ export const DatabaseSchema = z.object({
   teams: z.array(TeamSchema).default([]),
   seasons: z.record(z.string(), SeasonSchema).default({}),
   orgs: z.record(z.string(), OrgSchema).default({}),
+  orgMembers: z.record(z.string(), OrgMemberSchema).default({}),
   profile: UserProfileSchema.optional(),
 });
 

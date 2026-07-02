@@ -68,3 +68,29 @@ export function useUser(): UserProfile | null {
 export function useIsAuthenticated(): boolean {
   return useAuthStore((s) => !!s.session);
 }
+
+import { useOrgMembersQuery } from '@/features/queries';
+
+export function usePermissions() {
+  const user = useUser();
+  const { data: members = [] } = useOrgMembersQuery();
+  
+  // For demo: if they are the primary coach@example.com account, default to admin if not found.
+  // In production, everyone must be an org member.
+  const isDemoAdmin = user?.email.toLowerCase() === 'coach@example.com';
+  
+  const myMember = members.find(
+    (m) => m.email.toLowerCase() === user?.email.toLowerCase() && m.status === 'active'
+  );
+
+  const role = myMember?.role ?? (isDemoAdmin ? 'admin' : 'guardian');
+
+  return {
+    role,
+    canManageOrganization: role === 'admin',
+    canManageTeam: role === 'admin' || role === 'coach',
+    canCreateAssessments: role === 'admin' || role === 'coach',
+    canAssess: role === 'admin' || role === 'coach' || role === 'assessor',
+    isGuardian: role === 'guardian',
+  };
+}

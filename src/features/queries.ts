@@ -348,6 +348,48 @@ export function useOrgQuery() {
   });
 }
 
+export function useOrgMembersQuery() {
+  return useQuery({
+    queryKey: queryKeys.orgMembers,
+    queryFn: () => getDataSource().listOrgMembers(),
+  });
+}
+
+export function useInviteMemberMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ email, role }: { email: string; role: import('@/data/types').OrgRole }) =>
+      getDataSource().inviteOrgMember(email, role),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.orgMembers }),
+  });
+}
+
+export function useUpdateMemberRoleMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ memberId, role }: { memberId: string; role: import('@/data/types').OrgRole }) =>
+      getDataSource().updateOrgMemberRole(memberId, role),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.orgMembers }),
+  });
+}
+
+export function useRemoveMemberMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (memberId: string) => getDataSource().removeOrgMember(memberId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.orgMembers }),
+  });
+}
+
+export function useLinkGuardianMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ guardianId, tryoutId, playerId }: { guardianId: string; tryoutId: string; playerId: string }) =>
+      getDataSource().linkGuardianToAthlete(guardianId, tryoutId, playerId),
+    onSuccess: (_, { tryoutId }) => qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) }),
+  });
+}
+
 export function useEnterprisePaymentsQuery() {
   return useQuery({
     queryKey: queryKeys.enterprisePayments,

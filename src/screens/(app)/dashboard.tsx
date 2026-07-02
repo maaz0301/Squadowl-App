@@ -79,6 +79,10 @@ function OnboardingChecklist() {
   ];
   const doneCount = steps.filter((s) => s.done).length;
 
+  if (doneCount === steps.length) {
+    return null;
+  }
+
   return (
     <Card accent className="mb-4 gap-3">
       <View className="flex-row justify-between items-center">

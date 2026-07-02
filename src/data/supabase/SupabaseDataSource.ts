@@ -404,6 +404,17 @@ export class SupabaseDataSource implements DataSource {
     return this.loadUserProfile(userId);
   }
 
+  async checkUserExistsByEmail(email: string): Promise<boolean> {
+    const supabase = getSupabase();
+    // Using the secure RPC function to check without violating RLS
+    const { data, error } = await supabase.rpc('check_user_exists', { lookup_email: email });
+    if (error) {
+      console.warn('checkUserExistsByEmail error:', error);
+      return false; // Fail safe
+    }
+    return !!data;
+  }
+
   // ─── Database aggregate (used by global search) ──────────────────────────────
   async getDatabase(): Promise<Database> {
     const [profile, tryouts, teams, seasons] = await Promise.all([

@@ -96,9 +96,9 @@ export default function RosterScreen() {
                 Scoring as
               </Text>
               <View className="flex-row flex-wrap">
-                {tryout.assessors.map((a) => (
+                {tryout.assessors.map((a, i) => (
                   <Chip
-                    key={a.name}
+                    key={`${a.name}-${i}`}
                     label={a.name}
                     active={activeAssessor === a.name}
                     onPress={() => setActiveAssessor(activeAssessor === a.name ? null : a.name)}

@@ -122,9 +122,9 @@ export default function ScoreScreen() {
             Scoring as
           </Text>
           <View className="flex-row flex-wrap">
-            {tryoutQuery.data.assessors.map((a) => (
+            {tryoutQuery.data.assessors.map((a, i) => (
               <Chip
-                key={a.name}
+                key={`${a.name}-${i}`}
                 label={a.name}
                 active={activeAssessor === a.name}
                 onPress={() => setActiveAssessor(a.name)}
