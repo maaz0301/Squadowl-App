@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 import { getDataSource } from '@/data';
 import type {
   AddPlayerForm,
@@ -78,6 +80,40 @@ export function useTryoutQuery(id: string | undefined) {
     queryFn: () => getDataSource().getTryout(id!),
     enabled: !!id,
   });
+}
+
+export function useTryoutRealtimeSync(id: string | undefined) {
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (!id) return;
+
+    // Subscribe to insert/update events on the evaluations table for this specific tryout
+    const channel = supabase
+      .channel(`realtime:tryout_${id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'evaluations', filter: `tryout_id=eq.${id}` },
+        (payload) => {
+          // Whenever an evaluation is created, updated, or deleted, refetch the tryout data
+          qc.invalidateQueries({ queryKey: queryKeys.tryout(id) });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'evaluation_scores' },
+        (payload) => {
+          // evaluation_scores doesn't have tryout_id directly, so we just invalidate on any score change
+          // (or we could fetch the tryout_id, but invalidating is fast enough given our caching)
+          qc.invalidateQueries({ queryKey: queryKeys.tryout(id) });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [id, qc]);
 }
 
 export function useCreateTryoutMutation() {

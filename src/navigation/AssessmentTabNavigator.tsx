@@ -5,7 +5,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { useTryoutQuery, useRegistrationsQuery } from '@/features/queries';
+import { useTryoutQuery, useRegistrationsQuery, useTryoutRealtimeSync } from '@/features/queries';
 
 import AssessmentRosterScreen from '../screens/(app)/assessment/[id]/roster';
 import AssessmentRegistrationsScreen from '../screens/(app)/assessment/[id]/registrations';
@@ -54,6 +54,9 @@ export default function AssessmentTabNavigator() {
   
   // Extract ID from the nested params or directly
   const id = route.params?.params?.id || route.params?.id;
+  
+  // Enable Real-Time Sync across all assessment screens
+  useTryoutRealtimeSync(id);
   
   const [assessorState, setAssessorState] = React.useState(() => {
     return route.params?.params?.isAssessorOnly || route.params?.isAssessorOnly || false;
