@@ -63,11 +63,11 @@ export default function OrganizationMembersScreen() {
         />
       </View>
 
-      {canManageOrganization && (
+      {canManageOrganization && tab === 'staff' && (
         <View className="px-4 mb-4">
           <Card className="gap-2">
             <Text className="font-display font-bold" style={{ color: colors.ink }}>
-              Invite {tab === 'staff' ? 'Staff' : 'Guardian'}
+              Invite Staff
             </Text>
             <View className="flex-row items-center gap-2">
               <View className="flex-1">
@@ -88,11 +88,8 @@ export default function OrganizationMembersScreen() {
               )}
             </View>
             <Button
-              label={`Send ${tab === 'staff' ? 'Staff' : 'Guardian'} Invite`}
-              onPress={() => {
-                if (tab === 'guardians') setInviteRole('guardian');
-                handleInvite();
-              }}
+              label="Send Invite"
+              onPress={handleInvite}
               loading={inviteMut.isPending}
             />
           </Card>

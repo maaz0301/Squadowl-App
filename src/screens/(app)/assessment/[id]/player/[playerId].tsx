@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { Alert, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
-
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { usePermissions } from '@/state/authStore';
 import {
   Avatar,
   Badge,
@@ -23,6 +23,7 @@ import {
   useAiPlayerSummaryMutation,
   useLinkGuardianMutation,
   useInviteMemberMutation,
+  useCreateAndInviteMemberMutation,
   useOrgMembersQuery,
 } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
@@ -44,10 +45,12 @@ export default function PlayerHubScreen() {
   
   const linkGuardianMut = useLinkGuardianMutation();
   const inviteMut = useInviteMemberMutation();
+  const createAndInviteMut = useCreateAndInviteMemberMutation();
   const { data: members = [] } = useOrgMembersQuery();
 
   const [showEdit, setShowEdit] = useState(false);
   const [showGuardianLink, setShowGuardianLink] = useState(false);
+  const { canManageTeam } = usePermissions();
 
   if (tryoutQuery.isLoading) return <LoadingState />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
@@ -78,7 +81,7 @@ export default function PlayerHubScreen() {
           className="flex-1"
           onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentScore', params: { id: id, playerId: playerId } })}
         />
-        <Button label="Edit" variant="secondary" className="flex-1" onPress={() => setShowEdit(true)} />
+        {canManageTeam && <Button label="Edit" variant="secondary" className="flex-1" onPress={() => setShowEdit(true)} />}
       </View>
 
       <Card className="mb-4 gap-1">
@@ -88,13 +91,15 @@ export default function PlayerHubScreen() {
           </Text>
           {player.linkedGuardianId ? (
             <Badge label="Linked" variant="success" />
-          ) : (
+          ) : canManageTeam ? (
             <Button
               label="Link Account"
               variant="secondary"
               size="sm"
               onPress={() => setShowGuardianLink(true)}
             />
+          ) : (
+            <Text style={{ color: colors.inkMuted }}>Not linked</Text>
           )}
         </View>
 
@@ -182,16 +187,18 @@ export default function PlayerHubScreen() {
         ))
       )}
 
-      <Button
-        label="Delete Player"
-        variant="danger"
-        className="mt-6"
-        loading={deletePlayer.isPending}
-        onPress={async () => {
-          await deletePlayer.mutateAsync(playerId!);
-          navigation.goBack();
-        }}
-      />
+      {canManageTeam && (
+        <Button
+          label="Delete Player"
+          variant="danger"
+          className="mt-6"
+          loading={deletePlayer.isPending}
+          onPress={async () => {
+            await deletePlayer.mutateAsync(playerId!);
+            navigation.goBack();
+          }}
+        />
+      )}
 
       <Modal visible={showEdit} title="Edit Player" onClose={() => setShowEdit(false)}>
         <AddPlayerForm
@@ -213,15 +220,50 @@ export default function PlayerHubScreen() {
             <Button
               label={`Invite ${player.guardianEmail}`}
               onPress={async () => {
-                const member = await inviteMut.mutateAsync({ email: player.guardianEmail!, role: 'guardian' });
-                await linkGuardianMut.mutateAsync({
-                  guardianId: member.id,
-                  tryoutId: id!,
-                  playerId: playerId!,
-                });
-                setShowGuardianLink(false);
+                const email = player.guardianEmail!;
+                try {
+                  const member = await inviteMut.mutateAsync({ email, role: 'guardian' });
+                  await linkGuardianMut.mutateAsync({
+                    guardianId: member.id,
+                    tryoutId: id!,
+                    playerId: playerId!,
+                  });
+                  setShowGuardianLink(false);
+                } catch (error: any) {
+                  if (error.message?.includes('User not found')) {
+                    // Auto-create the user
+                    try {
+                      // Generate a random password (e.g. 6 chars)
+                      const defaultPassword = Math.random().toString(36).slice(-6) + 'Aa1!';
+                      const name = player.guardianName || 'Guardian';
+                      
+                      const newMember = await createAndInviteMut.mutateAsync({
+                        email,
+                        password: defaultPassword,
+                        name,
+                        role: 'guardian'
+                      });
+
+                      await linkGuardianMut.mutateAsync({
+                        guardianId: newMember.id,
+                        tryoutId: id!,
+                        playerId: playerId!,
+                      });
+                      
+                      setShowGuardianLink(false);
+                      Alert.alert(
+                        'Guardian Created', 
+                        `An account was created for ${email}. Please share their temporary password with them:\n\n${defaultPassword}`
+                      );
+                    } catch (createErr: any) {
+                      Alert.alert('Invite Failed', createErr.message || 'Could not auto-create guardian account.');
+                    }
+                  } else {
+                    Alert.alert('Invite Failed', error.message || 'Could not link guardian.');
+                  }
+                }
               }}
-              loading={inviteMut.isPending || linkGuardianMut.isPending}
+              loading={inviteMut.isPending || linkGuardianMut.isPending || createAndInviteMut.isPending}
             />
           ) : (
             <Text style={{ color: colors.inkMuted }}>

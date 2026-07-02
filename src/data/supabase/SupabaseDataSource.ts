@@ -1464,14 +1464,6 @@ export class SupabaseDataSource implements DataSource {
         .in('tryout_id', tryoutIds);
       assData = data || [];
     }
-
-    // Fetch athletes for guardians
-    const { data: athData } = await supabase
-      .from('athletes')
-      .select('id, guardian_email, guardian_name, created_at')
-      .eq('account_id', accountId)
-      .not('guardian_email', 'is', null);
-
     const members: Map<string, import('../types').OrgMember> = new Map();
 
     // Add memberships
@@ -1509,21 +1501,6 @@ export class SupabaseDataSource implements DataSource {
       });
     }
 
-    // Add guardians
-    for (const a of athData || []) {
-      const email = a.guardian_email;
-      if (!email || members.has(email.toLowerCase())) continue;
-      members.set(email.toLowerCase(), {
-        id: a.id,
-        orgId: accountId,
-        userId: undefined,
-        email: email,
-        name: a.guardian_name ?? undefined,
-        role: 'guardian',
-        status: 'active',
-        createdAt: a.created_at ? new Date(a.created_at).getTime() : Date.now(),
-      });
-    }
 
     return Array.from(members.values());
   }
