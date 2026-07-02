@@ -376,11 +376,18 @@ export function generateCloudCode(): string {
   return code;
 }
 
-export function playerDisplayName(p: { first: string; last: string; anonymous?: boolean }): string {
+export function playerDisplayName(p: { first?: string; last?: string; firstName?: string; lastName?: string; anonymous?: boolean }): string {
   if (p.anonymous) return 'Anonymous';
-  return `${p.first} ${p.last}`.trim();
+  const first = p.first ?? p.firstName ?? '';
+  const last = p.last ?? p.lastName ?? '';
+  const name = `${first} ${last}`.trim();
+  return name || 'Unknown Player';
 }
 
-export function playerInitials(p: { first: string; last: string }): string {
-  return `${p.first.charAt(0)}${p.last.charAt(0)}`.toUpperCase();
+export function playerInitials(p: { first?: string; last?: string; firstName?: string; lastName?: string }): string {
+  const first = p.first ?? p.firstName ?? '';
+  const last = p.last ?? p.lastName ?? '';
+  const f = first.charAt(0) || '';
+  const l = last.charAt(0) || '';
+  return `${f}${l}`.toUpperCase();
 }

@@ -441,6 +441,7 @@ export const OrgMemberSchema = z.object({
   orgId: z.string(),
   userId: z.string().optional(),
   email: z.string().email(),
+  name: z.string().optional(),
   role: z.enum(ORG_ROLES),
   status: z.enum(['pending', 'active', 'declined']).default('pending'),
   createdAt: z.number(),
@@ -487,3 +488,11 @@ export const DatabaseSchema = z.object({
 });
 
 export type Database = z.infer<typeof DatabaseSchema>;
+
+export interface GuardianRosterAthlete {
+  id: string;
+  firstName: string;
+  lastName: string;
+  tryouts: { id: string; name: string; sport: string }[];
+  seasons: { id: string; name: string; teamName: string; sport: string }[];
+}

@@ -54,6 +54,20 @@ export default function AssessmentTabNavigator() {
   
   // Extract ID from the nested params or directly
   const id = route.params?.params?.id || route.params?.id;
+  
+  const [assessorState, setAssessorState] = React.useState(() => {
+    return route.params?.params?.isAssessorOnly || route.params?.isAssessorOnly || false;
+  });
+
+  React.useEffect(() => {
+    const incoming = route.params?.params?.isAssessorOnly || route.params?.isAssessorOnly;
+    if (incoming !== undefined) {
+      setAssessorState(incoming);
+    }
+  }, [route.params]);
+
+  const isAssessorOnly = assessorState;
+  
   const tryoutQuery = useTryoutQuery(id);
   const tryout = tryoutQuery.data;
 
@@ -131,17 +145,19 @@ export default function AssessmentTabNavigator() {
           tabBarIcon: ({ color, focused }) => <TabIcon label="R" color={color} focused={focused} />,
         }}
       />
-      <Tab.Screen
-        name="AssessmentRegistrations"
-        component={AssessmentRegistrationsScreen}
-        initialParams={{ id }}
-        options={{
-          title: tryout?.name || 'Loading...',
-          tabBarLabel: 'Regs',
-          tabBarBadge: pendingRegs > 0 ? pendingRegs : undefined,
-          tabBarIcon: ({ color, focused }) => <TabIcon label="Q" color={color} focused={focused} />,
-        }}
-      />
+      {!isAssessorOnly && (
+        <Tab.Screen
+          name="AssessmentRegistrations"
+          component={AssessmentRegistrationsScreen}
+          initialParams={{ id }}
+          options={{
+            title: tryout?.name || 'Loading...',
+            tabBarLabel: 'Regs',
+            tabBarBadge: pendingRegs > 0 ? pendingRegs : undefined,
+            tabBarIcon: ({ color, focused }) => <TabIcon label="Q" color={color} focused={focused} />,
+          }}
+        />
+      )}
       <Tab.Screen
         name="AssessmentResults"
         component={AssessmentResultsScreen}
@@ -152,36 +168,42 @@ export default function AssessmentTabNavigator() {
           tabBarIcon: ({ color, focused }) => <TabIcon label="∑" color={color} focused={focused} />,
         }}
       />
-      <Tab.Screen
-        name="AssessmentSettings"
-        component={AssessmentSettingsScreen}
-        initialParams={{ id }}
-        options={{
-          title: tryout?.name || 'Loading...',
-          tabBarLabel: 'Settings',
-          tabBarIcon: ({ color, focused }) => <TabIcon label="⚙" color={color} focused={focused} />,
-        }}
-      />
-      <Tab.Screen
-        name="AssessmentExport"
-        component={AssessmentExportScreen}
-        initialParams={{ id }}
-        options={{
-          title: tryout?.name || 'Loading...',
-          tabBarLabel: 'Export',
-          tabBarIcon: ({ color, focused }) => <TabIcon label="↑" color={color} focused={focused} />,
-        }}
-      />
-      <Tab.Screen
-        name="AssessmentRubrics"
-        component={AssessmentRubricsScreen}
-        initialParams={{ id }}
-        options={{
-          title: tryout?.name || 'Loading...',
-          tabBarLabel: 'Rubrics',
-          tabBarIcon: ({ color, focused }) => <TabIcon label="≡" color={color} focused={focused} />,
-        }}
-      />
+      {!isAssessorOnly && (
+        <Tab.Screen
+          name="AssessmentSettings"
+          component={AssessmentSettingsScreen}
+          initialParams={{ id }}
+          options={{
+            title: tryout?.name || 'Loading...',
+            tabBarLabel: 'Settings',
+            tabBarIcon: ({ color, focused }) => <TabIcon label="⚙" color={color} focused={focused} />,
+          }}
+        />
+      )}
+      {!isAssessorOnly && (
+        <Tab.Screen
+          name="AssessmentExport"
+          component={AssessmentExportScreen}
+          initialParams={{ id }}
+          options={{
+            title: tryout?.name || 'Loading...',
+            tabBarLabel: 'Export',
+            tabBarIcon: ({ color, focused }) => <TabIcon label="↑" color={color} focused={focused} />,
+          }}
+        />
+      )}
+      {!isAssessorOnly && (
+        <Tab.Screen
+          name="AssessmentRubrics"
+          component={AssessmentRubricsScreen}
+          initialParams={{ id }}
+          options={{
+            title: tryout?.name || 'Loading...',
+            tabBarLabel: 'Rubrics',
+            tabBarIcon: ({ color, focused }) => <TabIcon label="≡" color={color} focused={focused} />,
+          }}
+        />
+      )}
 
       {/* Hidden Screens (still in the tab context but no tab button) */}
       <Tab.Screen name="AssessmentPlayer" component={AssessmentPlayerScreen} initialParams={{ id }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />

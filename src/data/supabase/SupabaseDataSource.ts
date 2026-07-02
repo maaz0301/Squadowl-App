@@ -131,7 +131,8 @@ export class SupabaseDataSource implements DataSource {
 
   // ─── shape mappers ──────────────────────────────────────────────────────────
   private rowToPlayer(p: Row, assessorNameById: Record<string, string>): Player {
-    const a = p.athletes ?? {};
+    const rawAthletes = p.athletes;
+    const a = Array.isArray(rawAthletes) ? rawAthletes[0] : rawAthletes ?? {};
     return {
       id: p.id,
       athleteId: a.id,
@@ -181,7 +182,7 @@ export class SupabaseDataSource implements DataSource {
   }
 
   private rowToAssessor(a: Row): Assessor {
-    return { name: a.name, email: a.email ?? '', role: a.role ?? 'assessor' };
+    return { name: a.name, email: a.email ?? '', role: a.role ?? 'assessor', status: a.status ?? 'accepted' };
   }
 
   private rowToRegistration(r: Row): Registration {
@@ -433,6 +434,7 @@ export class SupabaseDataSource implements DataSource {
       teams,
       seasons: seasonMap,
       orgs: {},
+      orgMembers: {},
       profile: profile ?? undefined,
     };
   }
@@ -526,6 +528,16 @@ export class SupabaseDataSource implements DataSource {
     // Exclude tryouts the user already owns (those show in listTryouts).
     const assigned = rows.filter((t) => t.account_id !== accountId);
     return this.assembleTryouts(assigned);
+  }
+
+  async rejectAssignedTryout(tryoutId: string): Promise<void> {
+    const { supabase, userId } = await this.ctx();
+    const { error } = await supabase
+      .from('tryout_assessors')
+      .delete()
+      .eq('tryout_id', tryoutId)
+      .eq('user_id', userId);
+    if (error) throw new Error(error.message);
   }
 
   async createTryout(form: CreateAssessmentForm): Promise<Tryout> {
@@ -1425,6 +1437,235 @@ export class SupabaseDataSource implements DataSource {
   async submitFeedback(submission: FeedbackSubmission): Promise<void> {
     // No feedback table yet; log + accept so the UI flow completes.
     console.log('[feedback]', JSON.stringify(submission));
+  }
+
+  // ─── Org Members ─────────────────────────────────────────────────────────────
+  async listOrgMembers(): Promise<import('../types').OrgMember[]> {
+    const { supabase, accountId } = await this.ctx();
+    
+    // Fetch memberships
+    const { data: memData } = await supabase
+      .from('memberships')
+      .select('id, user_id, role, created_at, profiles(email, display_name)')
+      .eq('account_id', accountId);
+
+    // Fetch tryouts for the account to get assessors
+    const { data: tryouts } = await supabase
+      .from('tryouts')
+      .select('id')
+      .eq('account_id', accountId);
+    
+    let assData: any[] = [];
+    if (tryouts && tryouts.length > 0) {
+      const tryoutIds = tryouts.map(t => t.id);
+      const { data } = await supabase
+        .from('tryout_assessors')
+        .select('id, user_id, role, joined_at, email, name')
+        .in('tryout_id', tryoutIds);
+      assData = data || [];
+    }
+
+    // Fetch athletes for guardians
+    const { data: athData } = await supabase
+      .from('athletes')
+      .select('id, guardian_email, guardian_name, created_at')
+      .eq('account_id', accountId)
+      .not('guardian_email', 'is', null);
+
+    const members: Map<string, import('../types').OrgMember> = new Map();
+
+    // Add memberships
+    for (const r of memData || []) {
+      const profiles: any = r.profiles;
+      const profile = Array.isArray(profiles) ? profiles[0] : profiles;
+      const email = profile?.email ?? '';
+      const name = profile?.display_name ?? undefined;
+      if (!email) continue;
+      members.set(email.toLowerCase(), {
+        id: r.id,
+        orgId: accountId,
+        userId: r.user_id,
+        email: email,
+        name,
+        role: r.role === 'owner' ? 'admin' : r.role,
+        status: 'active',
+        createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+      });
+    }
+
+    // Add assessors
+    for (const a of assData) {
+      const email = a.email;
+      if (!email || members.has(email.toLowerCase())) continue;
+      members.set(email.toLowerCase(), {
+        id: a.id,
+        orgId: accountId,
+        userId: a.user_id,
+        email: email,
+        name: a.name ?? undefined,
+        role: 'assessor',
+        status: 'active',
+        createdAt: a.joined_at ? new Date(a.joined_at).getTime() : Date.now(),
+      });
+    }
+
+    // Add guardians
+    for (const a of athData || []) {
+      const email = a.guardian_email;
+      if (!email || members.has(email.toLowerCase())) continue;
+      members.set(email.toLowerCase(), {
+        id: a.id,
+        orgId: accountId,
+        userId: undefined,
+        email: email,
+        name: a.guardian_name ?? undefined,
+        role: 'guardian',
+        status: 'active',
+        createdAt: a.created_at ? new Date(a.created_at).getTime() : Date.now(),
+      });
+    }
+
+    return Array.from(members.values());
+  }
+
+  async inviteOrgMember(email: string, role: import('../types').OrgRole): Promise<import('../types').OrgMember> {
+    const { supabase, accountId } = await this.ctx();
+
+    const { data, error } = await supabase.rpc('invite_org_member_by_email', {
+      account_uuid: accountId,
+      lookup_email: email,
+      org_role: role,
+    });
+
+    if (error) {
+      if (error.message.includes('User not found')) {
+        throw new Error('User not found. They must create an account first.');
+      }
+      throw error;
+    }
+
+    return data as import('../types').OrgMember;
+  }
+
+  async updateOrgMemberRole(memberId: string, role: import('../types').OrgRole): Promise<import('../types').OrgMember> {
+    const { supabase } = await this.ctx();
+    
+    const { data, error } = await supabase
+      .from('memberships')
+      .update({ role })
+      .eq('id', memberId)
+      .select()
+      .maybeSingle();
+
+    if (!error && !data) {
+      await supabase.from('tryout_assessors').update({ role }).eq('id', memberId);
+    } else if (error) {
+      throw new Error(error.message);
+    }
+    return {} as any;
+  }
+
+  async removeOrgMember(memberId: string): Promise<void> {
+    const { supabase } = await this.ctx();
+    const { error } = await supabase.from('memberships').delete().eq('id', memberId);
+    if (error) throw new Error(error.message);
+  }
+
+  async linkGuardianToAthlete(guardianId: string, tryoutId: string, playerId: string): Promise<import('../types').Player> {
+    const { supabase } = await this.ctx();
+
+    const { data, error } = await supabase
+      .from('athletes')
+      .update({ guardian_user_id: guardianId })
+      .eq('id', playerId)
+      .select(`
+        id,
+        first_name,
+        last_name,
+        year_of_birth,
+        default_position,
+        guardian_name,
+        guardian_email,
+        guardian_phone,
+        guardian_user_id
+      `)
+      .single();
+
+    if (error) throw error;
+
+    // Fetch the updated player from the tryout view to return the expected Player type
+    const { data: updatedPlayer, error: fetchError } = await supabase
+      .from('tryout_participants')
+      .select(`
+        id,
+        jersey,
+        position,
+        athletes(
+          id,
+          first_name,
+          last_name,
+          year_of_birth,
+          guardian_name,
+          guardian_email,
+          guardian_user_id
+        )
+      `)
+      .eq('athlete_id', playerId)
+      .eq('tryout_id', tryoutId)
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    const ath = Array.isArray(updatedPlayer.athletes) ? updatedPlayer.athletes[0] : updatedPlayer.athletes;
+
+    return {
+      id: ath.id,
+      first: ath.first_name,
+      last: ath.last_name,
+      pos: updatedPlayer.position,
+      jersey: updatedPlayer.jersey,
+      guardianName: ath.guardian_name,
+      guardianEmail: ath.guardian_email,
+      linkedGuardianId: ath.guardian_user_id,
+      athleteId: ath.id,
+    } as import('../types').Player;
+  }
+
+  async getGuardianRosters(): Promise<import('../types').GuardianRosterAthlete[]> {
+    const { supabase, userId } = await this.ctx();
+    if (!userId) return [];
+
+    const { data, error } = await supabase
+      .from('athletes')
+      .select(`
+        id,
+        first_name,
+        last_name,
+        tryout_participants(
+          tryouts(id, name, sport)
+        ),
+        season_roster(
+          seasons(id, name, team_name, sport)
+        )
+      `)
+      .eq('guardian_user_id', userId);
+
+    if (error) {
+      console.error('Failed to fetch guardian rosters:', error);
+      return [];
+    }
+
+    return (data as any[]).map((row) => ({
+      id: row.id,
+      firstName: row.first_name,
+      lastName: row.last_name,
+      tryouts: (row.tryout_participants || [])
+        .map((tp: any) => tp.tryouts)
+        .filter(Boolean),
+      seasons: (row.season_roster || [])
+        .map((sr: any) => sr.seasons)
+        .filter(Boolean),
+    }));
   }
 }
 

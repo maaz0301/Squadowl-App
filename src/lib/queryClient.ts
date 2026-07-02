@@ -30,4 +30,5 @@ export const queryKeys = {
   adminStats: ['admin', 'stats'] as const,
   adminUsers: ['admin', 'users'] as const,
   aiPlayer: (tryoutId: string, playerId: string) => ['ai', 'player', tryoutId, playerId] as const,
+  guardianRosters: ['guardian', 'rosters'] as const,
 };

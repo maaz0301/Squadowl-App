@@ -460,6 +460,11 @@ returns boolean language sql stable security definer set search_path = public as
       public.has_account_role(at.account_id, array['owner','admin','coach']::membership_role[])
       or at.guardian_user_id = auth.uid()
     )
+  )
+  or exists (
+    select 1 from public.tryout_participants tp
+    join public.tryout_assessors ta on ta.tryout_id = tp.tryout_id
+    where tp.athlete_id = a and ta.user_id = auth.uid()
   );
 $$;
 

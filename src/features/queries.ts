@@ -16,6 +16,7 @@ import {
   type RubricCategory,
 } from '@/data/rubrics';
 import type { AssessorProgress, PlayerResult, Recommendation } from '@/data/types';
+import { useAuthStore } from '@/state/authStore';
 
 // ---- Auth ----
 export function useProfileQuery() {
@@ -39,6 +40,20 @@ export function useCreateTeamMutation() {
     mutationFn: ({ name, season }: { name: string; season?: string }) =>
       getDataSource().createTeam(name, season),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teams }),
+  });
+}
+
+export function useRejectAssignmentMutation() {
+  const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.session?.user);
+  return useMutation({
+    mutationFn: async (tryoutId: string) => {
+      const ds = getDataSource();
+      return ds.rejectAssignedTryout(tryoutId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['assignedTryouts', user?.id, user?.email] });
+    },
   });
 }
 
@@ -386,7 +401,17 @@ export function useLinkGuardianMutation() {
   return useMutation({
     mutationFn: ({ guardianId, tryoutId, playerId }: { guardianId: string; tryoutId: string; playerId: string }) =>
       getDataSource().linkGuardianToAthlete(guardianId, tryoutId, playerId),
-    onSuccess: (_, { tryoutId }) => qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) }),
+    onSuccess: (_, { tryoutId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
+      qc.invalidateQueries({ queryKey: queryKeys.guardianRosters });
+    },
+  });
+}
+
+export function useGuardianRostersQuery() {
+  return useQuery({
+    queryKey: queryKeys.guardianRosters,
+    queryFn: () => getDataSource().getGuardianRosters(),
   });
 }
 

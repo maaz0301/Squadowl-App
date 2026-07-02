@@ -23,6 +23,8 @@ import {
   useTryoutsQuery,
   useSeasonsQuery,
   useAssignedTryoutsQuery,
+  useRejectAssignmentMutation,
+  useGuardianRostersQuery,
 } from '@/features/queries';
 import { APP_CONFIG } from '@/config/app';
 import { canUseFeature, isAtAssessmentLimit } from '@/data/plans';
@@ -116,11 +118,13 @@ export default function DashboardScreen() {
   const tryoutsQuery = useTryoutsQuery(false);
   const seasonsQuery = useSeasonsQuery();
   const assignedQuery = useAssignedTryoutsQuery();
+  const guardianQuery = useGuardianRostersQuery();
+  const rejectAssignmentMut = useRejectAssignmentMutation();
 
   const openAssigned = (id: string) => {
     setCurrentTryout(id);
     setActiveAssessor(user?.displayName ?? null);
-    navigation.navigate('AssessmentFlow', { screen: 'AssessmentRinkside', params: { id: id } });
+    navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: id, isAssessorOnly: true } });
   };
 
   if (teamsQuery.isLoading || tryoutsQuery.isLoading || seasonsQuery.isLoading) {
@@ -215,12 +219,61 @@ export default function DashboardScreen() {
                       {t.sport} · {t.roster.length} players
                     </Text>
                   </View>
-                  <Badge label="Score" variant="brand" />
+                  <View className="flex-row items-center gap-2">
+                    <Badge label="Score" variant="brand" />
+                  </View>
                 </Card>
               </Pressable>
             ))}
           </View>
         ) : null}
+        
+        {guardianQuery.data && guardianQuery.data.length > 0 ? (
+          <View className="mb-4">
+            <Text
+              className="text-xs font-bold uppercase tracking-wider mb-2"
+              style={{ color: colors.inkMuted }}
+            >
+              My Athletes
+            </Text>
+            {guardianQuery.data.map((ath) => (
+              <Card key={ath.id} className="mb-2">
+                <Text className="text-base font-display font-bold mb-1" style={{ color: colors.ink }}>
+                  {ath.firstName} {ath.lastName}
+                </Text>
+                
+                {ath.tryouts.length === 0 && ath.seasons.length === 0 ? (
+                  <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                    Not assigned to any tryouts or seasons yet.
+                  </Text>
+                ) : null}
+
+                {ath.tryouts.length > 0 ? (
+                  <View className="mt-2">
+                    <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Tryouts</Text>
+                    {ath.tryouts.map(t => (
+                      <Pressable key={t.id} onPress={() => openTryout(t.id)}>
+                        <Text className="text-sm" style={{ color: colors.primary }}>• {t.name} ({t.sport})</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
+
+                {ath.seasons.length > 0 ? (
+                  <View className="mt-2">
+                    <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Seasons</Text>
+                    {ath.seasons.map(s => (
+                      <Pressable key={s.id} onPress={() => navigation.navigate('SeasonDetail', { id: s.id })}>
+                        <Text className="text-sm" style={{ color: colors.primary }}>• {s.name} - {s.teamName}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
+              </Card>
+            ))}
+          </View>
+        ) : null}
+
         <Tabs
           tabs={[
             { key: 'assessments', label: 'Assessments', badge: tryoutsQuery.data?.length },

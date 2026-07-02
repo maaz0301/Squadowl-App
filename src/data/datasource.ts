@@ -12,6 +12,7 @@ import type {
   EnterprisePayment,
   Evaluation,
   ExportFormat,
+  GuardianRosterAthlete,
   Org,
   OrgMember,
   OrgRole,
@@ -50,6 +51,7 @@ export interface DataSource {
   listTryouts(includeArchived?: boolean): Promise<Tryout[]>;
   /** Tryouts the current user is invited to as an assessor (not owned by their account). */
   listAssignedTryouts(): Promise<Tryout[]>;
+  rejectAssignedTryout(tryoutId: string): Promise<void>;
   getTryout(id: string): Promise<Tryout | null>;
   createTryout(form: CreateAssessmentForm): Promise<Tryout>;
   updateTryout(id: string, updates: Partial<Tryout>): Promise<Tryout>;
@@ -113,4 +115,5 @@ export interface DataSource {
   addSeasonPlayer(seasonId: string, player: Omit<import('./types').SeasonPlayer, 'id'>): Promise<import('./types').SeasonPlayer>;
   updateTeam(id: string, updates: Partial<Team>): Promise<Team>;
   importScanScores(tryoutId: string, scores: { playerId: string; rubricKey: string; value: number }[]): Promise<void>;
+  getGuardianRosters(): Promise<GuardianRosterAthlete[]>;
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { FlatList, Text, View } from 'react-native';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, Header, Input, Screen, Tabs } from '@/components/ui';
+import { Badge, Button, Card, Header, Input, Screen, Tabs, Modal } from '@/components/ui';
 import {
   useOrgMembersQuery,
   useInviteMemberMutation,
@@ -23,6 +23,8 @@ export default function OrganizationMembersScreen() {
   
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<OrgRole>('coach');
+  const [showRolePicker, setShowRolePicker] = useState(false);
+  const [selectedMemberForRole, setSelectedMemberForRole] = useState<OrgMember | null>(null);
 
   const { data: members = [], isLoading } = useOrgMembersQuery();
   const inviteMut = useInviteMemberMutation();
@@ -35,10 +37,7 @@ export default function OrganizationMembersScreen() {
     setInviteEmail('');
   };
 
-  const handleRoleChange = async (member: OrgMember) => {
-    const nextRoleIndex = (ORG_ROLES.indexOf(member.role) + 1) % ORG_ROLES.length;
-    await updateRoleMut.mutateAsync({ memberId: member.id, role: ORG_ROLES[nextRoleIndex] });
-  };
+  // Removed handleRoleChange since it's now handled by the modal
 
   const handleRemove = async (memberId: string) => {
     await removeMut.mutateAsync(memberId);
@@ -80,11 +79,7 @@ export default function OrganizationMembersScreen() {
                 <Button
                   label={inviteRole.toUpperCase()}
                   variant="secondary"
-                  onPress={() => {
-                    const staffRoles = ['admin', 'coach', 'assessor'] as const;
-                    const idx = staffRoles.indexOf(inviteRole as any);
-                    setInviteRole(staffRoles[(idx + 1) % staffRoles.length]);
-                  }}
+                  onPress={() => setShowRolePicker(true)}
                 />
               )}
             </View>
@@ -113,11 +108,16 @@ export default function OrganizationMembersScreen() {
         }
         renderItem={({ item }) => (
           <Card className="mb-2 flex-row justify-between items-center">
-            <View>
-              <Text className="text-base font-bold" style={{ color: colors.ink }}>
-                {item.email}
+            <View className="flex-1 mr-4">
+              <Text className="text-base font-bold" style={{ color: colors.ink }} numberOfLines={1}>
+                {item.name || item.email}
               </Text>
-              <View className="flex-row gap-2 mt-1">
+              {!!item.name && item.name !== item.email && (
+                <Text className="text-sm mt-0.5" style={{ color: colors.inkMuted }} numberOfLines={1}>
+                  {item.email}
+                </Text>
+              )}
+              <View className="flex-row gap-2 mt-1.5">
                 <Badge label={item.role.toUpperCase()} variant="brand" />
                 <Badge
                   label={item.status.toUpperCase()}
@@ -125,15 +125,14 @@ export default function OrganizationMembersScreen() {
                 />
               </View>
             </View>
-            {canManageOrganization && (
-              <View className="flex-row gap-2">
+            {canManageOrganization && item.role !== 'admin' && (
+              <View className="flex-row gap-2 items-center">
                 {tab === 'staff' && (
                   <Button
                     label="Role"
                     variant="ghost"
                     size="sm"
-                    onPress={() => handleRoleChange(item)}
-                    loading={updateRoleMut.isPending}
+                    onPress={() => setSelectedMemberForRole(item)}
                   />
                 )}
                 <Button
@@ -148,6 +147,51 @@ export default function OrganizationMembersScreen() {
           </Card>
         )}
       />
+
+      <Modal
+        visible={showRolePicker}
+        title="Select Role"
+        onClose={() => setShowRolePicker(false)}
+        footer={<View />}
+      >
+        <View className="gap-2">
+          {(['admin', 'coach', 'assessor'] as const).map((r) => (
+            <Button
+              key={r}
+              label={r.toUpperCase()}
+              variant={inviteRole === r ? 'primary' : 'ghost'}
+              onPress={() => {
+                setInviteRole(r);
+                setShowRolePicker(false);
+              }}
+            />
+          ))}
+        </View>
+      </Modal>
+
+      <Modal
+        visible={!!selectedMemberForRole}
+        title="Update Role"
+        onClose={() => setSelectedMemberForRole(null)}
+        footer={<View />}
+      >
+        <View className="gap-2">
+          {(['admin', 'coach', 'assessor'] as const).map((r) => (
+            <Button
+              key={r}
+              label={r.toUpperCase()}
+              variant={selectedMemberForRole?.role === r ? 'primary' : 'ghost'}
+              onPress={async () => {
+                if (selectedMemberForRole) {
+                  await updateRoleMut.mutateAsync({ memberId: selectedMemberForRole.id, role: r });
+                }
+                setSelectedMemberForRole(null);
+              }}
+              loading={updateRoleMut.isPending && selectedMemberForRole?.role !== r}
+            />
+          ))}
+        </View>
+      </Modal>
     </Screen>
   );
 }
