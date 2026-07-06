@@ -235,6 +235,7 @@ export const SignupFormSchema = z.object({
   displayName: z.string().min(2, 'Name required'),
   email: z.string().email('Valid email required'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
+  accountType: z.enum(['coach', 'guardian']).default('coach'),
 });
 
 /** Create assessment form */
@@ -495,6 +496,11 @@ export interface GuardianRosterAthlete {
   id: string;
   firstName: string;
   lastName: string;
-  tryouts: { id: string; name: string; sport: string }[];
+  tryouts: { 
+    id: string; 
+    name: string; 
+    sport: string;
+    sessions: { name: string; result?: string; date?: number; scores?: Record<string, number> }[];
+  }[];
   seasons: { id: string; name: string; teamName: string; sport: string }[];
 }

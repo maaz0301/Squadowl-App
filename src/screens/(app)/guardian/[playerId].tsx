@@ -80,6 +80,40 @@ function EventCard({ item, playerId, colors }: { item: SeasonEvent & { seasonNam
   );
 }
 
+import { useNavigation } from '@react-navigation/native';
+
+function TryoutSeasonCard({ item, colors, playerId }: { item: any; colors: any; playerId: string }) {
+  const navigation = useNavigation<any>();
+
+  return (
+    <Pressable onPress={() => { 
+      if (item._type === 'tryout') {
+        navigation.navigate('GuardianAssessmentDetails', { playerId, tryoutId: item.id });
+      }
+    }}>
+      <Card accent className="mb-3">
+        <View className="flex-row justify-between items-start">
+          <View className="flex-1">
+            <Text className="text-lg font-display font-bold mb-1" style={{ color: colors.ink }}>
+              {item.name}
+            </Text>
+            {item._type === 'season' ? (
+              <Text className="text-sm mb-2" style={{ color: colors.inkMuted }}>
+                {item.teamName} · {item.sport}
+              </Text>
+            ) : (
+              <Text className="text-sm mb-2" style={{ color: colors.inkMuted }}>
+                Tryout · {item.sport}
+              </Text>
+            )}
+          </View>
+          <Badge label={item._type === 'season' ? 'Season' : 'Tryout'} variant={item._type === 'season' ? 'info' : 'brand'} />
+        </View>
+      </Card>
+    </Pressable>
+  );
+}
+
 export default function GuardianPortalScreen() {
   const route = useRoute<any>();
   const playerId = route.params?.playerId;
@@ -177,27 +211,7 @@ export default function GuardianPortalScreen() {
               message="This athlete isn't assigned to any tryouts or seasons yet."
             />
           }
-          renderItem={({ item }) => (
-            <Card accent className="mb-3">
-              <View className="flex-row justify-between items-start">
-                <View className="flex-1">
-                  <Text className="text-lg font-display font-bold mb-1" style={{ color: colors.ink }}>
-                    {item.name}
-                  </Text>
-                  {item._type === 'season' ? (
-                    <Text className="text-sm mb-2" style={{ color: colors.inkMuted }}>
-                      {item.teamName} · {item.sport}
-                    </Text>
-                  ) : (
-                    <Text className="text-sm mb-2" style={{ color: colors.inkMuted }}>
-                      Tryout · {item.sport}
-                    </Text>
-                  )}
-                </View>
-                <Badge label={item._type === 'season' ? 'Season' : 'Tryout'} variant={item._type === 'season' ? 'info' : 'brand'} />
-              </View>
-            </Card>
-          )}
+          renderItem={({ item }) => <TryoutSeasonCard item={item} colors={colors} playerId={playerId} />}
         />
       ) : tab === 'schedule' ? (
         <FlatList

@@ -31,7 +31,7 @@ import type { TeamBuilderConfig, TeamBuilderState } from './teamBuilder';
 export interface DataSource {
   // Auth
   login(email: string, password: string): Promise<AuthSession>;
-  signup(displayName: string, email: string, password: string): Promise<AuthSession>;
+  signup(displayName: string, email: string, password: string, accountType: string): Promise<AuthSession>;
   logout(): Promise<void>;
   getSession(): Promise<AuthSession | null>;
   getProfile(): Promise<UserProfile | null>;

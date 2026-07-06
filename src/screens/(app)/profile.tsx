@@ -7,7 +7,7 @@ import { Badge, Button, Card, Header, Input, Screen } from '@/components/ui';
 import { useThemeStore } from '@/state/themeStore';
 import { useUser, useAuthStore, usePermissions } from '@/state/authStore';
 import { getPlanDefinition, canUseFeature } from '@/data/plans';
-import { useUpdateProfileMutation, useUpdatePasswordMutation } from '@/features/queries';
+import { useUpdateProfileMutation, useUpdatePasswordMutation, useGuardianRostersQuery, useTeamsQuery, useTryoutsQuery, useSeasonsQuery } from '@/features/queries';
 
 export default function ProfileScreen() {
   const colors = useThemeColors();
@@ -18,7 +18,20 @@ export default function ProfileScreen() {
   const toggleTheme = useThemeStore((s) => s.toggle);
   const updateProfile = useUpdateProfileMutation();
   const updatePasswordMut = useUpdatePasswordMutation();
-  const { isGuardian } = usePermissions();
+  const { role } = usePermissions();
+  const guardianQuery = useGuardianRostersQuery();
+  const teamsQuery = useTeamsQuery();
+  const tryoutsQuery = useTryoutsQuery(false);
+  const seasonsQuery = useSeasonsQuery();
+
+  const isGuardianOnly = !!(
+    guardianQuery.data &&
+    guardianQuery.data.length > 0 &&
+    tryoutsQuery.data?.length === 0 &&
+    seasonsQuery.data?.length === 0 &&
+    teamsQuery.data?.length === 0
+  );
+
   const [editing, setEditing] = useState(false);
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [organization, setOrganization] = useState(user?.organization ?? '');
@@ -85,7 +98,10 @@ export default function ProfileScreen() {
             {user?.organization ? (
               <Text style={{ color: colors.inkFaint }}>{user.organization}</Text>
             ) : null}
-            {!isGuardian && <Badge label={plan.name} variant="brand" />}
+            <View className="flex-row gap-2 mt-1">
+              <Badge label={`Role: ${isGuardianOnly ? 'guardian' : role}`} variant="info" />
+              {!isGuardianOnly && <Badge label={`Plan: ${plan.name}`} variant="brand" />}
+            </View>
             
             <View className="flex-row gap-2 mt-2">
               <Button label="Edit Account" variant="ghost" size="sm" onPress={() => setEditing(true)} />
@@ -104,19 +120,41 @@ export default function ProfileScreen() {
         ) : null}
       </Card>
 
+      {!isGuardianOnly && (
+        <>
+          <Card className="mb-4 gap-2">
+            <Text className="font-display font-bold" style={{ color: colors.ink }}>
+              Plan Limits
+            </Text>
+            <Text style={{ color: colors.inkMuted }}>
+              Assessments: {plan.limits.assessments} · Players: {plan.limits.players} · Teams:{' '}
+              {plan.limits.teams}
+            </Text>
+            <Button label="Upgrade Plan" variant="secondary" onPress={() => navigation.navigate('Upgrade')} />
+          </Card>
 
+          <Card className="mb-4 gap-2">
+            <Text className="font-display font-bold" style={{ color: colors.ink }}>
+              Quick Links
+            </Text>
+            <Button label="Search" variant="ghost" onPress={() => navigation.navigate('Search')} />
+            <Button label="Manage Organization Members" variant="ghost" onPress={() => navigation.navigate('OrganizationMembers')} />
+            <Button label="Archived Assessments" variant="ghost" onPress={() => navigation.navigate('ArchivedAssessments')} />
+            <Button label="Send Feedback" variant="ghost" onPress={() => navigation.navigate('Feedback')} />
+            <Button label="Gift a Coach" variant="ghost" onPress={() => navigation.navigate('FriendPackages')} />
+          </Card>
 
-      {!isGuardian && (
-        <Card className="mb-4 gap-2">
+          <Card className="mb-4 gap-2">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>
             Appearance
           </Text>
           <Text style={{ color: colors.inkMuted }}>Theme: {themeMode === 'system' ? 'System' : themeMode}</Text>
           <Button label="Toggle Dark/Light" variant="ghost" onPress={toggleTheme} />
         </Card>
+        </>
       )}
 
-      {!isGuardian && canUseFeature(user?.planTier ?? 'free', 'enterprise') ? (
+      {!isGuardianOnly && canUseFeature(user?.planTier ?? 'free', 'enterprise') ? (
         <>
           <Button label="Enterprise Dashboard" onPress={() => navigation.navigate('Enterprise')} className="mb-3" />
           <Button

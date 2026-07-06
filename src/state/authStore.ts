@@ -10,7 +10,7 @@ interface AuthState {
   setSession: (session: AuthSession | null) => void;
   setHydrated: (v: boolean) => void;
   login: (email: string, password: string) => Promise<void>;
-  signup: (displayName: string, email: string, password: string) => Promise<void>;
+  signup: (displayName: string, email: string, password: string, accountType: string) => Promise<void>;
   logout: () => Promise<void>;
   restoreSession: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
@@ -27,8 +27,8 @@ export const useAuthStore = create<AuthState>()(
         const session = await getDataSource().login(email, password);
         set({ session });
       },
-      signup: async (displayName, email, password) => {
-        const session = await getDataSource().signup(displayName, email, password);
+      signup: async (displayName, email, password, accountType) => {
+        const session = await getDataSource().signup(displayName, email, password, accountType);
         set({ session });
       },
       logout: async () => {

@@ -337,12 +337,12 @@ export class SupabaseDataSource implements DataSource {
     return this.toAuthSession(data.session, user);
   }
 
-  async signup(displayName: string, email: string, password: string): Promise<AuthSession> {
+  async signup(displayName: string, email: string, password: string, accountType: string): Promise<AuthSession> {
     const supabase = getSupabase();
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { display_name: displayName } },
+      options: { data: { display_name: displayName, account_type: accountType } },
     });
     if (error) throw new Error(error.message);
     let session = data.session;
@@ -1671,7 +1671,8 @@ export class SupabaseDataSource implements DataSource {
         first_name,
         last_name,
         tryout_participants(
-          tryouts(id, name, sport)
+          tryouts(id, name, sport),
+          evaluations(session, recommendation, created_at, evaluation_scores(rubric_key, value))
         ),
         season_roster(
           seasons(id, name, team_name, sport)
@@ -1689,7 +1690,49 @@ export class SupabaseDataSource implements DataSource {
       firstName: row.first_name,
       lastName: row.last_name,
       tryouts: (row.tryout_participants || [])
-        .map((tp: any) => tp.tryouts)
+        .map((tp: any) => {
+          if (!tp.tryouts) return null;
+          
+          const evals = tp.evaluations || [];
+          const sessionMap = new Map<string, { result: string; date: number; scores: Record<string, number> }>();
+          
+          for (const e of evals) {
+            if (e.recommendation) {
+              const sessionName = e.session || 'Session 1';
+              const t = e.created_at ? new Date(e.created_at).getTime() : 0;
+              const existing = sessionMap.get(sessionName);
+              if (!existing || t > existing.date) {
+                // Map scores from evaluation_scores array to Record
+                const scoresRecord: Record<string, number> = {};
+                if (e.evaluation_scores && Array.isArray(e.evaluation_scores)) {
+                  for (const score of e.evaluation_scores) {
+                    if (score.rubric_key && typeof score.value === 'number') {
+                      scoresRecord[score.rubric_key] = score.value;
+                    }
+                  }
+                }
+                
+                sessionMap.set(sessionName, { 
+                  result: REC_FROM_DB[e.recommendation] || e.recommendation, 
+                  date: t,
+                  scores: scoresRecord
+                });
+              }
+            }
+          }
+          
+          const sessions = Array.from(sessionMap.entries()).map(([name, data]) => ({
+            name,
+            result: data.result,
+            date: data.date,
+            scores: Object.keys(data.scores).length > 0 ? data.scores : undefined
+          })).sort((a, b) => a.name.localeCompare(b.name));
+
+          return {
+            ...tp.tryouts,
+            sessions
+          };
+        })
         .filter(Boolean),
       seasons: (row.season_roster || [])
         .map((sr: any) => sr.seasons)
