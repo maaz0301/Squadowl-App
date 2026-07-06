@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Alert, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 
@@ -46,7 +46,7 @@ export default function ScoreScreen() {
   const existingEval = evalId
     ? tryoutQuery.data?.evals.find((e) => e.id === evalId)
     : tryoutQuery.data?.evals
-        .filter((e) => e.playerId === playerId)
+        .filter((e) => e.playerId === playerId && e.evaluator === activeAssessor?.name)
         .sort((a, b) => b.createdAt - a.createdAt)[0];
 
   const categories = useMemo(() => {
@@ -103,13 +103,17 @@ export default function ScoreScreen() {
   const overall = weightedOverall(scores ?? {}, categories, weights);
 
   const onSubmit = handleSubmit(async (data) => {
-    await saveEval.mutateAsync({
-      playerId: playerId!,
-      form: data,
-      evalId: evalId ?? undefined,
-    });
-    clearWorkingScores();
-    navigation.goBack();
+    try {
+      await saveEval.mutateAsync({
+        playerId: playerId!,
+        form: data,
+        evalId: evalId ?? undefined,
+      });
+      clearWorkingScores();
+      navigation.goBack();
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to save evaluation.');
+    }
   });
 
   return (
@@ -122,18 +126,21 @@ export default function ScoreScreen() {
             Scoring as
           </Text>
           <View className="flex-row flex-wrap">
-            {tryoutQuery.data.assessors.map((a, i) => (
-              <Chip
-                key={`${a.name}-${i}`}
-                label={a.name}
-                active={activeAssessor === a.name}
-                onPress={() => setActiveAssessor(a.name)}
-              />
-            ))}
+            {tryoutQuery.data.assessors.map((a, i) => {
+              const isActive = activeAssessor?.name === a.name && activeAssessor?.email === a.email;
+              return (
+                <Chip
+                  key={`${a.name}-${a.email}-${i}`}
+                  label={a.name}
+                  active={isActive}
+                  onPress={() => setActiveAssessor(isActive ? null : a)}
+                />
+              );
+            })}
           </View>
           {activeAssessor ? (
             <Text className="text-sm mt-1" style={{ color: colors.inkFaint }}>
-              Evaluations tagged to {activeAssessor}
+              Evaluations tagged to {activeAssessor.name}
             </Text>
           ) : null}
         </View>

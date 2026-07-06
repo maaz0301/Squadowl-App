@@ -6,10 +6,10 @@ CREATE OR REPLACE FUNCTION public.create_user_with_password(
   password text,
   display_name text
 )
-RETURNS uuid
+RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   new_user_id uuid;
@@ -32,7 +32,7 @@ BEGIN
     'authenticated',
     'authenticated',
     email,
-    crypt(password, gen_salt('bf')),
+    extensions.crypt(password, extensions.gen_salt('bf')),
     now(),
     '{"provider": "email", "providers": ["email"]}',
     jsonb_build_object('display_name', display_name),
@@ -41,9 +41,9 @@ BEGIN
     ''
   );
   
-  -- Insert the identity so they can log in with email
+  -- Insert into auth.identities to ensure the user can actually log in
   INSERT INTO auth.identities (
-    id, user_id, provider_id, identity_data, provider, created_at, updated_at
+    id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at
   ) VALUES (
     gen_random_uuid(),
     new_user_id,
@@ -54,7 +54,7 @@ BEGIN
     now()
   );
 
-  RETURN new_user_id;
+  RETURN json_build_object('id', new_user_id);
 END;
 $$;
 

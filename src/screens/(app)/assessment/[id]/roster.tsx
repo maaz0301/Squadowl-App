@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
@@ -38,6 +38,17 @@ export default function RosterScreen() {
   const user = useUser();
   const [showAdd, setShowAdd] = useState(false);
   const [showTools, setShowTools] = useState(false);
+
+  useEffect(() => {
+    if (tryoutQuery.data && user && !activeAssessor) {
+      const me = tryoutQuery.data.assessors.find(
+        (a) => (user.email && a.email === user.email) || (user.displayName && a.name === user.displayName)
+      );
+      if (me) {
+        setActiveAssessor(me);
+      }
+    }
+  }, [tryoutQuery.data, user, activeAssessor, setActiveAssessor]);
 
   const filteredRoster = useMemo(() => {
     if (!tryoutQuery.data) return [];
@@ -96,14 +107,25 @@ export default function RosterScreen() {
                 Scoring as
               </Text>
               <View className="flex-row flex-wrap">
-                {tryout.assessors.map((a, i) => (
-                  <Chip
-                    key={`${a.name}-${i}`}
-                    label={a.name}
-                    active={activeAssessor === a.name}
-                    onPress={() => setActiveAssessor(activeAssessor === a.name ? null : a.name)}
-                  />
-                ))}
+                {tryout.assessors.map((a, i) => {
+                  const isMe = !!((user?.email && a.email === user.email) || (user?.displayName && a.name === user.displayName));
+                  const tags = [];
+                  if (isMe) tags.push('You');
+                  if (a.role === 'lead') tags.push('Owner');
+                  const label = tags.length ? `${a.name} (${tags.join(', ')})` : a.name;
+
+                  const isActive = activeAssessor?.name === a.name && activeAssessor?.email === a.email;
+
+                  return (
+                    <Chip
+                      key={`${a.name}-${a.email}-${i}`}
+                      label={label}
+                      active={isActive}
+                      highlight={isMe}
+                      onPress={() => setActiveAssessor(isActive ? null : a)}
+                    />
+                  );
+                })}
               </View>
             </View>
           ) : null}

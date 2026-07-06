@@ -1,4 +1,4 @@
-import type { Session, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '@/lib/supabase';
 import type { DataSource } from '../datasource';
 import type {
@@ -147,6 +147,7 @@ export class SupabaseDataSource implements DataSource {
       guardianName: a.guardian_name ?? undefined,
       guardianEmail: a.guardian_email ?? undefined,
       guardianPhone: a.guardian_phone ?? undefined,
+      linkedGuardianId: a.guardian_user_id ?? undefined,
       yearOfBirth: a.year_of_birth != null ? String(a.year_of_birth) : undefined,
       currentPosition: a.default_position ?? undefined,
       currentTeam: p.current_team ?? undefined,
@@ -403,6 +404,12 @@ export class SupabaseDataSource implements DataSource {
       await supabase.from('accounts').update(accPatch).eq('id', accountId);
     }
     return this.loadUserProfile(userId);
+  }
+
+  async updatePassword(password: string): Promise<void> {
+    const { supabase } = await this.ctx();
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw new Error(error.message);
   }
 
   async checkUserExistsByEmail(email: string): Promise<boolean> {
@@ -735,6 +742,27 @@ export class SupabaseDataSource implements DataSource {
   // ─── Players ──────────────────────────────────────────────────────────────────
   private async createAthlete(accountId: string, fields: Row): Promise<string> {
     const supabase = getSupabase();
+
+    if (fields.guardian_email && !fields.guardian_user_id) {
+      try {
+        const { data: exists } = await supabase.rpc('check_user_exists', { lookup_email: fields.guardian_email });
+        if (!exists) {
+          const defaultPassword = Math.random().toString(36).slice(-8) + 'Aa1!';
+          const name = fields.guardian_name || 'Guardian';
+          const { data: newUserId, error } = await supabase.rpc('create_user_with_password', {
+             email: fields.guardian_email,
+             password: defaultPassword,
+             display_name: name
+          });
+          if (newUserId && !error) {
+             fields.guardian_user_id = newUserId;
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to auto-create guardian account:', err);
+      }
+    }
+
     const row = unwrap(
       await supabase.from('athletes').insert({ account_id: accountId, ...fields }).select('id').single(),
     ) as Row;
@@ -1503,6 +1531,30 @@ export class SupabaseDataSource implements DataSource {
 
 
     return Array.from(members.values());
+  }
+
+  async createAndInviteUser(email: string, password: string, name: string, role: import('../types').OrgRole): Promise<import('../types').OrgMember> {
+    const { supabase } = await this.ctx();
+
+    // Create a temporary client that doesn't persist sessions, so it doesn't log the coach out!
+    const tempClient = createClient(
+      process.env.EXPO_PUBLIC_SUPABASE_URL || '',
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+      { auth: { persistSession: false, autoRefreshToken: false } }
+    );
+
+    // This securely creates the user using Supabase's official API, bypassing all manual SQL hackiness
+    const { error: createError } = await tempClient.auth.signUp({
+      email,
+      password,
+      options: { data: { display_name: name } }
+    });
+
+    if (createError && !createError.message.includes('User already registered')) {
+      throw createError;
+    }
+
+    return this.inviteOrgMember(email, role);
   }
 
   async inviteOrgMember(email: string, role: import('../types').OrgRole): Promise<import('../types').OrgMember> {

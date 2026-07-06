@@ -33,9 +33,29 @@ function OnboardingChecklist() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const user = useUser();
+  const guardianQuery = useGuardianRostersQuery();
+  const tryoutsQuery = useTryoutsQuery(false);
+  const seasonsQuery = useSeasonsQuery();
+  const teamsQuery = useTeamsQuery();
+
   if (!user || user.onboardingCompleted) return null;
 
-  const steps = [
+  const isGuardianOnly = !!(
+    guardianQuery.data &&
+    guardianQuery.data.length > 0 &&
+    tryoutsQuery.data?.length === 0 &&
+    seasonsQuery.data?.length === 0 &&
+    teamsQuery.data?.length === 0
+  );
+
+  const steps = isGuardianOnly ? [
+    {
+      key: 'changePassword',
+      label: 'Change password',
+      done: false,
+      action: () => navigation.navigate('Profile'),
+    }
+  ] : [
     {
       key: 'createTeam',
       label: 'Create a team',
@@ -81,7 +101,7 @@ function OnboardingChecklist() {
   ];
   const doneCount = steps.filter((s) => s.done).length;
 
-  if (doneCount === steps.length) {
+  if (doneCount === steps.length && !isGuardianOnly) {
     return null;
   }
 
@@ -123,7 +143,7 @@ export default function DashboardScreen() {
 
   const openAssigned = (id: string) => {
     setCurrentTryout(id);
-    setActiveAssessor(user?.displayName ?? null);
+    setActiveAssessor(user?.displayName ? { name: user.displayName, email: user.email, role: 'assessor', status: 'accepted' } : null);
     navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: id, isAssessorOnly: true } });
   };
 
@@ -170,6 +190,14 @@ export default function DashboardScreen() {
       navigation.navigate('NewAssessment');
     }
   };
+
+  const isGuardianOnly = !!(
+    guardianQuery.data &&
+    guardianQuery.data.length > 0 &&
+    tryoutsQuery.data?.length === 0 &&
+    seasonsQuery.data?.length === 0 &&
+    teamsQuery.data?.length === 0
+  );
 
   const fabLabel =
     tab === 'seasons' ? '+ New Season' : tab === 'teams' ? '+ New Team' : '+ New Assessment';
@@ -237,54 +265,54 @@ export default function DashboardScreen() {
               My Athletes
             </Text>
             {guardianQuery.data.map((ath) => (
-              <Card key={ath.id} className="mb-2">
-                <Text className="text-base font-display font-bold mb-1" style={{ color: colors.ink }}>
-                  {ath.firstName} {ath.lastName}
-                </Text>
-                
-                {ath.tryouts.length === 0 && ath.seasons.length === 0 ? (
-                  <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                    Not assigned to any tryouts or seasons yet.
+              <Pressable key={ath.id} onPress={() => navigation.navigate('GuardianPortal', { playerId: ath.id })}>
+                <Card className="mb-2">
+                  <Text className="text-base font-display font-bold mb-1" style={{ color: colors.ink }}>
+                    {ath.firstName} {ath.lastName}
                   </Text>
-                ) : null}
+                  
+                  {ath.tryouts.length === 0 && ath.seasons.length === 0 ? (
+                    <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                      Not assigned to any tryouts or seasons yet.
+                    </Text>
+                  ) : null}
 
-                {ath.tryouts.length > 0 ? (
-                  <View className="mt-2">
-                    <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Tryouts</Text>
-                    {ath.tryouts.map(t => (
-                      <Pressable key={t.id} onPress={() => openTryout(t.id)}>
-                        <Text className="text-sm" style={{ color: colors.primary }}>• {t.name} ({t.sport})</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                ) : null}
+                  {ath.tryouts.length > 0 ? (
+                    <View className="mt-2">
+                      <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Tryouts</Text>
+                      {ath.tryouts.map(t => (
+                        <Text key={t.id} className="text-sm" style={{ color: colors.primary }}>• {t.name} ({t.sport})</Text>
+                      ))}
+                    </View>
+                  ) : null}
 
-                {ath.seasons.length > 0 ? (
-                  <View className="mt-2">
-                    <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Seasons</Text>
-                    {ath.seasons.map(s => (
-                      <Pressable key={s.id} onPress={() => navigation.navigate('SeasonDetail', { id: s.id })}>
-                        <Text className="text-sm" style={{ color: colors.primary }}>• {s.name} - {s.teamName}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                ) : null}
-              </Card>
+                  {ath.seasons.length > 0 ? (
+                    <View className="mt-2">
+                      <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Seasons</Text>
+                      {ath.seasons.map(s => (
+                        <Text key={s.id} className="text-sm" style={{ color: colors.primary }}>• {s.name} - {s.teamName}</Text>
+                      ))}
+                    </View>
+                  ) : null}
+                </Card>
+              </Pressable>
             ))}
           </View>
         ) : null}
 
-        <Tabs
-          tabs={[
-            { key: 'assessments', label: 'Assessments', badge: tryoutsQuery.data?.length },
-            { key: 'seasons', label: 'Team Hub', badge: seasonsQuery.data?.length },
-            { key: 'teams', label: 'Teams', badge: teamsQuery.data?.length },
-          ]}
-          activeKey={tab}
-          onChange={setTab}
-          className="mb-2"
-        />
-        {tab === 'assessments' ? (
+        {!isGuardianOnly && (
+          <Tabs
+            tabs={[
+              { key: 'assessments', label: 'Assessments', badge: tryoutsQuery.data?.length },
+              { key: 'seasons', label: 'Team Hub', badge: seasonsQuery.data?.length },
+              { key: 'teams', label: 'Teams', badge: teamsQuery.data?.length },
+            ]}
+            activeKey={tab}
+            onChange={setTab}
+            className="mb-2"
+          />
+        )}
+        {!isGuardianOnly && tab === 'assessments' ? (
           <View className="flex-row flex-wrap gap-2 mb-2">
             <Button
               label={combineMode ? 'Cancel Combine' : 'Combine Mode'}
@@ -305,7 +333,8 @@ export default function DashboardScreen() {
         ) : null}
       </View>
 
-      {tab === 'seasons' ? (
+      {!isGuardianOnly && (
+        tab === 'seasons' ? (
         <FlatList
           data={seasonsQuery.data}
           keyExtractor={(item) => item.id}
@@ -413,11 +442,13 @@ export default function DashboardScreen() {
             );
           }}
         />
-      )}
+      ))}
 
-      <View className="absolute bottom-6 left-4 right-4">
-        <Button label={fabLabel} onPress={fabAction} />
-      </View>
+      {!isGuardianOnly && (
+        <View className="absolute bottom-6 left-4 right-4">
+          <Button label={fabLabel} onPress={fabAction} />
+        </View>
+      )}
     </Screen>
   );
 }

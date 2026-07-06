@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { zustandStorage } from '@/lib/storage';
+import { type Assessor } from '@/data/types';
 
 export type RosterFilter = 'all' | 'scored' | 'unscored' | 'goalies' | 'skaters';
 
@@ -11,7 +12,7 @@ interface SessionState {
   workingScores: Record<string, number>;
   rosterFilter: RosterFilter;
   rinksideIndex: number;
-  activeAssessor: string | null;
+  activeAssessor: Assessor | null;
   combineTryoutIds: string[];
   setCurrentTryout: (id: string | null) => void;
   setCurrentPlayer: (id: string | null) => void;
@@ -21,7 +22,7 @@ interface SessionState {
   clearWorkingScores: () => void;
   setRosterFilter: (filter: RosterFilter) => void;
   setRinksideIndex: (index: number) => void;
-  setActiveAssessor: (name: string | null) => void;
+  setActiveAssessor: (assessor: Assessor | null) => void;
   setCombineTryoutIds: (ids: string[]) => void;
   toggleCombineTryout: (id: string) => void;
   resetAssessmentSession: () => void;
@@ -47,7 +48,7 @@ export const useSessionStore = create<SessionState>()(
       clearWorkingScores: () => set({ workingScores: {}, currentEvalId: null }),
       setRosterFilter: (filter) => set({ rosterFilter: filter }),
       setRinksideIndex: (index) => set({ rinksideIndex: index }),
-      setActiveAssessor: (name: string | null) => set({ activeAssessor: name }),
+      setActiveAssessor: (assessor) => set({ activeAssessor: assessor }),
       setCombineTryoutIds: (ids: string[]) => set({ combineTryoutIds: ids }),
       toggleCombineTryout: (id: string) =>
         set((s) => ({

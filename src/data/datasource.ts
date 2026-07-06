@@ -36,6 +36,7 @@ export interface DataSource {
   getSession(): Promise<AuthSession | null>;
   getProfile(): Promise<UserProfile | null>;
   updateProfile(updates: Partial<UserProfile>): Promise<UserProfile>;
+  updatePassword(password: string): Promise<void>;
   checkUserExistsByEmail(email: string): Promise<boolean>;
 
   // Database

@@ -276,6 +276,12 @@ export function useUpdateProfileMutation() {
   });
 }
 
+export function useUpdatePasswordMutation() {
+  return useMutation({
+    mutationFn: (password: string) => getDataSource().updatePassword(password),
+  });
+}
+
 // ---- Phase 2: Team Builder, AI, Export ----
 export function useGenerateTeamBuilderMutation(tryoutId: string) {
   const qc = useQueryClient();

@@ -224,9 +224,9 @@ export default function PlayerHubScreen() {
                 try {
                   const member = await inviteMut.mutateAsync({ email, role: 'guardian' });
                   await linkGuardianMut.mutateAsync({
-                    guardianId: member.id,
+                    guardianId: member.userId!,
                     tryoutId: id!,
-                    playerId: playerId!,
+                    playerId: player.athleteId!,
                   });
                   setShowGuardianLink(false);
                 } catch (error: any) {
@@ -245,9 +245,9 @@ export default function PlayerHubScreen() {
                       });
 
                       await linkGuardianMut.mutateAsync({
-                        guardianId: newMember.id,
+                        guardianId: newMember.userId!,
                         tryoutId: id!,
-                        playerId: playerId!,
+                        playerId: player.athleteId!,
                       });
                       
                       setShowGuardianLink(false);
