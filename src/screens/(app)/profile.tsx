@@ -42,6 +42,11 @@ export default function ProfileScreen() {
     }
     try {
       await updatePasswordMut.mutateAsync(password);
+      if (user) {
+        await updateProfile.mutateAsync({
+          onboardingSteps: { ...user.onboardingSteps, changePassword: true },
+        });
+      }
       setChangingPassword(false);
       setPassword('');
       alert('Password updated successfully');

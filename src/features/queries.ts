@@ -271,7 +271,7 @@ export function useResultsQuery(tryoutId: string | undefined) {
 export function useUpdateProfileMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (updates: Partial<UserProfile>) => getDataSource().updateProfile(updates),
+    mutationFn: (updates: Partial<UserProfile>) => useAuthStore.getState().updateProfile(updates),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.profile }),
   });
 }

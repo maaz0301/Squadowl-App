@@ -202,6 +202,7 @@ export const UserProfileSchema = z.object({
       inviteAssessors: z.boolean(),
       addPlayers: z.boolean(),
       scorePlayers: z.boolean(),
+      changePassword: z.boolean().optional(),
     })
     .default({
       createTeam: false,
@@ -209,6 +210,7 @@ export const UserProfileSchema = z.object({
       inviteAssessors: false,
       addPlayers: false,
       scorePlayers: false,
+      changePassword: false,
     }),
 });
 

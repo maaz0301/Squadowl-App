@@ -52,7 +52,7 @@ function OnboardingChecklist() {
     {
       key: 'changePassword',
       label: 'Change password',
-      done: false,
+      done: user.onboardingSteps?.changePassword === true,
       action: () => navigation.navigate('Profile'),
     }
   ] : [
@@ -101,7 +101,7 @@ function OnboardingChecklist() {
   ];
   const doneCount = steps.filter((s) => s.done).length;
 
-  if (doneCount === steps.length && !isGuardianOnly) {
+  if (doneCount === steps.length) {
     return null;
   }
 
@@ -210,9 +210,11 @@ export default function DashboardScreen() {
           subtitle={`Hi, ${user?.displayName ?? 'Coach'}`}
           right={
             <View className="flex-row items-center gap-2">
-              <Pressable onPress={() => navigation.navigate('Search')} hitSlop={8}>
-                <Badge label="Search" variant="info" />
-              </Pressable>
+              {!isGuardianOnly && (
+                <Pressable onPress={() => navigation.navigate('Search')} hitSlop={8}>
+                  <Badge label="Search" variant="info" />
+                </Pressable>
+              )}
               <Pressable
                 onPress={() => navigation.navigate('Profile')}
                 hitSlop={8}
