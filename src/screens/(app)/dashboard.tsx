@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FlatList, Pressable, ScrollView, Text, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, Text, View, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -184,7 +184,14 @@ export default function DashboardScreen() {
     else {
       const count = tryoutsQuery.data?.length ?? 0;
       if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
-        navigation.navigate('Upgrade');
+        Alert.alert(
+          'Plan Limit Reached',
+          'You have reached the maximum number of assessments for your current plan.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'View Plans', onPress: () => navigation.navigate('Upgrade') }
+          ]
+        );
         return;
       }
       navigation.navigate('NewAssessment');

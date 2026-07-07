@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ScrollView, Text, View, Pressable } from 'react-native';
+import { ScrollView, Text, View, Pressable, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 import { useForm, Controller } from 'react-hook-form';
@@ -40,7 +40,14 @@ export default function NewAssessmentScreen() {
   const onSubmit = handleSubmit(async (data) => {
     const count = tryoutsQuery.data?.length ?? 0;
     if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
-      navigation.navigate('Upgrade');
+      Alert.alert(
+        'Plan Limit Reached',
+        'You have reached the maximum number of assessments for your current plan.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'View Plans', onPress: () => navigation.navigate('Upgrade') }
+        ]
+      );
       return;
     }
     const tryout = await createTryout.mutateAsync(data);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, Share, Text, View, Platform } from 'react-native';
+import { FlatList, Share, Text, View, Platform, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import QRCode from 'react-native-qrcode-svg';
 import RNFS from 'react-native-fs';
@@ -80,7 +80,14 @@ export default function RegistrationsScreen() {
 
   const bulkAdd = async () => {
     if (isAtPlayerLimit(user?.planTier ?? 'free', (tryoutQuery.data?.roster.length ?? 0) + selected.size - 1)) {
-      navigation.navigate('Upgrade');
+      Alert.alert(
+        'Player Limit Reached',
+        'You have reached the maximum number of players for your current plan.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'View Plans', onPress: () => navigation.navigate('Upgrade') }
+        ]
+      );
       return;
     }
     for (const regId of selected) {
@@ -211,7 +218,14 @@ export default function RegistrationsScreen() {
                   loading={addToRoster.isPending}
                   onPress={() => {
                     if (isAtPlayerLimit(user?.planTier ?? 'free', tryout.roster.length)) {
-                      navigation.navigate('Upgrade');
+                      Alert.alert(
+                        'Player Limit Reached',
+                        'You have reached the maximum number of players for your current plan.',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'View Plans', onPress: () => navigation.navigate('Upgrade') }
+                        ]
+                      );
                       return;
                     }
                     addToRoster.mutate(item.id);

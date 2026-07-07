@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { FlatList, Pressable, Text, View } from 'react-native';
+import { FlatList, Pressable, Text, View, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 
@@ -77,7 +77,14 @@ export default function RosterScreen() {
 
   const openAdd = () => {
     if (isAtPlayerLimit(user?.planTier ?? 'free', tryout.roster.length)) {
-      navigation.navigate('Upgrade');
+      Alert.alert(
+        'Player Limit Reached',
+        'You have reached the maximum number of players for your current plan.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'View Plans', onPress: () => navigation.navigate('Upgrade') }
+        ]
+      );
       return;
     }
     setShowAdd(true);

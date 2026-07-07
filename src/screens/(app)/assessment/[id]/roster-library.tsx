@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FlatList, Pressable, Text, View } from 'react-native';
+import { FlatList, Pressable, Text, View, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -51,7 +51,14 @@ export default function RosterLibraryScreen() {
     if (!entries.length) return;
 
     if (isAtPlayerLimit(user?.planTier ?? 'free', (currentTryoutQuery.data?.roster.length ?? 0) + entries.length - 1)) {
-      navigation.navigate('Upgrade');
+      Alert.alert(
+        'Player Limit Reached',
+        'You have reached the maximum number of players for your current plan.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'View Plans', onPress: () => navigation.navigate('Upgrade') }
+        ]
+      );
       return;
     }
 
