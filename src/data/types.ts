@@ -193,6 +193,7 @@ export const UserProfileSchema = z.object({
   displayName: z.string(),
   organization: z.string().optional(),
   planTier: z.enum(PLAN_TIERS).default('coach'),
+  subscriptionStatus: z.string().optional(),
   createdAt: z.number(),
   onboardingCompleted: z.boolean().default(false),
   onboardingSteps: z

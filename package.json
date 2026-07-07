@@ -21,6 +21,7 @@
     "react-native": "0.85.3",
     "react-native-fs": "^2.20.0",
     "react-native-gesture-handler": "~2.31.1",
+    "react-native-inappbrowser-reborn": "^3.7.1",
     "react-native-mmkv": "^4.3.1",
     "react-native-nitro-image": "^0.15.1",
     "react-native-nitro-modules": "^0.36.1",

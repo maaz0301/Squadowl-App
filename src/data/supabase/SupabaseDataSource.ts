@@ -311,13 +311,16 @@ export class SupabaseDataSource implements DataSource {
         .limit(1)
         .maybeSingle()
     ).data as Row | null;
-    const account = membership?.accounts as Row | undefined;
+    const account = Array.isArray(membership?.accounts)
+      ? membership.accounts[0]
+      : (membership?.accounts as Row | undefined);
     return {
       id: profile.id,
       email: profile.email,
       displayName: profile.display_name,
       organization: account?.type === 'organization' ? account.name : undefined,
       planTier: (account?.plan_tier as UserProfile['planTier']) ?? 'free',
+      subscriptionStatus: account?.subscription_status,
       createdAt: toMs(profile.created_at),
       onboardingCompleted: profile.onboarding_completed,
       onboardingSteps: profile.onboarding_steps,
@@ -1459,6 +1462,24 @@ export class SupabaseDataSource implements DataSource {
     if (userId === ctx.userId) {
       await ctx.supabase.from('accounts').update({ plan_tier: planTier }).eq('id', ctx.accountId);
     }
+  }
+
+  async createCheckoutSession(planTier: string): Promise<{ url: string }> {
+    const { supabase } = await this.ctx();
+    const { data, error } = await supabase.functions.invoke('create-checkout-session', {
+      body: { planTier }
+    });
+    if (error) throw new Error(error.message);
+    if (data.error) throw new Error(data.error);
+    return data;
+  }
+
+  async createPortalSession(): Promise<{ url: string }> {
+    const { supabase } = await this.ctx();
+    const { data, error } = await supabase.functions.invoke('create-portal-session');
+    if (error) throw new Error(error.message);
+    if (data.error) throw new Error(data.error);
+    return data;
   }
 
   // ─── Misc ──────────────────────────────────────────────────────────────────────

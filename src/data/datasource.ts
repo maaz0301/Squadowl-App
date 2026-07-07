@@ -100,6 +100,8 @@ export interface DataSource {
   getAdminStats(): Promise<AdminStats>;
   listAdminUsers(): Promise<AdminUserRow[]>;
   overrideUserPlan(userId: string, planTier: UserProfile['planTier']): Promise<void>;
+  createCheckoutSession(planTier: string): Promise<{ url: string }>;
+  createPortalSession(): Promise<{ url: string }>;
 
   // Org Members & Permissions
   listOrgMembers(): Promise<OrgMember[]>;

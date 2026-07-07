@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { Text, View, Alert } from 'react-native';
+import { InAppBrowser } from 'react-native-inappbrowser-reborn';
 import { useNavigation } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -8,6 +9,7 @@ import { useThemeStore } from '@/state/themeStore';
 import { useUser, useAuthStore, usePermissions } from '@/state/authStore';
 import { getPlanDefinition, canUseFeature } from '@/data/plans';
 import { useUpdateProfileMutation, useUpdatePasswordMutation, useGuardianRostersQuery, useTeamsQuery, useTryoutsQuery, useSeasonsQuery } from '@/features/queries';
+import { getDataSource } from '@/data';
 
 export default function ProfileScreen() {
   const colors = useThemeColors();
@@ -37,6 +39,7 @@ export default function ProfileScreen() {
   const [organization, setOrganization] = useState(user?.organization ?? '');
   const [changingPassword, setChangingPassword] = useState(false);
   const [password, setPassword] = useState('');
+  const [loadingPortal, setLoadingPortal] = useState(false);
 
   const plan = getPlanDefinition(user?.planTier ?? 'coach');
 
@@ -65,6 +68,52 @@ export default function ProfileScreen() {
       alert('Password updated successfully');
     } catch (e: any) {
       alert(e.message || 'Failed to update password');
+    }
+  };
+
+  const openPortal = async () => {
+    try {
+      setLoadingPortal(true);
+      const res = await getDataSource().createPortalSession();
+      if (res?.url) {
+        if (await InAppBrowser.isAvailable()) {
+          await InAppBrowser.open(res.url, {
+            // iOS Properties
+            dismissButtonStyle: 'close',
+            preferredBarTintColor: colors.bg,
+            preferredControlTintColor: colors.primary,
+            readerMode: false,
+            animated: true,
+            modalPresentationStyle: 'fullScreen',
+            modalTransitionStyle: 'coverVertical',
+            modalEnabled: true,
+            enableBarCollapsing: false,
+            // Android Properties
+            showTitle: true,
+            toolbarColor: colors.bg,
+            secondaryToolbarColor: colors.border,
+            navigationBarColor: colors.bg,
+            navigationBarDividerColor: 'white',
+            enableUrlBarHiding: true,
+            enableDefaultShare: false,
+            forceCloseOnRedirection: false,
+            animations: {
+              startEnter: 'slide_in_right',
+              startExit: 'slide_out_left',
+              endEnter: 'slide_in_left',
+              endExit: 'slide_out_right'
+            },
+          });
+        } else {
+          // Fallback if in-app browser is not available
+          const { Linking } = require('react-native');
+          await Linking.openURL(res.url);
+        }
+      }
+    } catch (err: any) {
+      Alert.alert('Portal Error', err.message || 'Something went wrong.');
+    } finally {
+      setLoadingPortal(false);
     }
   };
 
@@ -101,6 +150,7 @@ export default function ProfileScreen() {
             <View className="flex-row gap-2 mt-1">
               <Badge label={`Role: ${isGuardianOnly ? 'guardian' : role}`} variant="info" />
               {!isGuardianOnly && <Badge label={`Plan: ${plan.name}`} variant="brand" />}
+              {user?.subscriptionStatus && <Badge label={user.subscriptionStatus} variant={user.subscriptionStatus === 'active' ? 'success' : 'default'} />}
             </View>
             
             <View className="flex-row gap-2 mt-2">
@@ -130,7 +180,11 @@ export default function ProfileScreen() {
               Assessments: {plan.limits.assessments} · Players: {plan.limits.players} · Teams:{' '}
               {plan.limits.teams}
             </Text>
-            <Button label="Upgrade Plan" variant="secondary" onPress={() => navigation.navigate('Upgrade')} />
+            {user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'trialing' ? (
+               <Button label="Manage Subscription" variant="secondary" onPress={openPortal} loading={loadingPortal} />
+            ) : (
+               <Button label="Upgrade Plan" variant="secondary" onPress={() => navigation.navigate('Upgrade')} />
+            )}
           </Card>
 
           <Card className="mb-4 gap-2">

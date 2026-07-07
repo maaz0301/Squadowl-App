@@ -1,21 +1,77 @@
-import { FlatList, Text, View } from 'react-native';
+import { FlatList, Text, View, Alert } from 'react-native';
+import { InAppBrowser } from 'react-native-inappbrowser-reborn';
 import { useNavigation } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Header, Screen } from '@/components/ui';
 import { PLAN_DEFINITIONS } from '@/data/plans';
-import { useUser } from '@/state/authStore';
-import { useUpdateProfileMutation } from '@/features/queries';
-
+import { useUser, useAuthStore } from '@/state/authStore';
+import { getDataSource } from '@/data';
+import { useState } from 'react';
 export default function UpgradeScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const user = useUser();
-  const updateProfile = useUpdateProfileMutation();
+  const restoreSession = useAuthStore((s) => s.restoreSession);
+  const [loadingTier, setLoadingTier] = useState<string | null>(null);
 
   const upgrade = async (tier: typeof PLAN_DEFINITIONS[number]['tier']) => {
-    await updateProfile.mutateAsync({ planTier: tier });
-    navigation.goBack();
+    try {
+      setLoadingTier(tier);
+      const res = await getDataSource().createCheckoutSession(tier);
+      if (res?.url) {
+        if (await InAppBrowser.isAvailable()) {
+          const result = await InAppBrowser.openAuth(res.url, 'aastryout://upgrade', {
+            // iOS Properties
+            dismissButtonStyle: 'cancel',
+            preferredBarTintColor: colors.bg,
+            preferredControlTintColor: colors.primary,
+            readerMode: false,
+            animated: true,
+            modalPresentationStyle: 'fullScreen',
+            modalTransitionStyle: 'coverVertical',
+            modalEnabled: true,
+            enableBarCollapsing: false,
+            // Android Properties
+            showTitle: true,
+            toolbarColor: colors.bg,
+            secondaryToolbarColor: colors.border,
+            navigationBarColor: colors.bg,
+            navigationBarDividerColor: 'white',
+            enableUrlBarHiding: true,
+            enableDefaultShare: false,
+            forceCloseOnRedirection: false,
+            animations: {
+              startEnter: 'slide_in_right',
+              startExit: 'slide_out_left',
+              endEnter: 'slide_in_left',
+              endExit: 'slide_out_right'
+            },
+          });
+          // Poll for Stripe Webhook to process the payment
+          for (let i = 0; i < 5; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            await restoreSession();
+            
+            // Re-fetch the user to check if plan updated
+            const currentUser = useAuthStore.getState().session?.user;
+            if (currentUser?.planTier === tier) {
+              break; // Successfully upgraded!
+            }
+          }
+        } else {
+          // Fallback if in-app browser is not available
+          const { Linking } = require('react-native');
+          await Linking.openURL(res.url);
+          // Assuming user returns manually, wait a bit then refresh
+          setTimeout(restoreSession, 3000);
+        }
+      }
+    } catch (err: any) {
+      Alert.alert('Checkout Error', err.message || 'Something went wrong.');
+    } finally {
+      setLoadingTier(null);
+    }
   };
 
   return (
@@ -33,13 +89,18 @@ export default function UpgradeScreen() {
             <Card accent={item.highlight} className="mb-4 gap-3">
               <View className="flex-row justify-between items-start">
                 <View>
-                  <Text className="text-xl font-display font-bold" style={{ color: colors.ink }}>
+                  <Text className="text-xl font-display font-bold" style={{ color: colors.ink, marginBottom: 12 }}>
                     {item.name}
                   </Text>
-                  <Text className="text-2xl font-display font-bold" style={{ color: colors.primary }}>
-                    {item.price}
-                    <Text className="text-sm" style={{ color: colors.inkMuted }}> {item.priceNote}</Text>
-                  </Text>
+                  <View className="flex-row items-baseline mb-4">
+                    <Text className="text-lg font-sans mr-1" style={{ color: colors.inkMuted }}>USD</Text>
+                    <Text className="text-4xl font-bold font-display" style={{ color: colors.primary }}>
+                      {item.price}
+                    </Text>
+                    <Text className="text-sm font-sans ml-1" style={{ color: colors.inkMuted }}>
+                      /year
+                    </Text>
+                  </View>
                 </View>
                 {isCurrent ? <Badge label="Current" variant="brand" /> : null}
                 {item.highlight ? <Badge label="Popular" variant="success" /> : null}
@@ -57,7 +118,7 @@ export default function UpgradeScreen() {
                   label={`Switch to ${item.name}`}
                   variant={item.highlight ? 'primary' : 'secondary'}
                   onPress={() => upgrade(item.tier)}
-                  loading={updateProfile.isPending}
+                  loading={loadingTier === item.tier}
                 />
               ) : null}
             </Card>

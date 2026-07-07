@@ -4,15 +4,19 @@ import { useNavigation } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, EmptyState, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
-import { useImportLibraryPlayersMutation, useTryoutsQuery } from '@/features/queries';
+import { useImportLibraryPlayersMutation, useTryoutsQuery, useTryoutQuery } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { buildRosterLibrary } from '@/data/extras';
+import { isAtPlayerLimit } from '@/data/plans';
+import { useUser } from '@/state/authStore';
 
 export default function RosterLibraryScreen() {
   const id = useAssessmentId();
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutsQuery = useTryoutsQuery(true);
+  const currentTryoutQuery = useTryoutQuery(id);
+  const user = useUser();
   const importPlayers = useImportLibraryPlayersMutation();
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -45,6 +49,12 @@ export default function RosterLibraryScreen() {
       .filter((e) => selected.has(e.key))
       .map((e) => ({ first: e.first, last: e.last, jersey: e.jersey, pos: e.pos }));
     if (!entries.length) return;
+
+    if (isAtPlayerLimit(user?.planTier ?? 'free', (currentTryoutQuery.data?.roster.length ?? 0) + entries.length - 1)) {
+      navigation.navigate('Upgrade');
+      return;
+    }
+
     await importPlayers.mutateAsync({ tryoutId: id!, entries });
     navigation.goBack();
   };

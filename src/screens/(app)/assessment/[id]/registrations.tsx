@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Share, Text, View, Platform } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import QRCode from 'react-native-qrcode-svg';
 import RNFS from 'react-native-fs';
 import RNShare from 'react-native-share';
@@ -7,6 +8,8 @@ import { EXPO_PUBLIC_WEB_URL } from '@env';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Avatar, Badge, Button, Card, ErrorState, Header, LoadingState, Screen, Modal, EmptyState, Tabs } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
+import { isAtPlayerLimit } from '@/data/plans';
+import { useUser } from '@/state/authStore';
 import {
   useTryoutQuery,
   useRegistrationsQuery,
@@ -23,12 +26,14 @@ type RegTab = 'pending' | 'all' | 'dismissed';
 export default function RegistrationsScreen() {
   const id = useAssessmentId();
   const colors = useThemeColors();
+  const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
   const regsQuery = useRegistrationsQuery(id!);
   const ensureCloud = useEnsureCloudSessionMutation();
   const addToRoster = useAddRegistrationToRosterMutation(id!);
   const dismissReg = useDismissRegistrationMutation(id!);
   const submitReg = useSubmitRegistrationMutation(id!);
+  const user = useUser();
   const [showQr, setShowQr] = useState(false);
   const [showSimulate, setShowSimulate] = useState(false);
   const [tab, setTab] = useState<RegTab>('pending');
@@ -74,6 +79,10 @@ export default function RegistrationsScreen() {
   };
 
   const bulkAdd = async () => {
+    if (isAtPlayerLimit(user?.planTier ?? 'free', (tryoutQuery.data?.roster.length ?? 0) + selected.size - 1)) {
+      navigation.navigate('Upgrade');
+      return;
+    }
     for (const regId of selected) {
       await addToRoster.mutateAsync(regId);
     }
@@ -200,7 +209,13 @@ export default function RegistrationsScreen() {
                   label="Add to Roster"
                   size="sm"
                   loading={addToRoster.isPending}
-                  onPress={() => addToRoster.mutate(item.id)}
+                  onPress={() => {
+                    if (isAtPlayerLimit(user?.planTier ?? 'free', tryout.roster.length)) {
+                      navigation.navigate('Upgrade');
+                      return;
+                    }
+                    addToRoster.mutate(item.id);
+                  }}
                 />
                 <Button
                   label="Dismiss"
