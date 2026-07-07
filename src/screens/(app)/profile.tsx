@@ -180,11 +180,12 @@ export default function ProfileScreen() {
               Assessments: {plan.limits.assessments} · Players: {plan.limits.players} · Teams:{' '}
               {plan.limits.teams}
             </Text>
-            {user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'trialing' ? (
-               <Button label="Manage Subscription" variant="secondary" onPress={openPortal} loading={loadingPortal} />
-            ) : (
-               <Button label="Upgrade Plan" variant="secondary" onPress={() => navigation.navigate('Upgrade')} />
-            )}
+            <View className="flex-row gap-2 mt-2">
+              <Button label="Upgrade Plan" variant="secondary" onPress={() => navigation.navigate('Upgrade')} className="flex-1" />
+              {user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'trialing' ? (
+                <Button label="Manage Subscription" variant="secondary" onPress={openPortal} loading={loadingPortal} className="flex-1" />
+              ) : null}
+            </View>
           </Card>
 
           <Card className="mb-4 gap-2">
