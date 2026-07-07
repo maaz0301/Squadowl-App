@@ -8,12 +8,45 @@ import { PLAN_DEFINITIONS } from '@/data/plans';
 import { useUser, useAuthStore } from '@/state/authStore';
 import { getDataSource } from '@/data';
 import { useState } from 'react';
+
+const TIER_RANKS: Record<string, number> = {
+  free: 0,
+  coach: 1,
+  club: 2,
+  pro: 3,
+  association: 4,
+};
+
 export default function UpgradeScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const user = useUser();
   const restoreSession = useAuthStore((s) => s.restoreSession);
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
+  const [loadingPortal, setLoadingPortal] = useState(false);
+
+  const openPortal = async () => {
+    try {
+      setLoadingPortal(true);
+      const res = await getDataSource().createPortalSession();
+      if (res?.url) {
+        if (await InAppBrowser.isAvailable()) {
+          await InAppBrowser.open(res.url, {
+            dismissButtonStyle: 'close',
+            preferredBarTintColor: colors.bg,
+            preferredControlTintColor: colors.primary,
+          });
+        } else {
+          const { Linking } = require('react-native');
+          await Linking.openURL(res.url);
+        }
+      }
+    } catch (err: any) {
+      Alert.alert('Portal Error', err.message || 'Something went wrong.');
+    } finally {
+      setLoadingPortal(false);
+    }
+  };
 
   const upgrade = async (tier: typeof PLAN_DEFINITIONS[number]['tier']) => {
     try {
@@ -78,6 +111,19 @@ export default function UpgradeScreen() {
     <Screen padded={false}>
       <View className="px-4">
         <Header title="Upgrade Plan" subtitle={`Current: ${user?.planTier ?? 'free'}`} showBack />
+        {user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'trialing' ? (
+          <View className="mb-2">
+            <Button
+              label="Manage Subscription & Bills"
+              variant="secondary"
+              onPress={openPortal}
+              loading={loadingPortal}
+            />
+            <Text className="text-xs text-center mt-2" style={{ color: colors.inkMuted }}>
+              Manage your subscription, change billing details, or download past invoices via the Stripe portal.
+            </Text>
+          </View>
+        ) : null}
       </View>
       <FlatList
         data={PLAN_DEFINITIONS}
@@ -113,7 +159,8 @@ export default function UpgradeScreen() {
                   <Text style={{ color: f.included ? colors.ink : colors.inkMuted }}>{f.label}</Text>
                 </View>
               ))}
-              {!isCurrent ? (
+              
+              {TIER_RANKS[item.tier] > TIER_RANKS[user?.planTier ?? 'free'] ? (
                 <Button
                   label={`Switch to ${item.name}`}
                   variant={item.highlight ? 'primary' : 'secondary'}
