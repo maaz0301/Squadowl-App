@@ -46,6 +46,18 @@ export default function PublicRegistration() {
     setIsSubmitting(true);
     try {
       await ds.submitPublicRegistration(eventId.toUpperCase(), data);
+      
+      if (data.guardianEmail) {
+        try {
+          await ds.sendEmail('registration_confirmation', data.guardianEmail, {
+            playerName: `${data.firstName} ${data.lastName}`,
+          });
+        } catch (emailErr) {
+          console.error('Failed to send confirmation email', emailErr);
+          // Don't fail the registration if email fails
+        }
+      }
+      
       setIsSuccess(true);
     } catch (err) {
       console.error(err);

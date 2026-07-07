@@ -111,6 +111,7 @@ export interface DataSource {
   linkGuardianToAthlete(guardianId: string, tryoutId: string, playerId: string): Promise<Player>;
 
   // Extended UI operations
+  sendEmail(type: 'org_invite' | 'tryout_invite' | 'schedule_update' | 'reminder' | 'registration_confirmation', to: string, payload: any): Promise<void>;
   copyTryout(id: string): Promise<Tryout>;
   restoreTryout(id: string): Promise<Tryout>;
   importLibraryPlayers(tryoutId: string, entries: { first: string; last: string; jersey?: string; pos?: string }[]): Promise<Player[]>;

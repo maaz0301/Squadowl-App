@@ -675,9 +675,17 @@ export class SupabaseDataSource implements DataSource {
     return this.updateTryout(id, { archived: false });
   }
 
-  async deleteTryout(id: string): Promise<void> {
+async deleteTryout(id: string): Promise<void> {
     const { supabase } = await this.ctx();
     unwrap(await supabase.from('tryouts').delete().eq('id', id).select().maybeSingle());
+  }
+
+  async sendEmail(type: 'org_invite' | 'tryout_invite' | 'schedule_update' | 'reminder' | 'registration_confirmation', to: string, payload: any): Promise<void> {
+    const { supabase } = await this.ctx();
+    const { error } = await supabase.functions.invoke('send-email', {
+      body: { type, to, payload },
+    });
+    if (error) throw error;
   }
 
   async copyTryout(id: string): Promise<Tryout> {
@@ -1303,6 +1311,32 @@ export class SupabaseDataSource implements DataSource {
         .select()
         .single(),
     ) as Row;
+
+    try {
+      const season = await this.getSeason(seasonId);
+      if (season) {
+        // Find all guardians related to this season and send them emails.
+        const emails = Array.from(new Set(
+          season.roster
+            .map(p => p.guardianEmail)
+            .filter(Boolean)
+        ));
+        
+        for (const email of emails) {
+          if (email) {
+            await this.sendEmail('schedule_update', email, {
+              eventName: form.title,
+              date: form.date,
+              time: form.startTime,
+              location: form.location,
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to send schedule emails', e);
+    }
+
     return this.rowToSeasonEvent(row, {});
   }
 
@@ -1592,6 +1626,12 @@ export class SupabaseDataSource implements DataSource {
         throw new Error('User not found. They must create an account first.');
       }
       throw error;
+    }
+
+    try {
+      await this.sendEmail('org_invite', email, { role });
+    } catch (e) {
+      console.error('Failed to send org invite email', e);
     }
 
     return data as import('../types').OrgMember;

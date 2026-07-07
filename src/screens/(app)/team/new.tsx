@@ -9,6 +9,7 @@ import { Button, ErrorState, Header, Input, LoadingState, Screen } from '@/compo
 import { useCreateTeamMutation, useTeamsQuery } from '@/features/queries';
 import { useUser } from '@/state/authStore';
 import { isAtTeamLimit } from '@/data/plans';
+import { LimitReachedModal } from '@/components/LimitReachedModal';
 
 const FormSchema = z.object({
   name: z.string().min(2, 'Team name required'),
@@ -22,7 +23,7 @@ export default function NewTeamScreen() {
   const createTeam = useCreateTeamMutation();
   const teamsQuery = useTeamsQuery();
   const user = useUser();
-  const [limitHit, setLimitHit] = useState(false);
+  const [limitMsg, setLimitMsg] = useState<string | null>(null);
 
   const { control, handleSubmit } = useForm<Form>({
     resolver: zodResolver(FormSchema),
@@ -32,7 +33,7 @@ export default function NewTeamScreen() {
   const onSubmit = handleSubmit(async (data) => {
     const count = teamsQuery.data?.length ?? 0;
     if (isAtTeamLimit(user?.planTier ?? 'free', count)) {
-      setLimitHit(true);
+      setLimitMsg('You have reached the maximum number of teams for your current plan.');
       return;
     }
     await createTeam.mutateAsync({ name: data.name, season: data.season });
@@ -53,9 +54,6 @@ export default function NewTeamScreen() {
     <Screen scroll>
       <Header title="New Team" showBack />
       <View className="gap-4 mt-2">
-        {limitHit ? (
-          <Button label="Team limit reached — View Plans" variant="secondary" onPress={() => navigation.navigate('Upgrade')} />
-        ) : null}
         <Controller
           control={control}
           name="name"
@@ -72,6 +70,7 @@ export default function NewTeamScreen() {
         />
         <Button label="Create Team" onPress={onSubmit} loading={createTeam.isPending} />
       </View>
+      <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
     </Screen>
   );
 }

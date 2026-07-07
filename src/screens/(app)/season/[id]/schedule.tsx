@@ -8,6 +8,8 @@ import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm } from '@/data
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Chip, EmptyState, ErrorState, Input, LoadingState, Modal, Screen } from '@/components/ui';
 import { useSeasonQuery, useAddSeasonEventMutation, useDeleteSeasonEventMutation } from '@/features/queries';
+import { getDataSource } from '@/data';
+import { Alert } from 'react-native';
 
 export default function SeasonScheduleScreen() {
   const route = useRoute<any>();
@@ -17,6 +19,7 @@ export default function SeasonScheduleScreen() {
   const addEvent = useAddSeasonEventMutation(id!);
   const deleteEvent = useDeleteSeasonEventMutation(id!);
   const [showAdd, setShowAdd] = useState(false);
+  const [reminding, setReminding] = useState<string | null>(null);
 
   const { control, handleSubmit, watch, setValue, reset } = useForm<CreateEventForm>({
     resolver: zodResolver(CreateEventFormSchema),
@@ -35,6 +38,38 @@ export default function SeasonScheduleScreen() {
     reset();
     setShowAdd(false);
   });
+
+  const sendReminder = async (event: import('@/data/types').SeasonEvent) => {
+    try {
+      setReminding(event.id);
+      const emails = Array.from(new Set(
+        season.roster
+          .map(p => p.guardianEmail)
+          .filter(Boolean)
+      ));
+      
+      if (emails.length === 0) {
+        Alert.alert('No Emails', 'There are no guardians with emails in the roster.');
+        return;
+      }
+      
+      let sent = 0;
+      for (const email of emails) {
+        if (email) {
+          await getDataSource().sendEmail('reminder', email, {
+            title: event.title,
+            message: `Don't forget! The ${event.type} "${event.title}" is coming up on ${event.date} at ${event.startTime || 'TBD'}. Location: ${event.location || 'TBD'}.`
+          });
+          sent++;
+        }
+      }
+      Alert.alert('Reminders Sent', `Successfully sent ${sent} reminder(s).`);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to send reminders.');
+    } finally {
+      setReminding(null);
+    }
+  };
 
   return (
     <Screen padded={false}>
@@ -56,7 +91,10 @@ export default function SeasonScheduleScreen() {
               {item.date} · {item.startTime ?? '—'}–{item.endTime ?? '—'}
             </Text>
             {item.location ? <Text style={{ color: colors.inkFaint }}>{item.location}</Text> : null}
-            <Button label="Delete" variant="ghost" size="sm" onPress={() => deleteEvent.mutate(item.id)} />
+            <View className="flex-row gap-2 mt-2">
+              <Button label="Send Reminder" variant="secondary" size="sm" onPress={() => sendReminder(item)} loading={reminding === item.id} />
+              <Button label="Delete" variant="ghost" size="sm" onPress={() => deleteEvent.mutate(item.id)} />
+            </View>
           </Card>
         )}
       />
