@@ -9,6 +9,7 @@ import { useAssessmentId } from '@/features/useAssessmentId';
 import { buildRosterLibrary } from '@/data/extras';
 import { isAtPlayerLimit } from '@/data/plans';
 import { useUser } from '@/state/authStore';
+import { LimitReachedModal } from '@/components/LimitReachedModal';
 
 export default function RosterLibraryScreen() {
   const id = useAssessmentId();
@@ -19,6 +20,7 @@ export default function RosterLibraryScreen() {
   const user = useUser();
   const importPlayers = useImportLibraryPlayersMutation();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [limitMsg, setLimitMsg] = useState<string | null>(null);
 
   const library = useMemo(() => {
     if (!tryoutsQuery.data) return [];
@@ -51,14 +53,7 @@ export default function RosterLibraryScreen() {
     if (!entries.length) return;
 
     if (isAtPlayerLimit(user?.planTier ?? 'free', (currentTryoutQuery.data?.roster.length ?? 0) + entries.length - 1)) {
-      Alert.alert(
-        'Player Limit Reached',
-        'You have reached the maximum number of players for your current plan.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'View Plans', onPress: () => navigation.navigate('Upgrade') }
-        ]
-      );
+      setLimitMsg('You have reached the maximum number of players for your current plan.');
       return;
     }
 
@@ -109,6 +104,7 @@ export default function RosterLibraryScreen() {
           );
         }}
       />
+      <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
     </Screen>
   );
 }

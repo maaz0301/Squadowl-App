@@ -20,6 +20,7 @@ import {
 } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { RegistrationForm } from '@/components/assessment/RegistrationForm';
+import { LimitReachedModal } from '@/components/LimitReachedModal';
 
 type RegTab = 'pending' | 'all' | 'dismissed';
 
@@ -38,6 +39,7 @@ export default function RegistrationsScreen() {
   const [showSimulate, setShowSimulate] = useState(false);
   const [tab, setTab] = useState<RegTab>('pending');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [limitMsg, setLimitMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (id && tryoutQuery.data && !tryoutQuery.data.cloud?.id) {
@@ -80,14 +82,7 @@ export default function RegistrationsScreen() {
 
   const bulkAdd = async () => {
     if (isAtPlayerLimit(user?.planTier ?? 'free', (tryoutQuery.data?.roster.length ?? 0) + selected.size - 1)) {
-      Alert.alert(
-        'Player Limit Reached',
-        'You have reached the maximum number of players for your current plan.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'View Plans', onPress: () => navigation.navigate('Upgrade') }
-        ]
-      );
+      setLimitMsg('You have reached the maximum number of players for your current plan.');
       return;
     }
     for (const regId of selected) {
@@ -218,14 +213,7 @@ export default function RegistrationsScreen() {
                   loading={addToRoster.isPending}
                   onPress={() => {
                     if (isAtPlayerLimit(user?.planTier ?? 'free', tryout.roster.length)) {
-                      Alert.alert(
-                        'Player Limit Reached',
-                        'You have reached the maximum number of players for your current plan.',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'View Plans', onPress: () => navigation.navigate('Upgrade') }
-                        ]
-                      );
+                      setLimitMsg('You have reached the maximum number of players for your current plan.');
                       return;
                     }
                     addToRoster.mutate(item.id);
@@ -262,6 +250,7 @@ export default function RegistrationsScreen() {
           }}
         />
       </Modal>
+      <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
     </Screen>
   );
 }

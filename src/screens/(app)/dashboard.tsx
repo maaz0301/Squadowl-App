@@ -15,6 +15,7 @@ import {
   Screen,
   Tabs,
 } from '@/components/ui';
+import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { PlanGate } from '@/components/PlanGate';
 import { useAuthStore, useUser } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
@@ -133,6 +134,7 @@ export default function DashboardScreen() {
   const toggleCombineTryout = useSessionStore((s) => s.toggleCombineTryout);
   const [tab, setTab] = useState('assessments');
   const [combineMode, setCombineMode] = useState(false);
+  const [limitMsg, setLimitMsg] = useState<string | null>(null);
 
   const teamsQuery = useTeamsQuery();
   const tryoutsQuery = useTryoutsQuery(false);
@@ -184,14 +186,7 @@ export default function DashboardScreen() {
     else {
       const count = tryoutsQuery.data?.length ?? 0;
       if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
-        Alert.alert(
-          'Plan Limit Reached',
-          'You have reached the maximum number of assessments for your current plan.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'View Plans', onPress: () => navigation.navigate('Upgrade') }
-          ]
-        );
+        setLimitMsg('You have reached the maximum number of assessments for your current plan.');
         return;
       }
       navigation.navigate('NewAssessment');
@@ -458,6 +453,7 @@ export default function DashboardScreen() {
           <Button label={fabLabel} onPress={fabAction} />
         </View>
       )}
+      <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
     </Screen>
   );
 }

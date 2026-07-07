@@ -23,6 +23,7 @@ import { useUser } from '@/state/authStore';
 import { playerDisplayName } from '@/data/rubrics';
 import { isAtPlayerLimit } from '@/data/plans';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
+import { LimitReachedModal } from '@/components/LimitReachedModal';
 
 export default function RosterScreen() {
   const id = useAssessmentId();
@@ -38,6 +39,7 @@ export default function RosterScreen() {
   const user = useUser();
   const [showAdd, setShowAdd] = useState(false);
   const [showTools, setShowTools] = useState(false);
+  const [limitMsg, setLimitMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (tryoutQuery.data && user && !activeAssessor) {
@@ -77,14 +79,7 @@ export default function RosterScreen() {
 
   const openAdd = () => {
     if (isAtPlayerLimit(user?.planTier ?? 'free', tryout.roster.length)) {
-      Alert.alert(
-        'Player Limit Reached',
-        'You have reached the maximum number of players for your current plan.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'View Plans', onPress: () => navigation.navigate('Upgrade') }
-        ]
-      );
+      setLimitMsg('You have reached the maximum number of players for your current plan.');
       return;
     }
     setShowAdd(true);
@@ -277,6 +272,7 @@ export default function RosterScreen() {
           </Pressable>
         ))}
       </Modal>
+      <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
     </Screen>
   );
 }

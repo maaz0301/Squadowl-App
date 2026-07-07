@@ -11,6 +11,7 @@ import { useCreateTryoutMutation, useTeamsQuery, useTryoutsQuery } from '@/featu
 import { useSessionStore } from '@/state/sessionStore';
 import { useUser } from '@/state/authStore';
 import { isAtAssessmentLimit } from '@/data/plans';
+import { LimitReachedModal } from '@/components/LimitReachedModal';
 
 export default function NewAssessmentScreen() {
   const colors = useThemeColors();
@@ -20,6 +21,7 @@ export default function NewAssessmentScreen() {
   const teamsQuery = useTeamsQuery();
   const tryoutsQuery = useTryoutsQuery(false);
   const user = useUser();
+  const [limitMsg, setLimitMsg] = useState<string | null>(null);
 
   const { control, handleSubmit, watch, setValue } = useForm<CreateAssessmentForm>({
     resolver: zodResolver(CreateAssessmentFormSchema),
@@ -40,14 +42,7 @@ export default function NewAssessmentScreen() {
   const onSubmit = handleSubmit(async (data) => {
     const count = tryoutsQuery.data?.length ?? 0;
     if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
-      Alert.alert(
-        'Plan Limit Reached',
-        'You have reached the maximum number of assessments for your current plan.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'View Plans', onPress: () => navigation.navigate('Upgrade') }
-        ]
-      );
+      setLimitMsg('You have reached the maximum number of assessments for your current plan.');
       return;
     }
     const tryout = await createTryout.mutateAsync(data);
@@ -149,6 +144,7 @@ export default function NewAssessmentScreen() {
 
         <Button label="Create Assessment" onPress={onSubmit} loading={createTryout.isPending} className="mt-2" />
       </View>
+      <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
     </Screen>
   );
 }
