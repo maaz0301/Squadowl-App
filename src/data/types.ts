@@ -56,6 +56,7 @@ export const TryoutSettingsSchema = z.object({
 export type TryoutSettings = z.infer<typeof TryoutSettingsSchema>;
 
 export const CloudSessionSchema = z.object({
+  id: z.string(),
   enabled: z.boolean(),
   dirty: z.boolean().optional(),
   lastSyncAt: z.number().optional(),

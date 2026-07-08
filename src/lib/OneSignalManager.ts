@@ -20,7 +20,7 @@ export class OneSignalManager {
   }
 
   private static setupNotificationClickListener() {
-    OneSignal.Notifications.addEventListener('click', async (event) => {
+    OneSignal.Notifications.addEventListener('click', async (event: any) => {
       const launchURL = event.notification.launchURL;
       
       if (launchURL) {

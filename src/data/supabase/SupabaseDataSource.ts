@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '@/lib/supabase';
 import type { DataSource } from '../datasource';
