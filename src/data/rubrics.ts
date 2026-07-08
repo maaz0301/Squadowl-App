@@ -260,6 +260,24 @@ function mean(nums: number[]): number | null {
   return nums.reduce((a, b) => a + b, 0) / nums.length;
 }
 
+/** Maps legacy rubric keys (e.g. 'SK1') to current keys (e.g. 'SK1 Accel') */
+export function mapLegacyScores(
+  scores: Record<string, number>,
+  categories: RubricCategory[]
+): Record<string, number> {
+  if (!scores) return {};
+  const mapped = { ...scores };
+  for (const cat of categories) {
+    for (const skill of cat.subskills) {
+      const prefix = skill.key.split(' ')[0];
+      if (mapped[prefix] !== undefined && mapped[skill.key] === undefined) {
+        mapped[skill.key] = mapped[prefix];
+      }
+    }
+  }
+  return mapped;
+}
+
 /** Average of all scored sub-skills in a category, from a single score map. */
 export function categoryAverage(
   scores: Record<string, number>,

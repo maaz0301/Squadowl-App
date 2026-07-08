@@ -1,5 +1,5 @@
 import React from 'react';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator, BottomTabBar } from '@react-navigation/bottom-tabs';
 import { Text, Pressable, View } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
@@ -79,6 +79,28 @@ export default function AssessmentTabNavigator() {
 
   return (
     <Tab.Navigator
+      tabBar={props => {
+        const state = props.state;
+        const activeRoute = state.routes[state.index];
+        const isRosterSubScreen = [
+          'AssessmentPlayer',
+          'AssessmentScore',
+          'AssessmentRinkside',
+          'AssessmentTeamBuilder',
+          'AssessmentCompare',
+          'AssessmentRosterLibrary',
+          'AssessmentScanSheet'
+        ].includes(activeRoute.name);
+
+        if (isRosterSubScreen) {
+          const rosterIndex = state.routes.findIndex(r => r.name === 'AssessmentRoster');
+          if (rosterIndex !== -1) {
+            const newState = { ...state, index: rosterIndex };
+            return <BottomTabBar {...props} state={newState} />;
+          }
+        }
+        return <BottomTabBar {...props} />;
+      }}
       screenOptions={{
         headerShown: false,
         headerStyle: { backgroundColor: colors.bgSecondary, borderBottomWidth: 1, borderBottomColor: colors.border },

@@ -22,6 +22,8 @@ import type {
   ScoreForm,
   Season,
   SeasonEvent,
+  Athlete,
+  AthleteHistory,
   Team,
   Tryout,
   UserProfile,
@@ -92,7 +94,10 @@ export interface DataSource {
   updateSeasonEvent(seasonId: string, eventId: string, updates: Partial<SeasonEvent>): Promise<SeasonEvent>;
   deleteSeasonEvent(seasonId: string, eventId: string): Promise<void>;
   sendPortalInvite(seasonId: string, playerId: string, email: string): Promise<void>;
+  sendTeamAnnouncement(seasonId: string, title: string, message: string): Promise<void>;
   setEventAvailability(seasonId: string, eventId: string, playerId: string, response: 'yes' | 'maybe' | 'no'): Promise<void>;
+  getAthleteHistory(athleteId: string): Promise<AthleteHistory>;
+  listAthletes(): Promise<Athlete[]>;
 
   // Phase 4: Enterprise & Admin
   getOrg(): Promise<Org | null>;

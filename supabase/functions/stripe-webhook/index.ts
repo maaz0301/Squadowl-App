@@ -1,9 +1,10 @@
+// @ts-ignore: Deno import
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { stripe, cryptoProvider } from '../_shared/stripe.ts';
 import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
 // Email sending temporarily removed
 
-serve(async (req) => {
+serve(async (req: Request) => {
   const signature = req.headers.get('Stripe-Signature');
   
   if (!signature) {
@@ -12,6 +13,7 @@ serve(async (req) => {
 
   try {
     const body = await req.text();
+    // @ts-ignore: Deno global
     const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') as string;
     
     let event;
@@ -88,7 +90,7 @@ serve(async (req) => {
         
         const { data: account } = await supabaseAdmin
           .from('accounts')
-          .select('id')
+          .select('id, name')
           .eq('stripe_customer_id', invoice.customer)
           .single();
           
@@ -103,6 +105,25 @@ serve(async (req) => {
           
           if (error) {
             console.error('Error inserting payment:', error);
+          } else {
+            // Send push notification to account owners
+            const { data: owners } = await supabaseAdmin
+              .from('memberships')
+              .select('user_id')
+              .eq('account_id', account.id)
+              .in('role', ['owner', 'admin']);
+              
+            if (owners && owners.length > 0) {
+              const userIds = owners.map((m: { user_id: string }) => m.user_id);
+              await supabaseAdmin.functions.invoke('send-push-notification', {
+                body: {
+                  target_user_ids: userIds,
+                  heading: 'Payment Successful',
+                  content: `Your payment of ${(invoice.amount_paid / 100).toFixed(2)} ${invoice.currency.toUpperCase()} was successful.`,
+                  data: { accountId: account.id }
+                }
+              });
+            }
           }
         }
         break;

@@ -27,6 +27,8 @@ import type {
   Season,
   SeasonEvent,
   SeasonPlayer,
+  Athlete,
+  AthleteHistory,
   Team,
   Tryout,
   UserProfile,
@@ -782,16 +784,19 @@ async deleteTryout(id: string): Promise<void> {
 
   async addPlayer(tryoutId: string, form: AddPlayerForm): Promise<Player> {
     const { supabase, accountId } = await this.ctx();
-    const athleteId = await this.createAthlete(accountId, {
-      first_name: form.first,
-      last_name: form.last,
-      year_of_birth: form.yearOfBirth ? Number(form.yearOfBirth) : null,
-      guardian_name: form.guardianName || null,
-      guardian_email: form.guardianEmail || null,
-      guardian_phone: form.guardianPhone || null,
-      medical_info: form.medicalInfo || null,
-      about: form.aboutChild || null,
-    });
+    let athleteId = form.athleteId;
+    if (!athleteId) {
+      athleteId = await this.createAthlete(accountId, {
+        first_name: form.first,
+        last_name: form.last,
+        year_of_birth: form.yearOfBirth ? Number(form.yearOfBirth) : null,
+        guardian_name: form.guardianName || null,
+        guardian_email: form.guardianEmail || null,
+        guardian_phone: form.guardianPhone || null,
+        medical_info: form.medicalInfo || null,
+        about: form.aboutChild || null,
+      });
+    }
     const participant = unwrap(
       await supabase
         .from('tryout_participants')
@@ -1102,7 +1107,12 @@ async deleteTryout(id: string): Promise<void> {
   async getAiPlayerSummary(tryoutId: string, playerId: string): Promise<AiPlayerSummary> {
     const tryout = await this.getTryout(tryoutId);
     if (!tryout) throw new Error('Tryout not found');
-    const summary = mockAiPlayerSummary(tryout, playerId);
+    const { supabase } = await this.ctx();
+    const { data, error } = await supabase.functions.invoke('generate-ai-insights', {
+      body: { action: 'summary', tryout, playerIds: [playerId] }
+    });
+    if (error) throw new Error(`AI error: ${error.message}`);
+    const summary = data;
     await this.updateTryout(tryoutId, { aiAssessments: { [playerId]: summary } });
     return summary;
   }
@@ -1110,7 +1120,12 @@ async deleteTryout(id: string): Promise<void> {
   async getAiCompare(tryoutId: string, playerIds: string[]): Promise<AiCompareSummary> {
     const tryout = await this.getTryout(tryoutId);
     if (!tryout) throw new Error('Tryout not found');
-    return mockAiCompare(tryout, playerIds);
+    const { supabase } = await this.ctx();
+    const { data, error } = await supabase.functions.invoke('generate-ai-insights', {
+      body: { action: 'compare', tryout, playerIds }
+    });
+    if (error) throw new Error(`AI error: ${error.message}`);
+    return data;
   }
 
   async exportTryout(
@@ -1132,8 +1147,17 @@ async deleteTryout(id: string): Promise<void> {
     };
   }
 
-  async createShareLink(_tryoutId: string, _label?: string): Promise<{ token: string; expiresAt: number }> {
-    return { token: generateId('share').slice(0, 12), expiresAt: Date.now() + 7 * 86400000 };
+  async createShareLink(tryoutId: string, _label?: string): Promise<{ token: string; expiresAt: number }> {
+    const tryout = await this.getTryout(tryoutId);
+    if (!tryout) throw new Error('Tryout not found');
+    const token = generateId('share').slice(0, 12);
+    const expiresAt = Date.now() + 7 * 86400000;
+    
+    // Store in settings to avoid needing a schema migration
+    const newSettings = { ...tryout.settings, shareToken: token, shareExpiresAt: expiresAt };
+    await this.updateTryout(tryoutId, { settings: newSettings });
+    
+    return { token, expiresAt };
   }
 
   // ─── Phase 3: Seasons ───────────────────────────────────────────────────────────
@@ -1341,7 +1365,7 @@ async deleteTryout(id: string): Promise<void> {
   }
 
   async updateSeasonEvent(
-    _seasonId: string,
+    seasonId: string,
     eventId: string,
     updates: Partial<SeasonEvent>,
   ): Promise<SeasonEvent> {
@@ -1357,6 +1381,25 @@ async deleteTryout(id: string): Promise<void> {
     const row = unwrap(
       await supabase.from('season_events').update(patch).eq('id', eventId).select().single(),
     ) as Row;
+
+    try {
+      const { data } = await supabase.from('season_roster').select('player_email').eq('season_id', seasonId);
+      const emails = data?.map((r) => r.player_email).filter(Boolean) || [];
+      if (emails.length > 0) {
+        supabase.functions.invoke('send-push-notification', {
+          body: { target_user_ids: emails, heading: `Schedule Update: ${row.title}`, content: `Event updated to ${row.event_date}.` }
+        }).catch(console.error);
+
+        for (const email of emails) {
+          supabase.functions.invoke('send-email', {
+            body: { type: 'schedule_update', to: email, payload: { eventName: row.title, date: row.event_date, time: row.start_time, location: row.location } }
+          }).catch(console.error);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to send update emails', e);
+    }
+
     return this.rowToSeasonEvent(row, {});
   }
 
@@ -1367,7 +1410,7 @@ async deleteTryout(id: string): Promise<void> {
 
   async addSeasonPlayer(seasonId: string, player: Omit<SeasonPlayer, 'id'>): Promise<SeasonPlayer> {
     const { supabase, accountId } = await this.ctx();
-    const athleteId = await this.createAthlete(accountId, {
+    const athleteId = player.athleteId || await this.createAthlete(accountId, {
       first_name: player.firstName,
       last_name: player.lastName,
       guardian_email: player.guardianEmail || null,
@@ -1393,13 +1436,109 @@ async deleteTryout(id: string): Promise<void> {
     const roster = unwrap(
       await supabase.from('season_roster').select('athlete_id').eq('id', playerId).single(),
     ) as Row;
+    const token = generateId('invite').slice(0, 20);
     await supabase.from('portal_invites').insert({
       account_id: accountId,
       athlete_id: roster.athlete_id,
       season_id: seasonId,
       email,
-      token: generateId('invite').slice(0, 20),
+      token,
     });
+    await supabase.functions.invoke('send-email', {
+      body: { type: 'org_invite', to: email, payload: { role: 'Guardian/Player' } }
+    });
+  }
+
+  async sendTeamAnnouncement(seasonId: string, title: string, message: string): Promise<void> {
+    const { supabase } = await this.ctx();
+    const { data } = await supabase.from('season_roster').select('player_email').eq('season_id', seasonId);
+    const emails = data?.map((r) => r.player_email).filter(Boolean) || [];
+    if (emails.length > 0) {
+      supabase.functions.invoke('send-push-notification', {
+        body: { target_user_ids: emails, heading: `Announcement: ${title}`, content: message }
+      }).catch(console.error);
+
+      for (const email of emails) {
+        supabase.functions.invoke('send-email', {
+          body: { type: 'reminder', to: email, payload: { title, message } }
+        }).catch(console.error);
+      }
+    }
+  }
+
+  async listAthletes(): Promise<Athlete[]> {
+    const { supabase, accountId } = await this.ctx();
+    const { data: athletes } = await supabase
+      .from('athletes')
+      .select('*, tryout_participants(current_team, current_level, jersey, created_at)')
+      .eq('account_id', accountId)
+      .order('first_name', { ascending: true });
+      
+    if (!athletes) return [];
+    
+    return athletes.map(a => {
+      const parts = (a.tryout_participants as any[])?.sort((p1, p2) => 
+        new Date(p1.created_at).getTime() - new Date(p2.created_at).getTime()
+      ) || [];
+      const recentPart = parts.length > 0 ? parts[parts.length - 1] : null;
+
+      return {
+        id: a.id,
+        first: a.first_name ?? '',
+        last: a.last_name ?? '',
+        yearOfBirth: a.year_of_birth != null ? String(a.year_of_birth) : undefined,
+        guardianName: a.guardian_name ?? undefined,
+        guardianEmail: a.guardian_email ?? undefined,
+        guardianPhone: a.guardian_phone ?? undefined,
+        medicalInfo: a.medical_info ?? undefined,
+        aboutChild: a.about ?? undefined,
+        currentPosition: a.default_position ?? undefined,
+        currentTeam: recentPart?.current_team ?? undefined,
+        currentLevel: recentPart?.current_level ?? undefined,
+        jersey: recentPart?.jersey ?? undefined,
+        pastSeasonsCount: parts.length,
+      };
+    });
+  }
+
+  async getAthleteHistory(athleteId: string): Promise<AthleteHistory> {
+    const { supabase } = await this.ctx();
+
+    // 1. Fetch past seasons
+    const { data: rosterRows } = await supabase
+      .from('season_roster')
+      .select('season_id, seasons(name, team_name)')
+      .eq('athlete_id', athleteId);
+
+    const pastSeasons = (rosterRows || []).map((r: any) => ({
+      seasonId: r.season_id,
+      seasonName: r.seasons?.name || 'Unknown Season',
+      teamName: r.seasons?.team_name || 'Unknown Team',
+    }));
+
+    // 2. Fetch past evaluations across tryouts
+    const { data: tryoutRosterRows } = await supabase
+      .from('tryout_participants')
+      .select('id')
+      .eq('athlete_id', athleteId);
+    
+    let pastEvaluations: Evaluation[] = [];
+    if (tryoutRosterRows && tryoutRosterRows.length > 0) {
+      const rosterIds = tryoutRosterRows.map(r => r.id);
+      const { data: evals } = await supabase
+        .from('evaluations')
+        .select('*, evaluation_scores(rubric_key, value)')
+        .in('participant_id', rosterIds);
+      if (evals) {
+        pastEvaluations = evals.map(e => this.rowToEval(e));
+      }
+    }
+
+    return {
+      athleteId,
+      pastSeasons,
+      pastEvaluations,
+    };
   }
 
   async setEventAvailability(

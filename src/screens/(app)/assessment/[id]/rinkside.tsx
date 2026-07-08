@@ -15,7 +15,7 @@ import {
   ScorePad,
   Screen,
 } from '@/components/ui';
-import { useTryoutQuery, useSaveEvaluationMutation } from '@/features/queries';
+import { useTryoutQuery, useSaveEvaluationMutation, useAthleteHistoryQuery } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { useSessionStore } from '@/state/sessionStore';
 import {
@@ -24,6 +24,7 @@ import {
   isGoaliePosition,
   playerDisplayName,
   weightedOverall,
+  mapLegacyScores,
 } from '@/data/rubrics';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -45,6 +46,8 @@ export default function RinksideScreen() {
   const roster = tryoutQuery.data?.roster ?? [];
   const player = roster[rinksideIndex];
 
+  const historyQuery = useAthleteHistoryQuery(player?.athleteId);
+
   const categories = useMemo(() => {
     if (!tryoutQuery.data || !player) return [];
     return getPlayerCategories(
@@ -61,9 +64,52 @@ export default function RinksideScreen() {
       : tryoutQuery.data.settings.skaterWeights;
   }, [tryoutQuery.data, player]);
 
+  const previousEvals = useMemo(() => {
+    const current = tryoutQuery.data?.evals.filter((e) => e.playerId === player?.id) || [];
+    const past = historyQuery.data?.pastEvaluations || [];
+    return [...current, ...past].sort((a, b) => b.createdAt - a.createdAt);
+  }, [tryoutQuery.data?.evals, historyQuery.data?.pastEvaluations, player?.id]);
+
+  const highestSessionNum = useMemo(() => {
+    return (tryoutQuery.data?.evals || []).reduce((max, ev) => {
+      if (!ev.session) return max;
+      const match = ev.session.match(/^Session (\d+)$/);
+      return match ? Math.max(max, parseInt(match[1], 10)) : max;
+    }, 0);
+  }, [tryoutQuery.data?.evals]);
+
+  const SESSIONS = useMemo(() => {
+    const count = Math.max(5, highestSessionNum + 1);
+    const sessions = Array.from({ length: count }, (_, i) => `Session ${i + 1}`);
+    sessions.push('Extra View');
+    return sessions;
+  }, [highestSessionNum]);
+
+  const mostRecentEval = previousEvals[0];
+
   useEffect(() => {
-    clearWorkingScores();
-  }, [player?.id]);
+    const defaultSession = mostRecentEval?.session && SESSIONS.includes(mostRecentEval.session) 
+      ? mostRecentEval.session 
+      : 'Session 1';
+    
+    setSession(defaultSession);
+
+    if (mostRecentEval?.scores) {
+      setWorkingScores(mapLegacyScores(mostRecentEval.scores, categories));
+    } else {
+      clearWorkingScores();
+    }
+  }, [player?.id, mostRecentEval?.id]);
+
+  const handleSessionChange = (newSession: string) => {
+    setSession(newSession);
+    const evalForSession = previousEvals.find(e => e.session === newSession);
+    if (evalForSession?.scores) {
+      setWorkingScores(mapLegacyScores(evalForSession.scores, categories));
+    } else {
+      clearWorkingScores();
+    }
+  };
 
   const goNext = () => {
     if (rinksideIndex < roster.length - 1) setRinksideIndex(rinksideIndex + 1);
@@ -115,11 +161,34 @@ export default function RinksideScreen() {
           title="Rinkside Scoring"
           subtitle={`${rinksideIndex + 1} of ${roster.length}`}
           showBack
+          onBack={() => navigation.navigate('AssessmentRoster')}
         />
         <View className="flex-row flex-wrap mb-2">
-          {(['Session 1', 'Session 2', 'Extra View'] as const).map((s) => (
-            <Chip key={s} label={s} active={session === s} onPress={() => setSession(s)} />
-          ))}
+          {(() => {
+            const scoredSessions = new Map((tryoutQuery.data?.evals.filter((e) => e.playerId === player?.id) || []).map(e => [e.session, e.id]));
+            const firstUnscoredIdx = SESSIONS.findIndex(s => !scoredSessions.has(s));
+            
+            return SESSIONS.map((s, idx) => {
+              const isScored = scoredSessions.has(s);
+              let disabled = false;
+              if (!isScored && firstUnscoredIdx !== -1 && idx > firstUnscoredIdx) {
+                disabled = true;
+              }
+              
+              return (
+                <Chip 
+                  key={s} 
+                  label={s} 
+                  active={session === s} 
+                  disabled={disabled}
+                  onPress={() => {
+                    if (disabled) return;
+                    handleSessionChange(s);
+                  }} 
+                />
+              );
+            });
+          })()}
         </View>
       </View>
 
@@ -143,6 +212,66 @@ export default function RinksideScreen() {
               {overall > 0 ? overall.toFixed(1) : '—'}
             </Text>
           </View>
+
+          {historyQuery.data && (historyQuery.data.pastSeasons.length > 0 || historyQuery.data.pastEvaluations.length > 0) && (
+            <View className="mb-4 px-4 py-3 rounded border" style={{ borderColor: colors.border, backgroundColor: colors.card }}>
+              <Text className="font-display font-bold mb-2" style={{ color: colors.primary }}>
+                Historical Data
+              </Text>
+              {(() => {
+                const uniquePastEvals = Object.values(
+                  historyQuery.data.pastEvaluations.reduce((acc, ev) => {
+                    const key = `${ev.session}-${ev.evaluator}`;
+                    if (!acc[key] || acc[key].createdAt < ev.createdAt) {
+                      acc[key] = ev;
+                    }
+                    return acc;
+                  }, {} as Record<string, typeof historyQuery.data.pastEvaluations[0]>)
+                ).sort((a, b) => a.createdAt - b.createdAt);
+
+                return (
+                  <>
+                    {historyQuery.data.pastSeasons.length > 0 && (
+                      <View>
+                        <Text className="text-sm font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Past Seasons</Text>
+                        {historyQuery.data.pastSeasons.map((s) => (
+                          <View key={s.seasonId} className="flex-row items-center gap-2 mb-1">
+                            <Text style={{ color: colors.primary, fontWeight: 'bold' }}>{s.seasonName}</Text>
+                            <Text style={{ color: colors.ink }}>{s.teamName}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                    {uniquePastEvals.length > 0 && (
+                      <View className={historyQuery.data.pastSeasons.length > 0 ? "mt-2 pt-2 border-t" : ""} style={{ borderColor: colors.border }}>
+                        <Text className="text-sm font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Past Evals ({uniquePastEvals.length})</Text>
+                        {uniquePastEvals.map((ev) => (
+                          <View key={ev.id} className="mb-1 border-b pb-1" style={{ borderColor: colors.border }}>
+                            <Text className="font-bold text-sm" style={{ color: colors.ink }}>
+                              {ev.session} · {ev.recommendation || 'No Rec'}
+                            </Text>
+                            {ev.strengths ? <Text className="text-xs" style={{ color: colors.success }}>+ {ev.strengths}</Text> : null}
+                            {ev.improve ? <Text className="text-xs" style={{ color: colors.inkMuted }}>→ {ev.improve}</Text> : null}
+                            {Object.keys(ev.scores || {}).length > 0 && (
+                              <Text className="text-xs mt-1 font-bold" style={{ color: colors.primary }}>
+                                {categories
+                                  .map((cat) => {
+                                    const avg = categoryAverage(ev.scores, cat.subskills);
+                                    return avg !== null ? `${cat.label} ${avg.toFixed(1)}` : null;
+                                  })
+                                  .filter(Boolean)
+                                  .join('  ·  ')}
+                              </Text>
+                            )}
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </>
+                );
+              })()}
+            </View>
+          )}
 
           {categories.map((cat) => {
             const catAvg = categoryAverage(workingScores, cat.subskills);

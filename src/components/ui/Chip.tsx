@@ -6,11 +6,12 @@ interface ChipProps {
   label: string;
   active?: boolean;
   highlight?: boolean;
+  disabled?: boolean;
   onPress?: () => void;
   className?: string;
 }
 
-export function Chip({ label, active, highlight, onPress, className }: ChipProps) {
+export function Chip({ label, active, highlight, disabled, onPress, className }: ChipProps) {
   const colors = useThemeColors();
   
   let bgColor = colors.tile;
@@ -29,11 +30,13 @@ export function Chip({ label, active, highlight, onPress, className }: ChipProps
 
   return (
     <Pressable
+      disabled={disabled}
       onPress={onPress}
       className={cn('px-3 py-2 rounded-full border mr-2 mb-2 min-h-[36px] justify-center', className)}
       style={{
         backgroundColor: bgColor,
         borderColor: borderColor,
+        opacity: disabled ? 0.3 : 1,
       }}
     >
       <Text

@@ -14,6 +14,7 @@ import {
   Header,
   LoadingState,
   Modal,
+  Chip,
   Screen,
 } from '@/components/ui';
 import {
@@ -25,11 +26,15 @@ import {
   useInviteMemberMutation,
   useCreateAndInviteMemberMutation,
   useOrgMembersQuery,
+  useAthleteHistoryQuery,
+  useSeasonsQuery,
+  useAddSeasonPlayerMutation,
 } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { playerDisplayName } from '@/data/rubrics';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { PlanGate } from '@/components/PlanGate';
+import { mockAiPlayerSummary } from '@/data/teamBuilder';
 
 export default function PlayerHubScreen() {
   const assessmentId = useAssessmentId();
@@ -47,6 +52,9 @@ export default function PlayerHubScreen() {
   const inviteMut = useInviteMemberMutation();
   const createAndInviteMut = useCreateAndInviteMemberMutation();
   const { data: members = [] } = useOrgMembersQuery();
+  
+  const player = tryoutQuery.data?.roster.find((p) => p.id === playerId);
+  const historyQuery = useAthleteHistoryQuery(player?.athleteId);
 
   const [showEdit, setShowEdit] = useState(false);
   const [showGuardianLink, setShowGuardianLink] = useState(false);
@@ -57,7 +65,6 @@ export default function PlayerHubScreen() {
     return <ErrorState message="Player not found." onRetry={() => tryoutQuery.refetch()} />;
   }
 
-  const player = tryoutQuery.data.roster.find((p) => p.id === playerId);
   if (!player) return <EmptyState title="Player not found" />;
 
   const evals = tryoutQuery.data.evals
@@ -75,14 +82,14 @@ export default function PlayerHubScreen() {
         {player.registrationSource === 'qr' ? <Badge label="QR Registered" variant="info" /> : null}
       </View>
 
-      <View className="flex-row gap-2 mb-4">
-        <Button
-          label="Score Player"
-          className="flex-1"
-          onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentScore', params: { id: id, playerId: playerId } })}
-        />
-        {canManageTeam && <Button label="Edit" variant="secondary" className="flex-1" onPress={() => setShowEdit(true)} />}
-      </View>
+        <View className="flex-row items-center gap-2 mt-4 mb-6">
+          <Button
+            label="Score Player"
+            className="flex-1"
+            onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentScore', params: { id: id, playerId: playerId } })}
+          />
+          {canManageTeam && <Button label="Edit" variant="secondary" className="flex-1" onPress={() => setShowEdit(true)} />}
+        </View>
 
       <Card className="mb-4 gap-1">
         <View className="flex-row justify-between items-center mb-1">
@@ -115,38 +122,78 @@ export default function PlayerHubScreen() {
         )}
       </Card>
 
-      <PlanGate feature="aiSummaries" title="AI Player Summary (Club+)">
-        <Card accent className="mb-4 gap-2">
-          <Text className="font-display font-bold" style={{ color: colors.ink }}>
-            AI Development Summary
-          </Text>
+      <Card accent className="mb-4 gap-2">
+        <Text className="font-display font-bold" style={{ color: colors.ink }}>
+          Development Summary
+        </Text>
+        <Text style={{ color: colors.inkMuted }}>
+          {mockAiPlayerSummary(tryoutQuery.data, playerId!).summary}
+        </Text>
+        <Text className="text-sm" style={{ color: colors.primary }}>
+          Role fit: {mockAiPlayerSummary(tryoutQuery.data, playerId!).role_fit}
+        </Text>
+
+        <PlanGate feature="aiSummaries" title="Deep AI Insights (Club+)">
           {tryoutQuery.data.aiAssessments?.[playerId!] ? (
-            <>
+            <View className="mt-2 border-t pt-2" style={{ borderColor: colors.border }}>
+              <Text className="font-bold mb-1" style={{ color: colors.primary }}>AI Advanced Analysis</Text>
               <Text style={{ color: colors.inkMuted }}>
                 {tryoutQuery.data.aiAssessments[playerId!].summary}
               </Text>
-              <Text className="text-sm" style={{ color: colors.primary }}>
-                Role fit: {tryoutQuery.data.aiAssessments[playerId!].role_fit}
-              </Text>
-            </>
+            </View>
           ) : (
             <Button
-              label="Generate AI Summary"
+              label="Generate AI Deep Dive"
               size="sm"
+              className="mt-2"
               onPress={() => aiSummary.mutate(playerId!)}
               loading={aiSummary.isPending}
             />
           )}
           {aiSummary.data ? (
-            <>
+            <View className="mt-2 border-t pt-2" style={{ borderColor: colors.border }}>
+              <Text className="font-bold mb-1" style={{ color: colors.primary }}>AI Advanced Analysis</Text>
               <Text style={{ color: colors.inkMuted }}>{aiSummary.data.summary}</Text>
-              {aiSummary.data.key_strengths.map((s) => (
+              {aiSummary.data.key_strengths.map((s: string) => (
                 <Text key={s} className="text-sm" style={{ color: colors.success }}>+ {s}</Text>
               ))}
-            </>
+            </View>
           ) : null}
+        </PlanGate>
+      </Card>
+
+      {historyQuery.data && (historyQuery.data.pastSeasons.length > 0 || historyQuery.data.pastEvaluations.length > 0) && (
+        <Card className="mb-4 gap-2 border-brand">
+          <Text className="font-display font-bold" style={{ color: colors.primary }}>
+            Historical Data
+          </Text>
+          {historyQuery.data.pastSeasons.length > 0 && (
+            <View>
+              <Text className="text-sm font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Past Seasons</Text>
+              {historyQuery.data.pastSeasons.map((s) => (
+                <View key={s.seasonId} className="flex-row items-center gap-2 mb-1">
+                  <Badge label={s.seasonName} variant="info" />
+                  <Text style={{ color: colors.ink }}>{s.teamName}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+          {historyQuery.data.pastEvaluations.length > 0 && (
+            <View className="mt-2">
+              <Text className="text-sm font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Past Evals ({historyQuery.data.pastEvaluations.length})</Text>
+              {historyQuery.data.pastEvaluations.map((ev, i) => (
+                <View key={ev.id} className="mb-1 border-b pb-1" style={{ borderColor: colors.border }}>
+                  <Text className="font-bold text-sm" style={{ color: colors.ink }}>
+                    {ev.session} · {ev.recommendation || 'No Rec'}
+                  </Text>
+                  {ev.strengths ? <Text className="text-xs" style={{ color: colors.success }}>+ {ev.strengths}</Text> : null}
+                  {ev.improve ? <Text className="text-xs" style={{ color: colors.inkMuted }}>→ {ev.improve}</Text> : null}
+                </View>
+              ))}
+            </View>
+          )}
         </Card>
-      </PlanGate>
+      )}
 
       <Text className="text-md font-display font-bold mb-3" style={{ color: colors.ink }}>
         Evaluations ({evals.length})
@@ -273,6 +320,7 @@ export default function PlayerHubScreen() {
           <Button label="Cancel" variant="ghost" onPress={() => setShowGuardianLink(false)} />
         </View>
       </Modal>
+
     </Screen>
   );
 }

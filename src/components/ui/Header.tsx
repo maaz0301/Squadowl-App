@@ -7,13 +7,19 @@ interface HeaderProps {
   title: string;
   subtitle?: string;
   showBack?: boolean;
+  onBack?: () => void;
   right?: React.ReactNode;
 }
 
-export function Header({ title, subtitle, showBack, right }: HeaderProps) {
+export function Header({ title, subtitle, showBack, onBack, right }: HeaderProps) {
   const colors = useThemeColors();
   const navigation = useNavigation();
+  
   const handleBack = () => {
+    if (onBack) {
+      onBack();
+      return;
+    }
     // Try parent navigator first (for nested tab navigators), fallback to current
     const parent = navigation.getParent();
     if (parent?.canGoBack()) {

@@ -8,6 +8,7 @@ import { AppThemeProvider } from './theme/ThemeProvider';
 import SplashScreen from 'react-native-splash-screen';
 import '../global.css';
 import { useAuthStore } from './state/authStore';
+import { usePushNotifications } from './hooks/usePushNotifications';
 
 const queryClient = new QueryClient({
   queryCache: new QueryCache({
@@ -20,6 +21,9 @@ const queryClient = new QueryClient({
 });
 
 export default function App() {
+  // Initialize push notifications and sync user
+  usePushNotifications();
+
   useEffect(() => {
     // Hide the native splash screen once the JS app has booted
     SplashScreen.hide();

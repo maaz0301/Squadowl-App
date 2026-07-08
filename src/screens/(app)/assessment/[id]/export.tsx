@@ -26,7 +26,7 @@ export default function ExportScreen() {
   const tryoutQuery = useTryoutQuery(id);
   const exportMut = useExportTryoutMutation(id!);
   const shareMut = useShareLinkMutation(id!);
-  const [lastExport, setLastExport] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState<string | null>(null);
 
   if (tryoutQuery.isLoading || !id) return <LoadingState />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
@@ -38,37 +38,15 @@ export default function ExportScreen() {
   const exportsAllowed = canUseFeature(tier, 'exports') || tier !== 'free';
 
   const handleExport = async (format: ExportFormat) => {
-    const result = await exportMut.mutateAsync(format);
-    setLastExport(result.filename);
-    
-    if (format === 'csv') {
-      if (Platform.OS === 'web') {
-        const blob = new Blob([result.content], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', result.filename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } else {
-        const path = `${RNFS.CachesDirectoryPath}/${result.filename}`;
-        await RNFS.writeFile(path, result.content, 'utf8');
-        try {
-          await RNShare.open({
-            url: `file://${path}`,
-            type: 'text/csv',
-            filename: result.filename,
-            title: `Export ${result.filename}`
-          });
-        } catch (e: any) {
-          if (e.message !== 'User did not share') {
-            await Share.share({ message: result.content, title: result.filename });
-          }
-        }
-      }
-    } else {
-      await Share.share({ message: result.content, title: result.filename });
+    setIsExporting(format);
+    try {
+      const { exportTryoutData } = await import('@/lib/exportData');
+      await exportTryoutData(tryout, format);
+    } catch (e: any) {
+      console.error(e);
+      // Optional: show error alert
+    } finally {
+      setIsExporting(null);
     }
   };
 
@@ -97,12 +75,11 @@ export default function ExportScreen() {
           <Text className="text-sm font-bold uppercase" style={{ color: colors.inkMuted }}>
             Export Formats
           </Text>
-          <Button label="Export CSV" variant="secondary" onPress={() => handleExport('csv')} loading={exportMut.isPending} />
+          <Button label="Export CSV" variant="secondary" onPress={() => handleExport('csv')} loading={isExporting === 'csv'} />
           <PlanGate feature="exports">
-            <Button label="Export PDF" variant="secondary" onPress={() => handleExport('pdf')} />
-            <Button label="Export XLSX" variant="secondary" onPress={() => handleExport('xlsx')} className="mt-2" />
+            <Button label="Export PDF" variant="secondary" onPress={() => handleExport('pdf')} loading={isExporting === 'pdf'} />
+            <Button label="Export XLSX" variant="secondary" onPress={() => handleExport('xlsx')} className="mt-2" loading={isExporting === 'xlsx'} />
           </PlanGate>
-          {lastExport ? <Badge label={`Exported: ${lastExport}`} variant="success" /> : null}
         </View>
       ) : (
         <PlanGate feature="exports" title="Exports require Coach plan+">

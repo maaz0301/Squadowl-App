@@ -397,6 +397,21 @@ export function useSetAvailabilityMutation(seasonId: string) {
   });
 }
 
+export function useAthleteHistoryQuery(athleteId?: string) {
+  return useQuery({
+    queryKey: ['athleteHistory', athleteId],
+    queryFn: () => getDataSource().getAthleteHistory(athleteId!),
+    enabled: !!athleteId,
+  });
+}
+
+export function useAthletesQuery() {
+  return useQuery({
+    queryKey: ['athletes'],
+    queryFn: () => getDataSource().listAthletes(),
+  });
+}
+
 // ---- Phase 4: Enterprise & Admin ----
 export function useOrgQuery() {
   return useQuery({

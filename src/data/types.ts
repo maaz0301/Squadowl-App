@@ -56,7 +56,6 @@ export const TryoutSettingsSchema = z.object({
 export type TryoutSettings = z.infer<typeof TryoutSettingsSchema>;
 
 export const CloudSessionSchema = z.object({
-  id: z.string(),
   enabled: z.boolean(),
   dirty: z.boolean().optional(),
   lastSyncAt: z.number().optional(),
@@ -65,6 +64,25 @@ export const CloudSessionSchema = z.object({
 });
 
 export type CloudSession = z.infer<typeof CloudSessionSchema>;
+
+export const AthleteSchema = z.object({
+  id: z.string(),
+  first: z.string(),
+  last: z.string(),
+  yearOfBirth: z.string().optional(),
+  guardianName: z.string().optional(),
+  guardianEmail: z.string().optional(),
+  guardianPhone: z.string().optional(),
+  medicalInfo: z.string().optional(),
+  aboutChild: z.string().optional(),
+  currentPosition: z.string().optional(),
+  currentTeam: z.string().optional(),
+  currentLevel: z.string().optional(),
+  jersey: z.string().optional(),
+  pastSeasonsCount: z.number().optional(),
+});
+
+export type Athlete = z.infer<typeof AthleteSchema>;
 
 export const PlayerSchema = z.object({
   id: z.string(),
@@ -257,6 +275,7 @@ export type CreateAssessmentForm = z.infer<typeof CreateAssessmentFormSchema>;
 
 /** Add player form */
 export const AddPlayerFormSchema = z.object({
+  athleteId: z.string().optional(),
   first: z.string().min(1, 'First name required'),
   last: z.string().min(1, 'Last name required'),
   jersey: z.string().optional(),
@@ -350,6 +369,7 @@ export type AvailabilityOption = (typeof AVAILABILITY_OPTIONS)[number];
 
 export const SeasonPlayerSchema = z.object({
   id: z.string(),
+  athleteId: z.string().optional(),
   firstName: z.string(),
   lastName: z.string(),
   jersey: z.string().optional(),
@@ -421,6 +441,12 @@ export const CreateEventFormSchema = z.object({
 });
 
 export type CreateEventForm = z.infer<typeof CreateEventFormSchema>;
+
+export interface AthleteHistory {
+  athleteId: string;
+  pastSeasons: { seasonId: string; seasonName: string; teamName: string }[];
+  pastEvaluations: Evaluation[];
+}
 
 // ---- Phase 4: Enterprise & Admin ----
 export const OrgSchema = z.object({
