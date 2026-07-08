@@ -39,6 +39,9 @@ export interface DataSource {
   getProfile(): Promise<UserProfile | null>;
   updateProfile(updates: Partial<UserProfile>): Promise<UserProfile>;
   updatePassword(password: string): Promise<void>;
+  requestPasswordReset(email: string): Promise<void>;
+  verifyPasswordResetOtp(email: string, token: string): Promise<void>;
+  resetPasswordWithOtp(email: string, token: string, newPassword: string): Promise<void>;
   checkUserExistsByEmail(email: string): Promise<boolean>;
 
   // Database

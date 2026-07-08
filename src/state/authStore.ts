@@ -14,6 +14,10 @@ interface AuthState {
   logout: () => Promise<void>;
   restoreSession: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<void>;
+  verifyPasswordResetOtp: (email: string, token: string) => Promise<void>;
+  resetPasswordWithOtp: (email: string, token: string, newPassword: string) => Promise<void>;
+  updatePassword: (password: string) => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -48,6 +52,22 @@ export const useAuthStore = create<AuthState>()(
         const profile = await getDataSource().updateProfile(updates);
         const session = get().session;
         if (session) set({ session: { ...session, user: profile } });
+      },
+      requestPasswordReset: async (email) => {
+        await getDataSource().requestPasswordReset(email);
+      },
+      verifyPasswordResetOtp: async (email, token) => {
+        await getDataSource().verifyPasswordResetOtp(email, token);
+        const session = await getDataSource().getSession();
+        set({ session, isHydrated: true });
+      },
+      resetPasswordWithOtp: async (email, token, newPassword) => {
+        await getDataSource().resetPasswordWithOtp(email, token, newPassword);
+        const session = await getDataSource().getSession();
+        set({ session, isHydrated: true });
+      },
+      updatePassword: async (password) => {
+        await getDataSource().updatePassword(password);
       },
     }),
     {

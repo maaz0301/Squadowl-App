@@ -82,6 +82,15 @@ export default function LoginScreen() {
           </Text>
         ) : null}
         <Button label="Sign In" onPress={onSubmit} loading={loading} />
+        
+        <View className="flex-row justify-center py-2">
+          <Pressable onPress={() => navigation.navigate('ForgotPassword')}>
+            <Text className="font-bold" style={{ color: colors.primary }}>
+              Forgot Password?
+            </Text>
+          </Pressable>
+        </View>
+
         <View className="flex-row justify-center gap-1 py-2">
           <Text style={{ color: colors.inkMuted }}>New coach?</Text>
           <Pressable onPress={() => navigation.navigate('Signup')}>

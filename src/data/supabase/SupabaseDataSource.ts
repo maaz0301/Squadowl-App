@@ -417,6 +417,34 @@ export class SupabaseDataSource implements DataSource {
     if (error) throw new Error(error.message);
   }
 
+  async requestPasswordReset(email: string): Promise<void> {
+    const supabase = getSupabase();
+    // Providing a redirectTo is generally needed for magic link/password reset flows in Supabase,
+    // though the actual URL depends on the project setup. For Expo, an app scheme like 'aas://reset-password' is often used.
+    // If none is provided, it falls back to the site url configured in Supabase.
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) throw new Error(error.message);
+  }
+
+  async verifyPasswordResetOtp(email: string, token: string): Promise<void> {
+    const supabase = getSupabase();
+    const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'recovery' });
+    if (error) throw new Error(error.message);
+    if (data.session) {
+      this.accountId = null;
+    }
+  }
+
+  async resetPasswordWithOtp(email: string, token: string, newPassword: string): Promise<void> {
+    const supabase = getSupabase();
+    const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'recovery' });
+    if (error) throw new Error(error.message);
+    if (!data.session) throw new Error('Failed to start session after OTP verification');
+    const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+    if (updateError) throw new Error(updateError.message);
+    this.accountId = null;
+  }
+
   async checkUserExistsByEmail(email: string): Promise<boolean> {
     const supabase = getSupabase();
     // Using the secure RPC function to check without violating RLS
