@@ -24,6 +24,7 @@ import {
   useAiPlayerSummaryMutation,
   useLinkGuardianMutation,
   useInviteMemberMutation,
+  useResendInviteMutation,
   useCreateAndInviteMemberMutation,
   useOrgMembersQuery,
   useAthleteHistoryQuery,
@@ -50,6 +51,7 @@ export default function PlayerHubScreen() {
   
   const linkGuardianMut = useLinkGuardianMutation();
   const inviteMut = useInviteMemberMutation();
+  const resendInviteMut = useResendInviteMutation();
   const createAndInviteMut = useCreateAndInviteMemberMutation();
   const { data: members = [] } = useOrgMembersQuery();
   
@@ -97,7 +99,29 @@ export default function PlayerHubScreen() {
             Guardian Access
           </Text>
           {player.linkedGuardianId ? (
-            <Badge label="Linked" variant="success" />
+            <View className="flex-row items-center gap-2">
+              <Badge label="Linked" variant="success" />
+              {canManageTeam && player.guardianEmail && (
+                <Button
+                  label="Resend Invite"
+                  variant="secondary"
+                  size="sm"
+                  onPress={async () => {
+                    try {
+                      await resendInviteMut.mutateAsync({ 
+                        userId: player.linkedGuardianId!, 
+                        email: player.guardianEmail!, 
+                        role: 'guardian' 
+                      });
+                      Alert.alert('Invite Sent', `Resent invite to ${player.guardianEmail} with a new temporary password.`);
+                    } catch (error: any) {
+                      Alert.alert('Invite Failed', error.message || 'Could not resend invite.');
+                    }
+                  }}
+                  loading={resendInviteMut.isPending}
+                />
+              )}
+            </View>
           ) : canManageTeam ? (
             <Button
               label="Link Account"

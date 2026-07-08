@@ -436,6 +436,15 @@ export function useInviteMemberMutation() {
   });
 }
 
+export function useResendInviteMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, email, role }: { userId: string; email: string; role: import('@/data/types').OrgRole }) =>
+      (getDataSource() as any).resendGuardianInvite(userId, email, role),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.orgMembers }),
+  });
+}
+
 export function useCreateAndInviteMemberMutation() {
   const qc = useQueryClient();
   return useMutation<import('@/data/types').OrgMember, Error, { email: string; password: string; name: string; role: import('@/data/types').OrgRole }>({

@@ -26,11 +26,19 @@ serve(async (req: Request) => {
     if (type === 'org_invite') {
       subject = `You have been invited to join an Organization`;
       html = `
-        <h2>Organization Invite</h2>
-        <p>You have been invited to join an organization on Athlete Assessment as a ${payload?.role ?? 'Member'}.</p>
-        <p>Please log in to your account or sign up using this email address to accept the invite.</p>
-        <br/>
-        <a href="https://athlete-assessment.com/login" style="padding: 10px 20px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 5px;">Login to Athlete Assessment</a>
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1f2937;">
+          <h2 style="color: #111827;">Organization Invite</h2>
+          <p>You have been invited to join an organization on Athlete Assessment as a <strong>${payload?.role ?? 'Member'}</strong>.</p>
+          <p>Please log in to your account or sign up using this email address to accept the invite.</p>
+          ${payload?.password ? `
+          <div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 0 0 10px 0; color: #4b5563;">An account was automatically created for you. You can log in using this temporary password:</p>
+            <p style="margin: 0; font-size: 18px; font-weight: bold; letter-spacing: 1px; color: #111827;">${payload.password}</p>
+          </div>
+          <p style="font-size: 14px; color: #6b7280;"><em>Note: We highly recommend changing this password after your first login.</em></p>
+          ` : ''}
+          <br/>
+        </div>
       `;
     } else if (type === 'tryout_invite') {
       subject = `You have been assigned as an Assessor`;
@@ -38,8 +46,6 @@ serve(async (req: Request) => {
         <h2>Assessment Invite</h2>
         <p>You have been invited to assess players for an upcoming tryout.</p>
         <p>Please log in to your account to view your assignment and score players.</p>
-        <br/>
-        <a href="https://athlete-assessment.com/login" style="padding: 10px 20px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 5px;">Login to Athlete Assessment</a>
       `;
     } else if (type === 'schedule_update') {
       subject = `Schedule Update: ${payload?.eventName ?? 'New Event'}`;
@@ -92,6 +98,7 @@ serve(async (req: Request) => {
       status: 200,
     });
   } catch (error: any) {
+    console.error('Edge Function Error:', error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,

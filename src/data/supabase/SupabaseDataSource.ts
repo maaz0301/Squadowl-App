@@ -1748,10 +1748,10 @@ async deleteTryout(id: string): Promise<void> {
       throw createError;
     }
 
-    return this.inviteOrgMember(email, role);
+    return this.inviteOrgMember(email, role, password);
   }
 
-  async inviteOrgMember(email: string, role: import('../types').OrgRole): Promise<import('../types').OrgMember> {
+  async inviteOrgMember(email: string, role: import('../types').OrgRole, password?: string): Promise<import('../types').OrgMember> {
     const { supabase, accountId } = await this.ctx();
 
     const { data, error } = await supabase.rpc('invite_org_member_by_email', {
@@ -1768,12 +1768,20 @@ async deleteTryout(id: string): Promise<void> {
     }
 
     try {
-      await this.sendEmail('org_invite', email, { role });
+      await this.sendEmail('org_invite', email, { role, password });
     } catch (e) {
-      console.error('Failed to send org invite email', e);
+      console.log('Failed to send org invite email (usually due to testing limits):', e);
     }
 
     return data as import('../types').OrgMember;
+  }
+
+  async resendGuardianInvite(userId: string, email: string, role: import('../types').OrgRole = 'guardian'): Promise<void> {
+    const { supabase } = await this.ctx();
+    const { error } = await supabase.functions.invoke('resend-invite', {
+      body: { userId, email, role },
+    });
+    if (error) throw error;
   }
 
   async updateOrgMemberRole(memberId: string, role: import('../types').OrgRole): Promise<import('../types').OrgMember> {
