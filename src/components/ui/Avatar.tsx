@@ -1,4 +1,4 @@
-import { Text, View } from 'react-native';
+import { Image, Text, View } from 'react-native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { playerInitials } from '@/data/rubrics';
 
@@ -7,6 +7,7 @@ interface AvatarProps {
   last: string;
   size?: number;
   pos?: string;
+  uri?: string;
 }
 
 const posColors: Record<string, string> = {
@@ -15,12 +16,12 @@ const posColors: Record<string, string> = {
   GTL: '#f59e0b',
 };
 
-export function Avatar({ first, last, size = 44, pos }: AvatarProps) {
+export function Avatar({ first, last, size = 44, pos, uri }: AvatarProps) {
   const colors = useThemeColors();
   const accent = pos ? (posColors[pos.toUpperCase()] ?? colors.primary) : colors.primary;
   return (
     <View
-      className="rounded-full items-center justify-center border-2"
+      className="rounded-full items-center justify-center border-2 overflow-hidden"
       style={{
         width: size,
         height: size,
@@ -28,9 +29,17 @@ export function Avatar({ first, last, size = 44, pos }: AvatarProps) {
         borderColor: accent,
       }}
     >
-      <Text className="font-display font-bold" style={{ color: colors.ink, fontSize: size * 0.35 }}>
-        {playerInitials({ first, last })}
-      </Text>
+      {uri ? (
+        <Image
+          source={{ uri }}
+          style={{ width: size - 4, height: size - 4, borderRadius: (size - 4) / 2 }}
+          resizeMode="cover"
+        />
+      ) : (
+        <Text className="font-display font-bold" style={{ color: colors.ink, fontSize: size * 0.35 }}>
+          {playerInitials({ first, last })}
+        </Text>
+      )}
     </View>
   );
 }

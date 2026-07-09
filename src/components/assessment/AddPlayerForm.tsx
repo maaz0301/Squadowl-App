@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, Image } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { AddPlayerFormSchema, type AddPlayerForm as AddPlayerFormType, type Athlete } from '@/data/types';
-import { Button, Input, Modal } from '@/components/ui';
+import { Button, Input, Modal, Avatar } from '@/components/ui';
 import { useAthletesQuery } from '@/features/queries';
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { launchImageLibrary } from 'react-native-image-picker';
 
 interface Props {
   loading?: boolean;
@@ -18,8 +19,9 @@ export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
   const athletesQuery = useAthletesQuery();
   const [modalVisible, setModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [photoUri, setPhotoUri] = useState<string | null>(defaultValues?.avatarUrl || null);
 
-  const { control, handleSubmit, setValue } = useForm<AddPlayerFormType>({
+  const { control, handleSubmit, setValue, watch } = useForm<AddPlayerFormType>({
     resolver: zodResolver(AddPlayerFormSchema),
     defaultValues: {
       athleteId: '',
@@ -27,9 +29,25 @@ export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
       last: '',
       jersey: '',
       pos: 'FWD',
+      avatarUrl: '',
       ...defaultValues,
     },
   });
+
+  const firstVal = watch('first');
+  const lastVal = watch('last');
+
+  const selectPhoto = async () => {
+    const result = await launchImageLibrary({
+      mediaType: 'photo',
+      quality: 0.8,
+    });
+    if (!result.didCancel && result.assets && result.assets.length > 0) {
+      const selected = result.assets[0];
+      setPhotoUri(selected.uri || null);
+      setValue('avatarUrl', selected.uri || '');
+    }
+  };
 
   const filteredAthletes = useMemo(() => {
     if (!athletesQuery.data) return [];
@@ -53,6 +71,8 @@ export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
     setValue('currentTeam', a.currentTeam || '');
     setValue('currentLevel', a.currentLevel || '');
     setValue('jersey', a.jersey || '');
+    setValue('avatarUrl', a.avatarUrl || '');
+    setPhotoUri(a.avatarUrl || null);
     setModalVisible(false);
   };
 
@@ -103,6 +123,12 @@ export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
           )}
         </View>
       </Modal>
+
+      <View className="items-center my-3 gap-2">
+        <Avatar first={firstVal || 'P'} last={lastVal || 'L'} size={96} uri={photoUri || undefined} />
+        <Button label={photoUri ? "Change Photo" : "Add Photo"} variant="secondary" onPress={selectPhoto} />
+      </View>
+
       <Controller
         control={control}
         name="first"

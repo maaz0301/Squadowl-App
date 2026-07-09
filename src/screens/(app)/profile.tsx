@@ -1,15 +1,24 @@
 import { useState } from 'react';
-import { Text, View, Alert } from 'react-native';
+import { Text, View, Alert, Pressable } from 'react-native';
 import { InAppBrowser } from 'react-native-inappbrowser-reborn';
 import { useNavigation } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, Header, Input, Screen } from '@/components/ui';
+import { Badge, Button, Card, Header, Input, Screen, Avatar } from '@/components/ui';
 import { useThemeStore } from '@/state/themeStore';
 import { useUser, useAuthStore, usePermissions } from '@/state/authStore';
 import { getPlanDefinition, canUseFeature } from '@/data/plans';
-import { useUpdateProfileMutation, useUpdatePasswordMutation, useGuardianRostersQuery, useTeamsQuery, useTryoutsQuery, useSeasonsQuery } from '@/features/queries';
+import {
+  useUpdateProfileMutation,
+  useUpdatePasswordMutation,
+  useGuardianRostersQuery,
+  useTeamsQuery,
+  useTryoutsQuery,
+  useSeasonsQuery,
+  useUploadCoachPhotoMutation,
+} from '@/features/queries';
 import { getDataSource } from '@/data';
+import { launchImageLibrary } from 'react-native-image-picker';
 
 export default function ProfileScreen() {
   const colors = useThemeColors();
@@ -20,11 +29,13 @@ export default function ProfileScreen() {
   const toggleTheme = useThemeStore((s) => s.toggle);
   const updateProfile = useUpdateProfileMutation();
   const updatePasswordMut = useUpdatePasswordMutation();
+  const uploadPhoto = useUploadCoachPhotoMutation();
   const { role } = usePermissions();
   const guardianQuery = useGuardianRostersQuery();
   const teamsQuery = useTeamsQuery();
   const tryoutsQuery = useTryoutsQuery(false);
   const seasonsQuery = useSeasonsQuery();
+
 
   const isGuardianOnly = !!(
     guardianQuery.data &&
@@ -49,6 +60,25 @@ export default function ProfileScreen() {
       organization: organization.trim() || undefined,
     });
     setEditing(false);
+  };
+
+  const selectPhoto = async () => {
+    const result = await launchImageLibrary({
+      mediaType: 'photo',
+      quality: 0.8,
+    });
+    if (!result.didCancel && result.assets && result.assets.length > 0 && user?.id) {
+      try {
+        await uploadPhoto.mutateAsync({
+          userId: user.id,
+          fileUri: result.assets[0].uri!,
+          fileType: 'image/jpeg',
+        });
+        Alert.alert('Success', 'Profile picture updated successfully!');
+      } catch (e: any) {
+        Alert.alert('Upload Error', 'Failed to upload photo: ' + e.message);
+      }
+    }
   };
 
   const savePassword = async () => {
@@ -121,14 +151,17 @@ export default function ProfileScreen() {
     <Screen scroll>
       <Header title="Profile" showBack />
       <Card accent className="mb-4 gap-2 items-center py-4">
-        <View
-          className="w-20 h-20 rounded-full items-center justify-center mb-2"
-          style={{ backgroundColor: colors.tile }}
-        >
-          <Text className="text-3xl font-display font-bold" style={{ color: colors.primary }}>
-            {user?.displayName?.charAt(0) ?? 'C'}
+        <Pressable onPress={selectPhoto} disabled={uploadPhoto.isPending} className="items-center mb-2">
+          <Avatar
+            first={user?.displayName?.split(' ')[0] ?? 'C'}
+            last={user?.displayName?.split(' ')[1] ?? ''}
+            size={80}
+            uri={user?.avatarUrl}
+          />
+          <Text className="text-xs mt-1" style={{ color: colors.primary }}>
+            {uploadPhoto.isPending ? 'Uploading...' : 'Tap to change photo'}
           </Text>
-        </View>
+        </Pressable>
         {editing ? (
           <View className="w-full gap-3">
             <Input label="Display name" value={displayName} onChangeText={setDisplayName} />

@@ -2,7 +2,9 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { corsHeaders } from '../_shared/cors.ts';
 
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+const SENDGRID_API_KEY = Deno.env.get('SENDGRID_API_KEY') || '';
+const SENDER_EMAIL = Deno.env.get('SENDER_EMAIL') || 'noreply@athleteassessment.com';
+const SENDER_NAME = Deno.env.get('SENDER_NAME') || 'Athlete Assessment';
 
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -10,8 +12,8 @@ serve(async (req: Request) => {
   }
 
   try {
-    if (!RESEND_API_KEY) {
-      throw new Error('RESEND_API_KEY is not set');
+    if (!SENDGRID_API_KEY) {
+      throw new Error('SENDGRID_API_KEY is not set');
     }
 
     const { type, to, payload } = await req.json();
@@ -69,31 +71,52 @@ serve(async (req: Request) => {
         <p>You have successfully registered <strong>${payload?.playerName}</strong>.</p>
         <p>We have received your information and look forward to seeing you at the event.</p>
       `;
+    } else if (type === 'password_reset') {
+      subject = `Reset your password`;
+      html = `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1f2937;">
+          <h2 style="color: #111827; margin-bottom: 20px;">Reset Password</h2>
+          <p>We received a request to reset your password. Use the following 6-digit code to proceed:</p>
+          <div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0; text-align: center;">
+            <p style="margin: 0; font-size: 28px; font-weight: bold; letter-spacing: 4px; color: #111827;">${payload?.code}</p>
+          </div>
+          <p style="font-size: 14px; color: #6b7280;">This code will expire shortly. If you did not request this, please ignore this email.</p>
+        </div>
+      `;
     }
 
-    const res = await fetch('https://api.resend.com/emails', {
+    const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${RESEND_API_KEY}`,
+        Authorization: `Bearer ${SENDGRID_API_KEY}`,
       },
       body: JSON.stringify({
-        // For production, change to a verified domain email. 
-        // resend.dev can only send to the verified email address associated with the resend account
-        from: 'Athlete Assessment <onboarding@resend.dev>',
-        to: [to],
-        subject,
-        html,
+        personalizations: [
+          {
+            to: [{ email: to }],
+            subject: subject,
+          },
+        ],
+        from: {
+          email: SENDER_EMAIL,
+          name: SENDER_NAME,
+        },
+        content: [
+          {
+            type: 'text/html',
+            value: html,
+          },
+        ],
       }),
     });
 
-    const data = await res.json();
-
     if (!res.ok) {
-      throw new Error(`Resend Error: ${data.message || JSON.stringify(data)}`);
+      const errorText = await res.text();
+      throw new Error(`SendGrid Error: ${res.status} - ${errorText}`);
     }
 
-    return new Response(JSON.stringify({ success: true, id: data.id }), {
+    return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });

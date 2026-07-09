@@ -43,6 +43,7 @@ export interface DataSource {
   verifyPasswordResetOtp(email: string, token: string): Promise<void>;
   resetPasswordWithOtp(email: string, token: string, newPassword: string): Promise<void>;
   checkUserExistsByEmail(email: string): Promise<boolean>;
+  uploadCoachPhoto(userId: string, fileUri: string, fileType: string): Promise<string>;
 
   // Database
   getDatabase(): Promise<Database>;
@@ -68,6 +69,7 @@ export interface DataSource {
   addPlayer(tryoutId: string, form: AddPlayerForm): Promise<Player>;
   updatePlayer(tryoutId: string, playerId: string, updates: Partial<Player>): Promise<Player>;
   deletePlayer(tryoutId: string, playerId: string): Promise<void>;
+  uploadPlayerPhoto(athleteId: string, fileUri: string, fileType: string): Promise<string>;
 
   // Evaluations
   saveEvaluation(tryoutId: string, playerId: string, form: ScoreForm, evalId?: string): Promise<Evaluation>;

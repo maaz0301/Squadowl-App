@@ -83,7 +83,7 @@ export default function ResultsScreen() {
               <Text className="text-xl font-display font-bold w-8" style={{ color: colors.inkMuted }}>
                 {index + 1}
               </Text>
-              <Avatar first={item.player.first} last={item.player.last} pos={item.player.pos} size={40} />
+              <Avatar first={item.player.first} last={item.player.last} pos={item.player.pos} size={40} uri={item.player.avatarUrl} />
               <View className="flex-1">
                 <Text className="font-bold" style={{ color: colors.ink }}>
                   {playerDisplayName(item.player)}

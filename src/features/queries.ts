@@ -276,6 +276,21 @@ export function useUpdateProfileMutation() {
   });
 }
 
+export function useUploadCoachPhotoMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ userId, fileUri, fileType }: { userId: string; fileUri: string; fileType: string }) => {
+      const publicUrl = await getDataSource().uploadCoachPhoto(userId, fileUri, fileType);
+      const currentProfile = useAuthStore.getState().user;
+      if (currentProfile) {
+        await useAuthStore.getState().updateProfile({ ...currentProfile, avatarUrl: publicUrl });
+      }
+      return publicUrl;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.profile }),
+  });
+}
+
 export function useUpdatePasswordMutation() {
   return useMutation({
     mutationFn: (password: string) => getDataSource().updatePassword(password),
@@ -296,6 +311,15 @@ export function useAiPlayerSummaryMutation(tryoutId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (playerId: string) => getDataSource().getAiPlayerSummary(tryoutId, playerId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) }),
+  });
+}
+
+export function useUploadPlayerPhotoMutation(tryoutId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ athleteId, fileUri, fileType }: { athleteId: string; fileUri: string; fileType: string }) =>
+      getDataSource().uploadPlayerPhoto(athleteId, fileUri, fileType),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) }),
   });
 }

@@ -174,7 +174,7 @@ export default function GuardianPortalScreen() {
         <Header title="Guardian Portal" showBack />
         
         <View className="flex-row items-center gap-4 mb-4 mt-2">
-          <Avatar first={athlete.firstName} last={athlete.lastName} size={64} />
+          <Avatar first={athlete.firstName} last={athlete.lastName} size={64} uri={athlete.avatarUrl} />
           <View>
             <Text className="text-2xl font-display font-bold" style={{ color: colors.ink }}>
               {athlete.firstName} {athlete.lastName}

@@ -81,6 +81,7 @@ export const AthleteSchema = z.object({
   currentLevel: z.string().optional(),
   jersey: z.string().optional(),
   pastSeasonsCount: z.number().optional(),
+  avatarUrl: z.string().optional(),
 });
 
 export type Athlete = z.infer<typeof AthleteSchema>;
@@ -90,6 +91,7 @@ export const PlayerSchema = z.object({
   athleteId: z.string().optional(),
   first: z.string(),
   last: z.string(),
+  avatarUrl: z.string().optional(),
   anonymous: z.boolean().optional(),
   jersey: z.string().optional(),
   jerseyColour: z.string().optional(),
@@ -211,6 +213,7 @@ export const UserProfileSchema = z.object({
   email: z.string().email(),
   displayName: z.string(),
   organization: z.string().optional(),
+  avatarUrl: z.string().optional(),
   planTier: z.enum(PLAN_TIERS).default('coach'),
   subscriptionStatus: z.string().optional(),
   createdAt: z.number(),
@@ -293,6 +296,7 @@ export const AddPlayerFormSchema = z.object({
   medicalInfo: z.string().optional(),
   friend1Name: z.string().optional(),
   friend2Name: z.string().optional(),
+  avatarUrl: z.string().optional(),
 });
 
 export type AddPlayerForm = z.infer<typeof AddPlayerFormSchema>;
@@ -524,6 +528,7 @@ export interface GuardianRosterAthlete {
   id: string;
   firstName: string;
   lastName: string;
+  avatarUrl?: string;
   tryouts: { 
     id: string; 
     name: string; 

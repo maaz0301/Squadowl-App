@@ -141,6 +141,7 @@ export class SupabaseDataSource implements DataSource {
       athleteId: a.id,
       first: a.first_name ?? '',
       last: a.last_name ?? '',
+      avatarUrl: a.avatar_url ?? undefined,
       anonymous: p.anonymous || undefined,
       jersey: p.jersey ?? undefined,
       jerseyColour: p.jersey_colour ?? undefined,
@@ -322,6 +323,7 @@ export class SupabaseDataSource implements DataSource {
       email: profile.email,
       displayName: profile.display_name,
       organization: account?.type === 'organization' ? account.name : undefined,
+      avatarUrl: profile.avatar_url ?? undefined,
       planTier: (account?.plan_tier as UserProfile['planTier']) ?? 'free',
       subscriptionStatus: account?.subscription_status,
       createdAt: toMs(profile.created_at),
@@ -397,6 +399,7 @@ export class SupabaseDataSource implements DataSource {
     if (updates.onboardingCompleted !== undefined)
       profilePatch.onboarding_completed = updates.onboardingCompleted;
     if (updates.onboardingSteps !== undefined) profilePatch.onboarding_steps = updates.onboardingSteps;
+    if (updates.avatarUrl !== undefined) profilePatch.avatar_url = updates.avatarUrl;
     if (Object.keys(profilePatch).length) {
       unwrap(await supabase.from('profiles').update(profilePatch).eq('id', userId).select().single());
     }
@@ -455,6 +458,83 @@ export class SupabaseDataSource implements DataSource {
       return false; // Fail safe
     }
     return !!data;
+  }
+
+  async uploadCoachPhoto(userId: string, fileUri: string, fileType: string): Promise<string> {
+    const { supabase } = await this.ctx();
+    const RNFS = require('react-native-fs');
+
+    const decodeBase64 = (base64Str: string): ArrayBuffer => {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+      const lookup = new Uint8Array(256);
+      for (let i = 0; i < chars.length; i++) {
+        lookup[chars.charCodeAt(i)] = i;
+      }
+      let bufferLength = base64Str.length * 0.75;
+      const len = base64Str.length;
+      let p = 0;
+
+      if (base64Str[len - 1] === '=') {
+        bufferLength--;
+        if (base64Str[len - 2] === '=') {
+          bufferLength--;
+        }
+      }
+
+      const arrayBuffer = new ArrayBuffer(bufferLength);
+      const bytes = new Uint8Array(arrayBuffer);
+
+      for (let i = 0; i < len; i += 4) {
+        const encoded1 = lookup[base64Str.charCodeAt(i)];
+        const encoded2 = lookup[base64Str.charCodeAt(i + 1)];
+        const encoded3 = lookup[base64Str.charCodeAt(i + 2)];
+        const encoded4 = lookup[base64Str.charCodeAt(i + 3)];
+
+        bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
+        bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
+        bytes[p++] = ((encoded3 & 3) << 6) | (encoded4 & 63);
+      }
+
+      return arrayBuffer;
+    };
+
+    let cleanPath = fileUri;
+    if (cleanPath.startsWith('file://')) {
+      cleanPath = cleanPath.slice(7);
+    }
+    cleanPath = decodeURIComponent(cleanPath);
+
+    const base64 = await RNFS.readFile(cleanPath, 'base64');
+    const buffer = decodeBase64(base64);
+
+    const fileExtension = fileType.split('/')[1] || 'jpg';
+    const filePath = `coaches/${userId}.${fileExtension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, buffer, {
+        contentType: fileType,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      throw new Error(`Upload failed: ${uploadError.message}`);
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(filePath);
+
+    unwrap(
+      await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrl })
+        .eq('id', userId)
+        .select()
+        .single()
+    );
+
+    return publicUrl;
   }
 
   // ─── Database aggregate (used by global search) ──────────────────────────────
@@ -716,7 +796,14 @@ async deleteTryout(id: string): Promise<void> {
     const { error } = await supabase.functions.invoke('send-email', {
       body: { type, to, payload },
     });
-    if (error) throw error;
+    if (error) {
+      let msg = error.message;
+      try {
+        const body = await error.context.json();
+        if (body?.error) msg = body.error;
+      } catch {}
+      throw new Error(msg);
+    }
   }
 
   async copyTryout(id: string): Promise<Tryout> {
@@ -824,6 +911,7 @@ async deleteTryout(id: string): Promise<void> {
         guardian_phone: form.guardianPhone || null,
         medical_info: form.medicalInfo || null,
         about: form.aboutChild || null,
+        avatar_url: form.avatarUrl || null,
       });
     }
     const participant = unwrap(
@@ -862,6 +950,10 @@ async deleteTryout(id: string): Promise<void> {
     if (updates.aboutChild !== undefined) athletePatch.about = updates.aboutChild || null;
     if (updates.currentPosition !== undefined)
       athletePatch.default_position = updates.currentPosition || null;
+    if (updates.avatarUrl !== undefined) athletePatch.avatar_url = updates.avatarUrl || null;
+
+
+
 
     const participantPatch: Row = {};
     if (updates.jersey !== undefined) participantPatch.jersey = updates.jersey || null;
@@ -911,6 +1003,83 @@ async deleteTryout(id: string): Promise<void> {
     unwrap(
       await supabase.from('tryout_participants').delete().eq('id', playerId).select().maybeSingle(),
     );
+  }
+
+  async uploadPlayerPhoto(athleteId: string, fileUri: string, fileType: string): Promise<string> {
+    const { supabase } = await this.ctx();
+    const RNFS = require('react-native-fs');
+
+    const decodeBase64 = (base64Str: string): ArrayBuffer => {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+      const lookup = new Uint8Array(256);
+      for (let i = 0; i < chars.length; i++) {
+        lookup[chars.charCodeAt(i)] = i;
+      }
+      let bufferLength = base64Str.length * 0.75;
+      const len = base64Str.length;
+      let p = 0;
+
+      if (base64Str[len - 1] === '=') {
+        bufferLength--;
+        if (base64Str[len - 2] === '=') {
+          bufferLength--;
+        }
+      }
+
+      const arrayBuffer = new ArrayBuffer(bufferLength);
+      const bytes = new Uint8Array(arrayBuffer);
+
+      for (let i = 0; i < len; i += 4) {
+        const encoded1 = lookup[base64Str.charCodeAt(i)];
+        const encoded2 = lookup[base64Str.charCodeAt(i + 1)];
+        const encoded3 = lookup[base64Str.charCodeAt(i + 2)];
+        const encoded4 = lookup[base64Str.charCodeAt(i + 3)];
+
+        bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
+        bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
+        bytes[p++] = ((encoded3 & 3) << 6) | (encoded4 & 63);
+      }
+
+      return arrayBuffer;
+    };
+
+    let cleanPath = fileUri;
+    if (cleanPath.startsWith('file://')) {
+      cleanPath = cleanPath.slice(7);
+    }
+    cleanPath = decodeURIComponent(cleanPath);
+
+    const base64 = await RNFS.readFile(cleanPath, 'base64');
+    const buffer = decodeBase64(base64);
+
+    const fileExtension = fileType.split('/')[1] || 'jpg';
+    const filePath = `${athleteId}.${fileExtension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, buffer, {
+        contentType: fileType,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      throw new Error(`Upload failed: ${uploadError.message}`);
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(filePath);
+
+    unwrap(
+      await supabase
+        .from('athletes')
+        .update({ avatar_url: publicUrl })
+        .eq('id', athleteId)
+        .select()
+        .single()
+    );
+
+    return publicUrl;
   }
 
   async importLibraryPlayers(
@@ -1140,7 +1309,20 @@ async deleteTryout(id: string): Promise<void> {
     const { data, error } = await supabase.functions.invoke('generate-ai-insights', {
       body: { action: 'summary', tryout, playerIds: [playerId] }
     });
-    if (error) throw new Error(`AI error: ${error.message}`);
+    if (error) {
+      let message = error.message;
+      try {
+        if ('context' in error && typeof (error as any).context?.json === 'function') {
+          const body = await (error as any).context.json();
+          if (body && body.error) {
+            message = body.error;
+          }
+        }
+      } catch (e) {
+        // ignore parsing error
+      }
+      throw new Error(`AI error: ${message}`);
+    }
     const summary = data;
     await this.updateTryout(tryoutId, { aiAssessments: { [playerId]: summary } });
     return summary;
@@ -1153,7 +1335,20 @@ async deleteTryout(id: string): Promise<void> {
     const { data, error } = await supabase.functions.invoke('generate-ai-insights', {
       body: { action: 'compare', tryout, playerIds }
     });
-    if (error) throw new Error(`AI error: ${error.message}`);
+    if (error) {
+      let message = error.message;
+      try {
+        if ('context' in error && typeof (error as any).context?.json === 'function') {
+          const body = await (error as any).context.json();
+          if (body && body.error) {
+            message = body.error;
+          }
+        }
+      } catch (e) {
+        // ignore parsing error
+      }
+      throw new Error(`AI error: ${message}`);
+    }
     return data;
   }
 
@@ -1473,9 +1668,17 @@ async deleteTryout(id: string): Promise<void> {
       email,
       token,
     });
-    await supabase.functions.invoke('send-email', {
+    const { error } = await supabase.functions.invoke('send-email', {
       body: { type: 'org_invite', to: email, payload: { role: 'Guardian/Player' } }
     });
+    if (error) {
+      let msg = error.message;
+      try {
+        const body = await error.context.json();
+        if (body?.error) msg = body.error;
+      } catch {}
+      throw new Error(msg);
+    }
   }
 
   async sendTeamAnnouncement(seasonId: string, title: string, message: string): Promise<void> {
@@ -1810,7 +2013,14 @@ async deleteTryout(id: string): Promise<void> {
     const { error } = await supabase.functions.invoke('resend-invite', {
       body: { userId, email, role },
     });
-    if (error) throw error;
+    if (error) {
+      let msg = error.message;
+      try {
+        const body = await error.context.json();
+        if (body?.error) msg = body.error;
+      } catch {}
+      throw new Error(msg);
+    }
   }
 
   async updateOrgMemberRole(memberId: string, role: import('../types').OrgRole): Promise<import('../types').OrgMember> {
@@ -1907,6 +2117,7 @@ async deleteTryout(id: string): Promise<void> {
         id,
         first_name,
         last_name,
+        avatar_url,
         tryout_participants(
           tryouts(id, name, sport),
           evaluations(session, recommendation, created_at, evaluation_scores(rubric_key, value))
@@ -1926,6 +2137,7 @@ async deleteTryout(id: string): Promise<void> {
       id: row.id,
       firstName: row.first_name,
       lastName: row.last_name,
+      avatarUrl: row.avatar_url,
       tryouts: (row.tryout_participants || [])
         .map((tp: any) => {
           if (!tp.tryouts) return null;

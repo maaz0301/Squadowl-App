@@ -226,6 +226,7 @@ export default function DashboardScreen() {
                   first={(user?.displayName ?? 'Coach').split(' ')[0] ?? 'C'}
                   last={(user?.displayName ?? '').split(' ')[1] ?? ''}
                   size={40}
+                  uri={user?.avatarUrl}
                 />
               </Pressable>
             </View>

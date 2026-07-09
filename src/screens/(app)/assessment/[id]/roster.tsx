@@ -16,7 +16,7 @@ import {
   Modal,
   Screen,
 } from '@/components/ui';
-import { useTryoutQuery, useAddPlayerMutation } from '@/features/queries';
+import { useTryoutQuery, useAddPlayerMutation, useUploadPlayerPhotoMutation } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { useSessionStore } from '@/state/sessionStore';
 import { useUser } from '@/state/authStore';
@@ -31,6 +31,7 @@ export default function RosterScreen() {
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
   const addPlayer = useAddPlayerMutation(id!);
+  const uploadPhoto = useUploadPlayerPhotoMutation(id!);
   const rosterFilter = useSessionStore((s) => s.rosterFilter);
   const setRosterFilter = useSessionStore((s) => s.setRosterFilter);
   const activeAssessor = useSessionStore((s) => s.activeAssessor);
@@ -194,7 +195,7 @@ export default function RosterScreen() {
                 className="flex-row items-center gap-3 p-4 mb-2 rounded-lg border"
                 style={{ backgroundColor: colors.card, borderColor: colors.border }}
               >
-                <Avatar first={item.first} last={item.last} pos={item.pos} />
+                <Avatar first={item.first} last={item.last} pos={item.pos} uri={item.avatarUrl} />
                 <View className="flex-1">
                   <Text className="text-base font-bold" style={{ color: colors.ink }}>
                     {playerDisplayName(item)}
@@ -226,9 +227,20 @@ export default function RosterScreen() {
         }
       >
         <AddPlayerForm
-          loading={addPlayer.isPending}
+          loading={addPlayer.isPending || uploadPhoto.isPending}
           onSubmit={async (data) => {
-            await addPlayer.mutateAsync(data);
+            const player = await addPlayer.mutateAsync(data);
+            if (player.athleteId && data.avatarUrl && data.avatarUrl.startsWith('file://')) {
+              try {
+                await uploadPhoto.mutateAsync({
+                  athleteId: player.athleteId,
+                  fileUri: data.avatarUrl,
+                  fileType: 'image/jpeg',
+                });
+              } catch (e: any) {
+                Alert.alert('Upload Error', 'Failed to upload profile picture: ' + e.message);
+              }
+            }
             setShowAdd(false);
           }}
         />

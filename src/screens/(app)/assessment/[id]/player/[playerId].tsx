@@ -30,6 +30,7 @@ import {
   useAthleteHistoryQuery,
   useSeasonsQuery,
   useAddSeasonPlayerMutation,
+  useUploadPlayerPhotoMutation,
 } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { playerDisplayName } from '@/data/rubrics';
@@ -47,6 +48,7 @@ export default function PlayerHubScreen() {
   const tryoutQuery = useTryoutQuery(id);
   const updatePlayer = useUpdatePlayerMutation(id!);
   const deletePlayer = useDeletePlayerMutation(id!);
+  const uploadPhoto = useUploadPlayerPhotoMutation(id!);
   const aiSummary = useAiPlayerSummaryMutation(id!);
   
   const linkGuardianMut = useLinkGuardianMutation();
@@ -77,7 +79,7 @@ export default function PlayerHubScreen() {
     <Screen scroll>
       <Header title={playerDisplayName(player)} showBack />
       <View className="items-center py-4 gap-2">
-        <Avatar first={player.first} last={player.last} pos={player.pos} size={72} />
+        <Avatar first={player.first} last={player.last} pos={player.pos} size={72} uri={player.avatarUrl} />
         <Text className="text-sm" style={{ color: colors.inkMuted }}>
           #{player.jersey ?? '—'} · {player.pos ?? '—'} · ID {player.athleteId ?? '—'}
         </Text>
@@ -161,16 +163,28 @@ export default function PlayerHubScreen() {
           {tryoutQuery.data.aiAssessments?.[playerId!] ? (
             <View className="mt-2 border-t pt-2" style={{ borderColor: colors.border }}>
               <Text className="font-bold mb-1" style={{ color: colors.primary }}>AI Advanced Analysis</Text>
-              <Text style={{ color: colors.inkMuted }}>
+              <Text style={{ color: colors.ink }}>
                 {tryoutQuery.data.aiAssessments[playerId!].summary}
               </Text>
+              {tryoutQuery.data.aiAssessments[playerId!].key_strengths?.map((s: string) => (
+                <Text key={s} className="text-sm mt-1" style={{ color: colors.success }}>+ {s}</Text>
+              ))}
+              {tryoutQuery.data.aiAssessments[playerId!].key_growth?.map((s: string) => (
+                <Text key={s} className="text-sm mt-1" style={{ color: colors.primary }}>- {s}</Text>
+              ))}
             </View>
           ) : (
             <Button
               label="Generate AI Deep Dive"
               size="sm"
               className="mt-2"
-              onPress={() => aiSummary.mutate(playerId!)}
+              onPress={async () => {
+                try {
+                  await aiSummary.mutateAsync(playerId!);
+                } catch (error: any) {
+                  Alert.alert('AI Summary Failed', error.message || 'Failed to generate AI summary');
+                }
+              }}
               loading={aiSummary.isPending}
             />
           )}
@@ -274,8 +288,20 @@ export default function PlayerHubScreen() {
       <Modal visible={showEdit} title="Edit Player" onClose={() => setShowEdit(false)}>
         <AddPlayerForm
           defaultValues={player}
-          loading={updatePlayer.isPending}
+          loading={updatePlayer.isPending || uploadPhoto.isPending}
           onSubmit={async (data) => {
+            if (player.athleteId && data.avatarUrl && data.avatarUrl.startsWith('file://')) {
+              try {
+                const publicUrl = await uploadPhoto.mutateAsync({
+                  athleteId: player.athleteId,
+                  fileUri: data.avatarUrl,
+                  fileType: 'image/jpeg',
+                });
+                data.avatarUrl = publicUrl;
+              } catch (e: any) {
+                Alert.alert('Upload Error', 'Failed to upload profile picture: ' + e.message);
+              }
+            }
             await updatePlayer.mutateAsync({ playerId: playerId!, updates: data });
             setShowEdit(false);
           }}
