@@ -15,7 +15,9 @@ This document tracks all the environment variables, secrets, and third-party ser
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`: Your Supabase Anon Public Key. Used to authenticate frontend requests.
 - `EXPO_PUBLIC_WEB_URL`: (Optional) The base URL for your project (e.g., `https://aas-tryout.app`), used for generating shareable links.
 
-*Note: The **OneSignal App ID** is currently hardcoded in `src/lib/OneSignalManager.ts`. If you change your OneSignal project, you will need to update the ID in that file.*
+*Note: The **Firebase / FCM configurations** require setting up the following native configuration files:*
+- **iOS:** Download `GoogleService-Info.plist` from your Firebase Console project settings (under Bundle ID `com.aastryout`) and add it to the project using Xcode in `ios/AASTryout/`.
+- **Android:** Download `google-services.json` from your Firebase Console project settings (under Package Name `com.aastryout`) and save it in `android/app/google-services.json`.
 
 ---
 
@@ -42,9 +44,16 @@ This document tracks all the environment variables, secrets, and third-party ser
 #### Resend (Emails)
 - `RESEND_API_KEY`: Used in the `send-email` edge function to send transactional emails (organization invites, tryout invites, schedule updates, etc.).
 
-#### OneSignal (Push Notifications)
-- `ONESIGNAL_APP_ID`: Used in the `send-push-notification` edge function to identify which app receives the notifications.
-- `ONESIGNAL_REST_API_KEY`: Used in the `send-push-notification` edge function to authenticate the request to OneSignal's API.
+#### Firebase Cloud Messaging (FCM Push Notifications)
+- `FIREBASE_SERVICE_ACCOUNT_KEY`: Used in the `send-push-notification` edge function to authenticate calls to the FCM v1 HTTP API. This should be the full JSON string of your Firebase service account private key.
+  - **Local Development:** Set this key inside `supabase/.env.local`:
+    ```env
+    FIREBASE_SERVICE_ACCOUNT_KEY='{"type": "service_account", ...}'
+    ```
+  - **Production (Supabase):** Set the secret via CLI:
+    ```bash
+    npx supabase secrets set FIREBASE_SERVICE_ACCOUNT_KEY='{"type": "service_account", ...}'
+    ```
 
 #### OpenAI (AI Features)
 - `OPENAI_API_KEY`: Used in the `generate-ai-insights` edge function to generate AI-powered player summaries and deep dives based on evaluation data.
@@ -53,7 +62,7 @@ This document tracks all the environment variables, secrets, and third-party ser
 
 ## Third-Party Services Overview
 1. **Supabase**: Primary backend—handles the PostgreSQL database, authentication, storage, and edge functions.
-2. **Resend**: Handles all transactional email delivery. (Replaced OneSignal for emails due to OneSignal requiring third-party ESPs anyway).
-3. **OneSignal**: Handles Push Notifications to iOS/Android devices.
+2. **Resend**: Handles all transactional email delivery.
+3. **Firebase Cloud Messaging (FCM)**: Handles Push Notifications to iOS/Android devices.
 4. **Stripe**: Handles subscription checkouts, payment processing, and billing webhooks.
 5. **OpenAI**: Powers the AI insights and player analysis generation.

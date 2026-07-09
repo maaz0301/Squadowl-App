@@ -1,12 +1,43 @@
 // @ts-ignore: Deno import
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { corsHeaders } from '../_shared/cors.ts';
+import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
+import * as jose from 'npm:jose@5.2.4';
 
 interface PushNotificationPayload {
   target_user_ids: string[];
   heading: string;
   content: string;
   data?: Record<string, any>;
+}
+
+// Generate Google API OAuth2 access token for FCM
+async function getAccessToken(serviceAccount: any): Promise<string> {
+  const jwt = await new jose.SignJWT({
+    iss: serviceAccount.client_email,
+    sub: serviceAccount.client_email,
+    aud: 'https://oauth2.googleapis.com/token',
+    scope: 'https://www.googleapis.com/auth/firebase.messaging',
+  })
+    .setProtectedHeader({ alg: 'RS256' })
+    .setIssuedAt()
+    .setExpirationTime('1h')
+    .sign(await jose.importPKCS8(serviceAccount.private_key, 'RS256'));
+
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(`Failed to get OAuth2 token: ${JSON.stringify(data)}`);
+  }
+  return data.access_token;
 }
 
 serve(async (req: Request) => {
@@ -26,52 +57,142 @@ serve(async (req: Request) => {
       throw new Error('heading and content are required');
     }
 
-    // @ts-ignore: Deno global
-    const ONESIGNAL_APP_ID = Deno.env.get('ONESIGNAL_APP_ID');
-    // @ts-ignore: Deno global
-    const ONESIGNAL_REST_API_KEY = Deno.env.get('ONESIGNAL_REST_API_KEY');
-
-    if (!ONESIGNAL_APP_ID || !ONESIGNAL_REST_API_KEY) {
-      throw new Error('OneSignal configuration missing in environment variables');
+    // Load Firebase Service Account key from environment
+    const serviceAccountKey = Deno.env.get('FIREBASE_SERVICE_ACCOUNT_KEY');
+    if (!serviceAccountKey) {
+      throw new Error('FIREBASE_SERVICE_ACCOUNT_KEY is missing in environment variables');
     }
 
-    // Send the notification using OneSignal API
-    const response = await fetch('https://onesignal.com/api/v1/notifications', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Basic ${ONESIGNAL_REST_API_KEY}`,
-      },
-      body: JSON.stringify({
-        app_id: ONESIGNAL_APP_ID,
-        include_aliases: {
-          external_id: target_user_ids,
+    const serviceAccount = JSON.parse(serviceAccountKey);
+    if (!serviceAccount.project_id || !serviceAccount.client_email || !serviceAccount.private_key) {
+      throw new Error('Invalid Firebase service account format');
+    }
+
+    // Clean user inputs
+    const cleanIds = target_user_ids
+      .map(id => id.replace(/"/g, '').trim())
+      .filter(Boolean);
+
+    if (cleanIds.length === 0) {
+      return new Response(
+        JSON.stringify({ success: true, message: 'No valid user IDs or emails provided' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      );
+    }
+
+    // 1. Resolve profiles by matching either id (UUID) or email
+    const listStr = cleanIds.map(id => `"${id}"`).join(',');
+    const { data: profiles, error: profilesError } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .or(`id.in.(${listStr}),email.in.(${listStr})`);
+
+    if (profilesError) {
+      console.error('Error fetching user profiles:', profilesError);
+      throw new Error(`Failed to retrieve profiles: ${profilesError.message}`);
+    }
+
+    const profileIds = profiles?.map(p => p.id) || [];
+    if (profileIds.length === 0) {
+      console.log('No user profiles found matching target_user_ids');
+      return new Response(
+        JSON.stringify({ success: true, message: 'No matching user profiles found' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      );
+    }
+
+    // 2. Fetch FCM tokens registered for the resolved profile IDs
+    const { data: tokenRecords, error: tokensError } = await supabaseAdmin
+      .from('fcm_tokens')
+      .select('token')
+      .in('user_id', profileIds);
+
+    if (tokensError) {
+      console.error('Error fetching FCM tokens:', tokensError);
+      throw new Error(`Failed to retrieve FCM tokens: ${tokensError.message}`);
+    }
+
+    const tokens = tokenRecords?.map(r => r.token).filter(Boolean) || [];
+    if (tokens.length === 0) {
+      console.log('No FCM tokens registered for target users');
+      return new Response(
+        JSON.stringify({ success: true, message: 'No registered FCM tokens found' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      );
+    }
+
+    // 3. Obtain FCM OAuth2 access token
+    const accessToken = await getAccessToken(serviceAccount);
+
+    // 4. Send messages to each token in parallel
+    const sendPromises = tokens.map(async (token) => {
+      // FCM v1 requires data fields to be string format
+      const stringifiedData: Record<string, string> = {};
+      if (data) {
+        for (const [key, val] of Object.entries(data)) {
+          stringifiedData[key] = typeof val === 'string' ? val : JSON.stringify(val);
+        }
+      }
+
+      const fcmPayload = {
+        message: {
+          token,
+          notification: {
+            title: heading,
+            body: content,
+          },
+          ...(data ? { data: stringifiedData } : {}),
         },
-        target_channel: 'push',
-        headings: { en: heading },
-        contents: { en: content },
-        data: data || {},
-      }),
+      };
+
+      const fcmUrl = `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`;
+      const response = await fetch(fcmUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(fcmPayload),
+      });
+
+      const responseText = await response.text();
+      if (!response.ok) {
+        console.error(`FCM send error for token ${token}:`, responseText);
+
+        // Auto-cleanup stale/invalid tokens
+        try {
+          const errJSON = JSON.parse(responseText);
+          const errorCode = errJSON?.error?.details?.[0]?.errorCode || errJSON?.error?.status;
+          if (errorCode === 'UNREGISTERED' || errorCode === 'INVALID_ARGUMENT') {
+            console.log(`FCM token ${token} is unregistered or invalid. Deleting record from database...`);
+            await supabaseAdmin
+              .from('fcm_tokens')
+              .delete()
+              .eq('token', token);
+          }
+        } catch (cleanupErr) {
+          console.error('Error during stale token cleanup:', cleanupErr);
+        }
+
+        return { success: false, token, error: responseText };
+      }
+
+      return { success: true, token, response: JSON.parse(responseText) };
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('OneSignal API error:', errorText);
-      throw new Error(`Failed to send push notification: ${response.status} ${response.statusText}`);
-    }
-
-    const responseData = await response.json();
-    console.log('Push notification sent successfully:', responseData);
+    const results = await Promise.all(sendPromises);
+    const sentCount = results.filter(r => r.success).length;
+    console.log(`Push notifications delivery finished: ${sentCount}/${tokens.length} sent successfully.`);
 
     return new Response(
-      JSON.stringify({ success: true, data: responseData }),
+      JSON.stringify({ success: true, results }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       }
     );
   } catch (error) {
-    console.error('Error sending push notification:', error);
+    console.error('Error in send-push-notification handler:', error);
     
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'An unknown error occurred' }),
