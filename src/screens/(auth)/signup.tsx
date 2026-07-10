@@ -67,37 +67,7 @@ export default function SignupScreen() {
             <Input label="Password" secureTextEntry onBlur={onBlur} onChangeText={onChange} value={value} error={fe?.message} />
           )}
         />
-        <Controller
-          control={control}
-          name="accountType"
-          render={({ field: { onChange, value } }) => (
-            <View className="gap-2 mt-2 mb-2">
-              <Text className="text-sm font-bold" style={{ color: colors.ink }}>Account Type</Text>
-              <View className="flex-row gap-2">
-                <Pressable
-                  onPress={() => onChange('coach')}
-                  className="flex-1 py-3 items-center rounded-md border"
-                  style={{ 
-                    borderColor: value === 'coach' ? colors.primary : colors.border,
-                    backgroundColor: value === 'coach' ? colors.primary + '15' : colors.tile
-                  }}
-                >
-                  <Text className="font-bold" style={{ color: value === 'coach' ? colors.primary : colors.ink }}>Coach / Assessor</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => onChange('guardian')}
-                  className="flex-1 py-3 items-center rounded-md border"
-                  style={{ 
-                    borderColor: value === 'guardian' ? colors.primary : colors.border,
-                    backgroundColor: value === 'guardian' ? colors.primary + '15' : colors.tile
-                  }}
-                >
-                  <Text className="font-bold" style={{ color: value === 'guardian' ? colors.primary : colors.ink }}>Guardian</Text>
-                </Pressable>
-              </View>
-            </View>
-          )}
-        />
+
         {error ? (
           <Text className="text-sm" style={{ color: colors.danger }}>
             {error}

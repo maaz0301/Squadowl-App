@@ -292,7 +292,7 @@ export function useUploadCoachPhotoMutation() {
   return useMutation({
     mutationFn: async ({ userId, fileUri, fileType }: { userId: string; fileUri: string; fileType: string }) => {
       const publicUrl = await getDataSource().uploadCoachPhoto(userId, fileUri, fileType);
-      const currentProfile = useAuthStore.getState().user;
+      const currentProfile = useAuthStore.getState().session?.user;
       if (currentProfile) {
         await useAuthStore.getState().updateProfile({ ...currentProfile, avatarUrl: publicUrl });
       }
