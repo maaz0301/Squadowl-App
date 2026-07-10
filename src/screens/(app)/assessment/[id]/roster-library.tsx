@@ -31,7 +31,7 @@ export default function RosterLibraryScreen() {
   if (tryoutsQuery.isError || !tryoutsQuery.data) {
     return (
       <Screen padded>
-        <Header title="Roster Library" showBack />
+        <Header title="Roster Library" showBack onBack={() => navigation.navigate('AssessmentRoster')} />
         <ErrorState message="Could not load library." onRetry={() => tryoutsQuery.refetch()} />
       </Screen>
     );

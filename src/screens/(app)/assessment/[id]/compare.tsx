@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
   Badge,
@@ -19,6 +20,7 @@ import { mockAiCompare } from '@/data/teamBuilder';
 export default function CompareScreen() {
   const id = useAssessmentId();
   const colors = useThemeColors();
+  const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
   const aiCompare = useAiCompareMutation(id!);
   const [selected, setSelected] = useState<string[]>([]);
@@ -43,7 +45,12 @@ export default function CompareScreen() {
   return (
     <Screen padded={false}>
       <View className="px-4">
-        <Header title="Compare Players" subtitle="Select 2–4 athletes" showBack />
+        <Header
+          title="Compare Players"
+          subtitle="Select 2–4 athletes"
+          showBack
+          onBack={() => navigation.navigate('AssessmentResults')}
+        />
         {selected.length >= 2 ? (
           <Card accent className="mb-4 gap-2">
             <Text className="font-display font-bold" style={{ color: colors.ink }}>
@@ -63,7 +70,19 @@ export default function CompareScreen() {
                   size="sm"
                   className="mb-2"
                 />
-                {aiCompare.data ? (
+                {aiCompare.isError || (aiCompare.data as any)?.error ? (
+                  <View
+                    className="p-3 rounded-lg mt-1"
+                    style={{ backgroundColor: colors.tile, borderWidth: 1, borderColor: colors.border }}
+                  >
+                    <Text className="font-bold text-sm mb-1" style={{ color: colors.ink }}>⚠️ Cannot generate comparison</Text>
+                    <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                      {(aiCompare.data as any)?.message
+                        || (aiCompare.error as any)?.message
+                        || 'Make sure the selected players have been scored before running AI Compare.'}
+                    </Text>
+                  </View>
+                ) : aiCompare.data ? (
                   <View className="gap-2">
                     <Text style={{ color: colors.inkMuted }}>{aiCompare.data.summary}</Text>
                     <Text style={{ color: colors.primary }}>{aiCompare.data.edge}</Text>

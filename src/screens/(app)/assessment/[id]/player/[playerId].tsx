@@ -77,7 +77,11 @@ export default function PlayerHubScreen() {
 
   return (
     <Screen scroll>
-      <Header title={playerDisplayName(player)} showBack />
+      <Header
+        title={playerDisplayName(player)}
+        showBack
+        onBack={() => navigation.navigate('AssessmentRoster')}
+      />
       <View className="items-center py-4 gap-2">
         <Avatar first={player.first} last={player.last} pos={player.pos} size={72} uri={player.avatarUrl} />
         <Text className="text-sm" style={{ color: colors.inkMuted }}>
@@ -162,7 +166,22 @@ export default function PlayerHubScreen() {
         <PlanGate feature="aiSummaries" title="Deep AI Insights (Club+)">
           {tryoutQuery.data.aiAssessments?.[playerId!] ? (
             <View className="mt-2 border-t pt-2" style={{ borderColor: colors.border }}>
-              <Text className="font-bold mb-1" style={{ color: colors.primary }}>AI Advanced Analysis</Text>
+              <View className="flex-row items-center justify-between mb-2">
+                <Text className="font-bold" style={{ color: colors.primary }}>AI Advanced Analysis</Text>
+                <Button
+                  label={aiSummary.isPending ? 'Generating...' : '↻ Regenerate'}
+                  size="sm"
+                  variant="ghost"
+                  onPress={async () => {
+                    try {
+                      await aiSummary.mutateAsync(playerId!);
+                    } catch (error: any) {
+                      Alert.alert('AI Summary Failed', error.message || 'Failed to regenerate AI summary');
+                    }
+                  }}
+                  loading={aiSummary.isPending}
+                />
+              </View>
               <Text style={{ color: colors.ink }}>
                 {tryoutQuery.data.aiAssessments[playerId!].summary}
               </Text>
@@ -188,50 +207,9 @@ export default function PlayerHubScreen() {
               loading={aiSummary.isPending}
             />
           )}
-          {aiSummary.data ? (
-            <View className="mt-2 border-t pt-2" style={{ borderColor: colors.border }}>
-              <Text className="font-bold mb-1" style={{ color: colors.primary }}>AI Advanced Analysis</Text>
-              <Text style={{ color: colors.inkMuted }}>{aiSummary.data.summary}</Text>
-              {aiSummary.data.key_strengths.map((s: string) => (
-                <Text key={s} className="text-sm" style={{ color: colors.success }}>+ {s}</Text>
-              ))}
-            </View>
-          ) : null}
         </PlanGate>
-      </Card>
 
-      {historyQuery.data && (historyQuery.data.pastSeasons.length > 0 || historyQuery.data.pastEvaluations.length > 0) && (
-        <Card className="mb-4 gap-2 border-brand">
-          <Text className="font-display font-bold" style={{ color: colors.primary }}>
-            Historical Data
-          </Text>
-          {historyQuery.data.pastSeasons.length > 0 && (
-            <View>
-              <Text className="text-sm font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Past Seasons</Text>
-              {historyQuery.data.pastSeasons.map((s) => (
-                <View key={s.seasonId} className="flex-row items-center gap-2 mb-1">
-                  <Badge label={s.seasonName} variant="info" />
-                  <Text style={{ color: colors.ink }}>{s.teamName}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-          {historyQuery.data.pastEvaluations.length > 0 && (
-            <View className="mt-2">
-              <Text className="text-sm font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Past Evals ({historyQuery.data.pastEvaluations.length})</Text>
-              {historyQuery.data.pastEvaluations.map((ev, i) => (
-                <View key={ev.id} className="mb-1 border-b pb-1" style={{ borderColor: colors.border }}>
-                  <Text className="font-bold text-sm" style={{ color: colors.ink }}>
-                    {ev.session} · {ev.recommendation || 'No Rec'}
-                  </Text>
-                  {ev.strengths ? <Text className="text-xs" style={{ color: colors.success }}>+ {ev.strengths}</Text> : null}
-                  {ev.improve ? <Text className="text-xs" style={{ color: colors.inkMuted }}>→ {ev.improve}</Text> : null}
-                </View>
-              ))}
-            </View>
-          )}
-        </Card>
-      )}
+      </Card>
 
       <Text className="text-md font-display font-bold mb-3" style={{ color: colors.ink }}>
         Evaluations ({evals.length})

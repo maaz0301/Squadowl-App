@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Share, Text, View, Platform } from 'react-native';
+import { Alert, Share, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import RNFS from 'react-native-fs';
 import RNShare from 'react-native-share';
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -22,6 +23,7 @@ import type { ExportFormat } from '@/data/types';
 export default function ExportScreen() {
   const id = useAssessmentId();
   const colors = useThemeColors();
+  const navigation = useNavigation<any>();
   const user = useUser();
   const tryoutQuery = useTryoutQuery(id);
   const exportMut = useExportTryoutMutation(id!);

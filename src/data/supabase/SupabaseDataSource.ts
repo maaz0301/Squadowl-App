@@ -244,6 +244,28 @@ export class SupabaseDataSource implements DataSource {
     const eByT = byTryout(eRows);
     const rByT = byTryout(rRows);
 
+    // Deduplicate evals by participant_id, evaluator_user_id, and session to hide existing corrupted duplicates
+    for (const tryoutId of Object.keys(eByT)) {
+      const uniqueEvals = new Map<string, Row>();
+      for (const e of eByT[tryoutId]) {
+        const key = `${e.participant_id}-${e.evaluator_user_id}-${e.session}`;
+        const existing = uniqueEvals.get(key);
+        
+        const currentScoresLen = e.evaluation_scores?.length ?? 0;
+        const existingScoresLen = existing?.evaluation_scores?.length ?? 0;
+        
+        // Prefer the duplicate that actually has scores; if tied, take the newest one
+        if (
+          !existing || 
+          currentScoresLen > existingScoresLen || 
+          (currentScoresLen === existingScoresLen && new Date(e.created_at) > new Date(existing.created_at))
+        ) {
+          uniqueEvals.set(key, e);
+        }
+      }
+      eByT[tryoutId] = Array.from(uniqueEvals.values());
+    }
+
     return tryoutRows.map((t) => {
       const settings = t.settings ?? { skaterWeights: {}, goalieWeights: {}, customRubrics: [] };
       const ai = t.ai_assessments ?? {};
@@ -1111,6 +1133,26 @@ async deleteTryout(id: string): Promise<void> {
     const recDb = form.recommendation ? REC_TO_DB[form.recommendation] : null;
 
     let id = evalId;
+    if (!id) {
+      const { data: existingRows } = await supabase
+        .from('evaluations')
+        .select('id')
+        .eq('tryout_id', tryoutId)
+        .eq('participant_id', playerId)
+        .eq('evaluator_user_id', userId)
+        .eq('session', form.session);
+        
+      if (existingRows && existingRows.length > 0) {
+        id = existingRows[0].id;
+        // Clean up duplicates if the DB was corrupted
+        if (existingRows.length > 1) {
+          const duplicateIds = existingRows.slice(1).map((r) => r.id);
+          await supabase.from('evaluation_scores').delete().in('evaluation_id', duplicateIds);
+          await supabase.from('evaluations').delete().in('id', duplicateIds);
+        }
+      }
+    }
+
     if (id) {
       unwrap(
         await supabase
@@ -1742,11 +1784,22 @@ async deleteTryout(id: string): Promise<void> {
       .select('season_id, seasons(name, team_name)')
       .eq('athlete_id', athleteId);
 
-    const pastSeasons = (rosterRows || []).map((r: any) => ({
+    let pastSeasons = (rosterRows || []).map((r: any) => ({
       seasonId: r.season_id,
       seasonName: r.seasons?.name || 'Unknown Season',
       teamName: r.seasons?.team_name || 'Unknown Team',
     }));
+
+    if (pastSeasons.length > 0) {
+      const seasonIds = pastSeasons.map((s) => s.seasonId);
+      const { data: eventsData } = await supabase
+        .from('season_events')
+        .select('season_id')
+        .in('season_id', seasonIds);
+
+      const seasonsWithEvents = new Set((eventsData || []).map((e: any) => e.season_id));
+      pastSeasons = pastSeasons.filter((s) => seasonsWithEvents.has(s.seasonId));
+    }
 
     // 2. Fetch past evaluations across tryouts
     const { data: tryoutRosterRows } = await supabase

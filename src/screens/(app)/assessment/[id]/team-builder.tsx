@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
   Badge,
@@ -19,6 +20,7 @@ import { getPlayerNameMap, type TeamBuilderState } from '@/data/teamBuilder';
 export default function TeamBuilderScreen() {
   const id = useAssessmentId();
   const colors = useThemeColors();
+  const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
   const generate = useGenerateTeamBuilderMutation(id!);
   const [teamCount, setTeamCount] = useState(2);
@@ -50,7 +52,7 @@ export default function TeamBuilderScreen() {
 
   return (
     <Screen scroll>
-      <Header title="Team Builder" subtitle="Sort Out — balanced teams" showBack />
+      <Header title="Team Builder" subtitle="Sort Out — balanced teams" showBack onBack={() => navigation.navigate('AssessmentResults')} />
 
       <PlanGate feature="teamBuilder" title="Team Builder (Club+)">
         <Card accent className="gap-3 mb-4">

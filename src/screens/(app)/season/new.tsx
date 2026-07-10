@@ -1,6 +1,7 @@
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useCallback } from 'react';
 
 import { ScrollView, Text, View } from 'react-native';
 import { CreateSeasonFormSchema, SPORTS, type CreateSeasonForm } from '@/data/types';
@@ -15,10 +16,16 @@ export default function NewSeasonScreen() {
   const createSeason = useCreateSeasonMutation();
   const teamsQuery = useTeamsQuery();
 
-  const { control, handleSubmit, watch, setValue } = useForm<CreateSeasonForm>({
+  const { control, handleSubmit, watch, setValue, reset } = useForm<CreateSeasonForm>({
     resolver: zodResolver(CreateSeasonFormSchema),
     defaultValues: { name: '', teamName: '', sport: 'Hockey', year: '2025-26' },
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      reset({ name: '', teamName: '', sport: 'Hockey', year: '2025-26' });
+    }, [reset])
+  );
 
   const sport = watch('sport');
 

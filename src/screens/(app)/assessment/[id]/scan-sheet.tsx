@@ -32,7 +32,7 @@ export default function ScanSheetScreen() {
   if (tryoutQuery.isError || !tryoutQuery.data) {
     return (
       <Screen scroll>
-        <Header title="Scan Sheet" showBack />
+        <Header title="Scan Sheet" showBack onBack={() => navigation.navigate('AssessmentRoster')} />
         <ErrorState message="Could not load scan sheet." onRetry={() => tryoutQuery.refetch()} />
       </Screen>
     );
@@ -51,7 +51,7 @@ export default function ScanSheetScreen() {
   return (
     <Screen padded={false}>
       <View className="px-4">
-        <Header title="Scan Sheet Import" showBack />
+        <Header title="Scan Sheet Import" showBack onBack={() => navigation.navigate('AssessmentRoster')} />
         <Card accent className="mb-4 gap-2">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>
             Paper score sheet → digital

@@ -136,7 +136,7 @@ export default function RinksideScreen() {
   if (roster.length === 0) {
     return (
       <Screen>
-        <Header title="Rinkside Scoring" showBack />
+        <Header title="Rinkside Scoring" showBack onBack={() => navigation.navigate('AssessmentRoster')} />
         <EmptyState title="No players" message="Add players to the roster first." />
       </Screen>
     );

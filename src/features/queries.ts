@@ -192,7 +192,18 @@ export function useSaveEvaluationMutation(tryoutId: string) {
       form: ScoreForm;
       evalId?: string;
     }) => getDataSource().saveEvaluation(tryoutId, playerId, form, evalId),
-    onSuccess: () => {
+    onSuccess: (newEval) => {
+      qc.setQueryData<Tryout | undefined>(queryKeys.tryout(tryoutId), (oldData) => {
+        if (!oldData) return oldData;
+        const evals = [...oldData.evals];
+        const idx = evals.findIndex((e) => e.id === newEval.id);
+        if (idx >= 0) {
+          evals[idx] = newEval;
+        } else {
+          evals.push(newEval);
+        }
+        return { ...oldData, evals };
+      });
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.results(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.profile });

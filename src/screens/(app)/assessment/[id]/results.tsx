@@ -22,7 +22,7 @@ export default function ResultsScreen() {
   const id = useAssessmentId();
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
-  const { data: tryout, results, assessorProgress, isLoading, isError, refetch } = useResultsQuery(id);
+  const { data: tryout, results, isLoading, isError, refetch } = useResultsQuery(id);
 
   if (isLoading) return <LoadingState message="Loading results..." />;
   if (isError || !tryout) {
@@ -37,19 +37,6 @@ export default function ResultsScreen() {
     <Screen padded={false}>
       <Header title="Assessment Results" showBack />
       <View className="px-4 py-3 gap-3">
-        <Card className="gap-2">
-          <Text className="text-md font-display font-bold" style={{ color: colors.ink }}>
-            Assessor Progress
-          </Text>
-          {assessorProgress.map((a, i) => (
-            <View key={`${a.name}-${i}`} className="flex-row justify-between">
-              <Text style={{ color: colors.inkMuted }}>{a.name}</Text>
-              <Text className="font-bold" style={{ color: colors.ink }}>
-                {a.scored}/{a.total}
-              </Text>
-            </View>
-          ))}
-        </Card>
         <View className="flex-row flex-wrap gap-2">
           <Button label="Team Builder" size="sm" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentTeamBuilder', params: { id: id } })} />
           <Button label="Compare" size="sm" variant="secondary" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentCompare', params: { id: id } })} />

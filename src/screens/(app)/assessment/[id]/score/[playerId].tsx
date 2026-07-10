@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { Alert, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
@@ -92,34 +92,81 @@ export default function ScoreScreen() {
       : tryoutQuery.data.settings.skaterWeights;
   }, [tryoutQuery.data, player]);
 
-  const initialScores = mapLegacyScores(existingEval?.scores ?? mostRecentEval?.scores ?? {}, categories);
+  const initialScores = mapLegacyScores(existingEval?.scores ?? {}, categories);
 
-  const { control, handleSubmit, watch, setValue } = useForm<ScoreForm>({
+  const { control, handleSubmit, watch, setValue, getValues } = useForm<ScoreForm>({
     resolver: zodResolver(ScoreFormSchema),
     defaultValues: {
       session: nextSession,
-      strengths: existingEval?.strengths ?? mostRecentEval?.strengths ?? '',
-      improve: existingEval?.improve ?? mostRecentEval?.improve ?? '',
-      recommendation: existingEval?.recommendation ?? mostRecentEval?.recommendation ?? '',
+      strengths: existingEval?.strengths ?? '',
+      improve: existingEval?.improve ?? '',
+      recommendation: existingEval?.recommendation ?? '',
       scores: initialScores,
     },
   });
 
   const scores = watch('scores');
+  const formData = watch();
+  const previousFormRef = useRef<string>('');
 
+  const loadEvalData = (targetEvalId?: string, fallbackSession?: string) => {
+    const targetEval = targetEvalId
+      ? tryoutQuery.data?.evals.find((e) => e.id === targetEvalId)
+      : undefined;
+
+    const scoresToSet = mapLegacyScores(targetEval?.scores ?? {}, categories);
+    setWorkingScores(scoresToSet);
+    setValue('session', targetEval?.session ?? fallbackSession ?? nextSession);
+    setValue('strengths', targetEval?.strengths ?? '');
+    setValue('improve', targetEval?.improve ?? '');
+    setValue('recommendation', targetEval?.recommendation ?? '');
+    
+    // Defer the ref update slightly to ensure React Hook Form's watch state is updated
+    setTimeout(() => {
+      previousFormRef.current = JSON.stringify(getValues()); 
+    }, 0);
+  };
+
+  const hasInitializedRef = useRef(false);
   useEffect(() => {
-    const scores = mapLegacyScores(existingEval?.scores ?? mostRecentEval?.scores ?? {}, categories);
-    setWorkingScores(scores);
-    setValue('session', existingEval?.session ?? nextSession);
-    setValue('strengths', existingEval?.strengths ?? mostRecentEval?.strengths ?? '');
-    setValue('improve', existingEval?.improve ?? mostRecentEval?.improve ?? '');
-    setValue('recommendation', existingEval?.recommendation ?? mostRecentEval?.recommendation ?? '');
+    if (!tryoutQuery.data || hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
+    loadEvalData(evalId);
     return () => clearWorkingScores();
-  }, [evalId, mostRecentEval?.id]); // re-run if history loads late
+  }, [tryoutQuery.data?.id]);
 
   useEffect(() => {
     setValue('scores', workingScores);
   }, [workingScores]);
+
+  useEffect(() => {
+    const currentFormStr = JSON.stringify(formData);
+    if (previousFormRef.current === currentFormStr || previousFormRef.current === '') {
+      if (previousFormRef.current === '') {
+        previousFormRef.current = currentFormStr;
+      }
+      return;
+    }
+
+    const timeout = setTimeout(async () => {
+      try {
+        const result = await saveEval.mutateAsync({
+          playerId: playerId!,
+          form: formData,
+          evalId: evalId ?? undefined,
+        });
+        
+        if (!evalId && result.id) {
+          navigation.setParams({ evalId: result.id });
+        }
+        previousFormRef.current = JSON.stringify(formData);
+      } catch (err) {
+        console.warn('Auto-save failed', err);
+      }
+    }, 1500);
+
+    return () => clearTimeout(timeout);
+  }, [formData, evalId, playerId]);
 
   if (tryoutQuery.isLoading) return <LoadingState message="Loading..." />;
   if (tryoutQuery.isError) {
@@ -143,8 +190,18 @@ export default function ScoreScreen() {
         form: data,
         evalId: evalId ?? undefined,
       });
-      clearWorkingScores();
-      navigation.goBack();
+
+      // Navigate to the next unscored session if available
+      const unscoredSessions = SESSIONS.filter(s => !scoredSessions.has(s) && s !== data.session);
+      
+      if (unscoredSessions.length > 0) {
+        const nextUnscored = unscoredSessions[0];
+        navigation.setParams({ evalId: undefined });
+        loadEvalData(undefined, nextUnscored);
+      } else {
+        clearWorkingScores();
+        navigation.goBack();
+      }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to save evaluation.');
     }
@@ -162,65 +219,7 @@ export default function ScoreScreen() {
         onBack={() => navigation.navigate('AssessmentRoster')}
       />
 
-      {historyQuery.data && (historyQuery.data.pastSeasons.length > 0 || historyQuery.data.pastEvaluations.length > 0) && (
-        <Card className="mb-4 gap-2 border-brand">
-          <Text className="font-display font-bold" style={{ color: colors.primary }}>
-            Historical Data
-          </Text>
-          {(() => {
-            const uniquePastEvals = Object.values(
-              historyQuery.data.pastEvaluations.reduce((acc, ev) => {
-                const key = `${ev.session}-${ev.evaluator}`;
-                if (!acc[key] || acc[key].createdAt < ev.createdAt) {
-                  acc[key] = ev;
-                }
-                return acc;
-              }, {} as Record<string, typeof historyQuery.data.pastEvaluations[0]>)
-            ).sort((a, b) => a.createdAt - b.createdAt);
 
-            return (
-              <>
-                {historyQuery.data.pastSeasons.length > 0 && (
-                  <View>
-                    <Text className="text-sm font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Past Seasons</Text>
-                    {historyQuery.data.pastSeasons.map((s) => (
-                      <View key={s.seasonId} className="flex-row items-center gap-2 mb-1">
-                        <Badge label={s.seasonName} variant="info" />
-                        <Text style={{ color: colors.ink }}>{s.teamName}</Text>
-                      </View>
-                    ))}
-                  </View>
-                )}
-                {uniquePastEvals.length > 0 && (
-                  <View className={historyQuery.data.pastSeasons.length > 0 ? "mt-2 pt-2 border-t" : ""} style={{ borderColor: colors.border }}>
-                    <Text className="text-sm font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Past Evals ({uniquePastEvals.length})</Text>
-                    {uniquePastEvals.map((ev, i) => (
-                      <View key={ev.id} className="mb-1 border-b pb-1" style={{ borderColor: colors.border }}>
-                        <Text className="font-bold text-sm" style={{ color: colors.ink }}>
-                          {ev.session} · {ev.recommendation || 'No Rec'}
-                        </Text>
-                        {ev.strengths ? <Text className="text-xs" style={{ color: colors.success }}>+ {ev.strengths}</Text> : null}
-                        {ev.improve ? <Text className="text-xs" style={{ color: colors.inkMuted }}>→ {ev.improve}</Text> : null}
-                        {Object.keys(ev.scores || {}).length > 0 && (
-                          <Text className="text-xs mt-1 font-bold" style={{ color: colors.primary }}>
-                            {categories
-                              .map((cat) => {
-                                const avg = categoryAverage(ev.scores, cat.subskills);
-                                return avg !== null ? `${cat.label} ${avg.toFixed(1)}` : null;
-                              })
-                              .filter(Boolean)
-                              .join('  ·  ')}
-                          </Text>
-                        )}
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </>
-            );
-          })()}
-        </Card>
-      )}
 
       {tryoutQuery.data.assessors.length > 0 ? (
         <View className="mb-4">
@@ -268,12 +267,15 @@ export default function ScoreScreen() {
               disabled={disabled}
               onPress={() => {
                 if (disabled) return;
+                let targetId;
                 if (scoredSessions.has(s)) {
-                  navigation.setParams({ evalId: scoredSessions.get(s) });
+                  targetId = scoredSessions.get(s);
+                  navigation.setParams({ evalId: targetId });
                 } else {
+                  targetId = undefined;
                   navigation.setParams({ evalId: undefined });
-                  setValue('session', s);
                 }
+                loadEvalData(targetId, s);
               }}
             />
           );
@@ -341,7 +343,7 @@ export default function ScoreScreen() {
         <Text className="text-center text-2xl font-display font-bold" style={{ color: colors.primary }}>
           Overall: {overall > 0 ? overall.toFixed(2) : '—'}
         </Text>
-        <Button label="Save Evaluation" onPress={onSubmit} loading={saveEval.isPending} />
+        <Button label="Done" onPress={onSubmit} loading={saveEval.isPending} />
       </View>
     </Screen>
   );
