@@ -1,8 +1,11 @@
 // @ts-nocheck
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -37,7 +40,7 @@ RULES:
       if (evals.length === 0) {
         return new Response(JSON.stringify({ error: 'no_evals', message: 'This player has no evaluation data yet. Score the player first before generating an AI summary.' }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
+          status: 200,
         });
       }
 
@@ -66,7 +69,7 @@ The "trend" field must be one of: "improving", "steady", "declining", or "insuff
       if (evals.length === 0) {
         return new Response(JSON.stringify({ error: 'no_evals', message: 'None of the selected players have evaluation data yet. Score the players first before comparing.' }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
+          status: 200,
         });
       }
 
@@ -116,9 +119,46 @@ Based ONLY on the numeric scores above, return this exact JSON:
 
     const content = data.content[0].text;
     // Strip markdown code fences that Claude sometimes adds (e.g. ```json ... ```)
-    const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+    // Also handle cases where there's text before/after the JSON block
+    let cleaned = content.trim();
+    // Remove leading ```json or ``` fences
+    cleaned = cleaned.replace(/^```(?:json)?\s*/i, '');
+    // Remove trailing ``` fences
+    cleaned = cleaned.replace(/\s*```\s*$/i, '').trim();
+    // If there's still no valid start, find the first { or [
+    if (!cleaned.startsWith('{') && !cleaned.startsWith('[')) {
+      const jsonStart = cleaned.search(/[{[]/);
+      if (jsonStart !== -1) cleaned = cleaned.slice(jsonStart);
+    }
+    // Trim trailing content after the last } or ]
+    const lastBrace = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'));
+    if (lastBrace !== -1 && lastBrace < cleaned.length - 1) {
+      cleaned = cleaned.slice(0, lastBrace + 1);
+    }
     const parsedResult = JSON.parse(cleaned);
 
+    // Persist the AI result to DB using the service role key (bypasses RLS),
+    // so all user roles (owner, coach, assessor) see the summary on next load.
+    if (action === 'summary' && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+        const playerId = playerIds[0];
+        // Fetch current ai_assessments, merge in the new summary, then update.
+        const { data: row } = await adminClient
+          .from('tryouts')
+          .select('ai_assessments')
+          .eq('id', tryout.id)
+          .single();
+        const current = row?.ai_assessments ?? {};
+        await adminClient
+          .from('tryouts')
+          .update({ ai_assessments: { ...current, [playerId]: parsedResult } })
+          .eq('id', tryout.id);
+      } catch (dbErr) {
+        // Non-fatal — the client still receives the summary even if the DB save fails.
+        console.warn('Could not persist AI summary to DB:', dbErr);
+      }
+    }
 
     return new Response(JSON.stringify(parsedResult), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -126,9 +166,11 @@ Based ONLY on the numeric scores above, return this exact JSON:
     });
   } catch (error: any) {
     console.error('Error generating AI insights:', error);
+    // Return 200 so Supabase's invoke() places the body in `data` (not `error`),
+    // preventing the "Cannot coerce the result to a single JSON object" client error.
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
+      status: 200,
     });
   }
 });

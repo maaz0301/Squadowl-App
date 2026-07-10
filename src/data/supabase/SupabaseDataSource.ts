@@ -1359,16 +1359,29 @@ async deleteTryout(id: string): Promise<void> {
         if ('context' in error && typeof (error as any).context?.json === 'function') {
           const body = await (error as any).context.json();
           if (body && body.error) {
-            message = body.error;
+            message = body.message || body.error;
           }
         }
       } catch (e) {
         // ignore parsing error
       }
-      throw new Error(`AI error: ${message}`);
+      throw new Error(message);
+    }
+    // Edge function returns { error, message } for expected errors (status 200)
+    if (data?.error) {
+      throw new Error(data.message || data.error);
     }
     const summary = data;
-    await this.updateTryout(tryoutId, { aiAssessments: { [playerId]: summary } });
+    // Best-effort: cache the AI result on the tryout record.
+    // If the current user lacks write permission (e.g. assessor role), the DB
+    // update will fail with "Cannot coerce the result to a single JSON object"
+    // (PostgREST returns 0 rows when RLS blocks the UPDATE). We don't want that
+    // to surface as a user-facing error — the summary was generated successfully.
+    try {
+      await this.updateTryout(tryoutId, { aiAssessments: { [playerId]: summary } });
+    } catch (saveErr) {
+      console.warn('AI summary generated but could not be saved to tryout:', saveErr);
+    }
     return summary;
   }
 
@@ -1385,13 +1398,17 @@ async deleteTryout(id: string): Promise<void> {
         if ('context' in error && typeof (error as any).context?.json === 'function') {
           const body = await (error as any).context.json();
           if (body && body.error) {
-            message = body.error;
+            message = body.message || body.error;
           }
         }
       } catch (e) {
         // ignore parsing error
       }
-      throw new Error(`AI error: ${message}`);
+      throw new Error(message);
+    }
+    // Edge function returns { error, message } for expected errors (status 200)
+    if (data?.error) {
+      throw new Error(data.message || data.error);
     }
     return data;
   }

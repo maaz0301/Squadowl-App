@@ -322,7 +322,24 @@ export function useAiPlayerSummaryMutation(tryoutId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (playerId: string) => getDataSource().getAiPlayerSummary(tryoutId, playerId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) }),
+    onSuccess: (summary, playerId) => {
+      // Write the AI result directly into the cached tryout so the UI updates
+      // immediately — even if the DB save failed (e.g. RLS blocks the update for
+      // assessor-role users). Without this, invalidateQueries would refetch from
+      // DB which has no ai_assessments, and the summary would never appear.
+      qc.setQueryData<Tryout | undefined>(queryKeys.tryout(tryoutId), (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          aiAssessments: {
+            ...(old.aiAssessments ?? {}),
+            [playerId]: summary,
+          },
+        };
+      });
+      // Also invalidate so owners/admins (who can write to DB) see the persisted result.
+      qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
+    },
   });
 }
 
