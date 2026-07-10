@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { corsHeaders } from '../_shared/cors.ts';
-import { SmtpClient } from 'https://deno.land/x/smtp@v0.7.0/mod.ts';
+import nodemailer from 'npm:nodemailer';
 
 const SMTP_HOST  = Deno.env.get('SMTP_HOST')       || 'smtp.gmail.com';
 const SMTP_PORT  = parseInt(Deno.env.get('SMTP_PORT') || '587');
@@ -193,11 +193,24 @@ serve(async (req: Request) => {
     else if (type === 'registration_confirmation') ({ subject, html } = tplRegistrationConfirm(payload?.playerName ?? 'Athlete'));
     else if (type === 'password_reset')       ({ subject, html } = tplPasswordReset(payload?.code ?? '------'));
 
-    // Send via Gmail SMTP
-    const client = new SmtpClient();
-    await client.connectTLS({ hostname: SMTP_HOST, port: SMTP_PORT, username: FROM_EMAIL, password: SMTP_PASS });
-    await client.send({ from: `${FROM_NAME} <${FROM_EMAIL}>`, to, subject, content: 'Please view this in an HTML email client.', html });
-    await client.close();
+    // Send via Gmail SMTP using nodemailer
+    const transporter = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_PORT === 465,
+      auth: {
+        user: FROM_EMAIL,
+        pass: SMTP_PASS,
+      },
+    });
+
+    await transporter.sendMail({
+      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+      to,
+      subject,
+      text: 'Please view this in an HTML email client.',
+      html,
+    });
 
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
