@@ -50,6 +50,28 @@ serve(async (req: Request) => {
             console.error('Error updating account plan tier:', error);
           } else {
             console.log('Successfully updated account to tier:', planTier);
+            
+            // Trigger send-email for upgrade
+            const { data: owners } = await supabaseAdmin
+              .from('memberships')
+              .select('user_id')
+              .eq('account_id', accountId)
+              .in('role', ['owner', 'admin']);
+            
+            if (owners && owners.length > 0) {
+              const ownerUserId = owners[0].user_id;
+              const { data: userRecord } = await supabaseAdmin.auth.admin.getUserById(ownerUserId);
+              if (userRecord?.user?.email) {
+                console.log('Sending subscription_upgraded email to:', userRecord.user.email);
+                await supabaseAdmin.functions.invoke('send-email', {
+                  body: {
+                    to: userRecord.user.email,
+                    type: 'subscription_upgraded',
+                    payload: { planTier }
+                  }
+                });
+              }
+            }
           }
         } else {
           console.warn('Missing accountId or planTier in metadata. Skipping database update.');
@@ -80,6 +102,28 @@ serve(async (req: Request) => {
             
           if (error) {
             console.error('Error updating account subscription status:', error);
+          } else if (subscription.status === 'canceled' || subscription.status === 'unpaid') {
+            // Trigger send-email for cancellation
+            const { data: owners } = await supabaseAdmin
+              .from('memberships')
+              .select('user_id')
+              .eq('account_id', account.id)
+              .in('role', ['owner', 'admin']);
+            
+            if (owners && owners.length > 0) {
+              const ownerUserId = owners[0].user_id;
+              const { data: userRecord } = await supabaseAdmin.auth.admin.getUserById(ownerUserId);
+              if (userRecord?.user?.email) {
+                console.log('Sending subscription_canceled email to:', userRecord.user.email);
+                await supabaseAdmin.functions.invoke('send-email', {
+                  body: {
+                    to: userRecord.user.email,
+                    type: 'subscription_canceled',
+                    payload: {}
+                  }
+                });
+              }
+            }
           }
         }
         break;

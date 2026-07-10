@@ -172,6 +172,44 @@ function tplPasswordReset(code: string) {
   };
 }
 
+function tplSubscriptionUpgraded(planTier: string) {
+  const planName = planTier.charAt(0).toUpperCase() + planTier.slice(1);
+  return {
+    subject: `Welcome to ${planName} — Athlete Assessment`,
+    html: wrap('Subscription Upgraded 🚀', `
+      <div style="background:#0f0f13;border:1px solid #10b981;border-radius:16px;padding:24px;margin-bottom:32px;text-align:center;">
+        <p style="margin:0;color:#10b981;font-size:18px;font-weight:700;">✅ Successfully Upgraded to ${planName}</p>
+      </div>
+      <p style="color:#d1d5db;font-size:16px;line-height:1.7;margin:0 0 24px;">
+        Thank you for upgrading! Your account has been instantly unlocked with all the premium features of the <strong>${planName}</strong> plan.
+      </p>
+      <p style="color:#9ca3af;font-size:15px;line-height:1.7;margin:0 0 24px;">
+        You can now return to the app and start using your new features immediately. If you have any questions or need help setting up your new tools, our support team is always here for you.
+      </p>
+      ${cta('Go to Dashboard')}
+    `),
+  };
+}
+
+function tplSubscriptionCanceled() {
+  return {
+    subject: `Subscription Canceled — Athlete Assessment`,
+    html: wrap('Subscription Canceled 😔', `
+      <p style="color:#d1d5db;font-size:16px;line-height:1.7;margin:0 0 24px;">
+        We've successfully processed your subscription cancellation. Your account has been downgraded to the Free plan.
+      </p>
+      <p style="color:#9ca3af;font-size:15px;line-height:1.7;margin:0 0 24px;">
+        You will no longer be billed, but you can continue using all the features of the Free plan. If you ever change your mind, we'd love to have you back on a premium plan!
+      </p>
+      <div style="background:#1c0505;border-left:4px solid #ef4444;border-radius:0 8px 8px 0;padding:16px 20px;margin-top:12px;">
+        <p style="color:#fca5a5;font-size:13px;line-height:1.5;margin:0;">
+          If you did not request this cancellation, please contact our support team immediately to restore your account.
+        </p>
+      </div>
+    `),
+  };
+}
+
 // ─── Main handler ────────────────────────────────────────────────────────────
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -192,6 +230,8 @@ serve(async (req: Request) => {
     else if (type === 'reminder')             ({ subject, html } = tplReminder(payload?.title ?? 'Upcoming Event', payload?.message ?? 'This is a reminder for an upcoming event.'));
     else if (type === 'registration_confirmation') ({ subject, html } = tplRegistrationConfirm(payload?.playerName ?? 'Athlete'));
     else if (type === 'password_reset')       ({ subject, html } = tplPasswordReset(payload?.code ?? '------'));
+    else if (type === 'subscription_upgraded') ({ subject, html } = tplSubscriptionUpgraded(payload?.planTier ?? 'Pro'));
+    else if (type === 'subscription_canceled') ({ subject, html } = tplSubscriptionCanceled());
 
     // Send via Gmail SMTP using nodemailer
     const transporter = nodemailer.createTransport({
