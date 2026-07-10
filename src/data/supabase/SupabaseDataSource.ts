@@ -1092,16 +1092,18 @@ async deleteTryout(id: string): Promise<void> {
       .from('avatars')
       .getPublicUrl(filePath);
 
+    const publicUrlWithCacheBuster = `${publicUrl}?v=${Date.now()}`;
+
     unwrap(
       await supabase
         .from('athletes')
-        .update({ avatar_url: publicUrl })
+        .update({ avatar_url: publicUrlWithCacheBuster })
         .eq('id', athleteId)
         .select()
         .single()
     );
 
-    return publicUrl;
+    return publicUrlWithCacheBuster;
   }
 
   async importLibraryPlayers(

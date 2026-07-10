@@ -328,7 +328,7 @@ export default function PlayerHubScreen() {
                       setShowGuardianLink(false);
                       Alert.alert(
                         'Guardian Created', 
-                        `An account was created for ${email}. Please share their temporary password with them:\n\n${defaultPassword}`
+                        `An account was created for ${email} and an email was sent to them containing their temporary password:\n\n${defaultPassword}`
                       );
                     } catch (createErr: any) {
                       Alert.alert('Invite Failed', createErr.message || 'Could not auto-create guardian account.');
