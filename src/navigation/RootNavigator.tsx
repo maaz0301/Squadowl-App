@@ -5,6 +5,7 @@ import AppNavigator from './AppNavigator';
 import WelcomeScreen from '../screens/(onboarding)/welcome';
 import WizardScreen from '../screens/(onboarding)/wizard';
 import { useAuthStore } from '@/state/authStore';
+import { SplashScreen } from '@/components/ui';
 
 const Stack = createNativeStackNavigator();
 
@@ -12,7 +13,7 @@ export default function RootNavigator() {
   const { session, isHydrated } = useAuthStore();
 
   if (!isHydrated) {
-    return null; // Or a splash screen component
+    return <SplashScreen />;
   }
 
   return (

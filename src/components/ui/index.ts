@@ -14,3 +14,4 @@ export { ErrorState } from './ErrorState';
 export { Modal } from './Modal';
 export { Screen } from './Screen';
 export { Header } from './Header';
+export { SplashScreen } from './SplashScreen';
