@@ -91,7 +91,11 @@ export default function RosterScreen() {
 
   return (
     <Screen padded={false}>
-      <Header title="Assessment Roster" showBack />
+      <Header
+        title="Assessment Roster"
+        showBack
+        onBack={() => navigation.navigate('DashboardMain')}
+      />
       {hasPlayers ? (
         <View className="px-4 pt-2 pb-3 gap-3">
           <View className="flex-row gap-2">
