@@ -4,13 +4,14 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { PasswordSchema } from '@/data/types';
 import { useAuthStore } from '@/state/authStore';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Button, Input, Screen, Header, ThemeToggle } from '@/components/ui';
 
 const ResetPasswordSchema = z.object({
   token: z.string().min(6, 'Please enter the 6-digit code'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: PasswordSchema,
 });
 
 export default function ResetPasswordScreen() {

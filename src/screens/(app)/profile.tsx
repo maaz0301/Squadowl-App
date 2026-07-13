@@ -19,6 +19,7 @@ import {
 } from '@/features/queries';
 import { getDataSource } from '@/data';
 import { launchImageLibrary } from 'react-native-image-picker';
+import { PasswordSchema } from '@/data/types';
 
 export default function ProfileScreen() {
   const colors = useThemeColors();
@@ -84,8 +85,9 @@ export default function ProfileScreen() {
   };
 
   const savePassword = async () => {
-    if (password.length < 6) {
-      alert('Password must be at least 6 characters');
+    const validation = PasswordSchema.safeParse(password);
+    if (!validation.success) {
+      Alert.alert('Validation Error', validation.error.issues[0].message);
       return;
     }
     try {
@@ -97,9 +99,9 @@ export default function ProfileScreen() {
       }
       setChangingPassword(false);
       setPassword('');
-      alert('Password updated successfully');
+      Alert.alert('Success', 'Password updated successfully');
     } catch (e: any) {
-      alert(e.message || 'Failed to update password');
+      Alert.alert('Error', e.message || 'Failed to update password');
     }
   };
 
