@@ -446,6 +446,13 @@ export class SupabaseDataSource implements DataSource {
 
   async requestPasswordReset(email: string): Promise<void> {
     const supabase = getSupabase();
+    
+    // Check if the user email is registered using RLS-safe function
+    const exists = await this.checkUserExistsByEmail(email);
+    if (!exists) {
+      throw new Error('Email address not found');
+    }
+
     // Providing a redirectTo is generally needed for magic link/password reset flows in Supabase,
     // though the actual URL depends on the project setup. For Expo, an app scheme like 'aas://reset-password' is often used.
     // If none is provided, it falls back to the site url configured in Supabase.
