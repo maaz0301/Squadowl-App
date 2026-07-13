@@ -8,6 +8,8 @@ import { PLAN_DEFINITIONS } from '@/data/plans';
 import { useUser, useAuthStore } from '@/state/authStore';
 import { getDataSource } from '@/data';
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/lib/queryClient';
 
 const TIER_RANKS: Record<string, number> = {
   free: 0,
@@ -22,6 +24,7 @@ export default function UpgradeScreen() {
   const navigation = useNavigation<any>();
   const user = useUser();
   const restoreSession = useAuthStore((s) => s.restoreSession);
+  const qc = useQueryClient();
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
   const [loadingPortal, setLoadingPortal] = useState(false);
 
@@ -73,7 +76,7 @@ export default function UpgradeScreen() {
             navigationBarDividerColor: 'white',
             enableUrlBarHiding: true,
             enableDefaultShare: false,
-            forceCloseOnRedirection: false,
+            forceCloseOnRedirection: true,
             animations: {
               startEnter: 'slide_in_right',
               startExit: 'slide_out_left',
@@ -85,6 +88,7 @@ export default function UpgradeScreen() {
           for (let i = 0; i < 5; i++) {
             await new Promise((resolve) => setTimeout(resolve, 2000));
             await restoreSession();
+            await qc.invalidateQueries({ queryKey: queryKeys.profile });
             
             // Re-fetch the user to check if plan updated
             const currentUser = useAuthStore.getState().session?.user;
@@ -97,7 +101,10 @@ export default function UpgradeScreen() {
           const { Linking } = require('react-native');
           await Linking.openURL(res.url);
           // Assuming user returns manually, wait a bit then refresh
-          setTimeout(restoreSession, 3000);
+          setTimeout(async () => {
+            await restoreSession();
+            await qc.invalidateQueries({ queryKey: queryKeys.profile });
+          }, 3000);
         }
       }
     } catch (err: any) {

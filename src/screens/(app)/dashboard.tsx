@@ -26,6 +26,7 @@ import {
   useAssignedTryoutsQuery,
   useRejectAssignmentMutation,
   useGuardianRostersQuery,
+  useProfileQuery,
 } from '@/features/queries';
 import { APP_CONFIG } from '@/config/app';
 import { canUseFeature, isAtAssessmentLimit } from '@/data/plans';
@@ -33,7 +34,9 @@ import { canUseFeature, isAtAssessmentLimit } from '@/data/plans';
 function OnboardingChecklist() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
-  const user = useUser();
+  const authUser = useUser();
+  const profileQuery = useProfileQuery();
+  const user = profileQuery.data ?? authUser;
   const guardianQuery = useGuardianRostersQuery();
   const tryoutsQuery = useTryoutsQuery(false);
   const seasonsQuery = useSeasonsQuery();

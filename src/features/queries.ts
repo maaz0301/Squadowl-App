@@ -89,8 +89,9 @@ export function useTryoutRealtimeSync(id: string | undefined) {
     if (!id) return;
 
     // Subscribe to insert/update events on the evaluations table for this specific tryout
+    const uniqueId = Math.random().toString(36).slice(2, 9);
     const channel = getSupabase()
-      .channel(`realtime:tryout_${id}`)
+      .channel(`realtime:tryout_${id}_${uniqueId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'evaluations', filter: `tryout_id=eq.${id}` },

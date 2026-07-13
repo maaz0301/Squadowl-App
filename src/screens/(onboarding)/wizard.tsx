@@ -1,9 +1,9 @@
 import { useNavigation } from '@react-navigation/native';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { Button, Card, Header, Screen } from '@/components/ui';
-import { useCreateTeamMutation, useCreateTryoutMutation, useTryoutsQuery } from '@/features/queries';
+import { useCreateTeamMutation, useCreateTryoutMutation, useTeamsQuery, useTryoutsQuery, useUpdateProfileMutation } from '@/features/queries';
 import { useAuthStore, useUser } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { useOnboardingStore } from '@/state/uiStore';
@@ -36,20 +36,43 @@ export default function WizardScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const user = useUser();
-  const [step, setStep] = useState(0);
-  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+  const [createdTeamId, setCreatedTeamId] = useState<string | null>(null);
+
+  const initialData = useMemo(() => {
+    const s = user?.onboardingSteps;
+    const completed = [];
+    if (s?.createTeam) completed.push(0);
+    if (s?.createAssessment) completed.push(1);
+    if (s?.addPlayers) completed.push(2);
+    if (s?.scorePlayers) completed.push(3);
+
+    let startStep = 0;
+    if (!completed.includes(0)) startStep = 0;
+    else if (!completed.includes(1)) startStep = 1;
+    else if (!completed.includes(2)) startStep = 2;
+    else if (!completed.includes(3)) startStep = 3;
+
+    return { startStep, completed };
+  }, [user?.onboardingSteps]);
+
+  const [step, setStep] = useState(initialData.startStep);
+  const [completedSteps, setCompletedSteps] = useState<number[]>(initialData.completed);
+
   const completeWizard = useOnboardingStore((s) => s.completeWizard);
-  const updateProfile = useAuthStore((s) => s.updateProfile);
+  const updateProfileMutation = useUpdateProfileMutation();
+  const updateProfile = updateProfileMutation.mutateAsync;
   const createTeam = useCreateTeamMutation();
   const createTryout = useCreateTryoutMutation();
   const tryoutsQuery = useTryoutsQuery(false);
+  const teamsQuery = useTeamsQuery();
   const setCurrentTryout = useSessionStore((s) => s.setCurrentTryout);
 
   const current = STEPS[step];
 
   const handleAction = async () => {
     if (step === 0) {
-      await createTeam.mutateAsync({ name: 'My Team', season: '2025-26' });
+      const team = await createTeam.mutateAsync({ name: 'My Team', season: '2025-26' });
+      setCreatedTeamId(team.id);
       setCompletedSteps((prev) => [...prev, 0]);
       await updateProfile({
         onboardingSteps: {
@@ -60,17 +83,29 @@ export default function WizardScreen() {
           scorePlayers: user?.onboardingSteps?.scorePlayers ?? false,
         },
       });
+      setStep(1);
+      return;
     } else if (step === 1) {
+      let tId = createdTeamId ?? teamsQuery.data?.[0]?.id;
+      let createdNewTeam = false;
+      if (!tId) {
+        const team = await createTeam.mutateAsync({ name: 'My Team', season: '2025-26' });
+        tId = team.id;
+        setCreatedTeamId(team.id);
+        createdNewTeam = true;
+      }
+
       const tryout = await createTryout.mutateAsync({
         name: 'First Assessment',
         sport: 'Hockey',
         eventType: 'Tryout',
+        teamId: tId,
       });
       setCurrentTryout(tryout.id);
-      setCompletedSteps((prev) => [...prev, 1]);
+      setCompletedSteps((prev) => [...prev, createdNewTeam ? 0 : null, 1].filter((n) => n !== null) as number[]);
       await updateProfile({
         onboardingSteps: {
-          createTeam: user?.onboardingSteps?.createTeam ?? false,
+          createTeam: createdNewTeam ? true : (user?.onboardingSteps?.createTeam ?? false),
           createAssessment: true,
           inviteAssessors: user?.onboardingSteps?.inviteAssessors ?? false,
           addPlayers: user?.onboardingSteps?.addPlayers ?? false,
@@ -80,13 +115,35 @@ export default function WizardScreen() {
       setStep(2);
       return;
     } else if (step === 2) {
-      const tryoutId = useSessionStore.getState().currentTryoutId ?? tryoutsQuery.data?.[0]?.id;
+      let tryoutId = useSessionStore.getState().currentTryoutId ?? tryoutsQuery.data?.[0]?.id;
+      let createdNewTeam = false;
+      let createdNewAssessment = false;
+
+      if (!tryoutId) {
+        let tId = createdTeamId ?? teamsQuery.data?.[0]?.id;
+        if (!tId) {
+          const team = await createTeam.mutateAsync({ name: 'My Team', season: '2025-26' });
+          tId = team.id;
+          setCreatedTeamId(team.id);
+          createdNewTeam = true;
+        }
+        const tryout = await createTryout.mutateAsync({
+          name: 'First Assessment',
+          sport: 'Hockey',
+          eventType: 'Tryout',
+          teamId: tId,
+        });
+        tryoutId = tryout.id;
+        setCurrentTryout(tryoutId);
+        createdNewAssessment = true;
+      }
+
       if (tryoutId) {
-        setCompletedSteps((prev) => [...prev, 2]);
+        setCompletedSteps((prev) => [...prev, createdNewTeam ? 0 : null, createdNewAssessment ? 1 : null, 2].filter((n) => n !== null) as number[]);
         await updateProfile({
           onboardingSteps: {
-            createTeam: user?.onboardingSteps?.createTeam ?? false,
-            createAssessment: user?.onboardingSteps?.createAssessment ?? false,
+            createTeam: createdNewTeam ? true : (user?.onboardingSteps?.createTeam ?? false),
+            createAssessment: createdNewAssessment ? true : (user?.onboardingSteps?.createAssessment ?? false),
             inviteAssessors: user?.onboardingSteps?.inviteAssessors ?? false,
             addPlayers: true,
             scorePlayers: user?.onboardingSteps?.scorePlayers ?? false,
@@ -99,14 +156,36 @@ export default function WizardScreen() {
         return;
       }
     } else if (step === 3) {
-      const tryoutId = useSessionStore.getState().currentTryoutId ?? tryoutsQuery.data?.[0]?.id;
+      let tryoutId = useSessionStore.getState().currentTryoutId ?? tryoutsQuery.data?.[0]?.id;
+      let createdNewTeam = false;
+      let createdNewAssessment = false;
+
+      if (!tryoutId) {
+        let tId = createdTeamId ?? teamsQuery.data?.[0]?.id;
+        if (!tId) {
+          const team = await createTeam.mutateAsync({ name: 'My Team', season: '2025-26' });
+          tId = team.id;
+          setCreatedTeamId(team.id);
+          createdNewTeam = true;
+        }
+        const tryout = await createTryout.mutateAsync({
+          name: 'First Assessment',
+          sport: 'Hockey',
+          eventType: 'Tryout',
+          teamId: tId,
+        });
+        tryoutId = tryout.id;
+        setCurrentTryout(tryoutId);
+        createdNewAssessment = true;
+      }
+
       if (tryoutId) {
-        setCompletedSteps((prev) => [...prev, 3]);
+        setCompletedSteps((prev) => [...prev, createdNewTeam ? 0 : null, createdNewAssessment ? 1 : null, 3].filter((n) => n !== null) as number[]);
         await updateProfile({
           onboardingCompleted: true,
           onboardingSteps: {
-            createTeam: user?.onboardingSteps?.createTeam ?? false,
-            createAssessment: user?.onboardingSteps?.createAssessment ?? false,
+            createTeam: createdNewTeam ? true : (user?.onboardingSteps?.createTeam ?? false),
+            createAssessment: createdNewAssessment ? true : (user?.onboardingSteps?.createAssessment ?? false),
             inviteAssessors: user?.onboardingSteps?.inviteAssessors ?? false,
             addPlayers: user?.onboardingSteps?.addPlayers ?? false,
             scorePlayers: true,
