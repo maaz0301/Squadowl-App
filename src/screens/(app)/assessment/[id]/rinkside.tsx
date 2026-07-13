@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { Dimensions, ScrollView, Text, View } from 'react-native';
+import { Dimensions, ScrollView, Text, View, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -41,6 +41,7 @@ export default function RinksideScreen() {
   const setWorkingScores = useSessionStore((s) => s.setWorkingScores);
   const clearWorkingScores = useSessionStore((s) => s.clearWorkingScores);
   const [session, setSession] = useState('Session 1');
+  const [recommendation, setRecommendation] = useState<'Make' | 'Keep' | 'Bubble' | 'Release' | ''>('');
   const translateX = useSharedValue(0);
 
   const roster = tryoutQuery.data?.roster ?? [];
@@ -87,21 +88,34 @@ export default function RinksideScreen() {
 
   const mostRecentEval = previousEvals[0];
 
-  const initialLoadRef = useRef(true);
+  const scoredSessions = useMemo(() => {
+    if (!tryoutQuery.data || !player) return new Set<string>();
+    return new Set(
+      (tryoutQuery.data.evals || [])
+        .filter((e) => e.playerId === player.id)
+        .map((e) => e.session)
+    );
+  }, [tryoutQuery.data?.evals, player?.id]);
+
+  const defaultSessionForPlayer = useMemo(() => {
+    return SESSIONS.find((s) => !scoredSessions.has(s) && s !== 'Extra View') || 'Session 1';
+  }, [SESSIONS, scoredSessions]);
+
   useEffect(() => {
-    if (initialLoadRef.current && mostRecentEval?.session) {
-      initialLoadRef.current = false;
-      setSession(mostRecentEval.session);
+    if (player?.id) {
+      setSession(defaultSessionForPlayer);
     }
-  }, [mostRecentEval?.id]);
+  }, [player?.id, defaultSessionForPlayer]);
 
   useEffect(() => {
     if (!player) return;
     const evalForSession = previousEvals.find(e => e.session === session);
-    if (evalForSession?.scores) {
+    if (evalForSession) {
       setWorkingScores(mapLegacyScores(evalForSession.scores, categories));
+      setRecommendation(evalForSession.recommendation || '');
     } else {
       clearWorkingScores();
+      setRecommendation('');
     }
   }, [player?.id, session, previousEvals]);
 
@@ -148,14 +162,20 @@ export default function RinksideScreen() {
     const hasScores = workingScores && Object.values(workingScores).some(val => val !== undefined && val !== null && val > 0);
     if (!hasScores) {
       clearWorkingScores();
+      setRecommendation('');
       if (rinksideIndex < roster.length - 1) setRinksideIndex(rinksideIndex + 1);
+      return;
+    }
+    if (!recommendation) {
+      Alert.alert('Recommendation required', 'Please select a recommendation before saving.');
       return;
     }
     await saveEval.mutateAsync({
       playerId: player.id,
-      form: { session, scores: workingScores, recommendation: '' },
+      form: { session, scores: workingScores, recommendation },
     });
     clearWorkingScores();
+    setRecommendation('');
     if (rinksideIndex < roster.length - 1) setRinksideIndex(rinksideIndex + 1);
   };
 
@@ -305,6 +325,20 @@ export default function RinksideScreen() {
               </View>
             );
           })}
+          
+          <Text className="text-sm font-bold uppercase mb-2 mt-4" style={{ color: colors.inkMuted }}>
+            Recommendation
+          </Text>
+          <View className="flex-row flex-wrap mb-4 gap-2">
+            {['Make', 'Keep', 'Bubble', 'Release'].map((rec) => (
+              <Chip
+                key={rec}
+                label={rec}
+                active={recommendation === rec}
+                onPress={() => setRecommendation(recommendation === rec ? '' : rec)}
+              />
+            ))}
+          </View>
           </ScrollView>
         </Animated.View>
       </GestureDetector>
