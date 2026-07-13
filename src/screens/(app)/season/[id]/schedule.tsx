@@ -21,7 +21,7 @@ export default function SeasonScheduleScreen() {
   const [showAdd, setShowAdd] = useState(false);
   const [reminding, setReminding] = useState<string | null>(null);
 
-  const { control, handleSubmit, watch, setValue, reset } = useForm<CreateEventForm>({
+  const { control, handleSubmit, watch, setValue, reset, setError } = useForm<CreateEventForm>({
     resolver: zodResolver(CreateEventFormSchema),
     defaultValues: { type: 'Practice', title: '', date: '', startTime: '', location: '' },
   });
@@ -35,6 +35,29 @@ export default function SeasonScheduleScreen() {
 
   const onSubmit = handleSubmit(
     async (data) => {
+      // Validate that event is between today (current time onwards) and up to two days from now
+      const [y, m, d] = data.date.split('-').map(Number);
+      const [hour, min] = (data.startTime || '00:00').split(':').map(Number);
+      const eventDate = new Date(y, m - 1, d, hour, min);
+      
+      const now = new Date();
+      const twoDaysFromNow = new Date();
+      twoDaysFromNow.setDate(now.getDate() + 2);
+
+      if (eventDate < now || eventDate > twoDaysFromNow) {
+        setError('date', {
+          type: 'manual',
+          message: 'Event must be scheduled between today onwards and up to two days from now.',
+        });
+        const errorMsg = 'Event must be scheduled between today onwards and up to two days from now.';
+        if (Platform.OS === 'web') {
+          alert(`Validation Error\n\n${errorMsg}`);
+        } else {
+          Alert.alert('Validation Error', errorMsg);
+        }
+        return;
+      }
+
       await addEvent.mutateAsync(data);
       reset();
       setShowAdd(false);
