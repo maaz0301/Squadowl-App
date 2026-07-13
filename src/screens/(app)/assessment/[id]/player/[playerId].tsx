@@ -121,7 +121,13 @@ export default function PlayerHubScreen() {
                       });
                       Alert.alert('Invite Sent', `Resent invite to ${player.guardianEmail} with a new temporary password.`);
                     } catch (error: any) {
-                      if (error.message?.includes('User not found') || error.message?.includes('not found')) {
+                      const msg = error.message || '';
+                      if (
+                        msg.includes('User not found') || 
+                        msg.includes('not found') || 
+                        msg.includes('Database error') ||
+                        msg.includes('finding user')
+                      ) {
                         Alert.alert(
                           'Invite Failed',
                           'This login account no longer exists. Would you like to unlink it and send a new invite?',
