@@ -17,7 +17,7 @@ import {
 } from '@/components/ui';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { PlanGate } from '@/components/PlanGate';
-import { useAuthStore, useUser } from '@/state/authStore';
+import { useAuthStore, useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import {
   useTeamsQuery,
@@ -44,13 +44,9 @@ function OnboardingChecklist() {
 
   if (!user || user.onboardingCompleted) return null;
 
-  const isGuardianOnly = !!(
-    guardianQuery.data &&
-    guardianQuery.data.length > 0 &&
-    tryoutsQuery.data?.length === 0 &&
-    seasonsQuery.data?.length === 0 &&
-    teamsQuery.data?.length === 0
-  );
+  const { isGuardian } = usePermissions();
+
+  const isGuardianOnly = isGuardian;
 
   const steps = isGuardianOnly ? [
     {
@@ -196,13 +192,9 @@ export default function DashboardScreen() {
     }
   };
 
-  const isGuardianOnly = !!(
-    guardianQuery.data &&
-    guardianQuery.data.length > 0 &&
-    tryoutsQuery.data?.length === 0 &&
-    seasonsQuery.data?.length === 0 &&
-    teamsQuery.data?.length === 0
-  );
+  const { role, isGuardian } = usePermissions();
+
+  const isGuardianOnly = isGuardian;
 
   const fabLabel =
     tab === 'seasons' ? '+ New Season' : tab === 'teams' ? '+ New Team' : '+ New Assessment';
@@ -212,7 +204,7 @@ export default function DashboardScreen() {
       <View className="px-4">
         <Header
           title={APP_CONFIG.appName}
-          subtitle={`Hi, ${user?.displayName ?? 'Coach'}`}
+          subtitle={`Hi, ${user?.displayName ?? (isGuardian ? 'Guardian' : 'Coach')}`}
           right={
             <View className="flex-row items-center gap-2">
               {!isGuardianOnly && (

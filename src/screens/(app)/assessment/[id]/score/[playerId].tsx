@@ -45,6 +45,7 @@ export default function ScoreScreen() {
   const clearWorkingScores = useSessionStore((s) => s.clearWorkingScores);
   const activeAssessor = useSessionStore((s) => s.activeAssessor);
   const setActiveAssessor = useSessionStore((s) => s.setActiveAssessor);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const player = tryoutQuery.data?.roster.find((p) => p.id === playerId);
   const historyQuery = useAthleteHistoryQuery(player?.athleteId);
@@ -196,9 +197,11 @@ export default function ScoreScreen() {
 
   const onSubmit = handleSubmit(async (data) => {
     try {
+      setIsSubmitting(true);
       const hasScores = data.scores && Object.values(data.scores).some(val => val !== undefined && val !== null && val > 0);
       if (!hasScores) {
         Alert.alert('No scores entered', 'Please grade at least one subskill before saving.');
+        setIsSubmitting(false);
         return;
       }
 
@@ -221,6 +224,8 @@ export default function ScoreScreen() {
       }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to save evaluation.');
+    } finally {
+      setIsSubmitting(false);
     }
   });
 
@@ -360,7 +365,7 @@ export default function ScoreScreen() {
         <Text className="text-center text-2xl font-display font-bold" style={{ color: colors.primary }}>
           Overall: {overall > 0 ? overall.toFixed(1) : '—'}
         </Text>
-        <Button label="Done" onPress={onSubmit} loading={saveEval.isPending} />
+        <Button label="Done" onPress={onSubmit} loading={isSubmitting} />
       </View>
     </Screen>
   );

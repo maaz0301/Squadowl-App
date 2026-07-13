@@ -31,6 +31,7 @@ export default function SeasonHubScreen() {
 
   return (
     <Screen scroll>
+      <Header title="Season Hub" showBack />
       <Card accent className="mb-4 gap-2">
         <Text className="text-xl font-display font-bold" style={{ color: colors.ink }}>
           {season.teamName}

@@ -32,20 +32,14 @@ export default function ProfileScreen() {
   const updateProfile = useUpdateProfileMutation();
   const updatePasswordMut = useUpdatePasswordMutation();
   const uploadPhoto = useUploadCoachPhotoMutation();
-  const { role } = usePermissions();
+  const { role, isGuardian } = usePermissions();
   const guardianQuery = useGuardianRostersQuery();
   const teamsQuery = useTeamsQuery();
   const tryoutsQuery = useTryoutsQuery(false);
   const seasonsQuery = useSeasonsQuery();
 
 
-  const isGuardianOnly = !!(
-    guardianQuery.data &&
-    guardianQuery.data.length > 0 &&
-    tryoutsQuery.data?.length === 0 &&
-    seasonsQuery.data?.length === 0 &&
-    teamsQuery.data?.length === 0
-  );
+  const isGuardianOnly = isGuardian;
 
   const [editing, setEditing] = useState(false);
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');

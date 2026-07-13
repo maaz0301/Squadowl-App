@@ -6,7 +6,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, Chip, EmptyState, ErrorState, Input, LoadingState, Modal, Screen, DateField, TimeField } from '@/components/ui';
+import { Badge, Button, Card, Chip, EmptyState, ErrorState, Input, LoadingState, Modal, Screen, DateField, TimeField, Header } from '@/components/ui';
 import { useSeasonQuery, useAddSeasonEventMutation, useDeleteSeasonEventMutation } from '@/features/queries';
 import { getDataSource } from '@/data';
 import { Alert, Platform } from 'react-native';
@@ -41,15 +41,13 @@ export default function SeasonScheduleScreen() {
       const eventDate = new Date(y, m - 1, d, hour, min);
       
       const now = new Date();
-      const twoDaysFromNow = new Date();
-      twoDaysFromNow.setDate(now.getDate() + 2);
 
-      if (eventDate < now || eventDate > twoDaysFromNow) {
+      if (eventDate < now) {
         setError('date', {
           type: 'manual',
-          message: 'Event must be scheduled between today onwards and up to two days from now.',
+          message: 'Event must be scheduled from today onwards.',
         });
-        const errorMsg = 'Event must be scheduled between today onwards and up to two days from now.';
+        const errorMsg = 'Event must be scheduled from today onwards.';
         if (Platform.OS === 'web') {
           alert(`Validation Error\n\n${errorMsg}`);
         } else {
@@ -109,6 +107,7 @@ export default function SeasonScheduleScreen() {
 
   return (
     <Screen padded={false}>
+      <Header title="Schedule" showBack />
       <View className="px-4 py-3">
         <Button label="+ Add Event" onPress={() => setShowAdd(true)} />
       </View>

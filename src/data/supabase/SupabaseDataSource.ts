@@ -104,14 +104,17 @@ export class SupabaseDataSource implements DataSource {
     const { data: u } = await supabase.auth.getUser();
     if (!u.user) throw new Error('Not authenticated');
     if (!this.accountId) {
+      // Fetch all memberships to determine the best account to use
       const m = await supabase
         .from('memberships')
-        .select('account_id')
+        .select('account_id, role')
         .eq('user_id', u.user.id)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      const accId: string | null = m.data?.account_id ?? null;
+        .order('created_at', { ascending: true });
+      const memberships = m.data ?? [];
+      
+      // Prefer a non-owner membership (e.g. guardian in a coach's org) over the user's own account
+      const nonOwner = memberships.find((r: any) => r.role !== 'owner');
+      const accId: string | null = nonOwner?.account_id ?? memberships[0]?.account_id ?? null;
       if (!accId) throw new Error('No account for user');
       this.accountId = accId;
     }
@@ -911,7 +914,8 @@ async deleteTryout(id: string): Promise<void> {
           const { data: newUserId, error } = await supabase.rpc('create_user_with_password', {
              email: fields.guardian_email,
              password: defaultPassword,
-             display_name: name
+             display_name: name,
+             account_type: 'guardian'
           });
           if (newUserId && !error) {
              fields.guardian_user_id = newUserId;
@@ -2047,22 +2051,21 @@ async deleteTryout(id: string): Promise<void> {
   async createAndInviteUser(email: string, password: string, name: string, role: import('../types').OrgRole): Promise<import('../types').OrgMember> {
     const { supabase } = await this.ctx();
 
-    // Securely create the user using the database RPC which bypasses client-side restrictions/confirmations
-    const { data: newUserId, error: createError } = await supabase.rpc('create_user_with_password', {
-      email,
-      password,
-      display_name: name,
+    // Create or update user via the Edge Function which uses the official Supabase Admin API.
+    // This guarantees the password hash is compatible with GoTrue authentication.
+    // Pass account_type so the handle_new_user trigger knows whether to create a personal account.
+    const accountType = role === 'guardian' ? 'guardian' : 'coach';
+    const { data, error: fnError } = await supabase.functions.invoke('create-user', {
+      body: { email, password, display_name: name, account_type: accountType },
     });
 
-    if (
-      createError && 
-      !createError.message.includes('already exists') && 
-      !createError.message.includes('already registered') &&
-      !createError.message.includes('duplicate key') &&
-      !createError.message.includes('unique constraint') &&
-      !createError.message.includes('users_email_partial_key')
-    ) {
-      throw createError;
+    if (fnError) {
+      throw new Error(fnError.message || 'Failed to create user account');
+    }
+
+    // If the Edge Function returned an error in the response body
+    if (data?.error) {
+      throw new Error(data.error);
     }
 
     return this.inviteOrgMember(email, role, password);
