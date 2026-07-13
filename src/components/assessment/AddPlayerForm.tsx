@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { View, Text, Pressable, Image } from 'react-native';
+import { View, Text, Pressable, Image, Alert } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { AddPlayerFormSchema, type AddPlayerForm as AddPlayerFormType, type Athlete } from '@/data/types';
@@ -146,67 +146,77 @@ export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
       <Controller
         control={control}
         name="jersey"
-        render={({ field: { onChange, onBlur, value } }) => (
-          <Input label="Jersey #" onBlur={onBlur} onChangeText={onChange} value={value} keyboardType="number-pad" />
+        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
+          <Input label="Jersey #" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} keyboardType="number-pad" />
         )}
       />
       <Controller
         control={control}
         name="pos"
-        render={({ field: { onChange, onBlur, value } }) => (
-          <Input label="Position (FWD/DEF/GTL)" onBlur={onBlur} onChangeText={onChange} value={value} autoCapitalize="characters" />
+        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
+          <Input label="Position (FWD/DEF/GTL)" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} autoCapitalize="characters" />
         )}
       />
       <Controller
         control={control}
         name="yearOfBirth"
-        render={({ field: { onChange, onBlur, value } }) => (
-          <Input label="Year of Birth" onBlur={onBlur} onChangeText={onChange} value={value} keyboardType="number-pad" />
+        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
+          <Input label="Year of Birth" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} keyboardType="number-pad" />
         )}
       />
       <Controller
         control={control}
         name="guardianName"
-        render={({ field: { onChange, onBlur, value } }) => (
-          <Input label="Guardian Name" onBlur={onBlur} onChangeText={onChange} value={value} />
+        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
+          <Input label="Guardian Name" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
         )}
       />
       <Controller
         control={control}
         name="guardianEmail"
-        render={({ field: { onChange, onBlur, value } }) => (
-          <Input label="Guardian Email" onBlur={onBlur} onChangeText={onChange} value={value} autoCapitalize="none" keyboardType="email-address" />
+        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
+          <Input label="Guardian Email" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} autoCapitalize="none" keyboardType="email-address" />
         )}
       />
       <Controller
         control={control}
         name="guardianPhone"
-        render={({ field: { onChange, onBlur, value } }) => (
-          <Input label="Guardian Phone" onBlur={onBlur} onChangeText={onChange} value={value} keyboardType="phone-pad" />
+        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
+          <Input label="Guardian Phone" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} keyboardType="phone-pad" />
         )}
       />
       <Controller
         control={control}
         name="medicalInfo"
-        render={({ field: { onChange, onBlur, value } }) => (
-          <Input label="Medical Info" onBlur={onBlur} onChangeText={onChange} value={value} multiline numberOfLines={2} />
+        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
+          <Input label="Medical Info" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} multiline numberOfLines={2} />
         )}
       />
       <Controller
         control={control}
         name="friend1Name"
-        render={({ field: { onChange, onBlur, value } }) => (
-          <Input label="Friend 1" onBlur={onBlur} onChangeText={onChange} value={value} />
+        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
+          <Input label="Friend 1" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
         )}
       />
       <Controller
         control={control}
         name="friend2Name"
-        render={({ field: { onChange, onBlur, value } }) => (
-          <Input label="Friend 2" onBlur={onBlur} onChangeText={onChange} value={value} />
+        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
+          <Input label="Friend 2" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
         )}
       />
-      <Button label="Save Player" onPress={handleSubmit(onSubmit)} loading={loading} />
+      <Button
+        label="Save Player"
+        onPress={handleSubmit(onSubmit, (errors) => {
+          if (errors.guardianEmail) {
+            Alert.alert('Invalid Email', errors.guardianEmail.message || 'Please enter a valid email address');
+          } else {
+            Alert.alert('Validation Error', 'Please check the highlighted fields before saving.');
+          }
+        })}
+        loading={loading}
+      />
     </View>
   );
 }

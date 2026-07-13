@@ -295,7 +295,7 @@ export const AddPlayerFormSchema = z.object({
   yearOfBirth: z.string().optional(),
   positionTryingOutFor: z.string().optional(),
   guardianName: z.string().optional(),
-  guardianEmail: z.string().email().optional().or(z.literal('')),
+  guardianEmail: z.string().optional().refine(val => !val || z.string().email().safeParse(val).success, { message: 'Please enter a valid email address' }),
   guardianPhone: z.string().optional(),
   currentTeam: z.string().optional(),
   currentLevel: z.string().optional(),

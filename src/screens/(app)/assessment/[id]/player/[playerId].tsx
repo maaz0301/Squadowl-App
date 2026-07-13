@@ -193,9 +193,11 @@ export default function PlayerHubScreen() {
           )}
         </View>
 
-        {player.guardianName ? (
+        {player.guardianName || player.guardianEmail ? (
           <>
-            <Text style={{ color: colors.ink }}>{player.guardianName}</Text>
+            {player.guardianName ? (
+              <Text style={{ color: colors.ink }}>{player.guardianName}</Text>
+            ) : null}
             {player.guardianEmail ? (
               <Text style={{ color: colors.inkMuted }}>{player.guardianEmail}</Text>
             ) : null}
@@ -321,20 +323,24 @@ export default function PlayerHubScreen() {
           defaultValues={player}
           loading={updatePlayer.isPending || uploadPhoto.isPending}
           onSubmit={async (data) => {
-            if (player.athleteId && data.avatarUrl && data.avatarUrl.startsWith('file://')) {
-              try {
-                const publicUrl = await uploadPhoto.mutateAsync({
-                  athleteId: player.athleteId,
-                  fileUri: data.avatarUrl,
-                  fileType: 'image/jpeg',
-                });
-                data.avatarUrl = publicUrl;
-              } catch (e: any) {
-                Alert.alert('Upload Error', 'Failed to upload profile picture: ' + e.message);
+            try {
+              if (player.athleteId && data.avatarUrl && data.avatarUrl.startsWith('file://')) {
+                try {
+                  const publicUrl = await uploadPhoto.mutateAsync({
+                    athleteId: player.athleteId,
+                    fileUri: data.avatarUrl,
+                    fileType: 'image/jpeg',
+                  });
+                  data.avatarUrl = publicUrl;
+                } catch (e: any) {
+                  Alert.alert('Upload Error', 'Failed to upload profile picture: ' + e.message);
+                }
               }
+              await updatePlayer.mutateAsync({ playerId: playerId!, updates: data });
+              setShowEdit(false);
+            } catch (err: any) {
+              Alert.alert('Save Error', 'Failed to update player: ' + err.message);
             }
-            await updatePlayer.mutateAsync({ playerId: playerId!, updates: data });
-            setShowEdit(false);
           }}
         />
       </Modal>

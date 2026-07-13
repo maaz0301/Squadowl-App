@@ -233,19 +233,23 @@ export default function RosterScreen() {
         <AddPlayerForm
           loading={addPlayer.isPending || uploadPhoto.isPending}
           onSubmit={async (data) => {
-            const player = await addPlayer.mutateAsync(data);
-            if (player.athleteId && data.avatarUrl && data.avatarUrl.startsWith('file://')) {
-              try {
-                await uploadPhoto.mutateAsync({
-                  athleteId: player.athleteId,
-                  fileUri: data.avatarUrl,
-                  fileType: 'image/jpeg',
-                });
-              } catch (e: any) {
-                Alert.alert('Upload Error', 'Failed to upload profile picture: ' + e.message);
+            try {
+              const player = await addPlayer.mutateAsync(data);
+              if (player.athleteId && data.avatarUrl && data.avatarUrl.startsWith('file://')) {
+                try {
+                  await uploadPhoto.mutateAsync({
+                    athleteId: player.athleteId,
+                    fileUri: data.avatarUrl,
+                    fileType: 'image/jpeg',
+                  });
+                } catch (e: any) {
+                  Alert.alert('Upload Error', 'Failed to upload profile picture: ' + e.message);
+                }
               }
+              setShowAdd(false);
+            } catch (err: any) {
+              Alert.alert('Save Error', 'Failed to save player: ' + err.message);
             }
-            setShowAdd(false);
           }}
         />
       </Modal>

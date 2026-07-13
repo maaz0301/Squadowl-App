@@ -915,6 +915,11 @@ async deleteTryout(id: string): Promise<void> {
           });
           if (newUserId && !error) {
              fields.guardian_user_id = newUserId;
+             try {
+               await this.sendEmail('org_invite', fields.guardian_email, { role: 'guardian', password: defaultPassword });
+             } catch (emailErr) {
+               console.warn('Failed to send auto-created guardian invite email:', emailErr);
+             }
           }
         }
       } catch (err) {
