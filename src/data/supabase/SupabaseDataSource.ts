@@ -2042,7 +2042,14 @@ async deleteTryout(id: string): Promise<void> {
       display_name: name,
     });
 
-    if (createError && !createError.message.includes('already exists') && !createError.message.includes('already registered')) {
+    if (
+      createError && 
+      !createError.message.includes('already exists') && 
+      !createError.message.includes('already registered') &&
+      !createError.message.includes('duplicate key') &&
+      !createError.message.includes('unique constraint') &&
+      !createError.message.includes('users_email_partial_key')
+    ) {
       throw createError;
     }
 
