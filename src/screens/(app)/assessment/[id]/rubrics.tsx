@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { Text, View, Alert, Pressable, Platform } from 'react-native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Button, Card, Chip, ErrorState, Header, Input, LoadingState, Screen } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
@@ -18,6 +18,14 @@ export default function RubricsScreen() {
   const [role, setRole] = useState<'skater' | 'goalie'>('skater');
   const [label, setLabel] = useState('');
   const [scale, setScale] = useState<'1-5' | '1-10'>('1-5');
+
+  const showAlert = (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      alert(`${title}\n\n${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
 
   if (tryoutQuery.isLoading || !id) return <LoadingState message="Loading rubrics..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
@@ -57,27 +65,57 @@ export default function RubricsScreen() {
   };
 
   const resetWeights = async (forRole: 'skater' | 'goalie') => {
-    const baseCats = forRole === 'goalie' ? defaults.goalie : defaults.skater;
-    const customCats = custom
-      .filter((r) => r.role === forRole || r.role === 'all' || !r.role)
-      .map((r) => ({
-        key: r.key,
-        label: r.label,
-        role: forRole,
-        subskills: [
-          { key: r.key, label: r.label, scale: (r.scale === '1-10' ? '1-10' : '1-5') as '1-5' | '1-10' },
-        ],
-      }));
-    const weights = buildDefaultWeights([...baseCats, ...customCats]);
-    await updateTryout.mutateAsync({
-      id: tryout.id,
-      updates: {
-        settings: {
-          ...tryout.settings,
-          [forRole === 'goalie' ? 'goalieWeights' : 'skaterWeights']: weights,
+    try {
+      const baseCats = forRole === 'goalie' ? defaults.goalie : defaults.skater;
+      const customCats = custom
+        .filter((r) => r.role === forRole || r.role === 'all' || !r.role)
+        .map((r) => ({
+          key: r.key,
+          label: r.label,
+          role: forRole,
+          subskills: [
+            { key: r.key, label: r.label, scale: (r.scale === '1-10' ? '1-10' : '1-5') as '1-5' | '1-10' },
+          ],
+        }));
+      const weights = buildDefaultWeights([...baseCats, ...customCats]);
+      await updateTryout.mutateAsync({
+        id: tryout.id,
+        updates: {
+          settings: {
+            ...tryout.settings,
+            [forRole === 'goalie' ? 'goalieWeights' : 'skaterWeights']: weights,
+          },
         },
-      },
-    });
+      });
+      showAlert('Success', `${forRole.charAt(0).toUpperCase() + forRole.slice(1)} weights successfully reset to default values.`);
+    } catch (err: any) {
+      showAlert('Error', err.message || 'Failed to reset weights.');
+    }
+  };
+
+  const removeCustom = async (keyToRemove: string) => {
+    const next = custom.filter((r) => r.key !== keyToRemove);
+    const nextSkaterWeights = { ...tryout.settings.skaterWeights };
+    const nextGoalieWeights = { ...tryout.settings.goalieWeights };
+    delete nextSkaterWeights[keyToRemove];
+    delete nextGoalieWeights[keyToRemove];
+
+    try {
+      await updateTryout.mutateAsync({
+        id: tryout.id,
+        updates: {
+          settings: {
+            ...tryout.settings,
+            customRubrics: next,
+            skaterWeights: nextSkaterWeights,
+            goalieWeights: nextGoalieWeights,
+          },
+        },
+      });
+      showAlert('Success', 'Custom rubric removed successfully.');
+    } catch (err: any) {
+      showAlert('Error', err.message || 'Failed to remove custom rubric.');
+    }
   };
 
   return (
@@ -125,9 +163,20 @@ export default function RubricsScreen() {
           {customLimit !== 'unlimited' ? ` / ${customLimit}` : ''})
         </Text>
         {custom.map((r) => (
-          <Text key={r.key} style={{ color: colors.ink }}>
-            {r.label} · {r.scale} · {r.role ?? 'all'}
-          </Text>
+          <View key={r.key} className="flex-row items-center justify-between py-1">
+            <Text style={{ color: colors.ink }} className="flex-1 mr-2">
+              {r.label} · {r.scale} · {r.role ?? 'all'}
+            </Text>
+            <Pressable 
+              onPress={() => removeCustom(r.key)}
+              hitSlop={8}
+              className="px-2"
+            >
+              <Text style={{ color: colors.danger, fontSize: 24, fontWeight: 'bold' }}>
+                -
+              </Text>
+            </Pressable>
+          </View>
         ))}
         {custom.length === 0 ? (
           <Text style={{ color: colors.inkMuted }}>No custom rubrics yet.</Text>

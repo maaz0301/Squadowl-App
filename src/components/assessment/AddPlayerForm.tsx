@@ -133,35 +133,35 @@ export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
         control={control}
         name="first"
         render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
-          <Input label="First Name" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
+          <Input label="First Name *" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
         )}
       />
       <Controller
         control={control}
         name="last"
         render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
-          <Input label="Last Name" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
+          <Input label="Last Name *" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
         )}
       />
       <Controller
         control={control}
         name="jersey"
         render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
-          <Input label="Jersey #" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} keyboardType="number-pad" />
+          <Input label="Jersey # *" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} keyboardType="number-pad" />
         )}
       />
       <Controller
         control={control}
         name="pos"
         render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
-          <Input label="Position (FWD/DEF/GTL)" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} autoCapitalize="characters" />
+          <Input label="Position (FWD/DEF/GTL) *" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} autoCapitalize="characters" />
         )}
       />
       <Controller
         control={control}
         name="yearOfBirth"
         render={({ field: { onChange, value }, fieldState: { error } }) => (
-          <YearField label="Year of Birth" value={value} onChange={onChange} error={error?.message} />
+          <YearField label="Year of Birth *" value={value} onChange={onChange} error={error?.message} />
         )}
       />
       <Controller

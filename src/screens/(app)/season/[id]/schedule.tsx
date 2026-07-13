@@ -6,7 +6,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, Chip, EmptyState, ErrorState, Input, LoadingState, Modal, Screen } from '@/components/ui';
+import { Badge, Button, Card, Chip, EmptyState, ErrorState, Input, LoadingState, Modal, Screen, DateField, TimeField } from '@/components/ui';
 import { useSeasonQuery, useAddSeasonEventMutation, useDeleteSeasonEventMutation } from '@/features/queries';
 import { getDataSource } from '@/data';
 import { Alert } from 'react-native';
@@ -109,11 +109,11 @@ export default function SeasonScheduleScreen() {
           <Controller control={control} name="title" render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
             <Input label="Title" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
           )} />
-          <Controller control={control} name="date" render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
-            <Input label="Date" placeholder="2026-03-20" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
+          <Controller control={control} name="date" render={({ field: { onChange, value }, fieldState: { error } }) => (
+            <DateField label="Date" value={value} onChange={onChange} placeholder="Select a date" />
           )} />
-          <Controller control={control} name="startTime" render={({ field: { onChange, onBlur, value } }) => (
-            <Input label="Start Time" placeholder="18:00" onBlur={onBlur} onChangeText={onChange} value={value} />
+          <Controller control={control} name="startTime" render={({ field: { onChange, value } }) => (
+            <TimeField label="Start Time" value={value} onChange={onChange} placeholder="Select a time" />
           )} />
           <Controller control={control} name="location" render={({ field: { onChange, onBlur, value } }) => (
             <Input label="Location" onBlur={onBlur} onChangeText={onChange} value={value} />
