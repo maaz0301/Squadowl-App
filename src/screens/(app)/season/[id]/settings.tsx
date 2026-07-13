@@ -1,10 +1,10 @@
-import { Share, Text, View } from 'react-native';
+import { Share, Text, View, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
-import { useSeasonQuery, useUpdateSeasonMutation } from '@/features/queries';
+import { useSeasonQuery, useUpdateSeasonMutation, useDeleteSeasonMutation } from '@/features/queries';
 
 export default function SeasonSettingsScreen() {
   const route = useRoute<any>();
@@ -13,6 +13,7 @@ export default function SeasonSettingsScreen() {
   const navigation = useNavigation<any>();
   const seasonQuery = useSeasonQuery(id);
   const updateSeason = useUpdateSeasonMutation();
+  const deleteSeason = useDeleteSeasonMutation();
 
   if (seasonQuery.isLoading) return <LoadingState />;
   if (seasonQuery.isError || !seasonQuery.data) {
@@ -36,6 +37,24 @@ export default function SeasonSettingsScreen() {
     navigation.replace('DashboardMain');
   };
 
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Season',
+      'Are you sure you want to delete this season? This action cannot be undone and will delete all associated data.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteSeason.mutateAsync(id!);
+            navigation.replace('DashboardMain');
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <Screen scroll>
       <Card accent className="mb-4 gap-2">
@@ -46,6 +65,7 @@ export default function SeasonSettingsScreen() {
       <Card className="gap-2">
         <Text className="font-bold" style={{ color: colors.danger }}>Danger Zone</Text>
         <Button label="Archive Season" variant="danger" onPress={archive} loading={updateSeason.isPending} />
+        <Button label="Delete Season" variant="danger" onPress={handleDelete} loading={deleteSeason.isPending} />
       </Card>
     </Screen>
   );

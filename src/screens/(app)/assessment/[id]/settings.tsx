@@ -21,6 +21,7 @@ import {
   useTryoutQuery,
   useUpdateTryoutMutation,
   useArchiveTryoutMutation,
+  useDeleteTryoutMutation,
   useCopyTryoutMutation,
 } from '@/features/queries';
 import { getDataSource } from '@/data';
@@ -37,6 +38,7 @@ export default function SettingsScreen() {
   const tryoutQuery = useTryoutQuery(id);
   const updateTryout = useUpdateTryoutMutation();
   const archiveTryout = useArchiveTryoutMutation();
+  const deleteTryout = useDeleteTryoutMutation();
   const copyTryout = useCopyTryoutMutation();
   const [showRubrics, setShowRubrics] = useState(false);
   const [showAssessor, setShowAssessor] = useState(false);
@@ -181,6 +183,24 @@ export default function SettingsScreen() {
     navigation.replace('DashboardMain');
   };
 
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Assessment',
+      'Are you sure you want to delete this assessment? This action cannot be undone and will delete all associated data.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteTryout.mutateAsync(tryout.id);
+            navigation.replace('DashboardMain');
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <Screen scroll>
       <Header title="Assessment Settings" showBack />
@@ -260,6 +280,7 @@ export default function SettingsScreen() {
           Danger Zone
         </Text>
         <Button label="Archive Assessment" variant="danger" onPress={handleArchive} loading={archiveTryout.isPending} />
+        <Button label="Delete Assessment" variant="danger" onPress={handleDelete} loading={deleteTryout.isPending} />
       </Card>
 
       <Modal visible={showEdit} title="Edit Assessment" onClose={() => setShowEdit(false)}>

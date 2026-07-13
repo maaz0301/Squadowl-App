@@ -15,6 +15,7 @@ export default function SignupScreen() {
   const signup = useAuthStore((s) => s.signup);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const { control, handleSubmit } = useForm({
     resolver: zodResolver(SignupFormSchema),
@@ -60,13 +61,35 @@ export default function SignupScreen() {
             />
           )}
         />
-        <Controller
-          control={control}
-          name="password"
-          render={({ field: { onChange, onBlur, value }, fieldState: { error: fe } }) => (
-            <Input label="Password" secureTextEntry onBlur={onBlur} onChangeText={onChange} value={value} error={fe?.message} />
-          )}
-        />
+        <View>
+          <Controller
+            control={control}
+            name="password"
+            render={({ field: { onChange, onBlur, value }, fieldState: { error: fe } }) => (
+              <Input label="Password" secureTextEntry={!showPassword} onBlur={onBlur} onChangeText={onChange} value={value} error={fe?.message} />
+            )}
+          />
+          <Pressable 
+            onPress={() => setShowPassword(!showPassword)} 
+            className="flex-row items-center gap-2 mt-4 ml-1 mb-1"
+          >
+            <View 
+              style={{ 
+                width: 20, 
+                height: 20, 
+                borderWidth: 1, 
+                borderColor: showPassword ? colors.primary : colors.border, 
+                borderRadius: 4, 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                backgroundColor: showPassword ? colors.primary : 'transparent' 
+              }}
+            >
+              {showPassword && <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>✓</Text>}
+            </View>
+            <Text style={{ color: colors.inkMuted }}>Show password</Text>
+          </Pressable>
+        </View>
 
         {error ? (
           <Text className="text-sm" style={{ color: colors.danger }}>

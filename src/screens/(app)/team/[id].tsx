@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { Text, View, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, ErrorState, Header, Input, LoadingState, Screen } from '@/components/ui';
-import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation } from '@/features/queries';
+import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMutation } from '@/features/queries';
 
 export default function TeamDetailScreen() {
   const route = useRoute<any>();
@@ -15,6 +15,7 @@ export default function TeamDetailScreen() {
   const teamsQuery = useTeamsQuery();
   const tryoutsQuery = useTryoutsQuery(false);
   const updateTeam = useUpdateTeamMutation();
+  const deleteTeam = useDeleteTeamMutation();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
   const [season, setSeason] = useState('');
@@ -56,6 +57,29 @@ export default function TeamDetailScreen() {
   const save = async () => {
     await updateTeam.mutateAsync({ id: team.id, updates: { name: name.trim(), season: season.trim() || undefined } });
     setEditing(false);
+  };
+
+  const archive = async () => {
+    await updateTeam.mutateAsync({ id: team.id, updates: { archived: true } });
+    navigation.replace('DashboardMain');
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Team',
+      'Are you sure you want to delete this team? This action cannot be undone and will delete all associated data.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteTeam.mutateAsync(team.id);
+            navigation.replace('DashboardMain');
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -107,6 +131,12 @@ export default function TeamDetailScreen() {
         className="mt-4"
         onPress={() => navigation.navigate('NewAssessment')}
       />
+
+      <Card className="mt-4 gap-2">
+        <Text className="font-bold" style={{ color: colors.danger }}>Danger Zone</Text>
+        <Button label="Archive Team" variant="danger" onPress={archive} loading={updateTeam.isPending} />
+        <Button label="Delete Team" variant="danger" onPress={handleDelete} loading={deleteTeam.isPending} />
+      </Card>
     </Screen>
   );
 }

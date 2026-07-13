@@ -151,6 +151,17 @@ export function useArchiveTryoutMutation() {
   });
 }
 
+export function useDeleteTryoutMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => getDataSource().deleteTryout(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.tryouts(false) });
+      qc.invalidateQueries({ queryKey: queryKeys.tryouts(true) });
+    },
+  });
+}
+
 // ---- Players ----
 export function useAddPlayerMutation(tryoutId: string) {
   const qc = useQueryClient();
@@ -408,6 +419,14 @@ export function useUpdateSeasonMutation() {
   });
 }
 
+export function useDeleteSeasonMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => getDataSource().deleteSeason(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.seasons }),
+  });
+}
+
 export function useAddSeasonEventMutation(seasonId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -642,6 +661,14 @@ export function useUpdateTeamMutation() {
   return useMutation({
     mutationFn: ({ id, updates }: { id: string; updates: Partial<Team> }) =>
       getDataSource().updateTeam(id, updates),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teams }),
+  });
+}
+
+export function useDeleteTeamMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => getDataSource().deleteTeam(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teams }),
   });
 }
