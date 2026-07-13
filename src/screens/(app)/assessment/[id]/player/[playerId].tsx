@@ -121,7 +121,54 @@ export default function PlayerHubScreen() {
                       });
                       Alert.alert('Invite Sent', `Resent invite to ${player.guardianEmail} with a new temporary password.`);
                     } catch (error: any) {
-                      Alert.alert('Invite Failed', error.message || 'Could not resend invite.');
+                      if (error.message?.includes('User not found') || error.message?.includes('not found')) {
+                        Alert.alert(
+                          'Invite Failed',
+                          'This login account no longer exists. Would you like to unlink it and send a new invite?',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { 
+                              text: 'Re-invite', 
+                              onPress: async () => {
+                                try {
+                                  // 1. Unlink the deleted ID first
+                                  await linkGuardianMut.mutateAsync({
+                                    guardianId: null as any,
+                                    tryoutId: id!,
+                                    playerId: player.athleteId!,
+                                  });
+                                  
+                                  // 2. Re-create and invite
+                                  const defaultPassword = Math.random().toString(36).slice(-6) + 'Aa1!';
+                                  const name = player.guardianName || 'Guardian';
+                                  
+                                  const newMember = await createAndInviteMut.mutateAsync({
+                                    email: player.guardianEmail!,
+                                    password: defaultPassword,
+                                    name,
+                                    role: 'guardian'
+                                  });
+
+                                  await linkGuardianMut.mutateAsync({
+                                    guardianId: newMember.userId!,
+                                    tryoutId: id!,
+                                    playerId: player.athleteId!,
+                                  });
+                                  
+                                  Alert.alert(
+                                    'Guardian Re-created', 
+                                    `An account was created for ${player.guardianEmail} and an email was sent containing their temporary password:\n\n${defaultPassword}`
+                                  );
+                                } catch (createErr: any) {
+                                  Alert.alert('Invite Failed', createErr.message || 'Could not re-create guardian account.');
+                                }
+                              }
+                            }
+                          ]
+                        );
+                      } else {
+                        Alert.alert('Invite Failed', error.message || 'Could not resend invite.');
+                      }
                     }
                   }}
                   loading={resendInviteMut.isPending}
