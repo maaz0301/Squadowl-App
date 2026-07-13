@@ -109,13 +109,17 @@ export default function ScoreScreen() {
   const formData = watch();
   const previousFormRef = useRef<string>('');
 
-  const loadEvalData = (targetEvalId?: string, fallbackSession?: string) => {
+  const loadEvalData = (targetEvalId?: string, fallbackSession?: string, preserveWorkingScores: boolean = false) => {
     const targetEval = targetEvalId
       ? tryoutQuery.data?.evals.find((e) => e.id === targetEvalId)
       : undefined;
 
-    const scoresToSet = mapLegacyScores(targetEval?.scores ?? {}, categories);
+    const scoresToSet = targetEval
+      ? mapLegacyScores(targetEval.scores ?? {}, categories)
+      : (preserveWorkingScores && Object.keys(workingScores).length > 0 ? workingScores : mapLegacyScores({}, categories));
+
     setWorkingScores(scoresToSet);
+    setValue('scores', scoresToSet);
     setValue('session', targetEval?.session ?? fallbackSession ?? nextSession);
     setValue('strengths', targetEval?.strengths ?? '');
     setValue('improve', targetEval?.improve ?? '');
@@ -131,8 +135,7 @@ export default function ScoreScreen() {
   useEffect(() => {
     if (!tryoutQuery.data || hasInitializedRef.current) return;
     hasInitializedRef.current = true;
-    loadEvalData(evalId);
-    return () => clearWorkingScores();
+    loadEvalData(evalId, undefined, true);
   }, [tryoutQuery.data?.id]);
 
   useEffect(() => {
@@ -145,6 +148,11 @@ export default function ScoreScreen() {
       if (previousFormRef.current === '') {
         previousFormRef.current = currentFormStr;
       }
+      return;
+    }
+
+    const hasScores = formData.scores && Object.values(formData.scores).some(val => val !== undefined && val !== null && val > 0);
+    if (!hasScores) {
       return;
     }
 
@@ -185,6 +193,12 @@ export default function ScoreScreen() {
 
   const onSubmit = handleSubmit(async (data) => {
     try {
+      const hasScores = data.scores && Object.values(data.scores).some(val => val !== undefined && val !== null && val > 0);
+      if (!hasScores) {
+        Alert.alert('No scores entered', 'Please grade at least one subskill before saving.');
+        return;
+      }
+
       await saveEval.mutateAsync({
         playerId: playerId!,
         form: data,
@@ -341,7 +355,7 @@ export default function ScoreScreen() {
 
       <View className="py-4 gap-2">
         <Text className="text-center text-2xl font-display font-bold" style={{ color: colors.primary }}>
-          Overall: {overall > 0 ? overall.toFixed(2) : '—'}
+          Overall: {overall > 0 ? overall.toFixed(1) : '—'}
         </Text>
         <Button label="Done" onPress={onSubmit} loading={saveEval.isPending} />
       </View>

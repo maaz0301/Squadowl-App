@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { Dimensions, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
@@ -87,28 +87,26 @@ export default function RinksideScreen() {
 
   const mostRecentEval = previousEvals[0];
 
+  const initialLoadRef = useRef(true);
   useEffect(() => {
-    const defaultSession = mostRecentEval?.session && SESSIONS.includes(mostRecentEval.session) 
-      ? mostRecentEval.session 
-      : 'Session 1';
-    
-    setSession(defaultSession);
-
-    if (mostRecentEval?.scores) {
-      setWorkingScores(mapLegacyScores(mostRecentEval.scores, categories));
-    } else {
-      clearWorkingScores();
+    if (initialLoadRef.current && mostRecentEval?.session) {
+      initialLoadRef.current = false;
+      setSession(mostRecentEval.session);
     }
-  }, [player?.id, mostRecentEval?.id]);
+  }, [mostRecentEval?.id]);
 
-  const handleSessionChange = (newSession: string) => {
-    setSession(newSession);
-    const evalForSession = previousEvals.find(e => e.session === newSession);
+  useEffect(() => {
+    if (!player) return;
+    const evalForSession = previousEvals.find(e => e.session === session);
     if (evalForSession?.scores) {
       setWorkingScores(mapLegacyScores(evalForSession.scores, categories));
     } else {
       clearWorkingScores();
     }
+  }, [player?.id, session, previousEvals]);
+
+  const handleSessionChange = (newSession: string) => {
+    setSession(newSession);
   };
 
   const goNext = () => {
@@ -119,6 +117,7 @@ export default function RinksideScreen() {
   };
 
   const pan = Gesture.Pan()
+    .activeOffsetX([-20, 20])
     .onUpdate((e) => {
       translateX.value = e.translationX;
     })
@@ -146,6 +145,12 @@ export default function RinksideScreen() {
 
   const saveAndNext = async () => {
     if (!player) return;
+    const hasScores = workingScores && Object.values(workingScores).some(val => val !== undefined && val !== null && val > 0);
+    if (!hasScores) {
+      clearWorkingScores();
+      if (rinksideIndex < roster.length - 1) setRinksideIndex(rinksideIndex + 1);
+      return;
+    }
     await saveEval.mutateAsync({
       playerId: player.id,
       form: { session, scores: workingScores, recommendation: '' },
@@ -218,58 +223,60 @@ export default function RinksideScreen() {
               <Text className="font-display font-bold mb-2" style={{ color: colors.primary }}>
                 Historical Data
               </Text>
-              {(() => {
-                const uniquePastEvals = Object.values(
-                  historyQuery.data.pastEvaluations.reduce((acc, ev) => {
-                    const key = `${ev.session}-${ev.evaluator}`;
-                    if (!acc[key] || acc[key].createdAt < ev.createdAt) {
-                      acc[key] = ev;
-                    }
-                    return acc;
-                  }, {} as Record<string, typeof historyQuery.data.pastEvaluations[0]>)
-                ).sort((a, b) => a.createdAt - b.createdAt);
+              <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled={true} showsVerticalScrollIndicator={true}>
+                {(() => {
+                  const uniquePastEvals = Object.values(
+                    historyQuery.data.pastEvaluations.reduce((acc, ev) => {
+                      const key = `${ev.session}-${ev.evaluator}`;
+                      if (!acc[key] || acc[key].createdAt < ev.createdAt) {
+                        acc[key] = ev;
+                      }
+                      return acc;
+                    }, {} as Record<string, typeof historyQuery.data.pastEvaluations[0]>)
+                  ).sort((a, b) => a.createdAt - b.createdAt);
 
-                return (
-                  <>
-                    {historyQuery.data.pastSeasons.length > 0 && (
-                      <View>
-                        <Text className="text-sm font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Past Seasons</Text>
-                        {historyQuery.data.pastSeasons.map((s) => (
-                          <View key={s.seasonId} className="flex-row items-center gap-2 mb-1">
-                            <Text style={{ color: colors.primary, fontWeight: 'bold' }}>{s.seasonName}</Text>
-                            <Text style={{ color: colors.ink }}>{s.teamName}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
-                    {uniquePastEvals.length > 0 && (
-                      <View className={historyQuery.data.pastSeasons.length > 0 ? "mt-2 pt-2 border-t" : ""} style={{ borderColor: colors.border }}>
-                        <Text className="text-sm font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Past Evals ({uniquePastEvals.length})</Text>
-                        {uniquePastEvals.map((ev) => (
-                          <View key={ev.id} className="mb-1 border-b pb-1" style={{ borderColor: colors.border }}>
-                            <Text className="font-bold text-sm" style={{ color: colors.ink }}>
-                              {ev.session} · {ev.recommendation || 'No Rec'}
-                            </Text>
-                            {ev.strengths ? <Text className="text-xs" style={{ color: colors.success }}>+ {ev.strengths}</Text> : null}
-                            {ev.improve ? <Text className="text-xs" style={{ color: colors.inkMuted }}>→ {ev.improve}</Text> : null}
-                            {Object.keys(ev.scores || {}).length > 0 && (
-                              <Text className="text-xs mt-1 font-bold" style={{ color: colors.primary }}>
-                                {categories
-                                  .map((cat) => {
-                                    const avg = categoryAverage(ev.scores, cat.subskills);
-                                    return avg !== null ? `${cat.label} ${avg.toFixed(1)}` : null;
-                                  })
-                                  .filter(Boolean)
-                                  .join('  ·  ')}
+                  return (
+                    <>
+                      {historyQuery.data.pastSeasons.length > 0 && (
+                        <View>
+                          <Text className="text-sm font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Past Seasons</Text>
+                          {historyQuery.data.pastSeasons.map((s) => (
+                            <View key={s.seasonId} className="flex-row items-center gap-2 mb-1">
+                              <Text style={{ color: colors.primary, fontWeight: 'bold' }}>{s.seasonName}</Text>
+                              <Text style={{ color: colors.ink }}>{s.teamName}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                      {uniquePastEvals.length > 0 && (
+                        <View className={historyQuery.data.pastSeasons.length > 0 ? "mt-2 pt-2 border-t" : ""} style={{ borderColor: colors.border }}>
+                          <Text className="text-sm font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Past Evals ({uniquePastEvals.length})</Text>
+                          {uniquePastEvals.map((ev) => (
+                            <View key={ev.id} className="mb-1 border-b pb-1" style={{ borderColor: colors.border }}>
+                              <Text className="font-bold text-sm" style={{ color: colors.ink }}>
+                                {ev.session} · {ev.recommendation || 'No Rec'}
                               </Text>
-                            )}
-                          </View>
-                        ))}
-                      </View>
-                    )}
-                  </>
-                );
-              })()}
+                              {ev.strengths ? <Text className="text-xs" style={{ color: colors.success }}>+ {ev.strengths}</Text> : null}
+                              {ev.improve ? <Text className="text-xs" style={{ color: colors.inkMuted }}>→ {ev.improve}</Text> : null}
+                              {Object.keys(ev.scores || {}).length > 0 && (
+                                <Text className="text-xs mt-1 font-bold" style={{ color: colors.primary }}>
+                                  {categories
+                                    .map((cat) => {
+                                      const avg = categoryAverage(ev.scores, cat.subskills);
+                                      return avg !== null ? `${cat.label} ${avg.toFixed(1)}` : null;
+                                    })
+                                    .filter(Boolean)
+                                    .join('  ·  ')}
+                                </Text>
+                              )}
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </>
+                  );
+                })()}
+              </ScrollView>
             </View>
           )}
 

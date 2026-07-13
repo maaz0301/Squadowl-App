@@ -3,7 +3,7 @@ import { View, Text, Pressable, Image, Alert } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { AddPlayerFormSchema, type AddPlayerForm as AddPlayerFormType, type Athlete } from '@/data/types';
-import { Button, Input, Modal, Avatar } from '@/components/ui';
+import { Button, Input, Modal, Avatar, YearField, PhoneField } from '@/components/ui';
 import { useAthletesQuery } from '@/features/queries';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { launchImageLibrary } from 'react-native-image-picker';
@@ -160,8 +160,8 @@ export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
       <Controller
         control={control}
         name="yearOfBirth"
-        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
-          <Input label="Year of Birth" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} keyboardType="number-pad" />
+        render={({ field: { onChange, value }, fieldState: { error } }) => (
+          <YearField label="Year of Birth" value={value} onChange={onChange} error={error?.message} />
         )}
       />
       <Controller
@@ -181,8 +181,8 @@ export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
       <Controller
         control={control}
         name="guardianPhone"
-        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
-          <Input label="Guardian Phone" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} keyboardType="phone-pad" />
+        render={({ field: { onChange, value }, fieldState: { error } }) => (
+          <PhoneField label="Guardian Phone" onChange={onChange} value={value} error={error?.message} />
         )}
       />
       <Controller

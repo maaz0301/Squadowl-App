@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Alert, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
@@ -33,7 +33,7 @@ import {
   useUploadPlayerPhotoMutation,
 } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
-import { playerDisplayName } from '@/data/rubrics';
+import { playerDisplayName, weightedOverall, getPlayerCategories, isGoaliePosition } from '@/data/rubrics';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { PlanGate } from '@/components/PlanGate';
 import { mockAiPlayerSummary } from '@/data/teamBuilder';
@@ -70,6 +70,22 @@ export default function PlayerHubScreen() {
   }
 
   if (!player) return <EmptyState title="Player not found" />;
+
+  const categories = useMemo(() => {
+    if (!tryoutQuery.data || !player) return [];
+    return getPlayerCategories(
+      tryoutQuery.data.sport,
+      player.pos,
+      tryoutQuery.data.settings.customRubrics,
+    );
+  }, [tryoutQuery.data, player]);
+
+  const weights = useMemo(() => {
+    if (!tryoutQuery.data || !player) return {};
+    return isGoaliePosition(player.pos)
+      ? tryoutQuery.data.settings.goalieWeights
+      : tryoutQuery.data.settings.skaterWeights;
+  }, [tryoutQuery.data, player]);
 
   const evals = tryoutQuery.data.evals
     .filter((e) => e.playerId === playerId)
@@ -272,14 +288,16 @@ export default function PlayerHubScreen() {
       {evals.length === 0 ? (
         <EmptyState title="No evaluations yet" message="Tap Score Player to add the first evaluation." />
       ) : (
-        evals.map((ev) => (
-          <Card key={ev.id} className="mb-2 gap-1">
-            <View className="flex-row justify-between">
-              <Text className="font-bold" style={{ color: colors.ink }}>
-                {ev.session} · {ev.date}
-              </Text>
-              {ev.recommendation ? <Badge label={ev.recommendation} variant="brand" /> : null}
-            </View>
+        evals.map((ev) => {
+          const overall = weightedOverall(ev.scores ?? {}, categories, weights);
+          return (
+            <Card key={ev.id} className="mb-2 gap-1">
+              <View className="flex-row justify-between">
+                <Text className="font-bold" style={{ color: colors.ink }}>
+                  {ev.session} · {ev.date} {overall > 0 ? `· Score: ${overall.toFixed(1)}` : ''}
+                </Text>
+                {ev.recommendation ? <Badge label={ev.recommendation} variant="brand" /> : null}
+              </View>
             <Text className="text-sm" style={{ color: colors.inkMuted }}>
               {ev.evaluator}
             </Text>
@@ -302,7 +320,8 @@ export default function PlayerHubScreen() {
               }
             />
           </Card>
-        ))
+        );
+      })
       )}
 
       {canManageTeam && (

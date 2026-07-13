@@ -16,3 +16,5 @@ export { Screen } from './Screen';
 export { Header } from './Header';
 export { SplashScreen } from './SplashScreen';
 export { ThemeToggle } from './ThemeToggle';
+export { YearField } from './YearField';
+export { PhoneField } from './PhoneField';
