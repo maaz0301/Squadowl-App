@@ -444,8 +444,8 @@ export type CreateSeasonForm = z.infer<typeof CreateSeasonFormSchema>;
 
 export const CreateEventFormSchema = z.object({
   type: z.enum(EVENT_KINDS),
-  title: z.string().min(1),
-  date: z.string().min(1),
+  title: z.string().min(1, 'Title is required'),
+  date: z.string().min(1, 'Date is required').regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'),
   startTime: z.string().optional(),
   endTime: z.string().optional(),
   location: z.string().optional(),

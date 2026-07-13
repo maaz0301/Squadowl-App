@@ -9,6 +9,7 @@ interface TimeFieldProps {
   value?: string; // 24h "HH:MM"
   onChange: (value: string) => void;
   placeholder?: string;
+  error?: string;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -45,7 +46,7 @@ const CENTER = FACE / 2;
 const RADIUS = CENTER - 26;
 const CELL = 40;
 
-export function TimeField({ label, value, onChange, placeholder = 'Select a time' }: TimeFieldProps) {
+export function TimeField({ label, value, onChange, placeholder = 'Select a time', error }: TimeFieldProps) {
   const colors = useThemeColors();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'hour' | 'minute'>('hour');
@@ -91,13 +92,18 @@ export function TimeField({ label, value, onChange, placeholder = 'Select a time
       <Pressable
         onPress={openPicker}
         className="rounded-md px-4 py-3 border min-h-[48px] flex-row items-center justify-between"
-        style={{ backgroundColor: colors.field, borderColor: colors.border }}
+        style={{ backgroundColor: colors.field, borderColor: error ? colors.danger : colors.border }}
       >
         <Text className="text-base" style={{ color: display ? colors.ink : colors.placeholder }}>
           {display ?? placeholder}
         </Text>
         <Text style={{ color: colors.inkMuted, fontSize: 14 }}>▾</Text>
       </Pressable>
+      {error ? (
+        <Text className="text-xs mt-0.5" style={{ color: colors.danger }}>
+          {error}
+        </Text>
+      ) : null}
 
       <Modal
         visible={open}

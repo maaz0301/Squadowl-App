@@ -9,6 +9,7 @@ interface DateFieldProps {
   value?: string; // YYYY-MM-DD
   onChange: (value: string) => void;
   placeholder?: string;
+  error?: string;
 }
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -36,7 +37,7 @@ function formatDisplay(value?: string): string | null {
   return `${MONTHS_SHORT[p.m]} ${p.d}, ${p.y}`;
 }
 
-export function DateField({ label, value, onChange, placeholder = 'Select a date' }: DateFieldProps) {
+export function DateField({ label, value, onChange, placeholder = 'Select a date', error }: DateFieldProps) {
   const colors = useThemeColors();
   const [open, setOpen] = useState(false);
   const today = new Date();
@@ -90,13 +91,18 @@ export function DateField({ label, value, onChange, placeholder = 'Select a date
       <Pressable
         onPress={openPicker}
         className="rounded-md px-4 py-3 border min-h-[48px] flex-row items-center justify-between"
-        style={{ backgroundColor: colors.field, borderColor: colors.border }}
+        style={{ backgroundColor: colors.field, borderColor: error ? colors.danger : colors.border }}
       >
         <Text className="text-base" style={{ color: display ? colors.ink : colors.placeholder }}>
           {display ?? placeholder}
         </Text>
         <Text style={{ color: colors.inkMuted, fontSize: 14 }}>▾</Text>
       </Pressable>
+      {error ? (
+        <Text className="text-xs mt-0.5" style={{ color: colors.danger }}>
+          {error}
+        </Text>
+      ) : null}
 
       <Modal
         visible={open}

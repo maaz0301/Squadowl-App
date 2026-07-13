@@ -9,7 +9,7 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Chip, EmptyState, ErrorState, Input, LoadingState, Modal, Screen, DateField, TimeField } from '@/components/ui';
 import { useSeasonQuery, useAddSeasonEventMutation, useDeleteSeasonEventMutation } from '@/features/queries';
 import { getDataSource } from '@/data';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 
 export default function SeasonScheduleScreen() {
   const route = useRoute<any>();
@@ -33,11 +33,21 @@ export default function SeasonScheduleScreen() {
   const season = seasonQuery.data;
   const eventType = watch('type');
 
-  const onSubmit = handleSubmit(async (data) => {
-    await addEvent.mutateAsync(data);
-    reset();
-    setShowAdd(false);
-  });
+  const onSubmit = handleSubmit(
+    async (data) => {
+      await addEvent.mutateAsync(data);
+      reset();
+      setShowAdd(false);
+    },
+    (errors) => {
+      const msg = errors.date?.message || errors.title?.message || 'Please check the required fields and date format.';
+      if (Platform.OS === 'web') {
+        alert(`Validation Error\n\n${msg}`);
+      } else {
+        Alert.alert('Validation Error', msg);
+      }
+    }
+  );
 
   const sendReminder = async (event: import('@/data/types').SeasonEvent) => {
     try {
@@ -49,7 +59,8 @@ export default function SeasonScheduleScreen() {
       ));
       
       if (emails.length === 0) {
-        Alert.alert('No Emails', 'There are no guardians with emails in the roster.');
+        if (Platform.OS === 'web') alert('No Emails: There are no guardians with emails in the roster.');
+        else Alert.alert('No Emails', 'There are no guardians with emails in the roster.');
         return;
       }
       
@@ -63,9 +74,11 @@ export default function SeasonScheduleScreen() {
           sent++;
         }
       }
-      Alert.alert('Reminders Sent', `Successfully sent ${sent} reminder(s).`);
+      if (Platform.OS === 'web') alert(`Reminders Sent: Successfully sent ${sent} reminder(s).`);
+      else Alert.alert('Reminders Sent', `Successfully sent ${sent} reminder(s).`);
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to send reminders.');
+      if (Platform.OS === 'web') alert(`Error: ${e.message || 'Failed to send reminders.'}`);
+      else Alert.alert('Error', e.message || 'Failed to send reminders.');
     } finally {
       setReminding(null);
     }
@@ -110,10 +123,10 @@ export default function SeasonScheduleScreen() {
             <Input label="Title" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
           )} />
           <Controller control={control} name="date" render={({ field: { onChange, value }, fieldState: { error } }) => (
-            <DateField label="Date" value={value} onChange={onChange} placeholder="Select a date" />
+            <DateField label="Date" value={value} onChange={onChange} placeholder="Select a date" error={error?.message} />
           )} />
-          <Controller control={control} name="startTime" render={({ field: { onChange, value } }) => (
-            <TimeField label="Start Time" value={value} onChange={onChange} placeholder="Select a time" />
+          <Controller control={control} name="startTime" render={({ field: { onChange, value }, fieldState: { error } }) => (
+            <TimeField label="Start Time" value={value} onChange={onChange} placeholder="Select a time" error={error?.message} />
           )} />
           <Controller control={control} name="location" render={({ field: { onChange, onBlur, value } }) => (
             <Input label="Location" onBlur={onBlur} onChangeText={onChange} value={value} />
