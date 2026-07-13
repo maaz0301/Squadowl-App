@@ -1,6 +1,7 @@
 /// <reference types="node" />
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '@/lib/supabase';
+import { APP_CONFIG } from '@/config/app';
 import type { DataSource } from '../datasource';
 import type {
   AddPlayerForm,
@@ -2034,21 +2035,14 @@ async deleteTryout(id: string): Promise<void> {
   async createAndInviteUser(email: string, password: string, name: string, role: import('../types').OrgRole): Promise<import('../types').OrgMember> {
     const { supabase } = await this.ctx();
 
-    // Create a temporary client that doesn't persist sessions, so it doesn't log the coach out!
-    const tempClient = createClient(
-      process.env.EXPO_PUBLIC_SUPABASE_URL || '',
-      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
-      { auth: { persistSession: false, autoRefreshToken: false } }
-    );
-
-    // This securely creates the user using Supabase's official API, bypassing all manual SQL hackiness
-    const { error: createError } = await tempClient.auth.signUp({
+    // Securely create the user using the database RPC which bypasses client-side restrictions/confirmations
+    const { data: newUserId, error: createError } = await supabase.rpc('create_user_with_password', {
       email,
       password,
-      options: { data: { display_name: name } }
+      display_name: name,
     });
 
-    if (createError && !createError.message.includes('User already registered')) {
+    if (createError && !createError.message.includes('already exists') && !createError.message.includes('already registered')) {
       throw createError;
     }
 
