@@ -131,12 +131,15 @@ export default function ScoreScreen() {
     }, 0);
   };
 
-  const hasInitializedRef = useRef(false);
+  const lastLoadedRef = useRef<{ playerId: string; evalId?: string } | null>(null);
   useEffect(() => {
-    if (!tryoutQuery.data || hasInitializedRef.current) return;
-    hasInitializedRef.current = true;
+    if (!tryoutQuery.data || !playerId) return;
+    if (lastLoadedRef.current?.playerId === playerId && lastLoadedRef.current?.evalId === evalId) {
+      return;
+    }
+    lastLoadedRef.current = { playerId, evalId };
     loadEvalData(evalId, undefined, true);
-  }, [tryoutQuery.data?.id]);
+  }, [tryoutQuery.data, playerId, evalId]);
 
   useEffect(() => {
     setValue('scores', workingScores);

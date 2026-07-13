@@ -330,7 +330,7 @@ export default function RinksideScreen() {
             Recommendation
           </Text>
           <View className="flex-row flex-wrap mb-4 gap-2">
-            {['Make', 'Keep', 'Bubble', 'Release'].map((rec) => (
+            {(['Make', 'Keep', 'Bubble', 'Release'] as const).map((rec) => (
               <Chip
                 key={rec}
                 label={rec}

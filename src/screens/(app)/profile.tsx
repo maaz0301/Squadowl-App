@@ -185,7 +185,16 @@ export default function ProfileScreen() {
               <Text style={{ color: colors.inkFaint }}>{user.organization}</Text>
             ) : null}
             <View className="flex-row gap-2 mt-1">
-              <Badge label={`Role: ${isGuardianOnly ? 'guardian' : role}`} variant="info" />
+              <Badge 
+                label={`Role: ${
+                  isGuardianOnly 
+                    ? 'Guardian' 
+                    : role === 'admin' 
+                    ? 'Coach' 
+                    : role.charAt(0).toUpperCase() + role.slice(1)
+                }`} 
+                variant="info" 
+              />
               {!isGuardianOnly && <Badge label={`Plan: ${plan.name}`} variant="brand" />}
               {user?.subscriptionStatus && <Badge label={user.subscriptionStatus} variant={user.subscriptionStatus === 'active' ? 'success' : 'default'} />}
             </View>
