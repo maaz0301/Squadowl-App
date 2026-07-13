@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuthStore } from '@/state/authStore';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Button, Input, Screen, Header } from '@/components/ui';
+import { Button, Input, Screen, Header, ThemeToggle } from '@/components/ui';
 
 const ResetPasswordSchema = z.object({
   token: z.string().min(6, 'Please enter the 6-digit code'),
@@ -53,6 +53,7 @@ export default function ResetPasswordScreen() {
         title="New Password"
         showBack={true}
         onBack={() => navigation.goBack()}
+        right={<ThemeToggle />}
       />
       <View className="flex-1 justify-center px-4">
         <View className="gap-2 mb-8">

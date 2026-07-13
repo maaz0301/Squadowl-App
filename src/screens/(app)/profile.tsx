@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Text, View, Alert, Pressable } from 'react-native';
+import { Text, View, Alert, Pressable, Switch } from 'react-native';
 import { InAppBrowser } from 'react-native-inappbrowser-reborn';
 import { useNavigation } from '@react-navigation/native';
 
-import { useThemeColors } from '@/theme/ThemeProvider';
+import { useThemeColors, useTheme } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Header, Input, Screen, Avatar } from '@/components/ui';
 import { useThemeStore } from '@/state/themeStore';
 import { useUser, useAuthStore, usePermissions } from '@/state/authStore';
@@ -22,6 +22,7 @@ import { launchImageLibrary } from 'react-native-image-picker';
 
 export default function ProfileScreen() {
   const colors = useThemeColors();
+  const { isDark } = useTheme();
   const navigation = useNavigation<any>();
   const user = useUser();
   const logout = useAuthStore((s) => s.logout);
@@ -50,6 +51,7 @@ export default function ProfileScreen() {
   const [organization, setOrganization] = useState(user?.organization ?? '');
   const [changingPassword, setChangingPassword] = useState(false);
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loadingPortal, setLoadingPortal] = useState(false);
 
   const plan = getPlanDefinition(user?.planTier ?? 'coach');
@@ -194,7 +196,29 @@ export default function ProfileScreen() {
         )}
         {changingPassword ? (
           <View className="w-full gap-3 mt-4 border-t pt-4" style={{ borderColor: colors.border }}>
-            <Input label="New Password" value={password} onChangeText={setPassword} secureTextEntry />
+            <View>
+              <Input label="New Password" value={password} onChangeText={setPassword} secureTextEntry={!showPassword} />
+              <Pressable 
+                onPress={() => setShowPassword(!showPassword)} 
+                className="flex-row items-center gap-2 mt-4 ml-1 mb-1"
+              >
+                <View 
+                  style={{ 
+                    width: 20, 
+                    height: 20, 
+                    borderWidth: 1, 
+                    borderColor: showPassword ? colors.primary : colors.border, 
+                    borderRadius: 4, 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    backgroundColor: showPassword ? colors.primary : 'transparent' 
+                  }}
+                >
+                  {showPassword && <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>✓</Text>}
+                </View>
+                <Text style={{ color: colors.inkMuted }}>Show password</Text>
+              </Pressable>
+            </View>
             <View className="flex-row gap-2">
               <Button label="Save Password" onPress={savePassword} loading={updatePasswordMut.isPending} />
               <Button label="Cancel" variant="ghost" onPress={() => { setChangingPassword(false); setPassword(''); }} />
@@ -233,12 +257,21 @@ export default function ProfileScreen() {
           </Card>
 
           <Card className="mb-4 gap-2">
-          <Text className="font-display font-bold" style={{ color: colors.ink }}>
-            Appearance
-          </Text>
-          <Text style={{ color: colors.inkMuted }}>Theme: {themeMode === 'system' ? 'System' : themeMode}</Text>
-          <Button label="Toggle Dark/Light" variant="ghost" onPress={toggleTheme} />
-        </Card>
+            <Text className="font-display font-bold" style={{ color: colors.ink }}>
+              Appearance
+            </Text>
+            <View className="flex-row items-center justify-between mt-2">
+              <Text style={{ color: colors.inkMuted, fontSize: 16 }}>
+                Dark Mode
+              </Text>
+              <Switch
+                value={isDark}
+                onValueChange={toggleTheme}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor="#ffffff"
+              />
+            </View>
+          </Card>
         </>
       )}
 

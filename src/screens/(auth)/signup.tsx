@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { SignupFormSchema } from '@/data/types';
 import { useAuthStore } from '@/state/authStore';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Button, Input, Screen, Header } from '@/components/ui';
+import { Button, Input, Screen, Header, ThemeToggle } from '@/components/ui';
 
 export default function SignupScreen() {
   const colors = useThemeColors();
@@ -37,7 +37,7 @@ export default function SignupScreen() {
 
   return (
     <Screen scroll>
-      <Header title="Create Account" showBack />
+      <Header title="Create Account" showBack right={<ThemeToggle />} />
       <View className="gap-4 mt-4">
         <Controller
           control={control}

@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { LoginFormSchema } from '@/data/types';
 import { useAuthStore } from '@/state/authStore';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Button, Input, Screen } from '@/components/ui';
+import { Button, Input, Screen, ThemeToggle } from '@/components/ui';
 import { APP_CONFIG } from '@/config/app';
 
 export default function LoginScreen() {
@@ -37,7 +37,10 @@ export default function LoginScreen() {
   });
 
   return (
-    <Screen scroll className="justify-center">
+    <Screen scroll className="justify-center relative">
+      <View className="absolute top-4 right-4 z-10">
+        <ThemeToggle />
+      </View>
       <View className="gap-2 mb-8">
         <Text className="text-display font-display font-bold" style={{ color: colors.primary }}>
           {APP_CONFIG.appName}
