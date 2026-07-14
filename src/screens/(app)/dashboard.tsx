@@ -42,9 +42,9 @@ function OnboardingChecklist() {
   const seasonsQuery = useSeasonsQuery();
   const teamsQuery = useTeamsQuery();
 
-  if (!user || user.onboardingCompleted) return null;
-
   const { isGuardian } = usePermissions();
+
+  if (!user || user.onboardingCompleted) return null;
 
   const isGuardianOnly = isGuardian;
 
@@ -142,6 +142,9 @@ export default function DashboardScreen() {
   const guardianQuery = useGuardianRostersQuery();
   const rejectAssignmentMut = useRejectAssignmentMutation();
 
+  const { role, isGuardian } = usePermissions();
+  const isGuardianOnly = isGuardian;
+
   const openAssigned = (id: string) => {
     setCurrentTryout(id);
     setActiveAssessor(user?.displayName ? { name: user.displayName, email: user.email, role: 'assessor', status: 'accepted' } : null);
@@ -192,9 +195,7 @@ export default function DashboardScreen() {
     }
   };
 
-  const { role, isGuardian } = usePermissions();
 
-  const isGuardianOnly = isGuardian;
 
   const fabLabel =
     tab === 'seasons' ? '+ New Season' : tab === 'teams' ? '+ New Team' : '+ New Assessment';

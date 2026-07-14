@@ -64,13 +64,6 @@ export default function PlayerHubScreen() {
   const [showGuardianLink, setShowGuardianLink] = useState(false);
   const { canManageTeam } = usePermissions();
 
-  if (tryoutQuery.isLoading) return <LoadingState />;
-  if (tryoutQuery.isError || !tryoutQuery.data) {
-    return <ErrorState message="Player not found." onRetry={() => tryoutQuery.refetch()} />;
-  }
-
-  if (!player) return <EmptyState title="Player not found" />;
-
   const categories = useMemo(() => {
     if (!tryoutQuery.data || !player) return [];
     return getPlayerCategories(
@@ -86,6 +79,13 @@ export default function PlayerHubScreen() {
       ? tryoutQuery.data.settings.goalieWeights
       : tryoutQuery.data.settings.skaterWeights;
   }, [tryoutQuery.data, player]);
+
+  if (tryoutQuery.isLoading) return <LoadingState />;
+  if (tryoutQuery.isError || !tryoutQuery.data) {
+    return <ErrorState message="Player not found." onRetry={() => tryoutQuery.refetch()} />;
+  }
+
+  if (!player) return <EmptyState title="Player not found" />;
 
   const evals = tryoutQuery.data.evals
     .filter((e) => e.playerId === playerId)

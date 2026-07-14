@@ -204,6 +204,7 @@ export const TeamSchema = z.object({
   createdAt: z.number(),
   updatedAt: z.number().optional(),
   tombstone: z.boolean().optional(),
+  archived: z.boolean().optional(),
 });
 
 export type Team = z.infer<typeof TeamSchema>;

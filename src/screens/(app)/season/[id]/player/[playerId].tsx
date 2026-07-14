@@ -1,11 +1,11 @@
-import { useState } from 'react';
-import { Text, View } from 'react-native';
 import { useRoute } from '@react-navigation/native';
+import { useState } from 'react';
+import { Text } from 'react-native';
 
-import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, EmptyState, Header, Input, LoadingState, Screen } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
-import { useSeasonQuery, usePortalInviteMutation } from '@/features/queries';
+import { Badge, Button, Card, EmptyState, Header, Input, LoadingState, Screen } from '@/components/ui';
+import { usePortalInviteMutation, useSeasonQuery } from '@/features/queries';
+import { useThemeColors } from '@/theme/ThemeProvider';
 
 export default function SeasonPlayerScreen() {
   const route = useRoute<any>();

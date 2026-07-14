@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Text, View, Alert } from 'react-native';
+import { Text, View, Alert, ScrollView, Pressable } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, ErrorState, Header, Input, LoadingState, Screen } from '@/components/ui';
-import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMutation } from '@/features/queries';
+import { Badge, Button, Card, ErrorState, Header, Input, LoadingState, Modal, Screen } from '@/components/ui';
+import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation } from '@/features/queries';
 
 export default function TeamDetailScreen() {
   const route = useRoute<any>();
@@ -16,9 +16,11 @@ export default function TeamDetailScreen() {
   const tryoutsQuery = useTryoutsQuery(false);
   const updateTeam = useUpdateTeamMutation();
   const deleteTeam = useDeleteTeamMutation();
+  const updateTryout = useUpdateTryoutMutation();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
   const [season, setSeason] = useState('');
+  const [showAttachModal, setShowAttachModal] = useState(false);
 
   if (teamsQuery.isLoading || tryoutsQuery.isLoading) return <LoadingState message="Loading team..." />;
   if (teamsQuery.isError || tryoutsQuery.isError) {
@@ -47,6 +49,7 @@ export default function TeamDetailScreen() {
   }
 
   const linkedTryouts = (tryoutsQuery.data ?? []).filter((t) => t.teamId === team.id);
+  const unlinkedTryouts = (tryoutsQuery.data ?? []).filter((t) => !t.teamId);
 
   const startEdit = () => {
     setName(team.name);
@@ -57,11 +60,6 @@ export default function TeamDetailScreen() {
   const save = async () => {
     await updateTeam.mutateAsync({ id: team.id, updates: { name: name.trim(), season: season.trim() || undefined } });
     setEditing(false);
-  };
-
-  const archive = async () => {
-    await updateTeam.mutateAsync({ id: team.id, updates: { archived: true } });
-    navigation.replace('DashboardMain');
   };
 
   const handleDelete = () => {
@@ -126,17 +124,59 @@ export default function TeamDetailScreen() {
         ))
       )}
 
-      <Button
-        label="Create Assessment for Team"
-        className="mt-4"
-        onPress={() => navigation.navigate('NewAssessment')}
-      />
+      <View className="flex-row gap-2 mt-4">
+        <Button
+          label="Create Assessment"
+          className="flex-1"
+          onPress={() => navigation.navigate('NewAssessment')}
+        />
+        <Button
+          label="Attach Assessment"
+          variant="secondary"
+          className="flex-1"
+          onPress={() => setShowAttachModal(true)}
+        />
+      </View>
 
-      <Card className="mt-4 gap-2">
+      <Card className="mt-6 gap-2">
         <Text className="font-bold" style={{ color: colors.danger }}>Danger Zone</Text>
-        <Button label="Archive Team" variant="danger" onPress={archive} loading={updateTeam.isPending} />
         <Button label="Delete Team" variant="danger" onPress={handleDelete} loading={deleteTeam.isPending} />
       </Card>
+
+      <Modal visible={showAttachModal} title="Attach Assessment" onClose={() => setShowAttachModal(false)}>
+        <View style={{ gap: 2 }}>
+          {unlinkedTryouts.length === 0 ? (
+            <Text style={{ color: colors.inkMuted, padding: 12 }}>No assessments available to link.</Text>
+          ) : (
+            unlinkedTryouts.map((t) => (
+              <Pressable
+                key={t.id}
+                onPress={async () => {
+                  try {
+                    await updateTryout.mutateAsync({ id: t.id, updates: { teamId: team.id } });
+                    setShowAttachModal(false);
+                  } catch (e: any) {
+                    Alert.alert('Error', e.message || 'Could not link assessment.');
+                  }
+                }}
+                style={({ pressed }) => [
+                  {
+                    padding: 12,
+                    backgroundColor: pressed ? colors.border : 'transparent',
+                    borderBottomWidth: 1,
+                    borderBottomColor: colors.border,
+                  }
+                ]}
+              >
+                <Text className="font-bold" style={{ color: colors.ink }}>{t.name}</Text>
+                <Text className="text-xs mt-1" style={{ color: colors.inkMuted }}>
+                  {t.sport} · {t.roster.length} players
+                </Text>
+              </Pressable>
+            ))
+          )}
+        </View>
+      </Modal>
     </Screen>
   );
 }

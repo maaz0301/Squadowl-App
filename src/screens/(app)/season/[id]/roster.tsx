@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { FlatList, Pressable, Text, View } from 'react-native';
+import { FlatList, Pressable, Text, View, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, EmptyState, ErrorState, Input, LoadingState, Modal, Screen } from '@/components/ui';
-import { useSeasonQuery, useAddSeasonPlayerMutation } from '@/features/queries';
+import { Badge, Button, Card, EmptyState, ErrorState, Header, Input, LoadingState, Modal, Screen } from '@/components/ui';
+import { useSeasonQuery, useAddSeasonPlayerMutation, useImportSeasonPlayersFromTeamMutation } from '@/features/queries';
 
 export default function SeasonRosterScreen() {
   const route = useRoute<any>();
@@ -14,6 +14,7 @@ export default function SeasonRosterScreen() {
   const navigation = useNavigation<any>();
   const seasonQuery = useSeasonQuery(id);
   const addPlayer = useAddSeasonPlayerMutation();
+  const importTeam = useImportSeasonPlayersFromTeamMutation();
   const [showAdd, setShowAdd] = useState(false);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -45,8 +46,32 @@ export default function SeasonRosterScreen() {
     setShowAdd(false);
   };
 
+  const handleImport = async () => {
+    try {
+      await importTeam.mutateAsync(id!);
+      Alert.alert('Import Complete', 'Roster players imported successfully from the linked team assessments.');
+    } catch (e: any) {
+      Alert.alert('Import Failed', e.message || 'Could not import players.');
+    }
+  };
+
   return (
     <Screen padded={false}>
+      <Header
+        title="Season Roster"
+        showBack
+        right={
+          season.teamId ? (
+            <Button
+              label="Import Team"
+              variant="ghost"
+              size="sm"
+              loading={importTeam.isPending}
+              onPress={handleImport}
+            />
+          ) : undefined
+        }
+      />
       <FlatList
         data={season.roster}
         keyExtractor={(p) => p.id}
@@ -54,9 +79,9 @@ export default function SeasonRosterScreen() {
         ListEmptyComponent={
           <EmptyState
             title="No roster players"
-            message="Import from assessments or add manually."
-            actionLabel="Add Player"
-            onAction={() => setShowAdd(true)}
+            message={season.teamId ? "Import players from the linked team assessments or add them manually." : "Add players manually to get started."}
+            actionLabel={season.teamId ? "Import from Team" : "Add Player"}
+            onAction={season.teamId ? handleImport : () => setShowAdd(true)}
           />
         }
         renderItem={({ item }) => (

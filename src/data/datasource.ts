@@ -127,6 +127,9 @@ export interface DataSource {
   importLibraryPlayers(tryoutId: string, entries: { first: string; last: string; jersey?: string; pos?: string }[]): Promise<Player[]>;
   submitFeedback(submission: import('./extras').FeedbackSubmission): Promise<void>;
   addSeasonPlayer(seasonId: string, player: Omit<import('./types').SeasonPlayer, 'id'>): Promise<import('./types').SeasonPlayer>;
+  deleteSeasonPlayer(seasonId: string, playerId: string): Promise<void>;
+  importSeasonPlayersFromTeam(seasonId: string): Promise<import('./types').SeasonPlayer[]>;
+  emailScheduleToPlayers(seasonId: string): Promise<void>;
   updateTeam(id: string, updates: Partial<Team>): Promise<Team>;
   importScanScores(tryoutId: string, scores: { playerId: string; rubricKey: string; value: number }[]): Promise<void>;
   getGuardianRosters(): Promise<GuardianRosterAthlete[]>;

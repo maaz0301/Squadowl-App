@@ -1,4 +1,4 @@
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 
@@ -31,7 +31,18 @@ export default function SeasonHubScreen() {
 
   return (
     <Screen scroll>
-      <Header title="Season Hub" showBack />
+      <Header
+        title="Season Hub"
+        showBack
+        right={
+          <Button
+            label="Settings"
+            variant="ghost"
+            size="sm"
+            onPress={() => navigation.navigate('SeasonSettings', { id: id })}
+          />
+        }
+      />
       <Card accent className="mb-4 gap-2">
         <Text className="text-xl font-display font-bold" style={{ color: colors.ink }}>
           {season.teamName}
@@ -43,8 +54,12 @@ export default function SeasonHubScreen() {
       </Card>
 
       <View className="flex-row gap-2 mb-4">
-        <Badge label={`${season.roster.length} players`} variant="brand" />
-        <Badge label={`${season.events.length} events`} />
+        <Pressable onPress={() => navigation.navigate('SeasonRoster', { id: id })}>
+          <Badge label={`${season.roster.length} players`} variant="brand" />
+        </Pressable>
+        <Pressable onPress={() => navigation.navigate('SeasonSchedule', { id: id })}>
+          <Badge label={`${season.events.length} events`} />
+        </Pressable>
       </View>
 
       <Text className="text-md font-display font-bold mb-3" style={{ color: colors.ink }}>

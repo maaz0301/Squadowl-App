@@ -1,24 +1,22 @@
-import { useEffect } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getSupabase } from '@/lib/supabase';
 import { getDataSource } from '@/data';
+import {
+  getPlayerRubrics,
+  type RubricCategory
+} from '@/data/rubrics';
 import type {
   AddPlayerForm,
   CreateAssessmentForm,
-  ScoreForm,
   RegistrationSubmit,
-  Tryout,
+  ScoreForm,
   Team,
+  Tryout,
   UserProfile,
 } from '@/data/types';
 import { queryKeys } from '@/lib/queryClient';
-import {
-  getPlayerRubrics,
-  weightedOverall,
-  type RubricCategory,
-} from '@/data/rubrics';
-import type { AssessorProgress, PlayerResult, Recommendation } from '@/data/types';
+import { getSupabase } from '@/lib/supabase';
 import { useAuthStore } from '@/state/authStore';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 
 // ---- Auth ----
 export function useProfileQuery() {
@@ -273,7 +271,7 @@ export function useDismissRegistrationMutation(tryoutId: string) {
 
 import { computeAssessorProgress, computePlayerResults } from '@/data/scoring';
 
-export { computePlayerResults, computeAssessorProgress } from '@/data/scoring';
+export { computeAssessorProgress, computePlayerResults } from '@/data/scoring';
 
 export function useResultsQuery(tryoutId: string | undefined) {
   const tryoutQuery = useTryoutQuery(tryoutId);
@@ -283,10 +281,10 @@ export function useResultsQuery(tryoutId: string | undefined) {
     assessorProgress: tryoutQuery.data ? computeAssessorProgress(tryoutQuery.data) : [],
     rubrics: tryoutQuery.data
       ? getPlayerRubrics(
-          tryoutQuery.data.sport,
-          undefined,
-          tryoutQuery.data.settings.customRubrics,
-        )
+        tryoutQuery.data.sport,
+        undefined,
+        tryoutQuery.data.settings.customRubrics,
+      )
       : ([] as RubricCategory[]),
   };
 }
@@ -653,6 +651,22 @@ export function useAddSeasonPlayerMutation() {
     onSuccess: (_, { seasonId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.season(seasonId) });
     },
+  });
+}
+
+export function useImportSeasonPlayersFromTeamMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (seasonId: string) => getDataSource().importSeasonPlayersFromTeam(seasonId),
+    onSuccess: (_, seasonId) => {
+      qc.invalidateQueries({ queryKey: queryKeys.season(seasonId) });
+    },
+  });
+}
+
+export function useEmailScheduleMutation() {
+  return useMutation({
+    mutationFn: (seasonId: string) => getDataSource().emailScheduleToPlayers(seasonId),
   });
 }
 

@@ -605,6 +605,7 @@ export class SupabaseDataSource implements DataSource {
       season: t.season_label ?? undefined,
       createdAt: toMs(t.created_at),
       updatedAt: t.updated_at ? toMs(t.updated_at) : undefined,
+      archived: t.archived || undefined,
     };
   }
 
@@ -644,6 +645,7 @@ export class SupabaseDataSource implements DataSource {
     const patch: Row = {};
     if (updates.name !== undefined) patch.name = updates.name;
     if (updates.season !== undefined) patch.season_label = updates.season;
+    if (updates.archived !== undefined) patch.archived = updates.archived;
     const row = unwrap(await supabase.from('teams').update(patch).eq('id', id).select().single()) as Row;
     return this.rowToTeam(row);
   }
@@ -1480,7 +1482,8 @@ async deleteTryout(id: string): Promise<void> {
   }
 
   private rowToSeasonPlayer(r: Row, invites: Row[]): SeasonPlayer {
-    const a = r.athletes ?? {};
+    const rawAthletes = r.athletes;
+    const a = Array.isArray(rawAthletes) ? rawAthletes[0] : rawAthletes ?? {};
     const myInvites = invites.filter((i) => i.athlete_id === a.id);
     return {
       id: r.id,
@@ -1591,6 +1594,49 @@ async deleteTryout(id: string): Promise<void> {
         .select()
         .single(),
     ) as Row;
+
+    const seasonId = row.id;
+
+    if (form.teamId) {
+      // Find all tryouts linked to this team
+      const { data: tryouts } = await supabase
+        .from('tryouts')
+        .select('id')
+        .eq('team_id', form.teamId);
+
+      if (tryouts && tryouts.length > 0) {
+        const tryoutIds = tryouts.map((t) => t.id);
+        // Find all unique participants in these tryouts
+        const { data: participants } = await supabase
+          .from('tryout_participants')
+          .select('athlete_id, jersey')
+          .in('tryout_id', tryoutIds);
+
+        if (participants && participants.length > 0) {
+          // De-duplicate by athlete_id
+          const uniqueAthletes = new Map<string, string | null>();
+          for (const p of participants) {
+            if (p.athlete_id) {
+              // Prefer keeping a jersey number if one exists
+              if (!uniqueAthletes.has(p.athlete_id) || p.jersey) {
+                uniqueAthletes.set(p.athlete_id, p.jersey);
+              }
+            }
+          }
+
+          const rosterInserts = Array.from(uniqueAthletes.entries()).map(([athleteId, jersey]) => ({
+            season_id: seasonId,
+            athlete_id: athleteId,
+            jersey: jersey || null,
+          }));
+
+          if (rosterInserts.length > 0) {
+            unwrap(await supabase.from('season_roster').insert(rosterInserts).select());
+          }
+        }
+      }
+    }
+
     const [assembled] = await this.assembleSeasons([row], true);
     return assembled;
   }
@@ -1732,6 +1778,109 @@ async deleteTryout(id: string): Promise<void> {
     ) as Row;
     return this.rowToSeasonPlayer(row, []);
   }
+
+  async deleteSeasonPlayer(_seasonId: string, playerId: string): Promise<void> {
+    const { supabase } = await this.ctx();
+    unwrap(
+      await supabase.from('season_roster').delete().eq('id', playerId).select().maybeSingle(),
+    );
+  }
+
+  async importSeasonPlayersFromTeam(seasonId: string): Promise<SeasonPlayer[]> {
+    const { supabase } = await this.ctx();
+    const seasonRow = unwrap(
+      await supabase.from('seasons').select('team_id').eq('id', seasonId).single()
+    ) as Row;
+
+    const teamId = seasonRow.team_id;
+    if (!teamId) {
+      throw new Error('No team linked to this season');
+    }
+
+    const { data: tryouts } = await supabase
+      .from('tryouts')
+      .select('id')
+      .eq('team_id', teamId);
+
+    if (!tryouts || tryouts.length === 0) {
+      return [];
+    }
+
+    const tryoutIds = tryouts.map((t) => t.id);
+
+    const { data: participants } = await supabase
+      .from('tryout_participants')
+      .select('athlete_id, jersey')
+      .in('tryout_id', tryoutIds);
+
+    if (!participants || participants.length === 0) {
+      return [];
+    }
+
+    const { data: existingRoster } = await supabase
+      .from('season_roster')
+      .select('athlete_id')
+      .eq('season_id', seasonId);
+
+    const existingAthleteIds = new Set(existingRoster?.map((r) => r.athlete_id) || []);
+
+    const uniqueAthletes = new Map<string, string | null>();
+    for (const p of participants) {
+      if (p.athlete_id && !existingAthleteIds.has(p.athlete_id)) {
+        if (!uniqueAthletes.has(p.athlete_id) || p.jersey) {
+          uniqueAthletes.set(p.athlete_id, p.jersey);
+        }
+      }
+    }
+
+    const rosterInserts = Array.from(uniqueAthletes.entries()).map(([athleteId, jersey]) => ({
+      season_id: seasonId,
+      athlete_id: athleteId,
+      jersey: jersey || null,
+    }));
+
+    if (rosterInserts.length > 0) {
+      unwrap(await supabase.from('season_roster').insert(rosterInserts).select());
+    }
+
+    const updatedSeason = await this.getSeason(seasonId);
+    return updatedSeason?.roster || [];
+  }
+
+  async emailScheduleToPlayers(seasonId: string): Promise<void> {
+    const { supabase } = await this.ctx();
+    const season = await this.getSeason(seasonId);
+    if (!season) throw new Error('Season not found');
+
+    const emails = new Set<string>();
+    for (const p of season.roster) {
+      if (p.playerEmail) emails.add(p.playerEmail);
+      if (p.guardianEmail) emails.add(p.guardianEmail);
+    }
+
+    if (emails.size === 0) {
+      throw new Error('No player or guardian emails found in the roster.');
+    }
+
+    const scheduleUrl = `https://aas-tryout.app/?schedule=${season.scheduleShareToken}`;
+
+    for (const email of emails) {
+      await supabase.functions.invoke('send-email', {
+        body: {
+          type: 'schedule_update',
+          to: email,
+          payload: {
+            eventName: `Public Schedule for ${season.teamName}`,
+            date: 'View online',
+            time: scheduleUrl,
+            location: 'Online Portal'
+          }
+        }
+      });
+    }
+  }
+
+
 
   async sendPortalInvite(seasonId: string, playerId: string, email: string): Promise<void> {
     const { supabase, accountId } = await this.ctx();
