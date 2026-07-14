@@ -90,7 +90,7 @@ export default function RosterLibraryScreen() {
           return (
             <Pressable onPress={() => toggle(item.key)}>
               <Card className="mb-2 flex-row justify-between items-center" accent={isSelected}>
-                <View>
+                <View className="flex-1 pr-4">
                   <Text className="font-bold" style={{ color: colors.ink }}>
                     {item.first} {item.last}
                   </Text>

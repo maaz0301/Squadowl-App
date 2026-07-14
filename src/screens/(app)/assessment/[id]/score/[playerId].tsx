@@ -46,6 +46,8 @@ export default function ScoreScreen() {
   const activeAssessor = useSessionStore((s) => s.activeAssessor);
   const setActiveAssessor = useSessionStore((s) => s.setActiveAssessor);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const activeMutationRef = useRef<Promise<any> | null>(null);
 
   const player = tryoutQuery.data?.roster.find((p) => p.id === playerId);
   const historyQuery = useAthleteHistoryQuery(player?.athleteId);
@@ -111,6 +113,13 @@ export default function ScoreScreen() {
   const previousFormRef = useRef<string>('');
 
   const loadEvalData = (targetEvalId?: string, fallbackSession?: string, preserveWorkingScores: boolean = false) => {
+    setIsSubmitting(false);
+    activeMutationRef.current = null;
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+      autoSaveTimeoutRef.current = null;
+    }
+
     const targetEval = targetEvalId
       ? tryoutQuery.data?.evals.find((e) => e.id === targetEvalId)
       : undefined;
@@ -160,24 +169,40 @@ export default function ScoreScreen() {
       return;
     }
 
-    const timeout = setTimeout(async () => {
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    autoSaveTimeoutRef.current = setTimeout(async () => {
+      const mutationPromise = saveEval.mutateAsync({
+        playerId: playerId!,
+        form: formData,
+        evalId: evalId ?? undefined,
+      });
+      activeMutationRef.current = mutationPromise;
+
       try {
-        const result = await saveEval.mutateAsync({
-          playerId: playerId!,
-          form: formData,
-          evalId: evalId ?? undefined,
-        });
-        
-        if (!evalId && result.id) {
-          navigation.setParams({ evalId: result.id });
+        const result = await mutationPromise;
+        if (activeMutationRef.current === mutationPromise) {
+          if (!evalId && result.id) {
+            navigation.setParams({ evalId: result.id });
+          }
+          previousFormRef.current = JSON.stringify(formData);
         }
-        previousFormRef.current = JSON.stringify(formData);
       } catch (err) {
         console.warn('Auto-save failed', err);
+      } finally {
+        if (activeMutationRef.current === mutationPromise) {
+          activeMutationRef.current = null;
+        }
       }
     }, 1500);
 
-    return () => clearTimeout(timeout);
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
   }, [formData, evalId, playerId]);
 
   if (tryoutQuery.isLoading) return <LoadingState message="Loading..." />;
@@ -198,18 +223,43 @@ export default function ScoreScreen() {
   const onSubmit = handleSubmit(async (data) => {
     try {
       setIsSubmitting(true);
-      const hasScores = data.scores && Object.values(data.scores).some(val => val !== undefined && val !== null && val > 0);
-      if (!hasScores) {
-        Alert.alert('No scores entered', 'Please grade at least one subskill before saving.');
-        setIsSubmitting(false);
-        return;
+
+      // Cancel any pending auto-save timeout
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+        autoSaveTimeoutRef.current = null;
       }
 
-      await saveEval.mutateAsync({
-        playerId: playerId!,
-        form: data,
-        evalId: evalId ?? undefined,
-      });
+      // If an auto-save mutation is already in progress, wait for it to complete
+      if (activeMutationRef.current) {
+        try {
+          await activeMutationRef.current;
+        } catch (e) {
+          // Suppress error because we will retry manually if previousFormRef.current !== currentFormStr
+        }
+      }
+
+      const currentFormStr = JSON.stringify(data);
+      const hasUnsavedChanges = previousFormRef.current !== currentFormStr;
+
+      if (hasUnsavedChanges) {
+        const hasScores = data.scores && Object.values(data.scores).some(val => val !== undefined && val !== null && val > 0);
+        if (!hasScores) {
+          Alert.alert('No scores entered', 'Please grade at least one subskill before saving.');
+          setIsSubmitting(false);
+          return;
+        }
+
+        const mutationPromise = saveEval.mutateAsync({
+          playerId: playerId!,
+          form: data,
+          evalId: evalId ?? undefined,
+        });
+        activeMutationRef.current = mutationPromise;
+
+        await mutationPromise;
+        previousFormRef.current = currentFormStr;
+      }
 
       // Navigate to the next unscored session if available
       const unscoredSessions = SESSIONS.filter(s => !scoredSessions.has(s) && s !== data.session);
@@ -226,6 +276,7 @@ export default function ScoreScreen() {
       Alert.alert('Error', err.message || 'Failed to save evaluation.');
     } finally {
       setIsSubmitting(false);
+      activeMutationRef.current = null;
     }
   });
 

@@ -186,7 +186,7 @@ export default function AssessmentTabNavigator() {
       <Tab.Screen
         name="AssessmentResults"
         component={AssessmentResultsScreen}
-        initialParams={{ id }}
+        initialParams={{ id, isAssessorOnly }}
         options={{
           title: tryout?.name || 'Loading...',
           tabBarLabel: 'Results',

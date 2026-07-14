@@ -115,9 +115,11 @@ export default function CompareScreen() {
             <Pressable onPress={() => toggle(item.id)}>
               <Card className={`mb-2 ${isSelected ? 'border-brand' : ''}`}>
                 <View className="flex-row justify-between items-center">
-                  <Text className="font-bold" style={{ color: colors.ink }}>
-                    {playerDisplayName(item)}
-                  </Text>
+                  <View className="flex-1 pr-4">
+                    <Text className="font-bold" style={{ color: colors.ink }}>
+                      {playerDisplayName(item)}
+                    </Text>
+                  </View>
                   {isSelected ? <Badge label="Selected" variant="brand" /> : null}
                 </View>
               </Card>

@@ -1,5 +1,5 @@
 import { FlatList, Text, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { themeTokens } from '@/theme/tokens';
@@ -22,7 +22,16 @@ export default function ResultsScreen() {
   const id = useAssessmentId();
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const { data: tryout, results, isLoading, isError, refetch } = useResultsQuery(id);
+
+  const parentState = navigation.getParent()?.getState();
+  const flowRoute = parentState?.routes?.find((r: any) => r.name === 'AssessmentFlow');
+  const isAssessorOnly =
+    route.params?.isAssessorOnly ||
+    flowRoute?.params?.isAssessorOnly ||
+    flowRoute?.params?.params?.isAssessorOnly ||
+    false;
 
   if (isLoading) return <LoadingState message="Loading results..." />;
   if (isError || !tryout) {
@@ -37,11 +46,22 @@ export default function ResultsScreen() {
     <Screen padded={false}>
       <Header title="Assessment Results" showBack />
       <View className="px-4 py-3 gap-3">
-        <View className="flex-row flex-wrap gap-2">
+        <View className="flex-row flex-wrap gap-2 items-center">
           <Button label="Team Builder" size="sm" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentTeamBuilder', params: { id: id } })} />
           <Button label="Compare" size="sm" variant="secondary" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentCompare', params: { id: id } })} />
-          <Button label="Export" size="sm" variant="secondary" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentExport', params: { id: id } })} />
+          <Button
+            label="Export"
+            size="sm"
+            variant="secondary"
+            disabled={isAssessorOnly}
+            onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentExport', params: { id: id } })}
+          />
         </View>
+        {isAssessorOnly && (
+          <Text className="text-xs italic" style={{ color: colors.inkMuted }}>
+            * Exporting results is disabled for the assessor role.
+          </Text>
+        )}
       </View>
 
       <FlatList
