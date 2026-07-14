@@ -1,13 +1,13 @@
 // @ts-nocheck
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
-import { corsHeaders } from '../_shared/cors.ts';
 import nodemailer from 'npm:nodemailer';
+import { corsHeaders } from '../_shared/cors.ts';
 
-const SMTP_HOST  = Deno.env.get('SMTP_HOST')       || 'smtp.gmail.com';
-const SMTP_PORT  = parseInt(Deno.env.get('SMTP_PORT') || '587');
-const SMTP_PASS  = Deno.env.get('SMTP_PASS')       || '';
+const SMTP_HOST = Deno.env.get('SMTP_HOST') || 'smtp.gmail.com';
+const SMTP_PORT = parseInt(Deno.env.get('SMTP_PORT') || '587');
+const SMTP_PASS = Deno.env.get('SMTP_PASS') || '';
 const FROM_EMAIL = Deno.env.get('SMTP_FROM_EMAIL') || 'reachraza1@gmail.com';
-const FROM_NAME  = Deno.env.get('SMTP_FROM_NAME')  || 'Athlete Assessment';
+const FROM_NAME = Deno.env.get('SMTP_FROM_NAME') || 'Athlete Assessment';
 
 // ─── Shared dark-theme HTML wrapper ─────────────────────────────────────────
 function wrap(title: string, body: string): string {
@@ -102,8 +102,8 @@ function tplTryoutInvite(tryoutName?: string) {
 
 function tplScheduleUpdate(eventName: string, date?: string, time?: string, location?: string) {
   const rows = [
-    date     ? `<tr><td style="color:#9ca3af;padding:8px 0 8px;font-size:14px;width:100px;">📅 Date</td><td style="color:#fff;font-weight:600;padding:8px 0;font-size:14px;">${date}</td></tr>` : '',
-    time     ? `<tr><td style="color:#9ca3af;padding:8px 0;font-size:14px;">🕐 Time</td><td style="color:#fff;font-weight:600;padding:8px 0;font-size:14px;">${time}</td></tr>` : '',
+    date ? `<tr><td style="color:#9ca3af;padding:8px 0 8px;font-size:14px;width:100px;">📅 Date</td><td style="color:#fff;font-weight:600;padding:8px 0;font-size:14px;">${date}</td></tr>` : '',
+    time ? `<tr><td style="color:#9ca3af;padding:8px 0;font-size:14px;">🕐 Time</td><td style="color:#fff;font-weight:600;padding:8px 0;font-size:14px;">${time}</td></tr>` : '',
     location ? `<tr><td style="color:#9ca3af;padding:8px 0;font-size:14px;">📍 Location</td><td style="color:#fff;font-weight:600;padding:8px 0;font-size:14px;">${location}</td></tr>` : '',
   ].join('');
   return {
@@ -222,14 +222,14 @@ serve(async (req: Request) => {
     if (!to || !type) throw new Error('Missing required fields (to, type)');
 
     let subject = 'Notification from Athlete Assessment';
-    let html    = '<p>You have a new notification.</p>';
+    let html = '<p>You have a new notification.</p>';
 
-    if (type === 'org_invite')               ({ subject, html } = tplOrgInvite(payload?.role ?? 'Member', payload?.password));
-    else if (type === 'tryout_invite')        ({ subject, html } = tplTryoutInvite(payload?.tryoutName));
-    else if (type === 'schedule_update')      ({ subject, html } = tplScheduleUpdate(payload?.eventName ?? 'New Event', payload?.date, payload?.time, payload?.location));
-    else if (type === 'reminder')             ({ subject, html } = tplReminder(payload?.title ?? 'Upcoming Event', payload?.message ?? 'This is a reminder for an upcoming event.'));
+    if (type === 'org_invite') ({ subject, html } = tplOrgInvite(payload?.role ?? 'Member', payload?.password));
+    else if (type === 'tryout_invite') ({ subject, html } = tplTryoutInvite(payload?.tryoutName));
+    else if (type === 'schedule_update') ({ subject, html } = tplScheduleUpdate(payload?.eventName ?? 'New Event', payload?.date, payload?.time, payload?.location));
+    else if (type === 'reminder') ({ subject, html } = tplReminder(payload?.title ?? 'Upcoming Event', payload?.message ?? 'This is a reminder for an upcoming event.'));
     else if (type === 'registration_confirmation') ({ subject, html } = tplRegistrationConfirm(payload?.playerName ?? 'Athlete'));
-    else if (type === 'password_reset')       ({ subject, html } = tplPasswordReset(payload?.code ?? '------'));
+    else if (type === 'password_reset') ({ subject, html } = tplPasswordReset(payload?.code ?? '------'));
     else if (type === 'subscription_upgraded') ({ subject, html } = tplSubscriptionUpgraded(payload?.planTier ?? 'Pro'));
     else if (type === 'subscription_canceled') ({ subject, html } = tplSubscriptionCanceled());
 
