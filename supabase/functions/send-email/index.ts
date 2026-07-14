@@ -49,12 +49,6 @@ function wrap(title: string, body: string): string {
 </body></html>`;
 }
 
-// ─── CTA button helper ───────────────────────────────────────────────────────
-const cta = (label: string) =>
-  `<div style="text-align:center;margin-top:28px;">
-    <a href="#" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;text-decoration:none;padding:14px 36px;border-radius:10px;font-size:16px;font-weight:600;">${label} →</a>
-  </div>`;
-
 // ─── Templates ───────────────────────────────────────────────────────────────
 function tplOrgInvite(role: string, password?: string) {
   const pwBlock = password ? `
@@ -76,7 +70,6 @@ function tplOrgInvite(role: string, password?: string) {
       <p style="color:#9ca3af;font-size:15px;line-height:1.7;margin:0 0 8px;">
         Log in (or sign up with this email) to accept the invite and get started.
       </p>
-      ${cta('Open Athlete Assessment')}
     `),
   };
 }
@@ -95,7 +88,6 @@ function tplTryoutInvite(tryoutName?: string) {
       <p style="color:#9ca3af;font-size:15px;line-height:1.7;margin:0;">
         Log in to view player rosters, submit scores, and complete evaluations.
       </p>
-      ${cta('View My Assignments')}
     `),
   };
 }
@@ -114,7 +106,7 @@ function tplScheduleUpdate(eventName: string, date?: string, time?: string, loca
         <p style="color:#a78bfa;font-size:20px;font-weight:700;margin:0 0 16px;">${eventName}</p>
         <table width="100%" cellpadding="0" cellspacing="0">${rows}</table>
       </div>
-      ${cta('View Schedule')}
+
     `),
   };
 }
@@ -127,7 +119,6 @@ function tplReminder(title: string, message: string) {
         <p style="color:#fbbf24;font-size:12px;text-transform:uppercase;letter-spacing:1.5px;margin:0 0 8px;font-weight:600;">Reminder</p>
         <p style="color:#d1d5db;font-size:16px;line-height:1.7;margin:0;">${message}</p>
       </div>
-      ${cta('Open App')}
     `),
   };
 }
@@ -149,7 +140,6 @@ function tplRegistrationConfirm(playerName: string) {
       <p style="color:#9ca3af;font-size:15px;line-height:1.7;margin:20px 0 0;">
         We've received all information and look forward to seeing them at the event. You'll be notified of any updates.
       </p>
-      ${cta('View Registration')}
     `),
   };
 }
@@ -186,7 +176,6 @@ function tplSubscriptionUpgraded(planTier: string) {
       <p style="color:#9ca3af;font-size:15px;line-height:1.7;margin:0 0 24px;">
         You can now return to the app and start using your new features immediately. If you have any questions or need help setting up your new tools, our support team is always here for you.
       </p>
-      ${cta('Go to Dashboard')}
     `),
   };
 }
