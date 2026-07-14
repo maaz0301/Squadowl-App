@@ -16,6 +16,17 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { useGuardianRostersQuery, useSeasonsQuery, useSetAvailabilityMutation } from '@/features/queries';
 import type { SeasonEvent } from '@/data/types';
 
+function ExpandableText({ text, style, className }: { text: string, style?: any, className?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <Pressable onPress={() => setExpanded(!expanded)}>
+      <Text className={className} style={style} numberOfLines={expanded ? undefined : 1}>
+        {text}
+      </Text>
+    </Pressable>
+  );
+}
+
 function EventCard({ item, playerId, colors }: { item: SeasonEvent & { seasonName: string; teamName: string; seasonId: string }, playerId: string, colors: any }) {
   const rsvpMutation = useSetAvailabilityMutation(item.seasonId);
   const rsvp = item.availability?.[playerId] || 'pending';
@@ -24,12 +35,8 @@ function EventCard({ item, playerId, colors }: { item: SeasonEvent & { seasonNam
     <Card className="mb-3">
       <View className="flex-row justify-between items-start mb-2">
         <View className="flex-1">
-          <Text className="text-base font-bold" style={{ color: colors.ink }}>
-            {item.title}
-          </Text>
-          <Text className="text-sm" style={{ color: colors.primary }}>
-            {item.seasonName}
-          </Text>
+          <ExpandableText text={item.title} className="text-base font-bold" style={{ color: colors.ink }} />
+          <ExpandableText text={item.seasonName} className="text-sm" style={{ color: colors.primary }} />
         </View>
         <Badge label={item.type} variant="info" />
       </View>
@@ -94,9 +101,7 @@ function TryoutSeasonCard({ item, colors, playerId }: { item: any; colors: any; 
       <Card accent className="mb-3">
         <View className="flex-row justify-between items-start">
           <View className="flex-1">
-            <Text className="text-lg font-display font-bold mb-1" style={{ color: colors.ink }}>
-              {item.name}
-            </Text>
+            <ExpandableText text={item.name} className="text-lg font-display font-bold mb-1" style={{ color: colors.ink }} />
             {item._type === 'season' ? (
               <Text className="text-sm mb-2" style={{ color: colors.inkMuted }}>
                 {item.teamName} · {item.sport}

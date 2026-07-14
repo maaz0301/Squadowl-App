@@ -1551,7 +1551,14 @@ async deleteTryout(id: string): Promise<void> {
     const rosterBySeason: Record<string, Row[]> = {};
     for (const r of rosterRows) (rosterBySeason[r.season_id] ??= []).push(r);
     const availByEvent: Record<string, Record<string, string>> = {};
-    for (const a of availabilityRows) (availByEvent[a.season_event_id] ??= {})[a.roster_id] = a.response;
+    for (const a of availabilityRows) {
+      const rosterItem = rosterRows.find((r) => r.id === a.roster_id);
+      if (rosterItem && rosterItem.athlete_id) {
+        (availByEvent[a.season_event_id] ??= {})[rosterItem.athlete_id] = a.response;
+      } else {
+        (availByEvent[a.season_event_id] ??= {})[a.roster_id] = a.response;
+      }
+    }
 
     return seasonRows.map((s) => ({
       id: s.id,
@@ -1583,7 +1590,7 @@ async deleteTryout(id: string): Promise<void> {
         .eq('archived', false)
         .order('created_at', { ascending: false }),
     ) as Row[];
-    return this.assembleSeasons(rows, false);
+    return this.assembleSeasons(rows, true);
   }
 
   async getSeason(id: string): Promise<Season | null> {
@@ -2032,18 +2039,34 @@ async deleteTryout(id: string): Promise<void> {
   }
 
   async setEventAvailability(
-    _seasonId: string,
+    seasonId: string,
     eventId: string,
     playerId: string,
     response: 'yes' | 'maybe' | 'no',
   ): Promise<void> {
     const { supabase } = await this.ctx();
-    await supabase
-      .from('event_availability')
-      .upsert(
-        { season_event_id: eventId, roster_id: playerId, response },
-        { onConflict: 'season_event_id,roster_id' },
-      );
+    const rosterRow = unwrap(
+      await supabase
+        .from('season_roster')
+        .select('id')
+        .eq('season_id', seasonId)
+        .eq('athlete_id', playerId)
+        .maybeSingle()
+    ) as Row | null;
+
+    if (!rosterRow) {
+      console.warn('Cannot set availability: player is not in roster');
+      return;
+    }
+
+    unwrap(
+      await supabase
+        .from('event_availability')
+        .upsert(
+          { season_event_id: eventId, roster_id: rosterRow.id, response },
+          { onConflict: 'season_event_id,roster_id' },
+        )
+    );
   }
 
   // ─── Phase 4: Enterprise & Admin ─────────────────────────────────────────────────
@@ -2213,6 +2236,41 @@ async deleteTryout(id: string): Promise<void> {
       });
     }
 
+    // Fetch athletes to get guardians
+    const { data: athletesData } = await supabase
+      .from('athletes')
+      .select('id, guardian_name, guardian_email, guardian_user_id, created_at')
+      .eq('account_id', accountId)
+      .eq('archived', false);
+
+    for (const a of athletesData || []) {
+      const email = a.guardian_email;
+      if (!email) continue;
+      const emailKey = email.toLowerCase();
+      
+      if (!members.has(emailKey)) {
+        members.set(emailKey, {
+          id: a.id,
+          orgId: accountId,
+          userId: a.guardian_user_id ?? undefined,
+          email: email,
+          name: a.guardian_name ?? undefined,
+          role: 'guardian',
+          status: a.guardian_user_id ? 'active' : 'pending',
+          createdAt: a.created_at ? new Date(a.created_at).getTime() : Date.now(),
+        });
+      } else {
+        const existing = members.get(emailKey)!;
+        if (!existing.name && a.guardian_name) {
+          existing.name = a.guardian_name;
+        }
+        if (!existing.userId && a.guardian_user_id) {
+          existing.userId = a.guardian_user_id;
+          existing.status = 'active';
+        }
+        existing.role = 'guardian';
+      }
+    }
 
     return Array.from(members.values());
   }
