@@ -214,9 +214,11 @@ export function useSaveEvaluationMutation(tryoutId: string) {
         }
         return { ...oldData, evals };
       });
-      qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
-      qc.invalidateQueries({ queryKey: queryKeys.results(tryoutId) });
-      qc.invalidateQueries({ queryKey: queryKeys.profile });
+      // Mark related queries as stale but don't block onSubmit with immediate refetches.
+      // They will re-fetch in the background when their components are next focused.
+      qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId), refetchType: 'none' });
+      qc.invalidateQueries({ queryKey: queryKeys.results(tryoutId), refetchType: 'none' });
+      qc.invalidateQueries({ queryKey: queryKeys.profile, refetchType: 'none' });
     },
   });
 }

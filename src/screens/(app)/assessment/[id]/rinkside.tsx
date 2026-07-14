@@ -40,9 +40,13 @@ export default function RinksideScreen() {
   const workingScores = useSessionStore((s) => s.workingScores);
   const setWorkingScores = useSessionStore((s) => s.setWorkingScores);
   const clearWorkingScores = useSessionStore((s) => s.clearWorkingScores);
+  const completedSessions = useSessionStore((s) => s.completedSessions);
+  const markSessionCompleted = useSessionStore((s) => s.markSessionCompleted);
   const [session, setSession] = useState('Session 1');
   const [recommendation, setRecommendation] = useState<'Make' | 'Keep' | 'Bubble' | 'Release' | ''>('');
   const translateX = useSharedValue(0);
+  const previousStateRef = useRef<string>('');
+  const lastLoadedRef = useRef<{ playerId: string; session: string } | null>(null);
 
   const roster = tryoutQuery.data?.roster ?? [];
   const player = roster[rinksideIndex];
@@ -72,12 +76,21 @@ export default function RinksideScreen() {
   }, [tryoutQuery.data?.evals, historyQuery.data?.pastEvaluations, player?.id]);
 
   const highestSessionNum = useMemo(() => {
-    return (tryoutQuery.data?.evals || []).reduce((max, ev) => {
+    let maxNum = (tryoutQuery.data?.evals || []).reduce((max, ev) => {
       if (!ev.session) return max;
+
+      const hasScores = ev.scores && Object.values(ev.scores).some(val => val !== undefined && val !== null && val > 0);
+      if (!hasScores) return max;
+
       const match = ev.session.match(/^Session (\d+)$/);
       return match ? Math.max(max, parseInt(match[1], 10)) : max;
     }, 0);
-  }, [tryoutQuery.data?.evals]);
+    const currentMatch = session?.match(/^Session (\d+)$/);
+    if (currentMatch) {
+      maxNum = Math.max(maxNum, parseInt(currentMatch[1], 10));
+    }
+    return maxNum;
+  }, [tryoutQuery.data?.evals, session]);
 
   const SESSIONS = useMemo(() => {
     const count = Math.max(5, highestSessionNum + 1);
@@ -98,25 +111,59 @@ export default function RinksideScreen() {
   }, [tryoutQuery.data?.evals, player?.id]);
 
   const defaultSessionForPlayer = useMemo(() => {
-    return SESSIONS.find((s) => !scoredSessions.has(s) && s !== 'Extra View') || 'Session 1';
-  }, [SESSIONS, scoredSessions]);
+    const completedForPlayer = completedSessions?.[player?.id || ''] || [];
+    return SESSIONS.find((s) => !completedForPlayer.includes(s) && !scoredSessions.has(s) && s !== 'Extra View') || 'Session 1';
+  }, [SESSIONS, completedSessions, scoredSessions, player?.id]);
+
+  const lastPlayerIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (player?.id) {
+    if (player?.id && lastPlayerIdRef.current !== player.id) {
+      lastPlayerIdRef.current = player.id;
       setSession(defaultSessionForPlayer);
     }
   }, [player?.id, defaultSessionForPlayer]);
 
   useEffect(() => {
     if (!player) return;
-    const evalForSession = previousEvals.find(e => e.session === session);
-    if (evalForSession) {
-      setWorkingScores(mapLegacyScores(evalForSession.scores, categories));
-      setRecommendation(evalForSession.recommendation || '');
-    } else {
-      clearWorkingScores();
-      setRecommendation('');
+
+    const lastPlayerId = lastLoadedRef.current?.playerId;
+    const lastSession = lastLoadedRef.current?.session;
+
+    if (lastPlayerId && lastSession && (lastPlayerId !== player.id || lastSession !== session)) {
+      const currentStateStr = JSON.stringify({ scores: workingScores, recommendation });
+      const hasUnsavedChanges = previousStateRef.current && previousStateRef.current !== currentStateStr;
+
+      if (hasUnsavedChanges) {
+        const prevPlayer = roster.find(p => p.id === lastPlayerId);
+        if (prevPlayer) {
+          const hasScores = workingScores && Object.values(workingScores).some(val => val !== undefined && val !== null && val > 0);
+          if (hasScores && recommendation) {
+            saveEval.mutate({
+              playerId: prevPlayer.id,
+              form: { session: lastSession, scores: workingScores, recommendation },
+            });
+          }
+        }
+      }
     }
+
+    const evalForSession = previousEvals.find(e => e.session === session);
+    let loadedScores = {};
+    let loadedRec = '';
+
+    if (evalForSession) {
+      loadedScores = mapLegacyScores(evalForSession.scores, categories);
+      loadedRec = evalForSession.recommendation || '';
+    } else {
+      loadedScores = mapLegacyScores({}, categories);
+      loadedRec = '';
+    }
+
+    setWorkingScores(loadedScores);
+    setRecommendation(loadedRec as any);
+    previousStateRef.current = JSON.stringify({ scores: loadedScores, recommendation: loadedRec });
+    lastLoadedRef.current = { playerId: player.id, session };
   }, [player?.id, session, previousEvals]);
 
   const handleSessionChange = (newSession: string) => {
@@ -141,6 +188,31 @@ export default function RinksideScreen() {
       translateX.value = withSpring(0);
     });
 
+  const currentStateRef = useRef({ scores: workingScores, recommendation, player, session });
+  useEffect(() => {
+    currentStateRef.current = { scores: workingScores, recommendation, player, session };
+  }, [workingScores, recommendation, player, session]);
+
+  useEffect(() => {
+    return () => {
+      const { scores, recommendation: rec, player: curPlayer, session: curSession } = currentStateRef.current;
+      if (!curPlayer) return;
+
+      const currentStateStr = JSON.stringify({ scores, recommendation: rec });
+      const hasUnsavedChanges = previousStateRef.current && previousStateRef.current !== currentStateStr;
+
+      if (hasUnsavedChanges) {
+        const hasScores = scores && Object.values(scores).some(val => val !== undefined && val !== null && val > 0);
+        if (hasScores && rec) {
+          saveEval.mutate({
+            playerId: curPlayer.id,
+            form: { session: curSession, scores, recommendation: rec },
+          });
+        }
+      }
+    };
+  }, []);
+
   if (tryoutQuery.isLoading) return <LoadingState message="Loading rinkside mode..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
     return <ErrorState message="Could not load assessment." onRetry={() => tryoutQuery.refetch()} />;
@@ -157,26 +229,51 @@ export default function RinksideScreen() {
 
   const overall = weightedOverall(workingScores, categories, weights);
 
-  const saveAndNext = async () => {
+  const saveAndNext = () => {
     if (!player) return;
+
+    const currentStateStr = JSON.stringify({ scores: workingScores, recommendation });
+    const hasUnsavedChanges = previousStateRef.current !== currentStateStr;
+
+    const currentIdx = SESSIONS.indexOf(session);
+    const getNextNavigation = () => {
+      if (currentIdx !== -1 && currentIdx < SESSIONS.length - 1) {
+        setSession(SESSIONS[currentIdx + 1]);
+      } else if (rinksideIndex < roster.length - 1) {
+        setRinksideIndex(rinksideIndex + 1);
+      }
+    };
+
+    if (!hasUnsavedChanges) {
+      clearWorkingScores();
+      setRecommendation('');
+      getNextNavigation();
+      return;
+    }
+
     const hasScores = workingScores && Object.values(workingScores).some(val => val !== undefined && val !== null && val > 0);
     if (!hasScores) {
       clearWorkingScores();
       setRecommendation('');
-      if (rinksideIndex < roster.length - 1) setRinksideIndex(rinksideIndex + 1);
+      getNextNavigation();
       return;
     }
     if (!recommendation) {
       Alert.alert('Recommendation required', 'Please select a recommendation before saving.');
       return;
     }
-    await saveEval.mutateAsync({
+    
+    markSessionCompleted(player.id, session);
+
+    saveEval.mutate({
       playerId: player.id,
       form: { session, scores: workingScores, recommendation },
     });
+    
+    previousStateRef.current = currentStateStr;
     clearWorkingScores();
     setRecommendation('');
-    if (rinksideIndex < roster.length - 1) setRinksideIndex(rinksideIndex + 1);
+    getNextNavigation();
   };
 
   return (
@@ -188,33 +285,39 @@ export default function RinksideScreen() {
           showBack
           onBack={() => navigation.navigate('AssessmentRoster')}
         />
-        <View className="flex-row flex-wrap mb-2">
-          {(() => {
-            const scoredSessions = new Map((tryoutQuery.data?.evals.filter((e) => e.playerId === player?.id) || []).map(e => [e.session, e.id]));
-            const firstUnscoredIdx = SESSIONS.findIndex(s => !scoredSessions.has(s));
-            
-            return SESSIONS.map((s, idx) => {
-              const isScored = scoredSessions.has(s);
-              let disabled = false;
-              if (!isScored && firstUnscoredIdx !== -1 && idx > firstUnscoredIdx) {
-                disabled = true;
-              }
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingRight: 16 }}
+        >
+          <View className="flex-row gap-2 mb-4">
+            {(() => {
+              const scoredSessions = new Map((tryoutQuery.data?.evals.filter((e) => e.playerId === player?.id) || []).map(e => [e.session, e.id]));
+              const firstUnscoredIdx = SESSIONS.findIndex(s => !scoredSessions.has(s));
               
-              return (
-                <Chip 
-                  key={s} 
-                  label={s} 
-                  active={session === s} 
-                  disabled={disabled}
-                  onPress={() => {
-                    if (disabled) return;
-                    handleSessionChange(s);
-                  }} 
-                />
-              );
-            });
-          })()}
-        </View>
+              return SESSIONS.map((s, idx) => {
+                const isScored = scoredSessions.has(s);
+                let disabled = false;
+                if (!isScored && firstUnscoredIdx !== -1 && idx > firstUnscoredIdx) {
+                  disabled = true;
+                }
+                
+                return (
+                  <Chip 
+                    key={s} 
+                    label={s} 
+                    active={session === s} 
+                    disabled={disabled}
+                    onPress={() => {
+                      if (disabled) return;
+                      handleSessionChange(s);
+                    }} 
+                  />
+                );
+              });
+            })()}
+          </View>
+        </ScrollView>
       </View>
 
       <GestureDetector gesture={pan}>
@@ -349,7 +452,7 @@ export default function RinksideScreen() {
         </Text>
         <View className="flex-row gap-2">
           <Button label="← Prev" variant="secondary" className="flex-1" onPress={goPrev} disabled={rinksideIndex === 0} />
-          <Button label="Save & Next →" className="flex-1" onPress={saveAndNext} loading={saveEval.isPending} />
+          <Button label="Save & Next →" className="flex-1" onPress={saveAndNext} />
         </View>
         <Button
           label="Full Score Form"

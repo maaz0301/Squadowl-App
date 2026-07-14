@@ -14,6 +14,7 @@ interface SessionState {
   rinksideIndex: number;
   activeAssessor: Assessor | null;
   combineTryoutIds: string[];
+  completedSessions: Record<string, string[]>;
   setCurrentTryout: (id: string | null) => void;
   setCurrentPlayer: (id: string | null) => void;
   setCurrentEval: (id: string | null) => void;
@@ -25,6 +26,7 @@ interface SessionState {
   setActiveAssessor: (assessor: Assessor | null) => void;
   setCombineTryoutIds: (ids: string[]) => void;
   toggleCombineTryout: (id: string) => void;
+  markSessionCompleted: (playerId: string, sessionName: string) => void;
   resetAssessmentSession: () => void;
 }
 
@@ -39,6 +41,7 @@ export const useSessionStore = create<SessionState>()(
       rinksideIndex: 0,
       activeAssessor: null,
       combineTryoutIds: [],
+      completedSessions: {},
       setCurrentTryout: (id) => set({ currentTryoutId: id }),
       setCurrentPlayer: (id) => set({ currentPlayerId: id }),
       setCurrentEval: (id) => set({ currentEvalId: id }),
@@ -56,12 +59,24 @@ export const useSessionStore = create<SessionState>()(
             ? s.combineTryoutIds.filter((x) => x !== id)
             : [...s.combineTryoutIds, id],
         })),
+      markSessionCompleted: (playerId: string, sessionName: string) =>
+        set((s) => {
+          const current = s.completedSessions[playerId] || [];
+          if (current.includes(sessionName)) return {};
+          return {
+            completedSessions: {
+              ...s.completedSessions,
+              [playerId]: [...current, sessionName],
+            },
+          };
+        }),
       resetAssessmentSession: () =>
         set({
           currentPlayerId: null,
           currentEvalId: null,
           workingScores: {},
           rinksideIndex: 0,
+          completedSessions: {},
         }),
     }),
     {
@@ -70,6 +85,7 @@ export const useSessionStore = create<SessionState>()(
       partialize: (s) => ({
         currentTryoutId: s.currentTryoutId,
         rosterFilter: s.rosterFilter,
+        completedSessions: s.completedSessions,
       }),
     },
   ),

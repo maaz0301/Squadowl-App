@@ -1176,15 +1176,19 @@ async deleteTryout(id: string): Promise<void> {
         // Clean up duplicates if the DB was corrupted
         if (existingRows.length > 1) {
           const duplicateIds = existingRows.slice(1).map((r) => r.id);
-          await supabase.from('evaluation_scores').delete().in('evaluation_id', duplicateIds);
-          await supabase.from('evaluations').delete().in('id', duplicateIds);
+          await Promise.all([
+            supabase.from('evaluation_scores').delete().in('evaluation_id', duplicateIds),
+            supabase.from('evaluations').delete().in('id', duplicateIds)
+          ]);
         }
       }
     }
 
+    let savedData: Row;
+
     if (id) {
-      unwrap(
-        await supabase
+      const [updateResult] = await Promise.all([
+        supabase
           .from('evaluations')
           .update({
             session: form.session,
@@ -1195,10 +1199,13 @@ async deleteTryout(id: string): Promise<void> {
           .eq('id', id)
           .select()
           .single(),
-      );
-      await supabase.from('evaluation_scores').delete().eq('evaluation_id', id);
+        supabase.from('evaluation_scores').delete().eq('evaluation_id', id)
+      ]);
+      savedData = unwrap(updateResult) as Row;
     } else {
-      const profile = await this.loadUserProfile(userId);
+      const [profile] = await Promise.all([
+        this.loadUserProfile(userId)
+      ]);
       const created = unwrap(
         await supabase
           .from('evaluations')
@@ -1213,10 +1220,11 @@ async deleteTryout(id: string): Promise<void> {
             recommendation: recDb,
             source: 'manual',
           })
-          .select('id')
+          .select()
           .single(),
       ) as Row;
       id = created.id;
+      savedData = created;
     }
 
     const scoreRows = Object.entries(form.scores)
@@ -1226,8 +1234,10 @@ async deleteTryout(id: string): Promise<void> {
       unwrap(await supabase.from('evaluation_scores').insert(scoreRows).select());
     }
 
-    await this.markOnboarding({ scorePlayers: true });
-    return this.fetchEval(id!);
+    this.markOnboarding({ scorePlayers: true }).catch(() => {});
+    
+    savedData.evaluation_scores = scoreRows;
+    return this.rowToEval(savedData);
   }
 
   async deleteEvaluation(_tryoutId: string, evalId: string): Promise<void> {

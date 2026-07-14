@@ -35,7 +35,7 @@ import {
 export default function ScoreScreen() {
   const id = useAssessmentId();
   const route = useRoute<any>();
-  const { playerId, evalId } = route.params || {};
+  const { playerId, evalId, session: routeSession } = route.params || {};
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
@@ -45,7 +45,8 @@ export default function ScoreScreen() {
   const clearWorkingScores = useSessionStore((s) => s.clearWorkingScores);
   const activeAssessor = useSessionStore((s) => s.activeAssessor);
   const setActiveAssessor = useSessionStore((s) => s.setActiveAssessor);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const completedSessions = useSessionStore((s) => s.completedSessions);
+  const markSessionCompleted = useSessionStore((s) => s.markSessionCompleted);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const activeMutationRef = useRef<Promise<any> | null>(null);
 
@@ -63,13 +64,26 @@ export default function ScoreScreen() {
 
   const mostRecentEval = previousEvals[0];
   const scoredSessions = new Map((tryoutQuery.data?.evals.filter((e) => e.playerId === playerId) || []).map(e => [e.session, e.id]));
-  const highestSessionNum = useMemo(() => {
+  const baseHighestSessionNum = useMemo(() => {
     return (tryoutQuery.data?.evals || []).reduce((max, ev) => {
       if (!ev.session) return max;
+      
+      const hasScores = ev.scores && Object.values(ev.scores).some(val => val !== undefined && val !== null && val > 0);
+      if (!hasScores) return max;
+
       const match = ev.session.match(/^Session (\d+)$/);
       return match ? Math.max(max, parseInt(match[1], 10)) : max;
     }, 0);
   }, [tryoutQuery.data?.evals]);
+
+  const highestSessionNum = useMemo(() => {
+    let maxNum = baseHighestSessionNum;
+    const match = routeSession?.match(/^Session (\d+)$/);
+    if (match) {
+      maxNum = Math.max(maxNum, parseInt(match[1], 10));
+    }
+    return maxNum;
+  }, [baseHighestSessionNum, routeSession]);
 
   const SESSIONS = useMemo(() => {
     const count = Math.max(5, highestSessionNum + 1);
@@ -77,7 +91,11 @@ export default function ScoreScreen() {
     sessions.push('Extra View');
     return sessions;
   }, [highestSessionNum]);
-  const nextSession = existingEval?.session ?? SESSIONS.find(s => !scoredSessions.has(s)) ?? 'Session 1';
+  const completedSessionsForPlayer = useMemo(() => {
+    return completedSessions?.[playerId || ''] || [];
+  }, [completedSessions, playerId]);
+  const nextSession = existingEval?.session ?? SESSIONS.find(s => !completedSessionsForPlayer.includes(s) && !scoredSessions.has(s) && s !== 'Extra View') ?? 'Session 1';
+  const currentSession = routeSession ?? nextSession;
 
   const categories = useMemo(() => {
     if (!tryoutQuery.data || !player) return [];
@@ -97,10 +115,10 @@ export default function ScoreScreen() {
 
   const initialScores = mapLegacyScores(existingEval?.scores ?? {}, categories);
 
-  const { control, handleSubmit, watch, setValue, getValues } = useForm<ScoreForm>({
+  const { control, handleSubmit, watch, setValue, getValues, reset, formState: { isSubmitting } } = useForm<ScoreForm>({
     resolver: zodResolver(ScoreFormSchema),
     defaultValues: {
-      session: nextSession,
+      session: currentSession,
       strengths: existingEval?.strengths ?? '',
       improve: existingEval?.improve ?? '',
       recommendation: existingEval?.recommendation ?? '',
@@ -111,13 +129,18 @@ export default function ScoreScreen() {
   const scores = watch('scores');
   const formData = watch();
   const previousFormRef = useRef<string>('');
+  const lastLoadedRef = useRef<{ playerId: string; evalId?: string; session?: string } | null>(null);
 
-  const loadEvalData = (targetEvalId?: string, fallbackSession?: string, preserveWorkingScores: boolean = false) => {
-    setIsSubmitting(false);
+  const loadEvalData = (targetEvalId?: string, targetSession?: string, preserveWorkingScores: boolean = false) => {
     activeMutationRef.current = null;
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
       autoSaveTimeoutRef.current = null;
+    }
+
+    const currentSess = targetSession ?? currentSession;
+    if (playerId) {
+      lastLoadedRef.current = { playerId, evalId: targetEvalId, session: currentSess };
     }
 
     const targetEval = targetEvalId
@@ -129,31 +152,88 @@ export default function ScoreScreen() {
       : (preserveWorkingScores && Object.keys(workingScores).length > 0 ? workingScores : mapLegacyScores({}, categories));
 
     setWorkingScores(scoresToSet);
-    setValue('scores', scoresToSet);
-    setValue('session', targetEval?.session ?? fallbackSession ?? nextSession);
-    setValue('strengths', targetEval?.strengths ?? '');
-    setValue('improve', targetEval?.improve ?? '');
-    setValue('recommendation', targetEval?.recommendation ?? '');
-    
-    // Defer the ref update slightly to ensure React Hook Form's watch state is updated
-    setTimeout(() => {
-      previousFormRef.current = JSON.stringify(getValues()); 
-    }, 0);
+
+    const newValues = {
+      session: targetEval?.session ?? currentSess,
+      strengths: targetEval?.strengths ?? '',
+      improve: targetEval?.improve ?? '',
+      recommendation: targetEval?.recommendation ?? '',
+      scores: scoresToSet,
+    };
+
+    reset(newValues);
+    previousFormRef.current = JSON.stringify(newValues);
   };
 
-  const lastLoadedRef = useRef<{ playerId: string; evalId?: string } | null>(null);
   useEffect(() => {
     if (!tryoutQuery.data || !playerId) return;
-    if (lastLoadedRef.current?.playerId === playerId && lastLoadedRef.current?.evalId === evalId) {
-      return;
+
+    const lastPlayerId = lastLoadedRef.current?.playerId;
+    const lastEvalId = lastLoadedRef.current?.evalId;
+    const lastSession = lastLoadedRef.current?.session;
+
+    const isPlayerChanged = lastPlayerId && lastPlayerId !== playerId;
+    const isEvalChanged = lastPlayerId && lastEvalId !== evalId;
+    const isSessionChanged = lastPlayerId && lastSession !== currentSession;
+
+    if (isPlayerChanged || isEvalChanged || isSessionChanged) {
+      const currentFormVal = getValues();
+      const currentFormStr = JSON.stringify(currentFormVal);
+      const hasUnsaved = previousFormRef.current && previousFormRef.current !== currentFormStr;
+
+      if (hasUnsaved) {
+        const prevPlayerId = lastPlayerId || playerId;
+        const prevEvalId = lastEvalId;
+        const prevSession = lastSession;
+
+        const hasScores = currentFormVal.scores && Object.values(currentFormVal.scores).some(val => val !== undefined && val !== null && val > 0);
+        if (hasScores) {
+          saveEval.mutate({
+            playerId: prevPlayerId,
+            form: { ...currentFormVal, session: prevSession || currentFormVal.session },
+            evalId: prevEvalId ?? undefined,
+          });
+        }
+      }
+
+      const shouldPreserve = !isPlayerChanged && !isSessionChanged;
+
+      lastLoadedRef.current = { playerId, evalId, session: currentSession };
+      loadEvalData(evalId, currentSession, shouldPreserve);
+    } else if (!lastLoadedRef.current) {
+      lastLoadedRef.current = { playerId, evalId, session: currentSession };
+      loadEvalData(evalId, currentSession, true);
     }
-    lastLoadedRef.current = { playerId, evalId };
-    loadEvalData(evalId, undefined, true);
-  }, [tryoutQuery.data, playerId, evalId]);
+  }, [tryoutQuery.data, playerId, evalId, currentSession]);
 
   useEffect(() => {
     setValue('scores', workingScores);
   }, [workingScores]);
+
+  const currentFormRef = useRef<{ form: ScoreForm; playerId: string; evalId?: string; session: string } | null>(null);
+  useEffect(() => {
+    currentFormRef.current = { form: formData, playerId, evalId, session: currentSession };
+  }, [formData, playerId, evalId, currentSession]);
+
+  useEffect(() => {
+    return () => {
+      if (currentFormRef.current) {
+        const { form, playerId: pId, evalId: eId, session: sName } = currentFormRef.current;
+        const currentFormStr = JSON.stringify(form);
+        const hasUnsaved = previousFormRef.current && previousFormRef.current !== currentFormStr;
+        if (hasUnsaved) {
+          const hasScores = form.scores && Object.values(form.scores).some(val => val !== undefined && val !== null && val > 0);
+          if (hasScores) {
+            saveEval.mutate({
+              playerId: pId,
+              form: { ...form, session: sName },
+              evalId: eId ?? undefined,
+            });
+          }
+        }
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const currentFormStr = JSON.stringify(formData);
@@ -220,23 +300,11 @@ export default function ScoreScreen() {
 
   const overall = weightedOverall(scores ?? {}, categories, weights);
 
-  const onSubmit = handleSubmit(async (data) => {
+  const onSubmit = handleSubmit((data) => {
     try {
-      setIsSubmitting(true);
-
-      // Cancel any pending auto-save timeout
       if (autoSaveTimeoutRef.current) {
         clearTimeout(autoSaveTimeoutRef.current);
         autoSaveTimeoutRef.current = null;
-      }
-
-      // If an auto-save mutation is already in progress, wait for it to complete
-      if (activeMutationRef.current) {
-        try {
-          await activeMutationRef.current;
-        } catch (e) {
-          // Suppress error because we will retry manually if previousFormRef.current !== currentFormStr
-        }
       }
 
       const currentFormStr = JSON.stringify(data);
@@ -246,37 +314,32 @@ export default function ScoreScreen() {
         const hasScores = data.scores && Object.values(data.scores).some(val => val !== undefined && val !== null && val > 0);
         if (!hasScores) {
           Alert.alert('No scores entered', 'Please grade at least one subskill before saving.');
-          setIsSubmitting(false);
           return;
         }
 
-        const mutationPromise = saveEval.mutateAsync({
+        saveEval.mutate({
           playerId: playerId!,
           form: data,
           evalId: evalId ?? undefined,
         });
-        activeMutationRef.current = mutationPromise;
-
-        await mutationPromise;
         previousFormRef.current = currentFormStr;
       }
 
-      // Navigate to the next unscored session if available
-      const unscoredSessions = SESSIONS.filter(s => !scoredSessions.has(s) && s !== data.session);
-      
-      if (unscoredSessions.length > 0) {
-        const nextUnscored = unscoredSessions[0];
-        navigation.setParams({ evalId: undefined });
-        loadEvalData(undefined, nextUnscored);
+      if (playerId) {
+        markSessionCompleted(playerId, data.session);
+      }
+
+      const currentIdx = SESSIONS.indexOf(data.session);
+      if (currentIdx !== -1 && currentIdx < SESSIONS.length - 1) {
+        const nextSess = SESSIONS[currentIdx + 1];
+        const nextEvalId = scoredSessions.get(nextSess);
+        navigation.setParams({ evalId: nextEvalId, session: nextSess });
       } else {
         clearWorkingScores();
         navigation.goBack();
       }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to save evaluation.');
-    } finally {
-      setIsSubmitting(false);
-      activeMutationRef.current = null;
     }
   });
 
@@ -285,10 +348,10 @@ export default function ScoreScreen() {
 
   return (
     <Screen scroll>
-      <Header 
-        title={`Score: ${playerDisplayName(player)}`} 
-        subtitle={`Overall: ${overall > 0 ? overall.toFixed(1) : '—'}`} 
-        showBack 
+      <Header
+        title={`Score: ${playerDisplayName(player)}`}
+        subtitle={`Overall: ${overall > 0 ? overall.toFixed(1) : '—'}`}
+        showBack
         onBack={() => navigation.navigate('AssessmentRoster')}
       />
 
@@ -320,40 +383,46 @@ export default function ScoreScreen() {
         </View>
       ) : null}
 
-      <View className="flex-row flex-wrap gap-2 mb-4">
-        {SESSIONS.map((s, idx) => {
-          const isScored = scoredSessions.has(s);
-          const isCurrentOfEval = isEditing && existingEval?.session === s;
-          
-          let disabled = false;
-          if (isScored) {
-             disabled = false; // Never disable scored sessions so they can tap to edit!
-          } else if (firstUnscoredIdx !== -1 && idx > firstUnscoredIdx) {
-             disabled = true;
-          }
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingRight: 16 }}
+      >
+        <View className="flex-row gap-2 mb-4">
+          {SESSIONS.map((s, idx) => {
+            const isScored = scoredSessions.has(s);
+            const isCurrentOfEval = isEditing && existingEval?.session === s;
 
-          return (
-            <Chip
-              key={s}
-              label={s}
-              active={watch('session') === s}
-              disabled={disabled}
-              onPress={() => {
-                if (disabled) return;
-                let targetId;
-                if (scoredSessions.has(s)) {
-                  targetId = scoredSessions.get(s);
-                  navigation.setParams({ evalId: targetId });
-                } else {
-                  targetId = undefined;
-                  navigation.setParams({ evalId: undefined });
-                }
-                loadEvalData(targetId, s);
-              }}
-            />
-          );
-        })}
-      </View>
+            let disabled = false;
+            if (isScored) {
+              disabled = false; // allow editing
+            } else if (firstUnscoredIdx !== -1 && idx > firstUnscoredIdx) {
+              disabled = true;
+            }
+
+            return (
+              <Chip
+                key={s}
+                label={s}
+                active={currentSession === s}
+                disabled={disabled}
+                onPress={() => {
+                  if (disabled) return;
+
+                  let targetId;
+                  if (scoredSessions.has(s)) {
+                    targetId = scoredSessions.get(s);
+                  } else {
+                    targetId = undefined;
+                  }
+
+                  navigation.setParams({ evalId: targetId, session: s });
+                }}
+              />
+            );
+          })}
+        </View>
+      </ScrollView>
 
       {categories.map((cat) => {
         const catAvg = categoryAverage(scores ?? {}, cat.subskills);
@@ -375,7 +444,9 @@ export default function ScoreScreen() {
                 scale={s.scale}
                 value={scores?.[s.key]}
                 onChange={(v) => {
-                  setWorkingScores({ ...workingScores, [s.key]: v });
+                  const newScores = { ...workingScores, [s.key]: v };
+                  setWorkingScores(newScores);
+                  setValue('scores', newScores, { shouldDirty: true });
                 }}
               />
             ))}
