@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { FlatList, Pressable, ScrollView, Text, View, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
@@ -127,6 +128,7 @@ function OnboardingChecklist() {
 export default function DashboardScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const user = useUser();
   const setCurrentTryout = useSessionStore((s) => s.setCurrentTryout);
   const setActiveAssessor = useSessionStore((s) => s.setActiveAssessor);
@@ -322,7 +324,11 @@ export default function DashboardScreen() {
         key={isGuardianOnly ? 'guardian' : tab}
         data={listData}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100, flexGrow: 1 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingBottom: Math.max(100, insets.bottom + 80),
+          flexGrow: 1,
+        }}
         ListHeaderComponent={
           <View className="pt-2">
             <Header
@@ -476,7 +482,10 @@ export default function DashboardScreen() {
       />
 
       {!isGuardianOnly && (
-        <View className="absolute bottom-6 left-4 right-4">
+        <View
+          className="absolute left-4 right-4"
+          style={{ bottom: Math.max(24, insets.bottom + 12) }}
+        >
           <Button label={fabLabel} onPress={fabAction} />
         </View>
       )}

@@ -163,6 +163,8 @@ export class SupabaseDataSource implements DataSource {
       positionTryingOutFor: p.position_trying_out_for ?? undefined,
       aboutChild: a.about ?? undefined,
       medicalInfo: a.medical_info ?? undefined,
+      friend1Name: p.friend1_name ?? undefined,
+      friend2Name: p.friend2_name ?? undefined,
       sortOut: p.sort_out || undefined,
       waiverAcceptedAt: p.waiver_accepted_at ? toMs(p.waiver_accepted_at) : undefined,
       registrationSource: p.registration_source ?? undefined,
@@ -896,6 +898,8 @@ async deleteTryout(id: string): Promise<void> {
           registration_source: p.registration_source,
           anonymous: p.anonymous,
           sort_out: p.sort_out,
+          friend1_name: p.friend1_name,
+          friend2_name: p.friend2_name,
         })),
       );
     }
@@ -968,6 +972,8 @@ async deleteTryout(id: string): Promise<void> {
           current_team: form.currentTeam || null,
           current_level: form.currentLevel || null,
           registration_source: 'manual',
+          friend1_name: form.friend1Name || null,
+          friend2_name: form.friend2Name || null,
         })
         .select('id')
         .single(),
@@ -1009,6 +1015,8 @@ async deleteTryout(id: string): Promise<void> {
     if (updates.sortOut !== undefined) participantPatch.sort_out = updates.sortOut;
     if (updates.waiverAcceptedAt !== undefined)
       participantPatch.waiver_accepted_at = toIso(updates.waiverAcceptedAt);
+    if (updates.friend1Name !== undefined) participantPatch.friend1_name = updates.friend1Name || null;
+    if (updates.friend2Name !== undefined) participantPatch.friend2_name = updates.friend2Name || null;
 
     if (updates.assignedAssessor !== undefined) {
       let assessorId: string | null = null;
@@ -1339,6 +1347,8 @@ async deleteTryout(id: string): Promise<void> {
           current_team: reg.current_team || null,
           current_level: reg.current_level || null,
           registration_source: 'qr',
+          friend1_name: reg.friend1_name || null,
+          friend2_name: reg.friend2_name || null,
         })
         .select('id')
         .single(),

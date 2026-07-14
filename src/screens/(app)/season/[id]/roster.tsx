@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { FlatList, Pressable, Text, View, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, EmptyState, ErrorState, Header, Input, LoadingState, Modal, Screen } from '@/components/ui';
@@ -12,6 +13,7 @@ export default function SeasonRosterScreen() {
   const { id } = route.params || {};
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const seasonQuery = useSeasonQuery(id);
   const addPlayer = useAddSeasonPlayerMutation();
   const importTeam = useImportSeasonPlayersFromTeamMutation();
@@ -75,7 +77,11 @@ export default function SeasonRosterScreen() {
       <FlatList
         data={season.roster}
         keyExtractor={(p) => p.id}
-        contentContainerStyle={{ padding: 16, paddingBottom: 100, flexGrow: 1 }}
+        contentContainerStyle={{
+          padding: 16,
+          paddingBottom: Math.max(100, insets.bottom + 80),
+          flexGrow: 1,
+        }}
         ListEmptyComponent={
           <EmptyState
             title="No roster players"
@@ -105,7 +111,10 @@ export default function SeasonRosterScreen() {
         )}
       />
 
-      <View className="absolute bottom-6 left-4 right-4">
+      <View
+        className="absolute left-4 right-4"
+        style={{ bottom: Math.max(24, insets.bottom + 12) }}
+      >
         <Button label="+ Add Player" onPress={() => setShowAdd(true)} />
       </View>
 
