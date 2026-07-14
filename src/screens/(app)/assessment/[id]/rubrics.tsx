@@ -140,7 +140,7 @@ export default function RubricsScreen() {
             {r.label} · {r.subskills.length} skills
           </Text>
         ))}
-        <Button label="Reset Skater Weights" size="sm" variant="ghost" onPress={() => resetWeights('skater')} />
+        {/* <Button label="Reset Skater Weights" size="sm" variant="ghost" onPress={() => resetWeights('skater')} /> */}
       </Card>
 
       {defaults.goalie.length > 0 ? (
@@ -153,7 +153,7 @@ export default function RubricsScreen() {
               {r.label} · {r.subskills.length} skills
             </Text>
           ))}
-          <Button label="Reset Goalie Weights" size="sm" variant="ghost" onPress={() => resetWeights('goalie')} />
+          {/* <Button label="Reset Goalie Weights" size="sm" variant="ghost" onPress={() => resetWeights('goalie')} /> */}
         </Card>
       ) : null}
 
