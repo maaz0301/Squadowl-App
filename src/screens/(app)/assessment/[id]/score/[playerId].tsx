@@ -300,7 +300,7 @@ export default function ScoreScreen() {
 
   const overall = weightedOverall(scores ?? {}, categories, weights);
 
-  const onSubmit = handleSubmit((data) => {
+  const onSubmit = handleSubmit(async (data) => {
     try {
       if (autoSaveTimeoutRef.current) {
         clearTimeout(autoSaveTimeoutRef.current);
@@ -317,7 +317,7 @@ export default function ScoreScreen() {
           return;
         }
 
-        saveEval.mutate({
+        await saveEval.mutateAsync({
           playerId: playerId!,
           form: data,
           evalId: evalId ?? undefined,

@@ -44,6 +44,7 @@ export default function RinksideScreen() {
   const markSessionCompleted = useSessionStore((s) => s.markSessionCompleted);
   const [session, setSession] = useState('Session 1');
   const [recommendation, setRecommendation] = useState<'Make' | 'Keep' | 'Bubble' | 'Release' | ''>('');
+  const [isSaving, setIsSaving] = useState(false);
   const translateX = useSharedValue(0);
   const previousStateRef = useRef<string>('');
   const lastLoadedRef = useRef<{ playerId: string; session: string } | null>(null);
@@ -229,18 +230,17 @@ export default function RinksideScreen() {
 
   const overall = weightedOverall(workingScores, categories, weights);
 
-  const saveAndNext = () => {
+  const saveAndNext = async () => {
     if (!player) return;
 
     const currentStateStr = JSON.stringify({ scores: workingScores, recommendation });
     const hasUnsavedChanges = previousStateRef.current !== currentStateStr;
 
-    const currentIdx = SESSIONS.indexOf(session);
     const getNextNavigation = () => {
-      if (currentIdx !== -1 && currentIdx < SESSIONS.length - 1) {
-        setSession(SESSIONS[currentIdx + 1]);
-      } else if (rinksideIndex < roster.length - 1) {
+      if (rinksideIndex < roster.length - 1) {
         setRinksideIndex(rinksideIndex + 1);
+      } else {
+        Alert.alert('Finished', 'You have reached the end of the roster.');
       }
     };
 
@@ -258,22 +258,28 @@ export default function RinksideScreen() {
       getNextNavigation();
       return;
     }
-    if (!recommendation) {
-      Alert.alert('Recommendation required', 'Please select a recommendation before saving.');
-      return;
+    // if (!recommendation) {
+    //   Alert.alert('Recommendation required', 'Please select a recommendation before saving.');
+    //   return;
+    // }
+    
+    try {
+      setIsSaving(true);
+      await saveEval.mutateAsync({
+        playerId: player.id,
+        form: { session, scores: workingScores, recommendation },
+      });
+      
+      markSessionCompleted(player.id, session);
+      previousStateRef.current = currentStateStr;
+      clearWorkingScores();
+      setRecommendation('');
+      getNextNavigation();
+    } catch (err: any) {
+      Alert.alert('Error Saving', err.message || 'Failed to save evaluation. Please try again.');
+    } finally {
+      setIsSaving(false);
     }
-    
-    markSessionCompleted(player.id, session);
-
-    saveEval.mutate({
-      playerId: player.id,
-      form: { session, scores: workingScores, recommendation },
-    });
-    
-    previousStateRef.current = currentStateStr;
-    clearWorkingScores();
-    setRecommendation('');
-    getNextNavigation();
   };
 
   return (
@@ -451,8 +457,8 @@ export default function RinksideScreen() {
           Swipe left/right to change players
         </Text>
         <View className="flex-row gap-2">
-          <Button label="← Prev" variant="secondary" className="flex-1" onPress={goPrev} disabled={rinksideIndex === 0} />
-          <Button label="Save & Next →" className="flex-1" onPress={saveAndNext} />
+          <Button label="← Prev" variant="secondary" className="flex-1" onPress={goPrev} disabled={rinksideIndex === 0 || isSaving} />
+          <Button label="Save & Next →" className="flex-1" onPress={saveAndNext} loading={isSaving} />
         </View>
         <Button
           label="Full Score Form"
