@@ -49,19 +49,15 @@ export default function ResultsScreen() {
         <View className="flex-row flex-wrap gap-2 items-center">
           <Button label="Team Builder" size="sm" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentTeamBuilder', params: { id: id } })} />
           <Button label="Compare" size="sm" variant="secondary" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentCompare', params: { id: id } })} />
-          <Button
-            label="Export"
-            size="sm"
-            variant="secondary"
-            disabled={isAssessorOnly}
-            onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentExport', params: { id: id } })}
-          />
+          {!isAssessorOnly && (
+            <Button
+              label="Export"
+              size="sm"
+              variant="secondary"
+              onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentExport', params: { id: id } })}
+            />
+          )}
         </View>
-        {isAssessorOnly && (
-          <Text className="text-xs italic" style={{ color: colors.inkMuted }}>
-            * Exporting results is disabled for the assessor role.
-          </Text>
-        )}
       </View>
 
       <FlatList
