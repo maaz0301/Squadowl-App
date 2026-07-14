@@ -465,7 +465,10 @@ export function useSetAvailabilityMutation(seasonId: string) {
       playerId: string;
       response: 'yes' | 'maybe' | 'no';
     }) => getDataSource().setEventAvailability(seasonId, eventId, playerId, response),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.season(seasonId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.season(seasonId) });
+      qc.invalidateQueries({ queryKey: queryKeys.seasons });
+    },
   });
 }
 
