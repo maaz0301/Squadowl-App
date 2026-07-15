@@ -490,6 +490,66 @@ export function useSetAvailabilityMutation(seasonId: string) {
       playerId: string;
       response: 'yes' | 'maybe' | 'no';
     }) => getDataSource().setEventAvailability(seasonId, eventId, playerId, response),
+    onMutate: async ({ eventId, playerId, response }) => {
+      await qc.cancelQueries({ queryKey: queryKeys.seasons });
+      await qc.cancelQueries({ queryKey: queryKeys.season(seasonId) });
+
+      const previousSeasons = qc.getQueryData<any[]>(queryKeys.seasons);
+      if (previousSeasons) {
+        qc.setQueryData(
+          queryKeys.seasons,
+          previousSeasons.map((season) => {
+            if (season.id === seasonId) {
+              return {
+                ...season,
+                events: (season.events || []).map((event: any) => {
+                  if (event.id === eventId) {
+                    return {
+                      ...event,
+                      availability: {
+                        ...(event.availability || {}),
+                        [playerId]: response,
+                      },
+                    };
+                  }
+                  return event;
+                }),
+              };
+            }
+            return season;
+          })
+        );
+      }
+
+      const previousSeason = qc.getQueryData<any>(queryKeys.season(seasonId));
+      if (previousSeason) {
+        qc.setQueryData(queryKeys.season(seasonId), {
+          ...previousSeason,
+          events: (previousSeason.events || []).map((event: any) => {
+            if (event.id === eventId) {
+              return {
+                ...event,
+                availability: {
+                  ...(event.availability || {}),
+                  [playerId]: response,
+                },
+              };
+            }
+            return event;
+          }),
+        });
+      }
+
+      return { previousSeasons, previousSeason };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousSeasons) {
+        qc.setQueryData(queryKeys.seasons, context.previousSeasons);
+      }
+      if (context?.previousSeason) {
+        qc.setQueryData(queryKeys.season(seasonId), context.previousSeason);
+      }
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.season(seasonId) });
       qc.invalidateQueries({ queryKey: queryKeys.seasons });

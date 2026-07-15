@@ -450,55 +450,62 @@ export default function PlayerHubScreen() {
           <Text style={{ color: colors.ink }}>
             Link {player.first} to a guardian account to grant them portal access.
           </Text>
-          {player.guardianEmail && !player.linkedGuardianId ? (
-            <Button
-              label={`Invite ${player.guardianEmail}`}
-              onPress={async () => {
-                const email = player.guardianEmail!;
-                try {
-                  const member = await inviteMut.mutateAsync({ email, role: 'guardian' });
-                  await linkGuardianMut.mutateAsync({
-                    guardianId: member.userId!,
-                    tryoutId: id!,
-                    playerId: player.athleteId!,
-                  });
-                  setShowGuardianLink(false);
-                } catch (error: any) {
-                  if (error.message?.includes('User not found')) {
-                    // Auto-create the user
-                    try {
-                      // Generate a random password (e.g. 6 chars)
-                      const defaultPassword = Math.random().toString(36).slice(-6) + 'Aa1!';
-                      const name = player.guardianName || 'Guardian';
-                      
-                      const newMember = await createAndInviteMut.mutateAsync({
-                        email,
-                        password: defaultPassword,
-                        name,
-                        role: 'guardian'
-                      });
+          {player.guardianEmail ? (
+            <View className="gap-2">
+              {player.linkedGuardianId && (
+                <Text style={{ color: colors.inkMuted }} className="text-sm mb-1">
+                  This guardian is already linked. Sending a new invite will refresh their access.
+                </Text>
+              )}
+              <Button
+                label={`Invite ${player.guardianEmail}`}
+                onPress={async () => {
+                  const email = player.guardianEmail!;
+                  try {
+                    const member = await inviteMut.mutateAsync({ email, role: 'guardian' });
+                    await linkGuardianMut.mutateAsync({
+                      guardianId: member.userId!,
+                      tryoutId: id!,
+                      playerId: player.athleteId!,
+                    });
+                    setShowGuardianLink(false);
+                  } catch (error: any) {
+                    if (error.message?.includes('User not found')) {
+                      // Auto-create the user
+                      try {
+                        // Generate a random password (e.g. 6 chars)
+                        const defaultPassword = Math.random().toString(36).slice(-6) + 'Aa1!';
+                        const name = player.guardianName || 'Guardian';
+                        
+                        const newMember = await createAndInviteMut.mutateAsync({
+                          email,
+                          password: defaultPassword,
+                          name,
+                          role: 'guardian'
+                        });
 
-                      await linkGuardianMut.mutateAsync({
-                        guardianId: newMember.userId!,
-                        tryoutId: id!,
-                        playerId: player.athleteId!,
-                      });
-                      
-                      setShowGuardianLink(false);
-                      Alert.alert(
-                        'Guardian Created', 
-                        `An account was created for ${email} and an email was sent to them containing their temporary password:\n\n${defaultPassword}`
-                      );
-                    } catch (createErr: any) {
-                      Alert.alert('Invite Failed', createErr.message || 'Could not auto-create guardian account.');
+                        await linkGuardianMut.mutateAsync({
+                          guardianId: newMember.userId!,
+                          tryoutId: id!,
+                          playerId: player.athleteId!,
+                        });
+                        
+                        setShowGuardianLink(false);
+                        Alert.alert(
+                          'Guardian Created', 
+                          `An account was created for ${email} and an email was sent to them containing their temporary password:\n\n${defaultPassword}`
+                        );
+                      } catch (createErr: any) {
+                        Alert.alert('Invite Failed', createErr.message || 'Could not auto-create guardian account.');
+                      }
+                    } else {
+                      Alert.alert('Invite Failed', error.message || 'Could not link guardian.');
                     }
-                  } else {
-                    Alert.alert('Invite Failed', error.message || 'Could not link guardian.');
                   }
-                }
-              }}
-              loading={inviteMut.isPending || linkGuardianMut.isPending || createAndInviteMut.isPending}
-            />
+                }}
+                loading={inviteMut.isPending || linkGuardianMut.isPending || createAndInviteMut.isPending}
+              />
+            </View>
           ) : (
             <Text style={{ color: colors.inkMuted }}>
               No email on file. Edit player profile to add a guardian email first.

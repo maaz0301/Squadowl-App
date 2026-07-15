@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FlatList, View, Text, Pressable } from 'react-native';
+import { FlatList, View, Text, Pressable, Alert } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 import {
   Screen,
@@ -31,6 +31,14 @@ function EventCard({ item, playerId, colors }: { item: SeasonEvent & { seasonNam
   const rsvpMutation = useSetAvailabilityMutation(item.seasonId);
   const rsvp = item.availability?.[playerId] || 'pending';
 
+  const handleRsvp = async (response: 'yes' | 'maybe' | 'no') => {
+    try {
+      await rsvpMutation.mutateAsync({ eventId: item.id, playerId, response });
+    } catch (error: any) {
+      Alert.alert('RSVP Failed', error.message || 'Could not save your response.');
+    }
+  };
+
   return (
     <Card className="mb-3">
       <View className="flex-row justify-between items-start mb-2">
@@ -38,9 +46,7 @@ function EventCard({ item, playerId, colors }: { item: SeasonEvent & { seasonNam
             <Text className="text-base font-bold" style={{ color: colors.ink }}>
               {item.title}
             </Text>
-            <Text className="text-sm" style={{ color: colors.primary }}>
-              {item.seasonName}
-            </Text>
+            <ExpandableText text={item.seasonName} className="text-sm" style={{ color: colors.primary }} />
           </View>
         <Badge label={item.type} variant="info" />
       </View>
@@ -65,21 +71,21 @@ function EventCard({ item, playerId, colors }: { item: SeasonEvent & { seasonNam
         <Text className="text-sm font-bold mb-2" style={{ color: colors.inkMuted }}>RSVP</Text>
         <View className="flex-row gap-2">
           <Pressable
-            onPress={() => rsvpMutation.mutate({ eventId: item.id, playerId, response: 'yes' })}
+            onPress={() => handleRsvp('yes')}
             className="flex-1 py-2 items-center rounded-md"
             style={{ backgroundColor: rsvp === 'yes' ? colors.success : colors.tile }}
           >
             <Text className="font-bold" style={{ color: rsvp === 'yes' ? '#fff' : colors.ink }}>Yes</Text>
           </Pressable>
           <Pressable
-            onPress={() => rsvpMutation.mutate({ eventId: item.id, playerId, response: 'maybe' })}
+            onPress={() => handleRsvp('maybe')}
             className="flex-1 py-2 items-center rounded-md"
             style={{ backgroundColor: rsvp === 'maybe' ? colors.warning : colors.tile }}
           >
             <Text className="font-bold" style={{ color: rsvp === 'maybe' ? '#fff' : colors.ink }}>Maybe</Text>
           </Pressable>
           <Pressable
-            onPress={() => rsvpMutation.mutate({ eventId: item.id, playerId, response: 'no' })}
+            onPress={() => handleRsvp('no')}
             className="flex-1 py-2 items-center rounded-md"
             style={{ backgroundColor: rsvp === 'no' ? colors.error : colors.tile }}
           >
@@ -105,9 +111,7 @@ function TryoutSeasonCard({ item, colors, playerId }: { item: any; colors: any; 
       <Card accent className="mb-3">
         <View className="flex-row justify-between items-start">
           <View className="flex-1 mr-2">
-            <Text className="text-lg font-display font-bold mb-1" style={{ color: colors.ink }}>
-              {item.name}
-            </Text>
+            <ExpandableText text={item.name} className="text-lg font-display font-bold mb-1" style={{ color: colors.ink }} />
             {item._type === 'season' ? (
               <Text className="text-sm mb-2" style={{ color: colors.inkMuted }}>
                 {item.teamName} · {item.sport}
@@ -187,7 +191,7 @@ export default function GuardianPortalScreen() {
         <View className="flex-row items-center gap-4 mb-4 mt-2">
           <Avatar first={athlete.firstName} last={athlete.lastName} size={64} uri={athlete.avatarUrl} />
           <View>
-            <Text className="text-2xl font-display font-bold" style={{ color: colors.ink }}>
+            <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
               {athlete.firstName} {athlete.lastName}
             </Text>
             <Text className="text-base mt-1" style={{ color: colors.inkMuted }}>

@@ -2424,8 +2424,54 @@ async deleteTryout(id: string): Promise<void> {
 
   async removeOrgMember(memberId: string): Promise<void> {
     const { supabase } = await this.ctx();
-    const { error } = await supabase.from('memberships').delete().eq('id', memberId);
-    if (error) throw new Error(error.message);
+
+    // 1. Try to find and delete from memberships
+    const { data: membership } = await supabase
+      .from('memberships')
+      .select('id')
+      .eq('id', memberId)
+      .maybeSingle();
+
+    if (membership) {
+      const { error } = await supabase.from('memberships').delete().eq('id', memberId);
+      if (error) throw new Error(error.message);
+      return;
+    }
+
+    // 2. Try to find and delete from tryout_assessors
+    const { data: assessor } = await supabase
+      .from('tryout_assessors')
+      .select('id')
+      .eq('id', memberId)
+      .maybeSingle();
+
+    if (assessor) {
+      const { error } = await supabase.from('tryout_assessors').delete().eq('id', memberId);
+      if (error) throw new Error(error.message);
+      return;
+    }
+
+    // 3. Try to find and clear guardian info from athletes
+    const { data: athlete } = await supabase
+      .from('athletes')
+      .select('id, guardian_email, account_id')
+      .eq('id', memberId)
+      .maybeSingle();
+
+    if (athlete && athlete.guardian_email) {
+      const { error } = await supabase
+        .from('athletes')
+        .update({
+          guardian_name: null,
+          guardian_email: null,
+          guardian_phone: null,
+          guardian_user_id: null,
+        })
+        .eq('account_id', athlete.account_id)
+        .eq('guardian_email', athlete.guardian_email);
+      if (error) throw new Error(error.message);
+      return;
+    }
   }
 
   async linkGuardianToAthlete(guardianId: string, tryoutId: string, playerId: string): Promise<import('../types').Player> {
