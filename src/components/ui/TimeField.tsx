@@ -63,9 +63,45 @@ export function TimeField({ label, value, onChange, placeholder = 'Select a time
   const openPicker = () => {
     const p = parse(value);
     const t = p ? to12(p.h24) : { hour: 9, period: 'AM' as const };
-    setHour(t.hour);
-    setMinute(p?.min ?? 0);
-    setPeriod(t.period);
+    let m = p?.min ?? 0;
+    let newHour = t.hour;
+    let newPeriod = t.period;
+
+    if (!p && disablePast) {
+      const now = new Date();
+      let isToday = false;
+      if (dateValue) {
+        const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue);
+        if (match) {
+           const y = Number(match[1]);
+           const mo = Number(match[2]) - 1;
+           const d = Number(match[3]);
+           if (y === now.getFullYear() && mo === now.getMonth() && d === now.getDate()) isToday = true;
+        }
+      } else {
+        isToday = true;
+      }
+
+      if (isToday) {
+        const h24 = to24(newHour, newPeriod);
+        if (h24 < now.getHours() || (h24 === now.getHours() && m < now.getMinutes())) {
+           let nextH24 = now.getHours() + 1;
+           if (nextH24 > 23) {
+             nextH24 = 23;
+             m = 59;
+           } else {
+             m = 0;
+           }
+           const nextT12 = to12(nextH24);
+           newHour = nextT12.hour;
+           newPeriod = nextT12.period;
+        }
+      }
+    }
+
+    setHour(newHour);
+    setMinute(m);
+    setPeriod(newPeriod);
     setMode('hour');
     setOpen(true);
   };
@@ -73,6 +109,29 @@ export function TimeField({ label, value, onChange, placeholder = 'Select a time
   const confirm = (h = hour, m = minute, pd = period) => {
     onChange(`${pad(to24(h, pd))}:${pad(m)}`);
     setOpen(false);
+  };
+
+  const isCurrentStatePast = () => {
+    if (!disablePast) return false;
+    const now = new Date();
+    let isToday = false;
+    if (dateValue) {
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue);
+      if (match) {
+        const p = { y: Number(match[1]), m: Number(match[2]) - 1, d: Number(match[3]) };
+        if (p.y < now.getFullYear() || (p.y === now.getFullYear() && p.m < now.getMonth()) || (p.y === now.getFullYear() && p.m === now.getMonth() && p.d < now.getDate())) return true;
+        if (p.y === now.getFullYear() && p.m === now.getMonth() && p.d === now.getDate()) isToday = true;
+      }
+    } else {
+      isToday = true;
+    }
+    
+    if (!isToday) return false;
+
+    const h24 = to24(hour, period);
+    if (h24 < now.getHours()) return true;
+    if (h24 === now.getHours()) return minute < now.getMinutes();
+    return false;
   };
 
   // hand angle in degrees, 0 = pointing up
@@ -142,7 +201,7 @@ export function TimeField({ label, value, onChange, placeholder = 'Select a time
         footer={
           <View className="flex-row gap-2 mt-4">
             <Button label="Cancel" variant="ghost" className="flex-1" onPress={() => setOpen(false)} />
-            <Button label="Done" className="flex-1" onPress={() => confirm()} />
+            <Button label="Done" className="flex-1" onPress={() => confirm()} disabled={isCurrentStatePast()} />
           </View>
         }
       >
@@ -226,7 +285,8 @@ export function TimeField({ label, value, onChange, placeholder = 'Select a time
               const x = CENTER + RADIUS * Math.sin(theta) - CELL / 2;
               const y = CENTER - RADIUS * Math.cos(theta) - CELL / 2;
               const selected = mode === 'hour' ? n === hour : n === minute;
-              return <Pressable
+              return (
+                <Pressable
                     key={n}
                     disabled={isPastTime(n)}
                     onPress={() => {

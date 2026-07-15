@@ -326,7 +326,7 @@ export default function DashboardScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={{
           paddingHorizontal: 16,
-          paddingBottom: Math.max(100, insets.bottom + 80),
+          paddingBottom: 24,
           flexGrow: 1,
         }}
         ListHeaderComponent={
@@ -483,8 +483,12 @@ export default function DashboardScreen() {
 
       {!isGuardianOnly && (
         <View
-          className="absolute left-4 right-4"
-          style={{ bottom: Math.max(24, insets.bottom + 12) }}
+          className="px-4 pt-4 border-t"
+          style={{
+            backgroundColor: colors.bg,
+            borderColor: colors.border,
+            paddingBottom: Math.max(24, insets.bottom + 12),
+          }}
         >
           <Button label={fabLabel} onPress={fabAction} />
         </View>
