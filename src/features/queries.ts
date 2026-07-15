@@ -335,8 +335,8 @@ export function useGenerateTeamBuilderMutation(tryoutId: string) {
     mutationFn: (config: import('@/data/teamBuilder').TeamBuilderConfig) =>
       withTimeout(
         getDataSource().generateTeamBuilder(tryoutId, config),
-        20000,
-        'Team builder generation timed out. The server might be busy, please try again.'
+        60000,
+        'Team builder generation timed out. Claude AI might be taking longer than usual, please try again.'
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) }),
   });

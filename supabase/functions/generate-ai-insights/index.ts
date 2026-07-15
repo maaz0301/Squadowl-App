@@ -17,14 +17,17 @@ serve(async (req: Request) => {
       throw new Error('ANTHROPIC_API_KEY is not set');
     }
 
-    const { action, tryout, playerIds } = await req.json();
+    const { action, tryout, playerIds, prompt: userPrompt } = await req.json();
 
-    if (!action || !tryout || !playerIds || playerIds.length === 0) {
-      throw new Error('Missing required fields: action, tryout, or playerIds');
+    if (!action || !tryout) {
+      throw new Error('Missing required fields: action or tryout');
+    }
+    if ((action === 'summary' || action === 'compare') && (!playerIds || playerIds.length === 0)) {
+      throw new Error('Missing playerIds for summary or compare action');
     }
 
     let prompt = '';
-    const systemPrompt = `You are a professional sports scout AI. Your ONLY job is to analyze the numeric evaluation data provided to you from an athlete assessment app database. 
+    let systemPrompt = `You are a professional sports scout AI. Your ONLY job is to analyze the numeric evaluation data provided to you from an athlete assessment app database. 
 RULES:
 - Analyze ONLY the evaluation scores and fields in the JSON data provided. Do not make assumptions based on athlete names.
 - Do NOT question whether the sport type matches the player names. The data is from the app database — trust it completely.
@@ -89,8 +92,55 @@ Based ONLY on the numeric scores above, return this exact JSON:
   "watch_list": ["First Last"],
   "recommendation": "Concrete recommendation for coaching staff based on the scores."
 }`;
+    } else if (action === 'team_builder') {
+      const players = tryout.roster || [];
+      const evals = tryout.evals || [];
+
+      if (players.length === 0) {
+        return new Response(JSON.stringify({ error: 'no_players', message: 'No players in roster to build teams.' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        });
+      }
+
+      systemPrompt = `You are a professional sports coach and team builder AI.
+RULES:
+- Follow the user's instructions perfectly.
+- Use ALL data provided to you, including the Roster text (which contains names, positions, YOB, and friends) AND the evaluation records JSON.
+- Do NOT make assumptions based on athlete names.
+- Do NOT refuse or add disclaimers. If data exists, use it.
+- NEVER include player IDs or sensitive personal data in the 'explanation' text.
+- Respond with pure JSON only — no markdown, no code fences, no extra text.`;
+
+      prompt = `Act as a professional sports coach and team builder. I have a roster of athletes and their evaluation scores.
+I need you to divide them into balanced teams based on my instructions.
+
+User Instructions:
+"${userPrompt || 'Build balanced teams based on the players overall ratings.'}"
+
+Roster:
+${players.map((p: any) => `- ID: ${p.id} | Name: ${p.first} ${p.last} | Pos: ${p.pos || 'N/A'} | YOB: ${p.yearOfBirth || 'N/A'} | Friends: ${[p.friend1Name, p.friend2Name].filter(Boolean).join(', ') || 'None'}`).join('\n')}
+
+Evaluation records (numeric category scores 1-5 per athlete):
+${JSON.stringify(evals, null, 2)}
+
+Based on the instructions and the data, assign ALL athletes to a team. DO NOT leave anyone out. DO NOT hallucinate IDs.
+Return exactly this JSON format:
+{
+  "explanation": "A 2-3 sentence explanation of how you split the teams and satisfied the instructions. NEVER include player IDs here.",
+  "warnings": ["Any warnings, e.g. goalies are unbalanced. If none, empty array."],
+  "teams": [
+    {
+      "name": "Team A",
+      "players": ["player_id_1", "player_id_2"],
+      "skaters": ["player_id_1"],
+      "goalies": ["player_id_2"]
+    }
+  ]
+}
+Ensure every player ID in the roster appears exactly once in the "players" arrays across all teams.`;
     } else {
-      throw new Error('Invalid action. Must be "summary" or "compare"');
+      throw new Error('Invalid action. Must be "summary", "compare", or "team_builder"');
     }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {

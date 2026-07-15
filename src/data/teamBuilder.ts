@@ -35,11 +35,13 @@ export interface TeamBuilderState {
   };
   ranks: { playerId: string; overall: number; rank: number }[];
   warnings: string[];
+  explanation?: string;
   teams: TeamBuilderTeam[];
 }
 
 export interface TeamBuilderConfig {
   teamCount: number;
+  prompt?: string;
   teamNames?: string[];
   sortMethod?: 'snake' | 'balanced';
   keepFriendPackages?: boolean;
@@ -86,7 +88,21 @@ export function buildTeams(tryout: Tryout, config: TeamBuilderConfig): TeamBuild
     ranked.push({ playerId: p.id, overall: 0, rank: ranked.length + 1 });
   }
 
-  const teamCount = Math.max(2, config.teamCount);
+  let teamCount = Math.max(2, config.teamCount);
+  let sortMethod = config.sortMethod ?? 'snake';
+  
+  // Mock AI parsing from prompt
+  if (config.prompt) {
+    const promptLower = config.prompt.toLowerCase();
+    const match = promptLower.match(/(\d+)\s*teams?/);
+    if (match) {
+      teamCount = Math.max(2, parseInt(match[1], 10));
+    }
+    if (promptLower.includes('balanced') || promptLower.includes('average')) {
+      sortMethod = 'balanced';
+    }
+  }
+
   const teamNames =
     config.teamNames ??
     Array.from({ length: teamCount }, (_, i) => `Team ${String.fromCharCode(65 + i)}`);
@@ -120,7 +136,6 @@ export function buildTeams(tryout: Tryout, config: TeamBuilderConfig): TeamBuild
     }
   }
 
-  const sortMethod = config.sortMethod ?? 'snake';
   const pool = ranked.filter((r) => !assigned.has(r.playerId));
 
   if (sortMethod === 'snake') {

@@ -1424,7 +1424,47 @@ async deleteTryout(id: string): Promise<void> {
   async generateTeamBuilder(tryoutId: string, config: TeamBuilderConfig): Promise<TeamBuilderState> {
     const tryout = await this.getTryout(tryoutId);
     if (!tryout) throw new Error('Tryout not found');
-    const result = buildTeams(tryout, config);
+    
+    let result: TeamBuilderState;
+    if (config.prompt) {
+      // Call Claude via edge function
+      const { supabase } = await this.ctx();
+      const { data, error } = await supabase.functions.invoke('generate-ai-insights', {
+        body: { action: 'team_builder', tryout, prompt: config.prompt }
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+      if (data?.error) {
+        throw new Error(data.message || data.error);
+      }
+      
+      // Merge Claude's response with local state structure
+      result = {
+        generatedAt: Date.now(),
+        sortMethod: config.sortMethod ?? 'balanced',
+        config: {
+          teamCount: data.teams?.length || config.teamCount,
+          teamNames: data.teams?.map((t: any) => t.name) || [],
+          keepFriendPackages: config.keepFriendPackages ?? true,
+          splitGoalies: config.splitGoalies ?? true,
+        },
+        ranks: [], // We can omit full rankings or compute them locally if needed
+        warnings: data.warnings || [],
+        explanation: data.explanation,
+        teams: (data.teams || []).map((t: any, i: number) => ({
+          index: i,
+          id: `ai-team-${i}`,
+          name: t.name || `Team ${i+1}`,
+          players: t.players || [],
+          skaters: t.skaters || [],
+          goalies: t.goalies || []
+        }))
+      };
+    } else {
+      result = buildTeams(tryout, config);
+    }
+    
     await this.updateTryout(tryoutId, { teamBuilder: result });
     return result;
   }
