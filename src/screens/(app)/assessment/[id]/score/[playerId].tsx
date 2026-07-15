@@ -131,7 +131,7 @@ export default function ScoreScreen() {
   const previousFormRef = useRef<string>('');
   const lastLoadedRef = useRef<{ playerId: string; evalId?: string; session?: string } | null>(null);
 
-  const loadEvalData = (targetEvalId?: string, targetSession?: string, preserveWorkingScores: boolean = false) => {
+  const loadEvalData = (targetEvalId?: string | null, targetSession?: string, preserveWorkingScores: boolean = false) => {
     activeMutationRef.current = null;
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
@@ -140,11 +140,11 @@ export default function ScoreScreen() {
 
     const currentSess = targetSession ?? currentSession;
     if (playerId) {
-      lastLoadedRef.current = { playerId, evalId: targetEvalId, session: currentSess };
+      lastLoadedRef.current = { playerId, evalId: targetEvalId ?? undefined, session: currentSess };
     }
 
     const targetEval = targetEvalId
-      ? tryoutQuery.data?.evals.find((e) => e.id === targetEvalId)
+      ? tryoutQuery.data?.evals.find((e) => e.id === targetEvalId && e.session === currentSess)
       : undefined;
 
     const scoresToSet = targetEval
@@ -153,11 +153,12 @@ export default function ScoreScreen() {
 
     setWorkingScores(scoresToSet);
 
+    const currentValues = getValues();
     const newValues = {
       session: targetEval?.session ?? currentSess,
-      strengths: targetEval?.strengths ?? '',
-      improve: targetEval?.improve ?? '',
-      recommendation: targetEval?.recommendation ?? '',
+      strengths: preserveWorkingScores ? currentValues.strengths : (targetEval?.strengths ?? ''),
+      improve: preserveWorkingScores ? currentValues.improve : (targetEval?.improve ?? ''),
+      recommendation: preserveWorkingScores ? currentValues.recommendation : (targetEval?.recommendation ?? ''),
       scores: scoresToSet,
     };
 
@@ -173,7 +174,7 @@ export default function ScoreScreen() {
     const lastSession = lastLoadedRef.current?.session;
 
     const isPlayerChanged = lastPlayerId && lastPlayerId !== playerId;
-    const isEvalChanged = lastPlayerId && lastEvalId !== evalId;
+    const isEvalChanged = lastPlayerId && lastEvalId !== (evalId ?? undefined);
     const isSessionChanged = lastPlayerId && lastSession !== currentSession;
 
     if (isPlayerChanged || isEvalChanged || isSessionChanged) {
@@ -198,10 +199,10 @@ export default function ScoreScreen() {
 
       const shouldPreserve = !isPlayerChanged && !isSessionChanged;
 
-      lastLoadedRef.current = { playerId, evalId, session: currentSession };
+      lastLoadedRef.current = { playerId, evalId: evalId ?? undefined, session: currentSession };
       loadEvalData(evalId, currentSession, shouldPreserve);
     } else if (!lastLoadedRef.current) {
-      lastLoadedRef.current = { playerId, evalId, session: currentSession };
+      lastLoadedRef.current = { playerId, evalId: evalId ?? undefined, session: currentSession };
       loadEvalData(evalId, currentSession, true);
     }
   }, [tryoutQuery.data, playerId, evalId, currentSession]);
@@ -210,9 +211,9 @@ export default function ScoreScreen() {
     setValue('scores', workingScores);
   }, [workingScores]);
 
-  const currentFormRef = useRef<{ form: ScoreForm; playerId: string; evalId?: string; session: string } | null>(null);
+  const currentFormRef = useRef<{ form: ScoreForm; playerId: string; evalId?: string | null; session: string } | null>(null);
   useEffect(() => {
-    currentFormRef.current = { form: formData, playerId, evalId, session: currentSession };
+    currentFormRef.current = { form: formData, playerId, evalId: evalId ?? null, session: currentSession };
   }, [formData, playerId, evalId, currentSession]);
 
   useEffect(() => {
@@ -343,7 +344,7 @@ export default function ScoreScreen() {
       const currentIdx = SESSIONS.indexOf(data.session);
       if (currentIdx !== -1 && currentIdx < SESSIONS.length - 1) {
         const nextSess = SESSIONS[currentIdx + 1];
-        const nextEvalId = scoredSessions.get(nextSess);
+        const nextEvalId = scoredSessions.get(nextSess) || null;
         navigation.setParams({ evalId: nextEvalId, session: nextSess });
       } else {
         clearWorkingScores();
@@ -424,7 +425,7 @@ export default function ScoreScreen() {
                   if (scoredSessions.has(s)) {
                     targetId = scoredSessions.get(s);
                   } else {
-                    targetId = undefined;
+                    targetId = null;
                   }
 
                   navigation.setParams({ evalId: targetId, session: s });
@@ -475,16 +476,22 @@ export default function ScoreScreen() {
           </Text>
         )}
       </View>
-      <View className="flex-row flex-wrap mb-4">
-        {RECOMMENDATIONS.filter(Boolean).map((rec) => (
-          <Chip
-            key={rec}
-            label={rec}
-            active={watch('recommendation') === rec}
-            onPress={() => setValue('recommendation', rec, { shouldValidate: true })}
-          />
-        ))}
-      </View>
+      <Controller
+        control={control}
+        name="recommendation"
+        render={({ field: { value, onChange } }) => (
+          <View className="flex-row flex-wrap mb-4 gap-2">
+            {RECOMMENDATIONS.filter(Boolean).map((rec) => (
+              <Chip
+                key={rec}
+                label={rec}
+                active={value === rec}
+                onPress={() => onChange(value === rec ? '' : rec)}
+              />
+            ))}
+          </View>
+        )}
+      />
 
       <Controller
         control={control}

@@ -396,7 +396,19 @@ export class SupabaseDataSource implements DataSource {
 
   async logout(): Promise<void> {
     this.accountId = null;
-    await getSupabase().auth.signOut();
+    try {
+      await getSupabase().auth.signOut();
+    } catch (error) {
+      console.warn('Supabase signOut failed, force clearing auth storage:', error);
+    } finally {
+      const { storage } = require('@/lib/storage');
+      const keys = storage.getAllKeys();
+      for (const key of keys) {
+        if (key.includes('auth-token') || key.startsWith('sb-')) {
+          storage.remove(key);
+        }
+      }
+    }
   }
 
   async getSession(): Promise<AuthSession | null> {

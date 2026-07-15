@@ -3,6 +3,8 @@ import { persist } from 'zustand/middleware';
 import type { AuthSession, UserProfile } from '@/data/types';
 import { getDataSource } from '@/data';
 import { zustandStorage } from '@/lib/storage';
+import { queryClient } from '@/lib/queryClient';
+import { useSessionStore } from './sessionStore';
 
 interface AuthState {
   session: AuthSession | null;
@@ -25,23 +27,47 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       session: null,
       isHydrated: false,
-      setSession: (session) => set({ session }),
+      setSession: (session) => {
+        queryClient.clear();
+        set({ session });
+      },
       setHydrated: (v) => set({ isHydrated: v }),
       login: async (email, password) => {
         const session = await getDataSource().login(email, password);
-        set({ session });
+        get().setSession(session);
       },
       signup: async (displayName, email, password, accountType) => {
         const session = await getDataSource().signup(displayName, email, password, accountType);
-        set({ session });
+        get().setSession(session);
       },
       logout: async () => {
-        await getDataSource().logout();
-        set({ session: null });
+        try {
+          await getDataSource().logout();
+        } catch (e) {
+          console.error('Error during data source logout:', e);
+        } finally {
+          queryClient.clear();
+          useSessionStore.setState({
+            currentTryoutId: null,
+            currentPlayerId: null,
+            currentEvalId: null,
+            workingScores: {},
+            rosterFilter: 'all',
+            rinksideIndex: 0,
+            activeAssessor: null,
+            combineTryoutIds: [],
+            completedSessions: {},
+          });
+          get().setSession(null);
+        }
       },
       restoreSession: async () => {
         try {
           const session = await getDataSource().getSession();
+          const currentSession = get().session;
+          if (session?.user?.id !== currentSession?.user?.id) {
+            queryClient.clear();
+          }
           set({ session, isHydrated: true });
         } catch (e) {
           console.error('Failed to restore session:', e);
@@ -59,15 +85,29 @@ export const useAuthStore = create<AuthState>()(
       verifyPasswordResetOtp: async (email, token) => {
         await getDataSource().verifyPasswordResetOtp(email, token);
         const session = await getDataSource().getSession();
+        const currentSession = get().session;
+        if (session?.user?.id !== currentSession?.user?.id) {
+          queryClient.clear();
+        }
         set({ session, isHydrated: true });
       },
       resetPasswordWithOtp: async (email, token, newPassword) => {
         await getDataSource().resetPasswordWithOtp(email, token, newPassword);
         const session = await getDataSource().getSession();
+        const currentSession = get().session;
+        if (session?.user?.id !== currentSession?.user?.id) {
+          queryClient.clear();
+        }
         set({ session, isHydrated: true });
       },
       updatePassword: async (password) => {
         await getDataSource().updatePassword(password);
+        const session = await getDataSource().getSession();
+        const currentSession = get().session;
+        if (session?.user?.id !== currentSession?.user?.id) {
+          queryClient.clear();
+        }
+        set({ session });
       },
     }),
     {

@@ -161,22 +161,27 @@ export default function RinksideScreen() {
       }
     }
 
-    const evalForSession = previousEvals.find(e => e.session === session);
-    let loadedScores = {};
-    let loadedRec = '';
+    const isPlayerChanged = lastPlayerId !== player.id;
+    const isSessionChanged = lastSession !== session;
 
-    if (evalForSession) {
-      loadedScores = mapLegacyScores(evalForSession.scores, categories);
-      loadedRec = evalForSession.recommendation || '';
-    } else {
-      loadedScores = mapLegacyScores({}, categories);
-      loadedRec = '';
+    if (isPlayerChanged || isSessionChanged || !lastLoadedRef.current) {
+      const evalForSession = previousEvals.find(e => e.session === session);
+      let loadedScores = {};
+      let loadedRec = '';
+
+      if (evalForSession) {
+        loadedScores = mapLegacyScores(evalForSession.scores, categories);
+        loadedRec = evalForSession.recommendation || '';
+      } else {
+        loadedScores = mapLegacyScores({}, categories);
+        loadedRec = '';
+      }
+
+      setWorkingScores(loadedScores);
+      setRecommendation(loadedRec as any);
+      previousStateRef.current = JSON.stringify({ scores: loadedScores, recommendation: loadedRec });
+      lastLoadedRef.current = { playerId: player.id, session };
     }
-
-    setWorkingScores(loadedScores);
-    setRecommendation(loadedRec as any);
-    previousStateRef.current = JSON.stringify({ scores: loadedScores, recommendation: loadedRec });
-    lastLoadedRef.current = { playerId: player.id, session };
   }, [player?.id, session, previousEvals]);
 
   const handleSessionChange = (newSession: string) => {

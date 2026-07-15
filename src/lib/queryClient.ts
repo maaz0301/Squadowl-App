@@ -1,6 +1,18 @@
-import { QueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryCache } from '@tanstack/react-query';
 
 export const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error) => {
+      if (error.message === 'Not authenticated' || error.message.includes('Auth session missing')) {
+        try {
+          const { useAuthStore } = require('../state/authStore');
+          useAuthStore.getState().logout();
+        } catch (e) {
+          console.error('Failed to auto-logout on auth failure:', e);
+        }
+      }
+    },
+  }),
   defaultOptions: {
     queries: {
       staleTime: 30_000,

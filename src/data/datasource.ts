@@ -1,5 +1,6 @@
 import type {
   AddPlayerForm,
+  Assessor,
   AdminStats,
   AdminUserRow,
   AiCompareSummary,
@@ -72,7 +73,13 @@ export interface DataSource {
   uploadPlayerPhoto(athleteId: string, fileUri: string, fileType: string): Promise<string>;
 
   // Evaluations
-  saveEvaluation(tryoutId: string, playerId: string, form: ScoreForm, evalId?: string): Promise<Evaluation>;
+  saveEvaluation(
+    tryoutId: string,
+    playerId: string,
+    form: ScoreForm,
+    evalId?: string,
+    activeAssessor?: Assessor | null,
+  ): Promise<Evaluation>;
   deleteEvaluation(tryoutId: string, evalId: string): Promise<void>;
 
   // Registration (QR mock)
