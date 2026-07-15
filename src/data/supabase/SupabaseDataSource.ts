@@ -1293,10 +1293,13 @@ async deleteTryout(id: string): Promise<void> {
       await supabase.from('tryouts').select('registration_code').eq('id', tryoutId).single(),
     ) as Row;
     if (!row.registration_code) {
-      await supabase
-        .from('tryouts')
-        .update({ registration_code: generateCloudCode(), registration_open: true })
-        .eq('id', tryoutId);
+      unwrap(
+        await supabase
+          .from('tryouts')
+          .update({ registration_code: generateCloudCode(), registration_open: true })
+          .eq('id', tryoutId)
+          .select()
+      );
     }
     const result = await this.getTryout(tryoutId);
     if (!result) throw new Error('Tryout not found');

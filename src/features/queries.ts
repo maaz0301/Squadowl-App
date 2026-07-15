@@ -253,7 +253,12 @@ export function useEnsureCloudSessionMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (tryoutId: string) => getDataSource().ensureCloudSession(tryoutId),
-    onSuccess: (tryout) => qc.invalidateQueries({ queryKey: queryKeys.tryout(tryout.id) }),
+    onSuccess: (tryout) => {
+      qc.setQueryData(queryKeys.tryout(tryout.id), tryout);
+      qc.invalidateQueries({ queryKey: queryKeys.tryout(tryout.id) });
+      qc.invalidateQueries({ queryKey: queryKeys.tryouts(true) });
+      qc.invalidateQueries({ queryKey: queryKeys.tryouts(false) });
+    },
   });
 }
 
