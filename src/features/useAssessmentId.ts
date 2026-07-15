@@ -1,9 +1,10 @@
 import { useRoute } from '@react-navigation/native';
 import { useSessionStore } from '@/state/sessionStore';
 
-function normalizeParam(value: string | string[] | undefined): string | undefined {
+function normalizeParam(value: any): string | undefined {
   if (value == null) return undefined;
-  return Array.isArray(value) ? value[0] : value;
+  if (typeof value === 'object' && value.id) return String(value.id);
+  return Array.isArray(value) ? String(value[0]) : String(value);
 }
 
 /** Resolves assessment id on tab screens where useLocalSearchParams may omit parent [id]. */

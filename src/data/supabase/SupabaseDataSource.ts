@@ -924,7 +924,7 @@ async deleteTryout(id: string): Promise<void> {
              account_type: 'guardian'
           });
           if (newUserId && !error) {
-             fields.guardian_user_id = newUserId;
+             fields.guardian_user_id = typeof newUserId === 'object' && newUserId !== null ? (newUserId as any).id || newUserId : newUserId;
              try {
                await this.sendEmail('org_invite', fields.guardian_email, { role: 'guardian', password: defaultPassword });
              } catch (emailErr) {
@@ -945,7 +945,15 @@ async deleteTryout(id: string): Promise<void> {
 
   async addPlayer(tryoutId: string, form: AddPlayerForm): Promise<Player> {
     const { supabase, accountId } = await this.ctx();
+    if (typeof tryoutId === 'object' && tryoutId !== null) {
+      tryoutId = String((tryoutId as any).id || tryoutId);
+    }
+    
     let athleteId = form.athleteId;
+    if (typeof athleteId === 'object' && athleteId !== null) {
+      athleteId = String((athleteId as any).id || athleteId);
+    }
+
     if (!athleteId) {
       athleteId = await this.createAthlete(accountId, {
         first_name: form.first,
@@ -1206,23 +1214,59 @@ async deleteTryout(id: string): Promise<void> {
       const [profile] = await Promise.all([
         this.loadUserProfile(userId)
       ]);
-      const created = unwrap(
-        await supabase
-          .from('evaluations')
-          .insert({
-            tryout_id: tryoutId,
-            participant_id: playerId,
-            evaluator_user_id: userId,
-            evaluator_name: profile.displayName,
-            session: form.session,
-            strengths: form.strengths ?? null,
-            improve: form.improve ?? null,
-            recommendation: recDb,
-            source: 'manual',
-          })
-          .select()
-          .single(),
-      ) as Row;
+      let created: Row | null = null;
+      try {
+        created = unwrap(
+          await supabase
+            .from('evaluations')
+            .insert({
+              tryout_id: tryoutId,
+              participant_id: playerId,
+              evaluator_user_id: userId,
+              evaluator_name: profile.displayName,
+              session: form.session,
+              strengths: form.strengths ?? null,
+              improve: form.improve ?? null,
+              recommendation: recDb,
+              source: 'manual',
+            })
+            .select()
+            .single(),
+        ) as Row;
+      } catch (e: any) {
+        if (e.message?.includes('duplicate key') || e.message?.includes('unique constraint')) {
+          const { data: existingRows } = await supabase
+            .from('evaluations')
+            .select('id')
+            .eq('tryout_id', tryoutId)
+            .eq('participant_id', playerId)
+            .eq('evaluator_user_id', userId)
+            .eq('session', form.session);
+          
+          if (existingRows && existingRows.length > 0) {
+            id = existingRows[0].id;
+            const [updateResult] = await Promise.all([
+              supabase
+                .from('evaluations')
+                .update({
+                  session: form.session,
+                  strengths: form.strengths ?? null,
+                  improve: form.improve ?? null,
+                  recommendation: recDb,
+                })
+                .eq('id', id)
+                .select()
+                .single(),
+              supabase.from('evaluation_scores').delete().eq('evaluation_id', id)
+            ]);
+            created = unwrap(updateResult) as Row;
+          } else {
+            throw e;
+          }
+        } else {
+          throw e;
+        }
+      }
       id = created.id;
       savedData = created;
     }
@@ -1231,7 +1275,7 @@ async deleteTryout(id: string): Promise<void> {
       .filter(([, v]) => v != null && !Number.isNaN(v))
       .map(([rubric_key, value]) => ({ evaluation_id: id, rubric_key, value }));
     if (scoreRows.length) {
-      unwrap(await supabase.from('evaluation_scores').insert(scoreRows).select());
+      unwrap(await supabase.from('evaluation_scores').upsert(scoreRows, { onConflict: 'evaluation_id,rubric_key' }).select());
     }
 
     this.markOnboarding({ scorePlayers: true }).catch(() => {});

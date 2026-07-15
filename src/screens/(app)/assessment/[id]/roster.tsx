@@ -248,7 +248,14 @@ export default function RosterScreen() {
               }
               setShowAdd(false);
             } catch (err: any) {
-              Alert.alert('Save Error', 'Failed to save player: ' + err.message);
+              Alert.alert(
+                'Save Error', 
+                err.message || 'Failed to add player.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Retry', onPress: () => addPlayer.mutate(data) }
+                ]
+              );
             }
           }}
         />

@@ -38,7 +38,7 @@ export function useCreateTeamMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ name, season }: { name: string; season?: string }) =>
-      getDataSource().createTeam(name, season),
+      withTimeout(getDataSource().createTeam(name, season), 15000),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teams }),
   });
 }
@@ -118,7 +118,7 @@ export function useTryoutRealtimeSync(id: string | undefined) {
 export function useCreateTryoutMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (form: CreateAssessmentForm) => getDataSource().createTryout(form),
+    mutationFn: (form: CreateAssessmentForm) => withTimeout(getDataSource().createTryout(form), 15000),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.tryouts(false) });
       qc.invalidateQueries({ queryKey: queryKeys.profile });
@@ -130,7 +130,7 @@ export function useUpdateTryoutMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, updates }: { id: string; updates: Partial<Tryout> }) =>
-      getDataSource().updateTryout(id, updates),
+      withTimeout(getDataSource().updateTryout(id, updates), 15000),
     onSuccess: (tryout) => {
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryout.id) });
       qc.invalidateQueries({ queryKey: queryKeys.tryouts(false) });
@@ -160,11 +160,19 @@ export function useDeleteTryoutMutation() {
   });
 }
 
+// ---- Utility ----
+const withTimeout = <T>(promise: Promise<T>, ms: number = 15000, msg: string = 'Request timed out. Please check your network connection.'): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(msg)), ms))
+  ]);
+};
+
 // ---- Players ----
 export function useAddPlayerMutation(tryoutId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (form: AddPlayerForm) => getDataSource().addPlayer(tryoutId, form),
+    mutationFn: (form: AddPlayerForm) => withTimeout(getDataSource().addPlayer(tryoutId, form), 15000, 'Adding player timed out. Please check your connection.'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.profile });
@@ -176,7 +184,7 @@ export function useUpdatePlayerMutation(tryoutId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ playerId, updates }: { playerId: string; updates: Partial<import('@/data/types').Player> }) =>
-      getDataSource().updatePlayer(tryoutId, playerId, updates),
+      withTimeout(getDataSource().updatePlayer(tryoutId, playerId, updates), 15000),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) }),
   });
 }
@@ -201,7 +209,7 @@ export function useSaveEvaluationMutation(tryoutId: string) {
       playerId: string;
       form: ScoreForm;
       evalId?: string;
-    }) => getDataSource().saveEvaluation(tryoutId, playerId, form, evalId),
+    }) => withTimeout(getDataSource().saveEvaluation(tryoutId, playerId, form, evalId), 15000, 'Saving evaluation timed out. Please check your connection.'),
     onSuccess: (newEval) => {
       qc.setQueryData<Tryout | undefined>(queryKeys.tryout(tryoutId), (oldData) => {
         if (!oldData) return oldData;
@@ -325,7 +333,11 @@ export function useGenerateTeamBuilderMutation(tryoutId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: import('@/data/teamBuilder').TeamBuilderConfig) =>
-      getDataSource().generateTeamBuilder(tryoutId, config),
+      withTimeout(
+        getDataSource().generateTeamBuilder(tryoutId, config),
+        20000,
+        'Team builder generation timed out. The server might be busy, please try again.'
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) }),
   });
 }
@@ -333,7 +345,12 @@ export function useGenerateTeamBuilderMutation(tryoutId: string) {
 export function useAiPlayerSummaryMutation(tryoutId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (playerId: string) => getDataSource().getAiPlayerSummary(tryoutId, playerId),
+    mutationFn: (playerId: string) => 
+      withTimeout(
+        getDataSource().getAiPlayerSummary(tryoutId, playerId), 
+        20000, 
+        'Generation timed out. The server might be busy, please try again.'
+      ),
     onSuccess: (summary, playerId) => {
       // Write the AI result directly into the cached tryout so the UI updates
       // immediately — even if the DB save failed (e.g. RLS blocks the update for
@@ -359,7 +376,7 @@ export function useUploadPlayerPhotoMutation(tryoutId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ athleteId, fileUri, fileType }: { athleteId: string; fileUri: string; fileType: string }) =>
-      getDataSource().uploadPlayerPhoto(athleteId, fileUri, fileType),
+      withTimeout(getDataSource().uploadPlayerPhoto(athleteId, fileUri, fileType), 15000, 'Uploading photo timed out. Please check your connection.'),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) }),
   });
 }
@@ -402,7 +419,7 @@ export function useSeasonQuery(id: string | undefined) {
 export function useCreateSeasonMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (form: import('@/data/types').CreateSeasonForm) => getDataSource().createSeason(form),
+    mutationFn: (form: import('@/data/types').CreateSeasonForm) => withTimeout(getDataSource().createSeason(form), 15000),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.seasons }),
   });
 }
@@ -652,7 +669,7 @@ export function useAddSeasonPlayerMutation() {
     }: {
       seasonId: string;
       player: Omit<import('../data/types').SeasonPlayer, 'id'>;
-    }) => getDataSource().addSeasonPlayer(seasonId, player),
+    }) => withTimeout(getDataSource().addSeasonPlayer(seasonId, player), 15000),
     onSuccess: (_, { seasonId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.season(seasonId) });
     },

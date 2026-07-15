@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { Alert, Text, View } from 'react-native';
+import { useState, useMemo, useEffect } from 'react';
+import { Alert, Text, View, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -57,11 +57,28 @@ export default function PlayerHubScreen() {
   const createAndInviteMut = useCreateAndInviteMemberMutation();
   const { data: members = [] } = useOrgMembersQuery();
   
-  const player = tryoutQuery.data?.roster.find((p) => p.id === playerId);
-  const historyQuery = useAthleteHistoryQuery(player?.athleteId);
-
   const [showEdit, setShowEdit] = useState(false);
   const [showGuardianLink, setShowGuardianLink] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiLoadingText, setAiLoadingText] = useState('Generating...');
+
+  useEffect(() => {
+    if (!aiSummary.isPending) {
+      setAiLoadingText('Generating...');
+      return;
+    }
+    const texts = ['Gathering data...', 'Ranking evaluations...', 'Analyzing strengths...', 'Finalizing insight...'];
+    let idx = 0;
+    const int = setInterval(() => {
+      idx = (idx + 1) % texts.length;
+      setAiLoadingText(texts[idx]);
+    }, 2500);
+    return () => clearInterval(int);
+  }, [aiSummary.isPending]);
+
+  const player = tryoutQuery.data?.roster.find((p) => p.athleteId === playerId || p.id === playerId);
+  const historyQuery = useAthleteHistoryQuery(player?.athleteId);
+
   const { canManageTeam } = usePermissions();
 
   const categories = useMemo(() => {
@@ -240,43 +257,107 @@ export default function PlayerHubScreen() {
               <View className="flex-row items-center justify-between mb-2">
                 <Text className="font-bold" style={{ color: colors.primary }}>AI Advanced Analysis</Text>
                 <Button
-                  label={aiSummary.isPending ? 'Generating...' : '↻ Regenerate'}
+                  label={aiSummary.isPending ? 'Processing...' : '↻ Regenerate'}
                   size="sm"
                   variant="ghost"
                   onPress={async () => {
                     try {
                       await aiSummary.mutateAsync(playerId!);
+                      setAiError(null);
                     } catch (error: any) {
-                      Alert.alert('AI Summary Failed', error.message || 'Failed to regenerate AI summary');
+                      setAiError(error.message || 'Failed to regenerate AI summary');
                     }
                   }}
                   loading={aiSummary.isPending}
                 />
               </View>
-              <Text style={{ color: colors.ink }}>
-                {tryoutQuery.data.aiAssessments[playerId!].summary}
-              </Text>
-              {tryoutQuery.data.aiAssessments[playerId!].key_strengths?.map((s: string) => (
-                <Text key={s} className="text-sm mt-1" style={{ color: colors.success }}>+ {s}</Text>
-              ))}
-              {tryoutQuery.data.aiAssessments[playerId!].key_growth?.map((s: string) => (
-                <Text key={s} className="text-sm mt-1" style={{ color: colors.primary }}>- {s}</Text>
-              ))}
+              {aiSummary.isPending ? (
+                <View className="items-center p-4">
+                  <ActivityIndicator size="large" color={colors.primary} />
+                  <Text className="mt-2 text-center" style={{ color: colors.ink }}>
+                    {aiLoadingText}
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <Text style={{ color: colors.ink }}>
+                    {tryoutQuery.data.aiAssessments[playerId!].summary}
+                  </Text>
+                  {tryoutQuery.data.aiAssessments[playerId!].key_strengths?.map((s: string) => (
+                    <Text key={s} className="text-sm mt-1" style={{ color: colors.success }}>+ {s}</Text>
+                  ))}
+                  {tryoutQuery.data.aiAssessments[playerId!].key_growth?.map((s: string) => (
+                    <Text key={s} className="text-sm mt-1" style={{ color: colors.primary }}>- {s}</Text>
+                  ))}
+                </>
+              )}
+              {aiError && (
+                <View className="mt-3 p-3 rounded-md" style={{ backgroundColor: colors.tile }}>
+                  <Text style={{ color: colors.ink, fontWeight: 'bold' }}>Notice</Text>
+                  <Text style={{ color: colors.inkMuted, marginTop: 4 }}>
+                    {aiError.toLowerCase().includes('key') || aiError.toLowerCase().includes('developed') 
+                      ? "This feature relies on an API key that is currently missing or in development. It will be built out soon."
+                      : aiError}
+                  </Text>
+                  <Button 
+                    label="Retry" 
+                    size="sm" 
+                    variant="secondary" 
+                    className="mt-2"
+                    onPress={() => {
+                      setAiError(null);
+                      aiSummary.mutate(playerId!);
+                    }} 
+                  />
+                </View>
+              )}
             </View>
           ) : (
-            <Button
-              label="Generate AI Deep Dive"
-              size="sm"
-              className="mt-2"
-              onPress={async () => {
-                try {
-                  await aiSummary.mutateAsync(playerId!);
-                } catch (error: any) {
-                  Alert.alert('AI Summary Failed', error.message || 'Failed to generate AI summary');
-                }
-              }}
-              loading={aiSummary.isPending}
-            />
+            <>
+              {aiSummary.isPending ? (
+                <View className="items-center p-4">
+                  <ActivityIndicator size="large" color={colors.primary} />
+                  <Text className="mt-2 text-center" style={{ color: colors.ink }}>
+                    {aiLoadingText}
+                  </Text>
+                </View>
+              ) : (
+                <Button
+                  label="Generate AI Deep Dive"
+                  size="sm"
+                  className="mt-2"
+                  onPress={async () => {
+                    try {
+                      await aiSummary.mutateAsync(playerId!);
+                      setAiError(null);
+                    } catch (error: any) {
+                      setAiError(error.message || 'Failed to generate AI summary');
+                    }
+                  }}
+                  loading={aiSummary.isPending}
+                />
+              )}
+              {aiError && (
+                <View className="mt-3 p-3 rounded-md" style={{ backgroundColor: colors.tile }}>
+                  <Text style={{ color: colors.ink, fontWeight: 'bold' }}>Notice</Text>
+                  <Text style={{ color: colors.inkMuted, marginTop: 4 }}>
+                    {aiError.toLowerCase().includes('key') || aiError.toLowerCase().includes('developed') 
+                      ? "This feature relies on an API key that is currently missing or in development. It will be built out soon."
+                      : aiError}
+                  </Text>
+                  <Button 
+                    label="Retry" 
+                    size="sm" 
+                    variant="secondary" 
+                    className="mt-2"
+                    onPress={() => {
+                      setAiError(null);
+                      aiSummary.mutate(playerId!);
+                    }} 
+                  />
+                </View>
+              )}
+            </>
           )}
         </PlanGate>
 

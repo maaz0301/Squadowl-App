@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { useState, useEffect } from 'react';
+import { Text, View, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
@@ -25,6 +25,21 @@ export default function TeamBuilderScreen() {
   const generate = useGenerateTeamBuilderMutation(id!);
   const [teamCount, setTeamCount] = useState(2);
   const [sortMethod, setSortMethod] = useState<'snake' | 'balanced'>('snake');
+  const [tbLoadingText, setTbLoadingText] = useState('Analyzing players...');
+
+  useEffect(() => {
+    if (!generate.isPending) {
+      setTbLoadingText('Analyzing players...');
+      return;
+    }
+    const texts = ['Analyzing players...', 'Balancing rosters...', 'Optimizing lines...', 'Finalizing teams...'];
+    let idx = 0;
+    const int = setInterval(() => {
+      idx = (idx + 1) % texts.length;
+      setTbLoadingText(texts[idx]);
+    }, 2500);
+    return () => clearInterval(int);
+  }, [generate.isPending]);
 
   if (tryoutQuery.isLoading) return <LoadingState message="Loading..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
@@ -71,7 +86,32 @@ export default function TeamBuilderScreen() {
             <Chip label="Snake Draft" active={sortMethod === 'snake'} onPress={() => setSortMethod('snake')} />
             <Chip label="Balanced Avg" active={sortMethod === 'balanced'} onPress={() => setSortMethod('balanced')} />
           </View>
-          <Button label="Generate Teams" onPress={handleGenerate} loading={generate.isPending} />
+          {generate.isPending ? (
+            <View className="items-center p-4">
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text className="mt-2 text-center" style={{ color: colors.ink }}>
+                {tbLoadingText}
+              </Text>
+            </View>
+          ) : (
+            <Button label="Generate Teams" onPress={handleGenerate} loading={generate.isPending} />
+          )}
+
+          {generate.isError && (
+            <View className="mt-3 p-3 rounded-md" style={{ backgroundColor: colors.tile }}>
+              <Text style={{ color: colors.ink, fontWeight: 'bold' }}>Notice</Text>
+              <Text style={{ color: colors.inkMuted, marginTop: 4 }}>
+                {generate.error?.message || "Team builder generation timed out. The server might be busy, please try again."}
+              </Text>
+              <Button 
+                label="Retry" 
+                size="sm" 
+                variant="secondary" 
+                className="mt-2"
+                onPress={handleGenerate} 
+              />
+            </View>
+          )}
         </Card>
 
         {teamBuilder?.warnings.map((w) => (
