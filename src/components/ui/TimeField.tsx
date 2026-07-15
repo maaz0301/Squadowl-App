@@ -10,6 +10,8 @@ interface TimeFieldProps {
   onChange: (value: string) => void;
   placeholder?: string;
   error?: string;
+  disablePast?: boolean;
+  dateValue?: string; // YYYY-MM-DD
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -46,7 +48,7 @@ const CENTER = FACE / 2;
 const RADIUS = CENTER - 26;
 const CELL = 40;
 
-export function TimeField({ label, value, onChange, placeholder = 'Select a time', error }: TimeFieldProps) {
+export function TimeField({ label, value, onChange, placeholder = 'Select a time', error, disablePast, dateValue }: TimeFieldProps) {
   const colors = useThemeColors();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'hour' | 'minute'>('hour');
@@ -81,6 +83,34 @@ export function TimeField({ label, value, onChange, placeholder = 'Select a time
     : Array.from({ length: 12 }, (_, i) => i * 5);
 
   const angleFor = (n: number) => (mode === 'hour' ? (n % 12) * 30 : n * 6);
+
+  const isPastTime = (n: number) => {
+    if (!disablePast) return false;
+    const now = new Date();
+    let isToday = false;
+    if (dateValue) {
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue);
+      if (match) {
+        const p = { y: Number(match[1]), m: Number(match[2]) - 1, d: Number(match[3]) };
+        if (p.y < now.getFullYear() || (p.y === now.getFullYear() && p.m < now.getMonth()) || (p.y === now.getFullYear() && p.m === now.getMonth() && p.d < now.getDate())) return true;
+        if (p.y === now.getFullYear() && p.m === now.getMonth() && p.d === now.getDate()) isToday = true;
+      }
+    } else {
+      isToday = true;
+    }
+    
+    if (!isToday) return false;
+
+    if (mode === 'hour') {
+       const h24 = to24(n, period);
+       return h24 < now.getHours();
+    } else {
+       const h24 = to24(hour, period);
+       if (h24 < now.getHours()) return true;
+       if (h24 === now.getHours()) return n < now.getMinutes();
+       return false;
+    }
+  };
 
   return (
     <View className="gap-1">
@@ -196,28 +226,30 @@ export function TimeField({ label, value, onChange, placeholder = 'Select a time
               const x = CENTER + RADIUS * Math.sin(theta) - CELL / 2;
               const y = CENTER - RADIUS * Math.cos(theta) - CELL / 2;
               const selected = mode === 'hour' ? n === hour : n === minute;
-              return (
-                <Pressable
-                  key={n}
-                  onPress={() => {
-                    if (mode === 'hour') {
-                      setHour(n);
-                      setMode('minute');
-                    } else {
-                      setMinute(n);
-                    }
-                  }}
-                  style={{
-                    position: 'absolute',
-                    left: x,
-                    top: y,
-                    width: CELL,
-                    height: CELL,
-                    borderRadius: CELL / 2,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: selected ? colors.primary : 'transparent',
-                  }}
+              return <Pressable
+                    key={n}
+                    disabled={isPastTime(n)}
+                    onPress={() => {
+                      if (isPastTime(n)) return;
+                      if (mode === 'hour') {
+                        setHour(n);
+                        setMode('minute');
+                      } else {
+                        setMinute(n);
+                      }
+                    }}
+                    style={{
+                      position: 'absolute',
+                      left: x,
+                      top: y,
+                      width: CELL,
+                      height: CELL,
+                      borderRadius: CELL / 2,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: selected ? colors.primary : 'transparent',
+                      opacity: isPastTime(n) ? 0.3 : 1,
+                    }}
                 >
                   <Text
                     className="text-base"

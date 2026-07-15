@@ -10,6 +10,7 @@ interface DateFieldProps {
   onChange: (value: string) => void;
   placeholder?: string;
   error?: string;
+  disablePast?: boolean;
 }
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -37,7 +38,7 @@ function formatDisplay(value?: string): string | null {
   return `${MONTHS_SHORT[p.m]} ${p.d}, ${p.y}`;
 }
 
-export function DateField({ label, value, onChange, placeholder = 'Select a date', error }: DateFieldProps) {
+export function DateField({ label, value, onChange, placeholder = 'Select a date', error, disablePast }: DateFieldProps) {
   const colors = useThemeColors();
   const [open, setOpen] = useState(false);
   const today = new Date();
@@ -80,6 +81,12 @@ export function DateField({ label, value, onChange, placeholder = 'Select a date
     view.y === today.getFullYear() && view.m === today.getMonth() && d === today.getDate();
   const isSelected = (d: number) =>
     !!parsed && parsed.y === view.y && parsed.m === view.m && parsed.d === d;
+  const isPast = (d: number) => {
+    if (!disablePast) return false;
+    const date = new Date(view.y, view.m, d);
+    const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return date < now;
+  };
 
   return (
     <View className="gap-1">
@@ -171,11 +178,13 @@ export function DateField({ label, value, onChange, placeholder = 'Select a date
                   <View className="w-10 h-10" />
                 ) : (
                   <Pressable
-                    onPress={() => select(d)}
+                    onPress={() => !isPast(d) && select(d)}
+                    disabled={isPast(d)}
                     className="w-10 h-10 rounded-full items-center justify-center border"
                     style={{
                       backgroundColor: isSelected(d) ? colors.primary : 'transparent',
                       borderColor: isToday(d) && !isSelected(d) ? colors.primary : 'transparent',
+                      opacity: isPast(d) ? 0.3 : 1,
                     }}
                   >
                     <Text

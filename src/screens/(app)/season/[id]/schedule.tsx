@@ -145,10 +145,10 @@ export default function SeasonScheduleScreen() {
             <Input label="Title" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
           )} />
           <Controller control={control} name="date" render={({ field: { onChange, value }, fieldState: { error } }) => (
-            <DateField label="Date" value={value} onChange={onChange} placeholder="Select a date" error={error?.message} />
+            <DateField label="Date" value={value} onChange={onChange} placeholder="Select a date" error={error?.message} disablePast />
           )} />
           <Controller control={control} name="startTime" render={({ field: { onChange, value }, fieldState: { error } }) => (
-            <TimeField label="Start Time" value={value} onChange={onChange} placeholder="Select a time" error={error?.message} />
+            <TimeField label="Start Time" value={value} onChange={onChange} placeholder="Select a time" error={error?.message} disablePast dateValue={watch('date')} />
           )} />
           <Controller control={control} name="location" render={({ field: { onChange, onBlur, value } }) => (
             <Input label="Location" onBlur={onBlur} onChangeText={onChange} value={value} />
