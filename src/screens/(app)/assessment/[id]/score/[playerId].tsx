@@ -115,7 +115,7 @@ export default function ScoreScreen() {
 
   const initialScores = mapLegacyScores(existingEval?.scores ?? {}, categories);
 
-  const { control, handleSubmit, watch, setValue, getValues, reset, formState: { isSubmitting } } = useForm<ScoreForm>({
+  const { control, handleSubmit, watch, setValue, getValues, reset, formState: { isSubmitting, errors } } = useForm<ScoreForm>({
     resolver: zodResolver(ScoreFormSchema),
     defaultValues: {
       session: currentSession,
@@ -454,16 +454,23 @@ export default function ScoreScreen() {
         );
       })}
 
-      <Text className="text-sm font-bold uppercase mb-2" style={{ color: colors.inkMuted }}>
-        Recommendation
-      </Text>
+      <View className="flex-row items-center justify-between mb-2">
+        <Text className="text-sm font-bold uppercase" style={{ color: colors.inkMuted }}>
+          Recommendation *
+        </Text>
+        {errors.recommendation && (
+          <Text className="text-sm font-medium" style={{ color: colors.danger }}>
+            {errors.recommendation.message}
+          </Text>
+        )}
+      </View>
       <View className="flex-row flex-wrap mb-4">
         {RECOMMENDATIONS.filter(Boolean).map((rec) => (
           <Chip
             key={rec}
             label={rec}
             active={watch('recommendation') === rec}
-            onPress={() => setValue('recommendation', rec)}
+            onPress={() => setValue('recommendation', rec, { shouldValidate: true })}
           />
         ))}
       </View>

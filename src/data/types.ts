@@ -311,11 +311,11 @@ export type AddPlayerForm = z.infer<typeof AddPlayerFormSchema>;
 
 /** Registration submit (simulated QR form) */
 export const RegistrationSubmitSchema = z.object({
-  firstName: z.string().min(1),
-  lastName: z.string().min(1),
+  firstName: z.string().min(1, 'First name is required'),
+  lastName: z.string().min(1, 'Last name is required'),
   yearOfBirth: z.string().optional(),
   positionTryingOutFor: z.string().optional(),
-  guardianName: z.string().min(1),
+  guardianName: z.string().min(1, 'Guardian name is required'),
   guardianEmail: z.string().email(),
   guardianPhone: z.string().optional(),
   currentTeam: z.string().optional(),
@@ -333,7 +333,7 @@ export const ScoreFormSchema = z.object({
   session: z.string(),
   strengths: z.string().optional(),
   improve: z.string().optional(),
-  recommendation: z.enum(RECOMMENDATIONS),
+  recommendation: z.enum(RECOMMENDATIONS).refine(val => val.length > 0, 'Recommendation is required'),
   scores: z.record(z.string(), z.number()),
 });
 
@@ -432,8 +432,8 @@ export const SeasonSchema = z.object({
 export type Season = z.infer<typeof SeasonSchema>;
 
 export const CreateSeasonFormSchema = z.object({
-  name: z.string().min(2),
-  teamName: z.string().min(2),
+  name: z.string().min(2, 'Season name must be at least 2 characters'),
+  teamName: z.string().min(2, 'Team name must be at least 2 characters'),
   sport: z.enum(SPORTS),
   year: z.string().optional(),
   division: z.string().optional(),

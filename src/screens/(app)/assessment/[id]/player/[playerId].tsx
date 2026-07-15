@@ -118,7 +118,7 @@ export default function PlayerHubScreen() {
       <View className="items-center py-4 gap-2">
         <Avatar first={player.first} last={player.last} pos={player.pos} size={72} uri={player.avatarUrl} />
         <Text className="text-sm" style={{ color: colors.inkMuted }}>
-          #{player.jersey ?? '—'} · {player.pos ?? '—'} · ID {player.athleteId ?? '—'}
+          #{player.jersey ?? '—'} · {player.pos ?? '—'}
         </Text>
         {player.registrationSource === 'qr' ? <Badge label="QR Registered" variant="info" /> : null}
       </View>
@@ -504,7 +504,6 @@ export default function PlayerHubScreen() {
               No email on file. Edit player profile to add a guardian email first.
             </Text>
           )}
-          <Button label="Cancel" variant="ghost" onPress={() => setShowGuardianLink(false)} />
         </View>
       </Modal>
 

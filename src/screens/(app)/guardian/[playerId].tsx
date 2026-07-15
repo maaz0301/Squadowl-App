@@ -34,10 +34,14 @@ function EventCard({ item, playerId, colors }: { item: SeasonEvent & { seasonNam
   return (
     <Card className="mb-3">
       <View className="flex-row justify-between items-start mb-2">
-        <View className="flex-1">
-          <ExpandableText text={item.title} className="text-base font-bold" style={{ color: colors.ink }} />
-          <ExpandableText text={item.seasonName} className="text-sm" style={{ color: colors.primary }} />
-        </View>
+          <View className="flex-1 mr-2">
+            <Text className="text-base font-bold" style={{ color: colors.ink }}>
+              {item.title}
+            </Text>
+            <Text className="text-sm" style={{ color: colors.primary }}>
+              {item.seasonName}
+            </Text>
+          </View>
         <Badge label={item.type} variant="info" />
       </View>
       
@@ -100,8 +104,10 @@ function TryoutSeasonCard({ item, colors, playerId }: { item: any; colors: any; 
     }}>
       <Card accent className="mb-3">
         <View className="flex-row justify-between items-start">
-          <View className="flex-1">
-            <ExpandableText text={item.name} className="text-lg font-display font-bold mb-1" style={{ color: colors.ink }} />
+          <View className="flex-1 mr-2">
+            <Text className="text-lg font-display font-bold mb-1" style={{ color: colors.ink }}>
+              {item.name}
+            </Text>
             {item._type === 'season' ? (
               <Text className="text-sm mb-2" style={{ color: colors.inkMuted }}>
                 {item.teamName} · {item.sport}
