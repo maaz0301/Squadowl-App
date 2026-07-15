@@ -307,6 +307,17 @@ export default function ScoreScreen() {
         autoSaveTimeoutRef.current = null;
       }
 
+      if (activeMutationRef.current) {
+        try {
+          const result = await activeMutationRef.current;
+          if (!evalId && result?.id) {
+            navigation.setParams({ evalId: result.id });
+          }
+        } catch (e) {
+          console.warn('Pre-submit auto-save await failed', e);
+        }
+      }
+
       const currentFormStr = JSON.stringify(data);
       const hasUnsavedChanges = previousFormRef.current !== currentFormStr;
 

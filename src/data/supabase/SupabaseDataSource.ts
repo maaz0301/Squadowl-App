@@ -1165,9 +1165,35 @@ async deleteTryout(id: string): Promise<void> {
     playerId: string,
     form: ScoreForm,
     evalId?: string,
+    activeAssessor?: import('@/data/types').Assessor | null,
   ): Promise<Evaluation> {
     const { supabase, userId } = await this.ctx();
     const recDb = form.recommendation ? REC_TO_DB[form.recommendation] : null;
+
+    let evaluatorUserId: string | null = userId;
+    let evaluatorName = '';
+
+    if (activeAssessor) {
+      evaluatorName = activeAssessor.name;
+      // Look up if this assessor has a linked user_id in tryout_assessors
+      const { data: assessorRow } = await supabase
+        .from('tryout_assessors')
+        .select('user_id')
+        .eq('tryout_id', tryoutId)
+        .eq('name', activeAssessor.name)
+        .maybeSingle();
+      
+      if (assessorRow?.user_id) {
+        evaluatorUserId = assessorRow.user_id;
+      } else {
+        evaluatorUserId = null;
+      }
+    } else {
+      const [profile] = await Promise.all([
+        this.loadUserProfile(userId)
+      ]);
+      evaluatorName = profile.displayName;
+    }
 
     let id = evalId;
     if (!id) {
@@ -1176,106 +1202,62 @@ async deleteTryout(id: string): Promise<void> {
         .select('id')
         .eq('tryout_id', tryoutId)
         .eq('participant_id', playerId)
-        .eq('evaluator_user_id', userId)
-        .eq('session', form.session);
+        .eq('evaluator_user_id', evaluatorUserId)
+        .eq('session', form.session)
+        .limit(1);
         
       if (existingRows && existingRows.length > 0) {
         id = existingRows[0].id;
-        // Clean up duplicates if the DB was corrupted
-        if (existingRows.length > 1) {
-          const duplicateIds = existingRows.slice(1).map((r) => r.id);
-          await Promise.all([
-            supabase.from('evaluation_scores').delete().in('evaluation_id', duplicateIds),
-            supabase.from('evaluations').delete().in('id', duplicateIds)
-          ]);
-        }
       }
     }
 
     let savedData: Row;
 
     if (id) {
-      const [updateResult] = await Promise.all([
-        supabase
-          .from('evaluations')
-          .update({
-            session: form.session,
-            strengths: form.strengths ?? null,
-            improve: form.improve ?? null,
-            recommendation: recDb,
-          })
-          .eq('id', id)
-          .select()
-          .single(),
-        supabase.from('evaluation_scores').delete().eq('evaluation_id', id)
-      ]);
+      const updateResult = await supabase
+        .from('evaluations')
+        .update({
+          session: form.session,
+          strengths: form.strengths ?? null,
+          improve: form.improve ?? null,
+          recommendation: recDb,
+          evaluator_user_id: evaluatorUserId,
+          evaluator_name: evaluatorName,
+        })
+        .eq('id', id)
+        .select()
+        .single();
       savedData = unwrap(updateResult) as Row;
     } else {
-      const [profile] = await Promise.all([
-        this.loadUserProfile(userId)
-      ]);
-      let created: Row | null = null;
-      try {
-        created = unwrap(
-          await supabase
-            .from('evaluations')
-            .insert({
-              tryout_id: tryoutId,
-              participant_id: playerId,
-              evaluator_user_id: userId,
-              evaluator_name: profile.displayName,
-              session: form.session,
-              strengths: form.strengths ?? null,
-              improve: form.improve ?? null,
-              recommendation: recDb,
-              source: 'manual',
-            })
-            .select()
-            .single(),
-        ) as Row;
-      } catch (e: any) {
-        if (e.message?.includes('duplicate key') || e.message?.includes('unique constraint')) {
-          const { data: existingRows } = await supabase
-            .from('evaluations')
-            .select('id')
-            .eq('tryout_id', tryoutId)
-            .eq('participant_id', playerId)
-            .eq('evaluator_user_id', userId)
-            .eq('session', form.session);
-          
-          if (existingRows && existingRows.length > 0) {
-            id = existingRows[0].id;
-            const [updateResult] = await Promise.all([
-              supabase
-                .from('evaluations')
-                .update({
-                  session: form.session,
-                  strengths: form.strengths ?? null,
-                  improve: form.improve ?? null,
-                  recommendation: recDb,
-                })
-                .eq('id', id)
-                .select()
-                .single(),
-              supabase.from('evaluation_scores').delete().eq('evaluation_id', id)
-            ]);
-            created = unwrap(updateResult) as Row;
-          } else {
-            throw e;
-          }
-        } else {
-          throw e;
-        }
-      }
-      id = created.id;
-      savedData = created;
+      const insertResult = await supabase
+        .from('evaluations')
+        .insert({
+          tryout_id: tryoutId,
+          participant_id: playerId,
+          evaluator_user_id: evaluatorUserId,
+          evaluator_name: evaluatorName,
+          session: form.session,
+          strengths: form.strengths ?? null,
+          improve: form.improve ?? null,
+          recommendation: recDb,
+          source: 'manual',
+        })
+        .select()
+        .single();
+      savedData = unwrap(insertResult) as Row;
+      id = savedData.id;
     }
 
     const scoreRows = Object.entries(form.scores)
       .filter(([, v]) => v != null && !Number.isNaN(v))
       .map(([rubric_key, value]) => ({ evaluation_id: id, rubric_key, value }));
+    
     if (scoreRows.length) {
-      unwrap(await supabase.from('evaluation_scores').upsert(scoreRows, { onConflict: 'evaluation_id,rubric_key' }).select());
+      unwrap(await supabase.from('evaluation_scores').upsert(scoreRows, { onConflict: 'evaluation_id,rubric_key' }));
+      const keys = scoreRows.map(r => r.rubric_key);
+      unwrap(await supabase.from('evaluation_scores').delete().eq('evaluation_id', id).not('rubric_key', 'in', `(${keys.join(',')})`));
+    } else {
+      unwrap(await supabase.from('evaluation_scores').delete().eq('evaluation_id', id));
     }
 
     this.markOnboarding({ scorePlayers: true }).catch(() => {});

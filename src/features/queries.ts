@@ -15,6 +15,7 @@ import type {
 import { queryKeys } from '@/lib/queryClient';
 import { getSupabase } from '@/lib/supabase';
 import { useAuthStore } from '@/state/authStore';
+import { useSessionStore } from '@/state/sessionStore';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
@@ -209,7 +210,14 @@ export function useSaveEvaluationMutation(tryoutId: string) {
       playerId: string;
       form: ScoreForm;
       evalId?: string;
-    }) => withTimeout(getDataSource().saveEvaluation(tryoutId, playerId, form, evalId), 15000, 'Saving evaluation timed out. Please check your connection.'),
+    }) => {
+      const activeAssessor = useSessionStore.getState().activeAssessor;
+      return withTimeout(
+        getDataSource().saveEvaluation(tryoutId, playerId, form, evalId, activeAssessor),
+        20000,
+        'Saving evaluation timed out. Please check your connection.'
+      );
+    },
     onSuccess: (newEval) => {
       qc.setQueryData<Tryout | undefined>(queryKeys.tryout(tryoutId), (oldData) => {
         if (!oldData) return oldData;

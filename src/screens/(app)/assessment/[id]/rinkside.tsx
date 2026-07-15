@@ -48,6 +48,7 @@ export default function RinksideScreen() {
   const translateX = useSharedValue(0);
   const previousStateRef = useRef<string>('');
   const lastLoadedRef = useRef<{ playerId: string; session: string } | null>(null);
+  const activeMutationRef = useRef<Promise<any> | null>(null);
 
   const roster = tryoutQuery.data?.roster ?? [];
   const player = roster[rinksideIndex];
@@ -140,10 +141,21 @@ export default function RinksideScreen() {
         if (prevPlayer) {
           const hasScores = workingScores && Object.values(workingScores).some(val => val !== undefined && val !== null && val > 0);
           if (hasScores && recommendation) {
-            saveEval.mutate({
+            const prevEval = tryoutQuery.data?.evals.find(
+              e => e.playerId === lastPlayerId && e.session === lastSession
+            );
+            const promise = saveEval.mutateAsync({
               playerId: prevPlayer.id,
               form: { session: lastSession, scores: workingScores, recommendation },
+              evalId: prevEval?.id,
             });
+            activeMutationRef.current = promise;
+            promise.catch(err => console.warn('Rinkside auto-save on player change failed', err))
+              .finally(() => {
+                if (activeMutationRef.current === promise) {
+                  activeMutationRef.current = null;
+                }
+              });
           }
         }
       }
@@ -205,9 +217,13 @@ export default function RinksideScreen() {
       if (hasUnsavedChanges) {
         const hasScores = scores && Object.values(scores).some(val => val !== undefined && val !== null && val > 0);
         if (hasScores && rec) {
+          const prevEval = tryoutQuery.data?.evals.find(
+            e => e.playerId === curPlayer.id && e.session === curSession
+          );
           saveEval.mutate({
             playerId: curPlayer.id,
             form: { session: curSession, scores, recommendation: rec },
+            evalId: prevEval?.id,
           });
         }
       }
@@ -233,6 +249,14 @@ export default function RinksideScreen() {
   const saveAndNext = async () => {
     if (!player) return;
 
+    if (activeMutationRef.current) {
+      try {
+        await activeMutationRef.current;
+      } catch (e) {
+        console.warn('Pre-saveAndNext auto-save await failed', e);
+      }
+    }
+
     const currentStateStr = JSON.stringify({ scores: workingScores, recommendation });
     const hasUnsavedChanges = previousStateRef.current !== currentStateStr;
 
@@ -240,7 +264,11 @@ export default function RinksideScreen() {
       if (rinksideIndex < roster.length - 1) {
         setRinksideIndex(rinksideIndex + 1);
       } else {
-        Alert.alert('Finished', 'You have reached the end of the roster.');
+        Alert.alert(
+          'Finished',
+          'You have reached the end of the roster.',
+          [{ text: 'OK', onPress: () => navigation.navigate('AssessmentRoster') }]
+        );
       }
     };
 
@@ -265,9 +293,13 @@ export default function RinksideScreen() {
     
     try {
       setIsSaving(true);
+      const curEval = tryoutQuery.data?.evals.find(
+        e => e.playerId === player.id && e.session === session
+      );
       await saveEval.mutateAsync({
         playerId: player.id,
         form: { session, scores: workingScores, recommendation },
+        evalId: curEval?.id,
       });
       
       markSessionCompleted(player.id, session);
