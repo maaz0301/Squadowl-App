@@ -45,14 +45,12 @@ export default function WelcomeScreen() {
           ))}
         </View>
 
-        <Button label="Get Started" onPress={() => navigation.navigate('Wizard')} />
-        <Button
-          label="Skip for now"
-          variant="ghost"
+        <Button 
+          label="Get Started" 
           onPress={() => {
             skipWizard();
             navigation.replace('App', { screen: 'DashboardMain' });
-          }}
+          }} 
         />
       </View>
     </Screen>
