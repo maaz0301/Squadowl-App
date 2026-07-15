@@ -288,12 +288,12 @@ export type CreateAssessmentForm = z.infer<typeof CreateAssessmentFormSchema>;
 /** Add player form */
 export const AddPlayerFormSchema = z.object({
   athleteId: z.string().optional(),
-  first: z.string().min(1, 'First name required'),
-  last: z.string().min(1, 'Last name required'),
-  jersey: z.string().min(1, 'Jersey number required'),
-  pos: z.string().min(1, 'Position required'),
+  first: z.string({ message: 'First name required' }).min(1, 'First name required'),
+  last: z.string({ message: 'Last name required' }).min(1, 'Last name required'),
+  jersey: z.string({ message: 'Jersey number required' }).min(1, 'Jersey number required'),
+  pos: z.string({ message: 'Position required' }).min(1, 'Position required'),
   shoots: z.string().optional(),
-  yearOfBirth: z.string().min(1, 'Year of Birth required'),
+  yearOfBirth: z.string({ message: 'Please select a year of birth.' }).min(1, 'Please select a year of birth.'),
   positionTryingOutFor: z.string().optional(),
   guardianName: z.string().optional(),
   guardianEmail: z.string().optional().refine(val => !val || z.string().email().safeParse(val).success, { message: 'Please enter a valid email address' }),
@@ -537,9 +537,9 @@ export interface GuardianRosterAthlete {
   firstName: string;
   lastName: string;
   avatarUrl?: string;
-  tryouts: { 
-    id: string; 
-    name: string; 
+  tryouts: {
+    id: string;
+    name: string;
     sport: string;
     sessions: { name: string; result?: string; date?: number; scores?: Record<string, number> }[];
   }[];
