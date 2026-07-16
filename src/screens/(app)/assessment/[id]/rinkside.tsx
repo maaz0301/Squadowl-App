@@ -44,6 +44,7 @@ export default function RinksideScreen() {
   const markSessionCompleted = useSessionStore((s) => s.markSessionCompleted);
   const [session, setSession] = useState('Session 1');
   const [recommendation, setRecommendation] = useState<'Make' | 'Keep' | 'Bubble' | 'Release' | ''>('');
+  const [showRecError, setShowRecError] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const translateX = useSharedValue(0);
   const previousStateRef = useRef<string>('');
@@ -179,6 +180,7 @@ export default function RinksideScreen() {
 
       setWorkingScores(loadedScores);
       setRecommendation(loadedRec as any);
+      setShowRecError(false);
       previousStateRef.current = JSON.stringify({ scores: loadedScores, recommendation: loadedRec });
       lastLoadedRef.current = { playerId: player.id, session };
     }
@@ -288,14 +290,16 @@ export default function RinksideScreen() {
     if (!hasScores) {
       clearWorkingScores();
       setRecommendation('');
+      setShowRecError(false);
       getNextNavigation();
       return;
     }
-    // if (!recommendation) {
-    //   Alert.alert('Recommendation required', 'Please select a recommendation before saving.');
-    //   return;
-    // }
-    
+    if (!recommendation) {
+      setShowRecError(true);
+      Alert.alert('Recommendation required', 'Please select a recommendation before saving.');
+      return;
+    }
+
     try {
       setIsSaving(true);
       const curEval = tryoutQuery.data?.evals.find(
@@ -311,6 +315,7 @@ export default function RinksideScreen() {
       previousStateRef.current = currentStateStr;
       clearWorkingScores();
       setRecommendation('');
+      setShowRecError(false);
       getNextNavigation();
     } catch (err: any) {
       Alert.alert('Error Saving', err.message || 'Failed to save evaluation. Please try again.');
@@ -472,16 +477,27 @@ export default function RinksideScreen() {
             );
           })}
           
-          <Text className="text-sm font-bold uppercase mb-2 mt-4" style={{ color: colors.inkMuted }}>
-            Recommendation
-          </Text>
+          <View className="flex-row items-center justify-between mb-2 mt-4">
+            <Text className="text-sm font-bold uppercase" style={{ color: colors.inkMuted }}>
+              Recommendation *
+            </Text>
+            {showRecError && (
+              <Text className="text-sm font-medium" style={{ color: colors.danger }}>
+                Recommendation is required
+              </Text>
+            )}
+          </View>
           <View className="flex-row flex-wrap mb-4 gap-2">
             {(['Make', 'Keep', 'Bubble', 'Release'] as const).map((rec) => (
               <Chip
                 key={rec}
                 label={rec}
                 active={recommendation === rec}
-                onPress={() => setRecommendation(recommendation === rec ? '' : rec)}
+                onPress={() => {
+                  const next = recommendation === rec ? '' : rec;
+                  setRecommendation(next);
+                  if (next) setShowRecError(false);
+                }}
               />
             ))}
           </View>

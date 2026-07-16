@@ -191,7 +191,8 @@ export default function ScoreScreen() {
         const prevSession = lastSession;
 
         const hasScores = currentFormVal.scores && Object.values(currentFormVal.scores).some(val => val !== undefined && val !== null && val > 0);
-        if (hasScores) {
+
+        if (hasScores && currentFormVal.recommendation) {
           saveEval.mutate({
             playerId: prevPlayerId,
             form: { ...currentFormVal, session: prevSession || currentFormVal.session },
@@ -227,7 +228,7 @@ export default function ScoreScreen() {
         const hasUnsaved = previousFormRef.current && previousFormRef.current !== currentFormStr;
         if (hasUnsaved) {
           const hasScores = form.scores && Object.values(form.scores).some(val => val !== undefined && val !== null && val > 0);
-          if (hasScores) {
+          if (hasScores && form.recommendation) {
             saveEval.mutate({
               playerId: pId,
               form: { ...form, session: sName },
@@ -249,7 +250,7 @@ export default function ScoreScreen() {
     }
 
     const hasScores = formData.scores && Object.values(formData.scores).some(val => val !== undefined && val !== null && val > 0);
-    if (!hasScores) {
+    if (!hasScores || !formData.recommendation) {
       return;
     }
 
