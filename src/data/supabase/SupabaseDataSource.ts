@@ -442,7 +442,7 @@ export class SupabaseDataSource implements DataSource {
     }
   }
 
-  async getSession(): Promise<AuthSession | null> {
+  async getSession(forceRefresh?: boolean): Promise<AuthSession | null> {
     const supabase = getSupabase();
     const { data, error } = await supabase.auth.getSession();
     if (error || !data.session) {
@@ -452,6 +452,9 @@ export class SupabaseDataSource implements DataSource {
     }
     try {
       this.userId = data.session.user.id;
+      if (forceRefresh) {
+        delete this.profileCache[data.session.user.id];
+      }
       const user = await this.loadUserProfile(data.session.user.id);
       return this.toAuthSession(data.session, user);
     } catch (e) {
@@ -463,10 +466,13 @@ export class SupabaseDataSource implements DataSource {
     }
   }
 
-  async getProfile(): Promise<UserProfile | null> {
+  async getProfile(forceRefresh?: boolean): Promise<UserProfile | null> {
     const supabase = getSupabase();
     const { data } = await supabase.auth.getUser();
     if (!data.user) return null;
+    if (forceRefresh) {
+      delete this.profileCache[data.user.id];
+    }
     return this.loadUserProfile(data.user.id);
   }
 

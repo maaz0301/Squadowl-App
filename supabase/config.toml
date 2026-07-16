@@ -1,4 +1,12 @@
 
+# Stripe calls this server-to-server with only a Stripe-Signature header (no Supabase JWT).
+# It verifies the Stripe signature itself, so JWT verification must be disabled or the
+# gateway rejects Stripe's webhook with 401 and the account plan never updates.
+[functions.stripe-webhook]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/stripe-webhook/index.ts"
+
 [functions.send-email]
 enabled = true
 verify_jwt = false

@@ -1,15 +1,14 @@
 import { FlatList, Text, View, Alert } from 'react-native';
 import { InAppBrowser } from 'react-native-inappbrowser-reborn';
-import { useNavigation } from '@react-navigation/native';
-
+import { useState, useCallback } from 'react';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/lib/queryClient';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Header, Screen } from '@/components/ui';
 import { PLAN_DEFINITIONS } from '@/data/plans';
 import { useUser, useAuthStore } from '@/state/authStore';
 import { getDataSource } from '@/data';
-import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { queryKeys } from '@/lib/queryClient';
 
 const TIER_RANKS: Record<string, number> = {
   free: 0,
@@ -27,6 +26,13 @@ export default function UpgradeScreen() {
   const qc = useQueryClient();
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
   const [loadingPortal, setLoadingPortal] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      restoreSession(true);
+      qc.invalidateQueries({ queryKey: queryKeys.profile });
+    }, [restoreSession, qc])
+  );
 
   const openPortal = async () => {
     try {
@@ -87,7 +93,7 @@ export default function UpgradeScreen() {
           // Poll for Stripe Webhook to process the payment
           for (let i = 0; i < 5; i++) {
             await new Promise((resolve) => setTimeout(resolve, 2000));
-            await restoreSession();
+            await restoreSession(true);
             await qc.invalidateQueries({ queryKey: queryKeys.profile });
             
             // Re-fetch the user to check if plan updated
@@ -102,7 +108,7 @@ export default function UpgradeScreen() {
           await Linking.openURL(res.url);
           // Assuming user returns manually, wait a bit then refresh
           setTimeout(async () => {
-            await restoreSession();
+            await restoreSession(true);
             await qc.invalidateQueries({ queryKey: queryKeys.profile });
           }, 3000);
         }

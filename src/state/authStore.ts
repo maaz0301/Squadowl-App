@@ -14,7 +14,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   signup: (displayName: string, email: string, password: string, accountType: string) => Promise<void>;
   logout: () => Promise<void>;
-  restoreSession: () => Promise<void>;
+  restoreSession: (forceRefresh?: boolean) => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
   verifyPasswordResetOtp: (email: string, token: string) => Promise<void>;
@@ -61,9 +61,9 @@ export const useAuthStore = create<AuthState>()(
           get().setSession(null);
         }
       },
-      restoreSession: async () => {
+      restoreSession: async (forceRefresh?: boolean) => {
         try {
-          const session = await getDataSource().getSession();
+          const session = await getDataSource().getSession(forceRefresh);
           const currentSession = get().session;
           if (session?.user?.id !== currentSession?.user?.id) {
             queryClient.clear();
