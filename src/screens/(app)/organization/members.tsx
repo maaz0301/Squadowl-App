@@ -35,6 +35,7 @@ export default function OrganizationMembersScreen() {
     if (!inviteEmail) return;
     try {
       await inviteMut.mutateAsync({ email: inviteEmail, role: inviteRole });
+      Alert.alert('Success', 'Invitation sent successfully.');
       setInviteEmail('');
     } catch (error: any) {
       Alert.alert('Invite Failed', error.message || 'Could not invite user.');
