@@ -70,7 +70,7 @@ export default function OrganizationMembersScreen() {
             <Text className="font-display font-bold" style={{ color: colors.ink }}>
               Invite Staff
             </Text>
-            <View className="flex-row items-center gap-2">
+            <View className="flex-row items-end gap-2">
               <View className="flex-1">
                 <Input
                   label="Email Address"
