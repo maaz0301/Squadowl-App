@@ -469,6 +469,7 @@ export default function PlayerHubScreen() {
                       playerId: player.athleteId!,
                     });
                     setShowGuardianLink(false);
+                    Alert.alert('Success', 'Guardian account linked and invitation sent successfully.');
                   } catch (error: any) {
                     if (error.message?.includes('User not found')) {
                       // Auto-create the user
