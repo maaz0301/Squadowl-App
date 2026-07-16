@@ -95,6 +95,7 @@ const EVENT_KIND_FROM_DB: Record<string, EventKind> = {
 export class SupabaseDataSource implements DataSource {
   private userId: string | null = null;
   private accountId: string | null = null;
+  private profileCache: Record<string, UserProfile> = {};
 
   private notImplemented(method: string): never {
     throw new Error(`SupabaseDataSource.${method}() not implemented yet.`);
@@ -204,7 +205,13 @@ export class SupabaseDataSource implements DataSource {
   }
 
   private rowToAssessor(a: Row): Assessor {
-    return { name: a.name, email: a.email ?? '', role: a.role ?? 'assessor', status: a.status ?? 'accepted' };
+    return {
+      name: a.name,
+      email: a.email ?? '',
+      role: a.role ?? 'assessor',
+      status: a.status ?? 'accepted',
+      userId: a.user_id ?? undefined,
+    };
   }
 
   private rowToRegistration(r: Row): Registration {
@@ -341,6 +348,9 @@ export class SupabaseDataSource implements DataSource {
 
   // ─── Auth ──────────────────────────────────────────────────────────────────
   private async loadUserProfile(userId: string): Promise<UserProfile> {
+    if (this.profileCache[userId]) {
+      return this.profileCache[userId];
+    }
     const supabase = getSupabase();
     const profile = unwrap(
       await supabase.from('profiles').select('*').eq('id', userId).single(),
@@ -361,7 +371,7 @@ export class SupabaseDataSource implements DataSource {
     const rawRole = membership?.role;
     const role = rawRole === 'owner' ? 'admin' : rawRole;
 
-    return {
+    const result = {
       id: profile.id,
       email: profile.email,
       displayName: profile.display_name,
@@ -374,6 +384,8 @@ export class SupabaseDataSource implements DataSource {
       onboardingSteps: profile.onboarding_steps,
       role: role ?? undefined,
     };
+    this.profileCache[userId] = result;
+    return result;
   }
 
   private toAuthSession(session: Session, user: UserProfile): AuthSession {
@@ -478,6 +490,7 @@ export class SupabaseDataSource implements DataSource {
       }
       await supabase.from('accounts').update(accPatch).eq('id', accountId);
     }
+    delete this.profileCache[userId];
     return this.loadUserProfile(userId);
   }
 
@@ -1215,39 +1228,49 @@ async deleteTryout(id: string): Promise<void> {
 
     if (activeAssessor) {
       evaluatorName = activeAssessor.name;
-      // Look up if this assessor has a linked user_id in tryout_assessors
-      const { data: assessorRow } = await supabase
-        .from('tryout_assessors')
-        .select('user_id')
-        .eq('tryout_id', tryoutId)
-        .eq('name', activeAssessor.name)
-        .maybeSingle();
-      
-      if (assessorRow?.user_id) {
-        evaluatorUserId = assessorRow.user_id;
-      } else {
-        evaluatorUserId = null;
+      // We directly read the userId property mapped in rowToAssessor, bypassing DB lookup
+      evaluatorUserId = activeAssessor.userId ?? null;
+
+      if (!evaluatorUserId) {
+        const profile = await this.loadUserProfile(userId);
+        if (
+          profile.email &&
+          activeAssessor.email &&
+          profile.email.toLowerCase() === activeAssessor.email.toLowerCase()
+        ) {
+          evaluatorUserId = userId;
+        }
       }
     } else {
-      const [profile] = await Promise.all([
-        this.loadUserProfile(userId)
-      ]);
+      const profile = await this.loadUserProfile(userId);
       evaluatorName = profile.displayName;
     }
 
     let id = evalId;
     if (!id) {
-      const { data: existingRows } = await supabase
+      // Correctly check for existing evaluation including null check for evaluatorUserId
+      let query = supabase
         .from('evaluations')
         .select('id')
         .eq('tryout_id', tryoutId)
         .eq('participant_id', playerId)
-        .eq('evaluator_user_id', evaluatorUserId)
-        .eq('session', form.session)
-        .limit(1);
-        
+        .eq('session', form.session);
+
+      if (evaluatorUserId) {
+        query = query.eq('evaluator_user_id', evaluatorUserId);
+      } else {
+        query = query.is('evaluator_user_id', null).eq('evaluator_name', evaluatorName);
+      }
+
+      const { data: existingRows } = await query;
       if (existingRows && existingRows.length > 0) {
         id = existingRows[0].id;
+        
+        // Clean up duplicate evaluation rows if they exist in the DB (fixes 'two go remove and one remain')
+        if (existingRows.length > 1) {
+          const extraIds = existingRows.slice(1).map((r) => r.id);
+          await supabase.from('evaluations').delete().in('id', extraIds);
+        }
       }
     }
 
@@ -1293,9 +1316,15 @@ async deleteTryout(id: string): Promise<void> {
       .map(([rubric_key, value]) => ({ evaluation_id: id, rubric_key, value }));
     
     if (scoreRows.length) {
-      unwrap(await supabase.from('evaluation_scores').upsert(scoreRows, { onConflict: 'evaluation_id,rubric_key' }));
       const keys = scoreRows.map(r => r.rubric_key);
-      unwrap(await supabase.from('evaluation_scores').delete().eq('evaluation_id', id).not('rubric_key', 'in', `(${keys.join(',')})`));
+      // Save scores and clean up old ones in parallel
+      await Promise.all([
+        supabase.from('evaluation_scores').upsert(scoreRows, { onConflict: 'evaluation_id,rubric_key' }),
+        supabase.from('evaluation_scores').delete().eq('evaluation_id', id).not('rubric_key', 'in', `(${keys.join(',')})`),
+      ]).then(([upsertRes, deleteRes]) => {
+        unwrap(upsertRes);
+        unwrap(deleteRes);
+      });
     } else {
       unwrap(await supabase.from('evaluation_scores').delete().eq('evaluation_id', id));
     }

@@ -38,6 +38,7 @@ export default function ScoreScreen() {
   const { playerId, evalId, session: routeSession } = route.params || {};
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
+  const [saving, setSaving] = useState(false);
   const tryoutQuery = useTryoutQuery(id);
   const saveEval = useSaveEvaluationMutation(id!);
   const workingScores = useSessionStore((s) => s.workingScores);
@@ -115,7 +116,7 @@ export default function ScoreScreen() {
 
   const initialScores = mapLegacyScores(existingEval?.scores ?? {}, categories);
 
-  const { control, handleSubmit, watch, setValue, getValues, reset, formState: { isSubmitting, errors } } = useForm<ScoreForm>({
+  const { control, handleSubmit, watch, setValue, getValues, reset, formState: { errors } } = useForm<ScoreForm>({
     resolver: zodResolver(ScoreFormSchema),
     defaultValues: {
       session: currentSession,
@@ -174,10 +175,12 @@ export default function ScoreScreen() {
     const lastSession = lastLoadedRef.current?.session;
 
     const isPlayerChanged = lastPlayerId && lastPlayerId !== playerId;
-    const isEvalChanged = lastPlayerId && lastEvalId !== (evalId ?? undefined);
     const isSessionChanged = lastPlayerId && lastSession !== currentSession;
+    // Only reload if we switched from one non-null evaluation ID to a different non-null ID.
+    // Transitioning from undefined/null to a non-null ID (due to save/autosave completion) should not reload or reset.
+    const isEvalSwitched = lastPlayerId && lastEvalId && evalId && lastEvalId !== evalId;
 
-    if (isPlayerChanged || isEvalChanged || isSessionChanged) {
+    if (isPlayerChanged || isSessionChanged || isEvalSwitched) {
       const currentFormVal = getValues();
       const currentFormStr = JSON.stringify(currentFormVal);
       const hasUnsaved = previousFormRef.current && previousFormRef.current !== currentFormStr;
@@ -201,9 +204,9 @@ export default function ScoreScreen() {
 
       lastLoadedRef.current = { playerId, evalId: evalId ?? undefined, session: currentSession };
       loadEvalData(evalId, currentSession, shouldPreserve);
-    } else if (!lastLoadedRef.current) {
+    } else {
+      // Just update the lastLoadedRef with the current parameters without reloading or resetting the form
       lastLoadedRef.current = { playerId, evalId: evalId ?? undefined, session: currentSession };
-      loadEvalData(evalId, currentSession, true);
     }
   }, [tryoutQuery.data, playerId, evalId, currentSession]);
 
@@ -303,6 +306,7 @@ export default function ScoreScreen() {
 
   const onSubmit = handleSubmit(async (data) => {
     try {
+      setSaving(true);
       if (autoSaveTimeoutRef.current) {
         clearTimeout(autoSaveTimeoutRef.current);
         autoSaveTimeoutRef.current = null;
@@ -326,6 +330,7 @@ export default function ScoreScreen() {
         const hasScores = data.scores && Object.values(data.scores).some(val => val !== undefined && val !== null && val > 0);
         if (!hasScores) {
           Alert.alert('No scores entered', 'Please grade at least one subskill before saving.');
+          setSaving(false);
           return;
         }
 
@@ -352,6 +357,8 @@ export default function ScoreScreen() {
       }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to save evaluation.');
+    } finally {
+      setSaving(false);
     }
   });
 
@@ -512,7 +519,7 @@ export default function ScoreScreen() {
         <Text className="text-center text-2xl font-display font-bold" style={{ color: colors.primary }}>
           Overall: {overall > 0 ? overall.toFixed(1) : '—'}
         </Text>
-        <Button label="Done" onPress={onSubmit} loading={isSubmitting} />
+        <Button label="Done" onPress={onSubmit} loading={saving} />
       </View>
     </Screen>
   );

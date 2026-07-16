@@ -87,6 +87,14 @@ export function useTryoutRealtimeSync(id: string | undefined) {
   useEffect(() => {
     if (!id) return;
 
+    let timeoutId: NodeJS.Timeout | null = null;
+    const triggerInvalidate = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        qc.invalidateQueries({ queryKey: queryKeys.tryout(id) });
+      }, 1000);
+    };
+
     // Subscribe to insert/update events on the evaluations table for this specific tryout
     const uniqueId = Math.random().toString(36).slice(2, 9);
     const channel = getSupabase()
@@ -94,23 +102,17 @@ export function useTryoutRealtimeSync(id: string | undefined) {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'evaluations', filter: `tryout_id=eq.${id}` },
-        (payload: any) => {
-          // Whenever an evaluation is created, updated, or deleted, refetch the tryout data
-          qc.invalidateQueries({ queryKey: queryKeys.tryout(id) });
-        }
+        () => triggerInvalidate()
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'evaluation_scores' },
-        (payload: any) => {
-          // evaluation_scores doesn't have tryout_id directly, so we just invalidate on any score change
-          // (or we could fetch the tryout_id, but invalidating is fast enough given our caching)
-          qc.invalidateQueries({ queryKey: queryKeys.tryout(id) });
-        }
+        () => triggerInvalidate()
       )
       .subscribe();
 
     return () => {
+      if (timeoutId) clearTimeout(timeoutId);
       getSupabase().removeChannel(channel);
     };
   }, [id, qc]);
@@ -214,7 +216,7 @@ export function useSaveEvaluationMutation(tryoutId: string) {
       const activeAssessor = useSessionStore.getState().activeAssessor;
       return withTimeout(
         getDataSource().saveEvaluation(tryoutId, playerId, form, evalId, activeAssessor),
-        20000,
+        5000,
         'Saving evaluation timed out. Please check your connection.'
       );
     },
