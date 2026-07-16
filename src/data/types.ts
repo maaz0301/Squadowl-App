@@ -236,6 +236,7 @@ export const UserProfileSchema = z.object({
       scorePlayers: false,
       changePassword: false,
     }),
+  role: z.string().optional(),
 });
 
 export type UserProfile = z.infer<typeof UserProfileSchema>;
@@ -451,6 +452,7 @@ export const CreateEventFormSchema = z.object({
   endTime: z.string().optional(),
   location: z.string().optional(),
   notes: z.string().optional(),
+  playerIds: z.array(z.string()).optional(),
 });
 
 export type CreateEventForm = z.infer<typeof CreateEventFormSchema>;
@@ -541,7 +543,20 @@ export interface GuardianRosterAthlete {
     id: string;
     name: string;
     sport: string;
-    sessions: { name: string; result?: string; date?: number; scores?: Record<string, number> }[];
+    participantId: string; // <-- ADD THIS LINE HERE
+    sessions: {
+      name: string;
+      result?: string;
+      date?: number;
+      scores?: Record<string, number>;
+    }[];
   }[];
-  seasons: { id: string; name: string; teamName: string; sport: string }[];
+  seasons: {
+    id: string;
+    name: string;
+    teamName: string;
+    sport: string;
+    jersey?: string;
+    events?: SeasonEvent[];
+  }[];
 }

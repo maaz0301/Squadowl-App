@@ -485,6 +485,7 @@ export function usePortalInviteMutation(seasonId: string) {
 
 export function useSetAvailabilityMutation(seasonId: string) {
   const qc = useQueryClient();
+  const userId = useAuthStore((s) => s.session?.user?.id);
   return useMutation({
     mutationFn: ({
       eventId,
@@ -498,6 +499,9 @@ export function useSetAvailabilityMutation(seasonId: string) {
     onMutate: async ({ eventId, playerId, response }) => {
       await qc.cancelQueries({ queryKey: queryKeys.seasons });
       await qc.cancelQueries({ queryKey: queryKeys.season(seasonId) });
+      if (userId) {
+        await qc.cancelQueries({ queryKey: queryKeys.guardianRosters(userId) });
+      }
 
       const previousSeasons = qc.getQueryData<any[]>(queryKeys.seasons);
       if (previousSeasons) {
@@ -545,7 +549,42 @@ export function useSetAvailabilityMutation(seasonId: string) {
         });
       }
 
-      return { previousSeasons, previousSeason };
+      const previousRosters = userId ? qc.getQueryData<any[]>(queryKeys.guardianRosters(userId)) : undefined;
+      if (userId && previousRosters) {
+        qc.setQueryData(
+          queryKeys.guardianRosters(userId),
+          previousRosters.map((athlete) => {
+            if (athlete.id === playerId) {
+              return {
+                ...athlete,
+                seasons: (athlete.seasons || []).map((season: any) => {
+                  if (season.id === seasonId) {
+                    return {
+                      ...season,
+                      events: (season.events || []).map((event: any) => {
+                        if (event.id === eventId) {
+                          return {
+                            ...event,
+                            availability: {
+                              ...(event.availability || {}),
+                              [playerId]: response,
+                            },
+                          };
+                        }
+                        return event;
+                      }),
+                    };
+                  }
+                  return season;
+                }),
+              };
+            }
+            return athlete;
+          })
+        );
+      }
+
+      return { previousSeasons, previousSeason, previousRosters };
     },
     onError: (err, variables, context) => {
       if (context?.previousSeasons) {
@@ -554,10 +593,14 @@ export function useSetAvailabilityMutation(seasonId: string) {
       if (context?.previousSeason) {
         qc.setQueryData(queryKeys.season(seasonId), context.previousSeason);
       }
+      if (userId && context?.previousRosters) {
+        qc.setQueryData(queryKeys.guardianRosters(userId), context.previousRosters);
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.season(seasonId) });
       qc.invalidateQueries({ queryKey: queryKeys.seasons });
+      qc.invalidateQueries({ queryKey: queryKeys.guardianRosters() });
     },
   });
 }
@@ -586,9 +629,11 @@ export function useOrgQuery() {
 }
 
 export function useOrgMembersQuery() {
+  const userId = useAuthStore((s) => s.session?.user?.id);
   return useQuery({
-    queryKey: queryKeys.orgMembers,
+    queryKey: queryKeys.orgMembers(userId),
     queryFn: () => getDataSource().listOrgMembers(),
+    enabled: !!userId,
   });
 }
 
@@ -597,7 +642,7 @@ export function useInviteMemberMutation() {
   return useMutation({
     mutationFn: ({ email, role }: { email: string; role: import('@/data/types').OrgRole }) =>
       getDataSource().inviteOrgMember(email, role),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.orgMembers }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.orgMembers() }),
   });
 }
 
@@ -606,7 +651,7 @@ export function useResendInviteMutation() {
   return useMutation({
     mutationFn: ({ userId, email, role }: { userId: string; email: string; role: import('@/data/types').OrgRole }) =>
       (getDataSource() as any).resendGuardianInvite(userId, email, role),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.orgMembers }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.orgMembers() }),
   });
 }
 
@@ -615,7 +660,7 @@ export function useCreateAndInviteMemberMutation() {
   return useMutation<import('@/data/types').OrgMember, Error, { email: string; password: string; name: string; role: import('@/data/types').OrgRole }>({
     mutationFn: ({ email, password, name, role }) =>
       (getDataSource() as any).createAndInviteUser(email, password, name, role),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.orgMembers }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.orgMembers() }),
   });
 }
 
@@ -624,7 +669,7 @@ export function useUpdateMemberRoleMutation() {
   return useMutation({
     mutationFn: ({ memberId, role }: { memberId: string; role: import('@/data/types').OrgRole }) =>
       getDataSource().updateOrgMemberRole(memberId, role),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.orgMembers }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.orgMembers() }),
   });
 }
 
@@ -632,7 +677,7 @@ export function useRemoveMemberMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (memberId: string) => getDataSource().removeOrgMember(memberId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.orgMembers }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.orgMembers() }),
   });
 }
 
@@ -643,15 +688,17 @@ export function useLinkGuardianMutation() {
       getDataSource().linkGuardianToAthlete(guardianId, tryoutId, playerId),
     onSuccess: (_, { tryoutId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
-      qc.invalidateQueries({ queryKey: queryKeys.guardianRosters });
+      qc.invalidateQueries({ queryKey: queryKeys.guardianRosters() });
     },
   });
 }
 
 export function useGuardianRostersQuery() {
+  const userId = useAuthStore((s) => s.session?.user?.id);
   return useQuery({
-    queryKey: queryKeys.guardianRosters,
+    queryKey: queryKeys.guardianRosters(userId),
     queryFn: () => getDataSource().getGuardianRosters(),
+    enabled: !!userId,
   });
 }
 
@@ -782,7 +829,7 @@ export function useDeleteTeamMutation() {
   });
 }
 
-export function useImportScanScoresMutation() {
+export function useImportScanScoresMutation() { 
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({

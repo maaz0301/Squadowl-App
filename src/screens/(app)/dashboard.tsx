@@ -155,26 +155,39 @@ export default function DashboardScreen() {
     navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: id, isAssessorOnly: true } });
   };
 
-  if (teamsQuery.isLoading || tryoutsQuery.isLoading || seasonsQuery.isLoading) {
-    return <LoadingState message="Loading dashboard..." />;
-  }
-
-  if (teamsQuery.isError || tryoutsQuery.isError || seasonsQuery.isError) {
-    const errorMsg =
-      teamsQuery.error?.message ||
-      tryoutsQuery.error?.message ||
-      seasonsQuery.error?.message ||
-      'Unknown error';
-    return (
-      <ErrorState
-        message={`Could not load dashboard data: ${errorMsg}`}
-        onRetry={() => {
-          teamsQuery.refetch();
-          tryoutsQuery.refetch();
-          seasonsQuery.refetch();
-        }}
-      />
-    );
+  if (isGuardianOnly) {
+    if (guardianQuery.isLoading) {
+      return <LoadingState message="Loading portal..." />;
+    }
+    if (guardianQuery.isError) {
+      return (
+        <ErrorState
+          message={`Could not load guardian dashboard: ${guardianQuery.error?.message || 'Unknown error'}`}
+          onRetry={() => guardianQuery.refetch()}
+        />
+      );
+    }
+  } else {
+    if (teamsQuery.isLoading || tryoutsQuery.isLoading || seasonsQuery.isLoading) {
+      return <LoadingState message="Loading dashboard..." />;
+    }
+    if (teamsQuery.isError || tryoutsQuery.isError || seasonsQuery.isError) {
+      const errorMsg =
+        teamsQuery.error?.message ||
+        tryoutsQuery.error?.message ||
+        seasonsQuery.error?.message ||
+        'Unknown error';
+      return (
+        <ErrorState
+          message={`Could not load dashboard data: ${errorMsg}`}
+          onRetry={() => {
+            teamsQuery.refetch();
+            tryoutsQuery.refetch();
+            seasonsQuery.refetch();
+          }}
+        />
+      );
+    }
   }
 
   const openTryout = (id: string) => {
@@ -400,49 +413,56 @@ export default function DashboardScreen() {
               </View>
             ) : null}
             
-            {guardianQuery.data && guardianQuery.data.length > 0 ? (
-              <View className="mb-4">
-                <Text
-                  className="text-xs font-bold uppercase tracking-wider mb-2"
-                  style={{ color: colors.inkMuted }}
-                >
-                  My Athletes
+          {guardianQuery.data && guardianQuery.data.length > 0 ? (
+  <View className="mb-4">
+    <Text
+      className="text-xs font-bold uppercase tracking-wider mb-2"
+      style={{ color: colors.inkMuted }}
+    >
+      My Athletes
+    </Text>
+    {guardianQuery.data.map((ath) => (
+      <Pressable key={ath.id} onPress={() => navigation.navigate('GuardianPortal', { playerId: ath.id })}>
+        <Card className="mb-2">
+          <Text className="text-base font-display font-bold mb-1" style={{ color: colors.ink }}>
+            {ath.firstName} {ath.lastName}
+          </Text>
+          
+          {ath.tryouts.length === 0 && ath.seasons.length === 0 ? (
+            <Text className="text-sm" style={{ color: colors.inkMuted }}>
+              Not assigned to any tryouts or seasons yet.
+            </Text>
+          ) : null}
+
+          {ath.tryouts.length > 0 ? (
+            <View className="mt-2">
+              <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Tryouts</Text>
+              {ath.tryouts.map(t => (
+                /* 
+                  CRITICAL FIX: Changed key from t.id to t.participantId.
+                  This ensures that if a player is in two tryouts, React renders 
+                  each entry as a unique, independent item.
+                */
+                <Text key={t.participantId} className="text-sm" style={{ color: colors.primary }}>
+                  • {t.name} ({t.sport})
                 </Text>
-                {guardianQuery.data.map((ath) => (
-                  <Pressable key={ath.id} onPress={() => navigation.navigate('GuardianPortal', { playerId: ath.id })}>
-                    <Card className="mb-2">
-                      <Text className="text-base font-display font-bold mb-1" style={{ color: colors.ink }}>
-                        {ath.firstName} {ath.lastName}
-                      </Text>
-                      
-                      {ath.tryouts.length === 0 && ath.seasons.length === 0 ? (
-                        <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                          Not assigned to any tryouts or seasons yet.
-                        </Text>
-                      ) : null}
+              ))}
+            </View>
+          ) : null}
 
-                      {ath.tryouts.length > 0 ? (
-                        <View className="mt-2">
-                          <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Tryouts</Text>
-                          {ath.tryouts.map(t => (
-                            <Text key={t.id} className="text-sm" style={{ color: colors.primary }}>• {t.name} ({t.sport})</Text>
-                          ))}
-                        </View>
-                      ) : null}
-
-                      {ath.seasons.length > 0 ? (
-                        <View className="mt-2">
-                          <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Seasons</Text>
-                          {ath.seasons.map(s => (
-                            <Text key={s.id} className="text-sm" style={{ color: colors.primary }}>• {s.name} - {s.teamName}</Text>
-                          ))}
-                        </View>
-                      ) : null}
-                    </Card>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
+          {ath.seasons.length > 0 ? (
+            <View className="mt-2">
+              <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Seasons</Text>
+              {ath.seasons.map(s => (
+                <Text key={s.id} className="text-sm" style={{ color: colors.primary }}>• {s.name} - {s.teamName}</Text>
+              ))}
+            </View>
+          ) : null}
+        </Card>
+      </Pressable>
+    ))}
+  </View>
+) : null}
 
             {!isGuardianOnly && (
               <Tabs

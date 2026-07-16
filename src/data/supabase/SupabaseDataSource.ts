@@ -93,6 +93,7 @@ const EVENT_KIND_FROM_DB: Record<string, EventKind> = {
 };
 
 export class SupabaseDataSource implements DataSource {
+  private userId: string | null = null;
   private accountId: string | null = null;
 
   private notImplemented(method: string): never {
@@ -101,14 +102,24 @@ export class SupabaseDataSource implements DataSource {
 
   private async ctx(): Promise<{ supabase: SupabaseClient; userId: string; accountId: string }> {
     const supabase = getSupabase();
-    const { data: u } = await supabase.auth.getUser();
-    if (!u.user) throw new Error('Not authenticated');
+    let uId = this.userId;
+    if (!uId) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        uId = session.user.id;
+      } else {
+        const { data: u } = await supabase.auth.getUser();
+        if (!u.user) throw new Error('Not authenticated');
+        uId = u.user.id;
+      }
+      this.userId = uId;
+    }
     if (!this.accountId) {
       // Fetch all memberships to determine the best account to use
       const m = await supabase
         .from('memberships')
         .select('account_id, role')
-        .eq('user_id', u.user.id)
+        .eq('user_id', uId)
         .order('created_at', { ascending: true });
       const memberships = m.data ?? [];
       
@@ -118,7 +129,7 @@ export class SupabaseDataSource implements DataSource {
       if (!accId) throw new Error('No account for user');
       this.accountId = accId;
     }
-    return { supabase, userId: u.user.id, accountId: this.accountId };
+    return { supabase, userId: uId, accountId: this.accountId };
   }
 
   private async markOnboarding(patch: Record<string, boolean>): Promise<void> {
@@ -346,6 +357,10 @@ export class SupabaseDataSource implements DataSource {
     const account = Array.isArray(membership?.accounts)
       ? membership.accounts[0]
       : (membership?.accounts as Row | undefined);
+    
+    const rawRole = membership?.role;
+    const role = rawRole === 'owner' ? 'admin' : rawRole;
+
     return {
       id: profile.id,
       email: profile.email,
@@ -357,6 +372,7 @@ export class SupabaseDataSource implements DataSource {
       createdAt: toMs(profile.created_at),
       onboardingCompleted: profile.onboarding_completed,
       onboardingSteps: profile.onboarding_steps,
+      role: role ?? undefined,
     };
   }
 
@@ -369,6 +385,7 @@ export class SupabaseDataSource implements DataSource {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error || !data.session) throw new Error(error?.message ?? 'Login failed');
     this.accountId = null;
+    this.userId = data.session.user.id;
     const user = await this.loadUserProfile(data.session.user.id);
     return this.toAuthSession(data.session, user);
   }
@@ -390,12 +407,14 @@ export class SupabaseDataSource implements DataSource {
       session = signIn.session;
     }
     this.accountId = null;
+    this.userId = session.user.id;
     const user = await this.loadUserProfile(session.user.id);
     return this.toAuthSession(session, user);
   }
 
   async logout(): Promise<void> {
     this.accountId = null;
+    this.userId = null;
     try {
       await getSupabase().auth.signOut();
     } catch (error) {
@@ -414,12 +433,19 @@ export class SupabaseDataSource implements DataSource {
   async getSession(): Promise<AuthSession | null> {
     const supabase = getSupabase();
     const { data, error } = await supabase.auth.getSession();
-    if (error || !data.session) return null;
+    if (error || !data.session) {
+      this.userId = null;
+      this.accountId = null;
+      return null;
+    }
     try {
+      this.userId = data.session.user.id;
       const user = await this.loadUserProfile(data.session.user.id);
       return this.toAuthSession(data.session, user);
     } catch (e) {
       console.warn('Failed to restore session profile, signing out:', e);
+      this.userId = null;
+      this.accountId = null;
       await supabase.auth.signOut();
       return null;
     }
@@ -483,6 +509,7 @@ export class SupabaseDataSource implements DataSource {
     if (error) throw new Error(error.message);
     if (data.session) {
       this.accountId = null;
+      this.userId = null;
     }
   }
 
@@ -494,6 +521,7 @@ export class SupabaseDataSource implements DataSource {
     const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
     if (updateError) throw new Error(updateError.message);
     this.accountId = null;
+    this.userId = null;
   }
 
   async checkUserExistsByEmail(email: string): Promise<boolean> {
@@ -1634,8 +1662,11 @@ async deleteTryout(id: string): Promise<void> {
     const availByEvent: Record<string, Record<string, string>> = {};
     for (const a of availabilityRows) {
       const rosterItem = rosterRows.find((r) => r.id === a.roster_id);
-      if (rosterItem && rosterItem.athlete_id) {
-        (availByEvent[a.season_event_id] ??= {})[rosterItem.athlete_id] = a.response;
+      if (rosterItem) {
+        if (rosterItem.athlete_id) {
+          (availByEvent[a.season_event_id] ??= {})[rosterItem.athlete_id] = a.response;
+        }
+        (availByEvent[a.season_event_id] ??= {})[rosterItem.id] = a.response;
       } else {
         (availByEvent[a.season_event_id] ??= {})[a.roster_id] = a.response;
       }
@@ -1792,12 +1823,33 @@ async deleteTryout(id: string): Promise<void> {
         .single(),
     ) as Row;
 
+    const eventId = row.id;
+
     try {
       const season = await this.getSeason(seasonId);
       if (season) {
-        // Find all guardians related to this season and send them emails.
+        // Find which players are selected (default to all if none provided)
+        const selectedPlayerIds = form.playerIds && form.playerIds.length > 0
+          ? form.playerIds
+          : season.roster.map(p => p.id);
+
+        // Pre-populate event_availability for these players
+        const availInserts = season.roster
+          .filter(p => selectedPlayerIds.includes(p.id))
+          .map(p => ({
+            season_event_id: eventId,
+            roster_id: p.id,
+            response: 'pending' as const,
+          }));
+        
+        if (availInserts.length > 0) {
+          unwrap(await supabase.from('event_availability').insert(availInserts));
+        }
+
+        // Find all guardians related to the selected players and send them emails.
         const emails = Array.from(new Set(
           season.roster
+            .filter(p => selectedPlayerIds.includes(p.id))
             .map(p => p.guardianEmail)
             .filter(Boolean)
         ));
@@ -1839,18 +1891,44 @@ async deleteTryout(id: string): Promise<void> {
     ) as Row;
 
     try {
-      const { data } = await supabase.from('season_roster').select('player_email').eq('season_id', seasonId);
-      const emails = data?.map((r) => r.player_email).filter(Boolean) || [];
-      if (emails.length > 0) {
-        supabase.functions.invoke('send-push-notification', {
-          body: { target_user_ids: emails, heading: `Schedule Update: ${row.title}`, content: `Event updated to ${row.event_date}.` }
-        }).catch(console.error);
+      const { data: availPlayers } = await supabase
+        .from('event_availability')
+        .select(`
+          roster_id,
+          season_roster(
+            player_email,
+            athletes(
+              guardian_email
+            )
+          )
+        `)
+        .eq('season_event_id', eventId);
 
-        for (const email of emails) {
-          supabase.functions.invoke('send-email', {
-            body: { type: 'schedule_update', to: email, payload: { eventName: row.title, date: row.event_date, time: row.start_time, location: row.location } }
-          }).catch(console.error);
+      const playerEmails = new Set<string>();
+      const guardianEmails = new Set<string>();
+
+      if (availPlayers) {
+        for (const item of availPlayers as any[]) {
+          const sr = item.season_roster;
+          if (sr) {
+            if (sr.player_email) playerEmails.add(sr.player_email);
+            if (sr.athletes?.guardian_email) guardianEmails.add(sr.athletes.guardian_email);
+          }
         }
+      }
+
+      const allEmails = new Set([...playerEmails, ...guardianEmails]);
+
+      if (playerEmails.size > 0) {
+        supabase.functions.invoke('send-push-notification', {
+          body: { target_user_ids: Array.from(playerEmails), heading: `Schedule Update: ${row.title}`, content: `Event updated to ${row.event_date}.` }
+        }).catch(console.error);
+      }
+
+      for (const email of allEmails) {
+        supabase.functions.invoke('send-email', {
+          body: { type: 'schedule_update', to: email, payload: { eventName: row.title, date: row.event_date, time: row.start_time, location: row.location } }
+        }).catch(console.error);
       }
     } catch (e) {
       console.error('Failed to send update emails', e);
@@ -1960,14 +2038,26 @@ async deleteTryout(id: string): Promise<void> {
     const season = await this.getSeason(seasonId);
     if (!season) throw new Error('Season not found');
 
+    // Get all roster IDs that are assigned to at least one event in this season
+    const eventIds = season.events.map(e => e.id);
+    let availData: any[] = [];
+    if (eventIds.length > 0) {
+      const { data } = await supabase.from('event_availability').select('roster_id').in('season_event_id', eventIds);
+      availData = data || [];
+    }
+
+    const assignedRosterIds = new Set(availData.map((a: any) => a.roster_id));
+
     const emails = new Set<string>();
     for (const p of season.roster) {
-      if (p.playerEmail) emails.add(p.playerEmail);
-      if (p.guardianEmail) emails.add(p.guardianEmail);
+      if (assignedRosterIds.has(p.id)) {
+        if (p.playerEmail) emails.add(p.playerEmail);
+        if (p.guardianEmail) emails.add(p.guardianEmail);
+      }
     }
 
     if (emails.size === 0) {
-      throw new Error('No player or guardian emails found in the roster.');
+      throw new Error('No player or guardian emails found for players added to scheduled events.');
     }
 
     const scheduleUrl = `https://aas-tryout.app/?schedule=${season.scheduleShareToken}`;
@@ -2131,7 +2221,7 @@ async deleteTryout(id: string): Promise<void> {
         .from('season_roster')
         .select('id')
         .eq('season_id', seasonId)
-        .eq('athlete_id', playerId)
+        .or(`athlete_id.eq.${playerId},id.eq.${playerId}`)
         .maybeSingle()
     ) as Row | null;
 
@@ -2549,11 +2639,97 @@ async deleteTryout(id: string): Promise<void> {
     } as import('../types').Player;
   }
 
-  async getGuardianRosters(): Promise<import('../types').GuardianRosterAthlete[]> {
+  // async getGuardianRosters(): Promise<import('../types').GuardianRosterAthlete[]> {
+  //   const { supabase, userId } = await this.ctx();
+  //   if (!userId) return [];
+
+  //   const { data, error } = await supabase
+  //     .from('athletes')
+  //     .select(`
+  //       id,
+  //       first_name,
+  //       last_name,
+  //       avatar_url,
+  //       tryout_participants(
+  //         tryouts(id, name, sport),
+  //         evaluations(session, recommendation, created_at, evaluation_scores(rubric_key, value))
+  //       ),
+  //       season_roster(
+  //         seasons(id, name, team_name, sport)
+  //       )
+  //     `)
+  //     .eq('guardian_user_id', userId);
+
+  //   if (error) {
+  //     console.error('Failed to fetch guardian rosters:', error);
+  //     return [];
+  //   }
+
+  //   return (data as any[]).map((row) => ({
+  //     id: row.id,
+  //     firstName: row.first_name,
+  //     lastName: row.last_name,
+  //     avatarUrl: row.avatar_url,
+  //     tryouts: (row.tryout_participants || [])
+  //       .map((tp: any) => {
+  //         if (!tp.tryouts) return null;
+          
+  //         const evals = tp.evaluations || [];
+  //         const sessionMap = new Map<string, { result: string; date: number; scores: Record<string, number> }>();
+          
+  //         for (const e of evals) {
+  //           if (e.recommendation) {
+  //             const sessionName = e.session || 'Session 1';
+  //             const t = e.created_at ? new Date(e.created_at).getTime() : 0;
+  //             const existing = sessionMap.get(sessionName);
+  //             if (!existing || t > existing.date) {
+  //               // Map scores from evaluation_scores array to Record
+  //               const scoresRecord: Record<string, number> = {};
+  //               if (e.evaluation_scores && Array.isArray(e.evaluation_scores)) {
+  //                 for (const score of e.evaluation_scores) {
+  //                   if (score.rubric_key && typeof score.value === 'number') {
+  //                     scoresRecord[score.rubric_key] = score.value;
+  //                   }
+  //                 }
+  //               }
+                
+  //               sessionMap.set(sessionName, { 
+  //                 result: REC_FROM_DB[e.recommendation] || e.recommendation, 
+  //                 date: t,
+  //                 scores: scoresRecord
+  //               });
+  //             }
+  //           }
+  //         }
+          
+  //         const sessions = Array.from(sessionMap.entries()).map(([name, data]) => ({
+  //           name,
+  //           result: data.result,
+  //           date: data.date,
+  //           scores: Object.keys(data.scores).length > 0 ? data.scores : undefined
+  //         })).sort((a, b) => a.name.localeCompare(b.name));
+
+  //         return {
+  //           ...tp.tryouts,
+  //           sessions
+  //         };
+  //       })
+  //       .filter(Boolean),
+  //     seasons: (row.season_roster || [])
+  //       .map((sr: any) => sr.seasons)
+  //       .filter(Boolean),
+  //   }));
+  // }
+async getGuardianRosters(): Promise<import('../types').GuardianRosterAthlete[]> {
     const { supabase, userId } = await this.ctx();
     if (!userId) return [];
 
-    const { data, error } = await supabase
+    // 1. Fetch the actual logged-in user's email to bypass misaligned UUIDs
+    const { data: userData } = await supabase.auth.getUser();
+    const userEmail = userData?.user?.email?.toLowerCase();
+
+    // 2. Query matching athletes based on User ID OR matching Guardian Email
+    let query = supabase
       .from('athletes')
       .select(`
         id,
@@ -2561,39 +2737,73 @@ async deleteTryout(id: string): Promise<void> {
         last_name,
         avatar_url,
         tryout_participants(
+          id,
+          tryout_id,
           tryouts(id, name, sport),
-          evaluations(session, recommendation, created_at, evaluation_scores(rubric_key, value))
+          evaluations(
+            id,
+            session,
+            recommendation,
+            created_at,
+            evaluation_scores(rubric_key, value)
+          )
         ),
         season_roster(
-          seasons(id, name, team_name, sport)
+          id,
+          jersey,
+          event_availability(
+            season_event_id,
+            response
+          ),
+          seasons(
+            id,
+            name,
+            team_name,
+            sport,
+            season_events(
+              id,
+              kind,
+              title,
+              event_date,
+              start_time,
+              end_time,
+              location,
+              notes
+            )
+          )
         )
-      `)
-      .eq('guardian_user_id', userId);
+      `);
+
+    // Fall back to matching by lowercased email if the UUIDs are unlinked
+    if (userEmail) {
+      query = query.or(`guardian_user_id.eq.${userId},guardian_email.ilike.${userEmail}`);
+    } else {
+      query = query.eq('guardian_user_id', userId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Failed to fetch guardian rosters:', error);
       return [];
     }
 
-    return (data as any[]).map((row) => ({
-      id: row.id,
-      firstName: row.first_name,
-      lastName: row.last_name,
-      avatarUrl: row.avatar_url,
-      tryouts: (row.tryout_participants || [])
+    return (data as any[]).map((row) => {
+      // 3. Map tryouts/assessments using the unique participant ID (tp.id)
+      const tryoutsList = (row.tryout_participants || [])
         .map((tp: any) => {
           if (!tp.tryouts) return null;
-          
+
           const evals = tp.evaluations || [];
           const sessionMap = new Map<string, { result: string; date: number; scores: Record<string, number> }>();
-          
+
           for (const e of evals) {
             if (e.recommendation) {
               const sessionName = e.session || 'Session 1';
               const t = e.created_at ? new Date(e.created_at).getTime() : 0;
               const existing = sessionMap.get(sessionName);
+
               if (!existing || t > existing.date) {
-                // Map scores from evaluation_scores array to Record
                 const scoresRecord: Record<string, number> = {};
                 if (e.evaluation_scores && Array.isArray(e.evaluation_scores)) {
                   for (const score of e.evaluation_scores) {
@@ -2602,33 +2812,84 @@ async deleteTryout(id: string): Promise<void> {
                     }
                   }
                 }
-                
-                sessionMap.set(sessionName, { 
-                  result: REC_FROM_DB[e.recommendation] || e.recommendation, 
+
+                sessionMap.set(sessionName, {
+                  result: REC_FROM_DB[e.recommendation] || e.recommendation,
                   date: t,
-                  scores: scoresRecord
+                  scores: scoresRecord,
                 });
               }
             }
           }
-          
-          const sessions = Array.from(sessionMap.entries()).map(([name, data]) => ({
-            name,
-            result: data.result,
-            date: data.date,
-            scores: Object.keys(data.scores).length > 0 ? data.scores : undefined
-          })).sort((a, b) => a.name.localeCompare(b.name));
+
+          const sessions = Array.from(sessionMap.entries())
+            .map(([name, data]) => ({
+              name,
+              result: data.result,
+              date: data.date,
+              scores: Object.keys(data.scores).length > 0 ? data.scores : undefined,
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name));
 
           return {
             ...tp.tryouts,
-            sessions
+            // Globally unique ID prevents multiple dashboard row items from collapsing
+            participantId: tp.id, 
+            sessions,
           };
         })
-        .filter(Boolean),
-      seasons: (row.season_roster || [])
-        .map((sr: any) => sr.seasons)
-        .filter(Boolean),
-    }));
+        .filter(Boolean);
+
+      // 4. Map active seasons and nested schedule events (practices/games)
+      const seasonsList = (row.season_roster || [])
+        .map((sr: any) => {
+          if (!sr.seasons) return null;
+
+          const assignedEventIds = new Set<string>(
+            (sr.event_availability || []).map((ea: any) => ea.season_event_id)
+          );
+
+          const formattedEvents = (sr.seasons.season_events || [])
+            .filter((ev: any) => assignedEventIds.has(ev.id))
+            .map((ev: any) => {
+              const ea = (sr.event_availability || []).find((a: any) => a.season_event_id === ev.id);
+              const availabilityRecord: Record<string, string> = {};
+              if (ea) {
+                availabilityRecord[row.id] = ea.response;
+              }
+              return {
+                id: ev.id,
+                type: EVENT_KIND_FROM_DB[ev.kind] ?? 'Game',
+                title: ev.title,
+                date: ev.event_date,
+                startTime: ev.start_time ?? undefined,
+                endTime: ev.end_time ?? undefined,
+                location: ev.location ?? undefined,
+                notes: ev.notes ?? undefined,
+                availability: availabilityRecord,
+              };
+            });
+
+          return {
+            id: sr.seasons.id,
+            name: sr.seasons.name,
+            teamName: sr.seasons.team_name,
+            sport: sr.seasons.sport,
+            jersey: sr.jersey ?? undefined,
+            events: formattedEvents, // Mapped practices/games now exposed to frontend!
+          };
+        })
+        .filter(Boolean);
+
+      return {
+        id: row.id,
+        firstName: row.first_name,
+        lastName: row.last_name,
+        avatarUrl: row.avatar_url,
+        tryouts: tryoutsList,
+        seasons: seasonsList,
+      };
+    });
   }
 }
 

@@ -13,7 +13,7 @@ import {
   Badge,
 } from '@/components/ui';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { useGuardianRostersQuery, useSeasonsQuery, useSetAvailabilityMutation } from '@/features/queries';
+import { useGuardianRostersQuery, useSetAvailabilityMutation } from '@/features/queries';
 import type { SeasonEvent } from '@/data/types';
 
 function ExpandableText({ text, style, className }: { text: string, style?: any, className?: string }) {
@@ -136,9 +136,8 @@ export default function GuardianPortalScreen() {
   const [tab, setTab] = useState('overview');
 
   const guardianQuery = useGuardianRostersQuery();
-  const seasonsQuery = useSeasonsQuery();
 
-  if (guardianQuery.isLoading || seasonsQuery.isLoading) {
+  if (guardianQuery.isLoading) {
     return <LoadingState message="Loading portal..." />;
   }
 
@@ -160,12 +159,10 @@ export default function GuardianPortalScreen() {
   // Aggregate events from the seasons the athlete is enrolled in
   let allEvents: (SeasonEvent & { seasonName: string; teamName: string; seasonId: string })[] = [];
   
-  if (seasonsQuery.data) {
-    const athleteSeasonIds = new Set(athlete.seasons.map((s) => s.id));
-    const athleteSeasons = seasonsQuery.data.filter((s) => athleteSeasonIds.has(s.id));
-    
-    athleteSeasons.forEach((season) => {
-      season.events.forEach((event) => {
+  if (athlete && athlete.seasons) {
+    athlete.seasons.forEach((season) => {
+      const seasonEvents: SeasonEvent[] = (season as any).events || [];
+      seasonEvents.forEach((event) => {
         allEvents.push({
           ...event,
           seasonName: season.name,

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { FlatList, Text, View } from 'react-native';
+import { useState, useEffect } from 'react';
+import { FlatList, Text, View, ScrollView, Pressable } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 
 import { useForm, Controller } from 'react-hook-form';
@@ -20,10 +20,11 @@ export default function SeasonScheduleScreen() {
   const deleteEvent = useDeleteSeasonEventMutation(id!);
   const [showAdd, setShowAdd] = useState(false);
   const [reminding, setReminding] = useState<string | null>(null);
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
 
   const { control, handleSubmit, watch, setValue, reset, setError } = useForm<CreateEventForm>({
     resolver: zodResolver(CreateEventFormSchema),
-    defaultValues: { type: 'Practice', title: '', date: '', startTime: '', location: '' },
+    defaultValues: { type: 'Practice', title: '', date: '', startTime: '', location: '', playerIds: [] },
   });
 
   if (seasonQuery.isLoading) return <LoadingState message="Loading schedule..." />;
@@ -32,6 +33,12 @@ export default function SeasonScheduleScreen() {
   }
   const season = seasonQuery.data;
   const eventType = watch('type');
+
+  useEffect(() => {
+    if (showAdd && season?.roster) {
+      setSelectedPlayerIds(season.roster.map((p) => p.id));
+    }
+  }, [showAdd, season?.roster]);
 
   const onSubmit = handleSubmit(
     async (data) => {
@@ -56,7 +63,10 @@ export default function SeasonScheduleScreen() {
         return;
       }
 
-      await addEvent.mutateAsync(data);
+      await addEvent.mutateAsync({
+        ...data,
+        playerIds: selectedPlayerIds,
+      });
       reset();
       setShowAdd(false);
     },
@@ -73,8 +83,10 @@ export default function SeasonScheduleScreen() {
   const sendReminder = async (event: import('@/data/types').SeasonEvent) => {
     try {
       setReminding(event.id);
+      const assignedRosterIds = new Set(Object.keys(event.availability || {}));
       const emails = Array.from(new Set(
         season.roster
+          .filter(p => assignedRosterIds.has(p.id))
           .map(p => p.guardianEmail)
           .filter(Boolean)
       ));
@@ -153,6 +165,36 @@ export default function SeasonScheduleScreen() {
           <Controller control={control} name="location" render={({ field: { onChange, onBlur, value } }) => (
             <Input label="Location" onBlur={onBlur} onChangeText={onChange} value={value} />
           )} />
+          <Text className="font-bold text-xs uppercase tracking-wider mt-2" style={{ color: colors.inkMuted }}>
+            Roster Assignment ({selectedPlayerIds.length}/{season.roster.length})
+          </Text>
+          <ScrollView style={{ maxHeight: 150 }} nestedScrollEnabled>
+            {season.roster.map((player) => {
+              const isSelected = selectedPlayerIds.includes(player.id);
+              return (
+                <Pressable
+                  key={player.id}
+                  onPress={() => {
+                    if (isSelected) {
+                      setSelectedPlayerIds(selectedPlayerIds.filter(id => id !== player.id));
+                    } else {
+                      setSelectedPlayerIds([...selectedPlayerIds, player.id]);
+                    }
+                  }}
+                  className="flex-row items-center justify-between py-2 border-b"
+                  style={{ borderColor: colors.border }}
+                >
+                  <Text style={{ color: colors.ink }}>
+                    {player.firstName} {player.lastName}
+                  </Text>
+                  <Badge
+                    label={isSelected ? 'Selected' : 'Deselected'}
+                    variant={isSelected ? 'success' : 'default'}
+                  />
+                </Pressable>
+              );
+            })}
+          </ScrollView>
           <Button label="Save Event" onPress={onSubmit} loading={addEvent.isPending} />
         </View>
       </Modal>

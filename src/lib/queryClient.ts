@@ -37,10 +37,10 @@ export const queryKeys = {
   seasons: ['seasons'] as const,
   season: (id: string) => ['season', id] as const,
   org: ['org'] as const,
-  orgMembers: ['org', 'members'] as const,
+  orgMembers: (userId?: string) => userId ? ['org', 'members', userId] as const : ['org', 'members'] as const,
   enterprisePayments: ['enterprise', 'payments'] as const,
   adminStats: ['admin', 'stats'] as const,
   adminUsers: ['admin', 'users'] as const,
   aiPlayer: (tryoutId: string, playerId: string) => ['ai', 'player', tryoutId, playerId] as const,
-  guardianRosters: ['guardian', 'rosters'] as const,
+  guardianRosters: (userId?: string) => userId ? ['guardian', 'rosters', userId] as const : ['guardian', 'rosters'] as const,
 };

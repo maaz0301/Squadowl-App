@@ -135,15 +135,26 @@ export function usePermissions() {
   const user = useUser();
   const { data: members = [] } = useOrgMembersQuery();
   
+  if (!user) {
+    return {
+      role: 'guardian',
+      canManageOrganization: false,
+      canManageTeam: false,
+      canCreateAssessments: false,
+      canAssess: false,
+      isGuardian: true,
+    };
+  }
+
   // For demo: if they are the primary coach@example.com account, default to admin if not found.
   // In production, everyone must be an org member.
-  const isDemoAdmin = user?.email.toLowerCase() === 'coach@example.com';
+  const isDemoAdmin = user.email.toLowerCase() === 'coach@example.com';
   
   const myMember = members.find(
-    (m) => m.email.toLowerCase() === user?.email.toLowerCase() && m.status === 'active'
+    (m) => m.email.toLowerCase() === user.email.toLowerCase() && m.status === 'active'
   );
 
-  const role = myMember?.role ?? (isDemoAdmin ? 'admin' : 'guardian');
+  const role = user.role ?? myMember?.role ?? (isDemoAdmin ? 'admin' : 'guardian');
 
   return {
     role,
