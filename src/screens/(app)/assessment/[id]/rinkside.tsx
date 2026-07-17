@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { Dimensions, ScrollView, Text, View, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -113,10 +113,22 @@ export default function RinksideScreen() {
     );
   }, [tryoutQuery.data?.evals, player?.id]);
 
-  const defaultSessionForPlayer = useMemo(() => {
+  // Highest session number this player already has scored/completed data for.
+  const highestDoneSessionNum = useMemo(() => {
     const completedForPlayer = completedSessions?.[player?.id || ''] || [];
-    return SESSIONS.find((s) => !completedForPlayer.includes(s) && !scoredSessions.has(s) && s !== 'Extra View') || 'Session 1';
-  }, [SESSIONS, completedSessions, scoredSessions, player?.id]);
+    const done = [...completedForPlayer, ...Array.from(scoredSessions)];
+    return done.reduce((max, s) => {
+      const match = s?.match(/^Session (\d+)$/);
+      return match ? Math.max(max, parseInt(match[1], 10)) : max;
+    }, 0);
+  }, [completedSessions, scoredSessions, player?.id]);
+
+  // Default to the session *after* the last completed one (e.g. Session 3 done -> Session 4).
+  // A fresh player (nothing done) defaults to Session 1.
+  const defaultSessionForPlayer = useMemo(
+    () => `Session ${highestDoneSessionNum + 1}`,
+    [highestDoneSessionNum],
+  );
 
   const lastPlayerIdRef = useRef<string | null>(null);
 
@@ -126,6 +138,21 @@ export default function RinksideScreen() {
       setSession(defaultSessionForPlayer);
     }
   }, [player?.id, defaultSessionForPlayer]);
+
+  // Each time the screen is (re)opened, start at the first player on a freshly-defaulted,
+  // empty session. Uses focus (not mount) because the tab screen stays mounted between visits.
+  // Nulling lastPlayerIdRef forces the session to re-default even when the previous visit
+  // ended on this same player; clearing the recommendation/scores drops anything carried
+  // over from the last scored session so the new session opens blank.
+  useFocusEffect(
+    useCallback(() => {
+      setRinksideIndex(0);
+      lastPlayerIdRef.current = null;
+      setRecommendation('');
+      setShowRecError(false);
+      clearWorkingScores();
+    }, [setRinksideIndex, clearWorkingScores]),
+  );
 
   useEffect(() => {
     if (!player) return;
@@ -340,13 +367,14 @@ export default function RinksideScreen() {
         >
           <View className="flex-row gap-2 mb-4">
             {(() => {
-              const scoredSessions = new Map((tryoutQuery.data?.evals.filter((e) => e.playerId === player?.id) || []).map(e => [e.session, e.id]));
-              const firstUnscoredIdx = SESSIONS.findIndex(s => !scoredSessions.has(s));
-              
+              const scoredSessionsMap = new Map((tryoutQuery.data?.evals.filter((e) => e.playerId === player?.id) || []).map(e => [e.session, e.id]));
+              // Session (highestDoneSessionNum + 1) sits at this index and is the "next" one to score.
+              const nextSessionIdx = highestDoneSessionNum;
+
               return SESSIONS.map((s, idx) => {
-                const isScored = scoredSessions.has(s);
+                const isScored = scoredSessionsMap.has(s);
                 let disabled = false;
-                if (!isScored && firstUnscoredIdx !== -1 && idx > firstUnscoredIdx) {
+                if (!isScored && idx > nextSessionIdx) {
                   disabled = true;
                 }
                 

@@ -137,13 +137,15 @@ export default function OrganizationMembersScreen() {
                     onPress={() => setSelectedMemberForRole(item)}
                   />
                 )}
-                <Button
-                  label="Revoke"
-                  variant="danger"
-                  size="sm"
-                  onPress={() => handleRemove(item.id)}
-                  loading={removeMut.isPending}
-                />
+                {tab !== 'staff' && (
+                  <Button
+                    label="Revoke"
+                    variant="danger"
+                    size="sm"
+                    onPress={() => handleRemove(item.id)}
+                    loading={removeMut.isPending}
+                  />
+                )}
               </View>
             )}
           </Card>
@@ -157,7 +159,7 @@ export default function OrganizationMembersScreen() {
         footer={<View />}
       >
         <View className="gap-2">
-          {(['admin', 'coach', 'assessor'] as const).map((r) => (
+          {(['coach', 'assessor'] as const).map((r) => (
             <Button
               key={r}
               label={r.toUpperCase()}
@@ -178,16 +180,24 @@ export default function OrganizationMembersScreen() {
         footer={<View />}
       >
         <View className="gap-2">
-          {(['admin', 'coach', 'assessor'] as const).map((r) => (
+          {(['coach', 'assessor'] as const).map((r) => (
             <Button
               key={r}
               label={r.toUpperCase()}
               variant={selectedMemberForRole?.role === r ? 'primary' : 'ghost'}
               onPress={async () => {
-                if (selectedMemberForRole) {
-                  await updateRoleMut.mutateAsync({ memberId: selectedMemberForRole.id, role: r });
+                const member = selectedMemberForRole;
+                if (!member || member.role === r) {
+                  setSelectedMemberForRole(null);
+                  return;
                 }
-                setSelectedMemberForRole(null);
+                try {
+                  await updateRoleMut.mutateAsync({ memberId: member.id, role: r });
+                  setSelectedMemberForRole(null);
+                  Alert.alert('Success', `Role updated to ${r.toUpperCase()}.`);
+                } catch (error: any) {
+                  Alert.alert('Update Failed', error?.message || 'Could not update role.');
+                }
               }}
               loading={updateRoleMut.isPending && selectedMemberForRole?.role !== r}
             />

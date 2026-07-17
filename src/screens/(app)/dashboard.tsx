@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { FlatList, Pressable, ScrollView, Text, View, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
@@ -135,6 +135,20 @@ export default function DashboardScreen() {
   const combineIds = useSessionStore((s) => s.combineTryoutIds);
   const toggleCombineTryout = useSessionStore((s) => s.toggleCombineTryout);
   const [tab, setTab] = useState('assessments');
+  const listRef = useRef<FlatList>(null);
+  const scrollOffsets = useRef<Record<string, number>>({});
+  const currentOffset = useRef(0);
+
+  const handleTabChange = (nextTab: string) => {
+    // Remember where the current tab was scrolled to, then restore the
+    // target tab's own last-known scroll position instead of jumping to top.
+    scrollOffsets.current[tab] = currentOffset.current;
+    const restored = scrollOffsets.current[nextTab] ?? 0;
+    setTab(nextTab);
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToOffset({ offset: restored, animated: false });
+    });
+  };
   const [combineMode, setCombineMode] = useState(false);
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
   const [assignedExpanded, setAssignedExpanded] = useState(true);
@@ -334,9 +348,14 @@ export default function DashboardScreen() {
   return (
     <Screen padded={false}>
       <FlatList
-        key={isGuardianOnly ? 'guardian' : tab}
+        key={isGuardianOnly ? 'guardian' : 'coach'}
+        ref={listRef}
         data={listData}
         keyExtractor={(item) => item.id}
+        onScroll={(e) => {
+          currentOffset.current = e.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingBottom: 24,
@@ -472,7 +491,7 @@ export default function DashboardScreen() {
                   { key: 'teams', label: 'Teams', badge: teamsQuery.data?.length },
                 ]}
                 activeKey={tab}
-                onChange={setTab}
+                onChange={handleTabChange}
                 className="mb-2"
               />
             )}

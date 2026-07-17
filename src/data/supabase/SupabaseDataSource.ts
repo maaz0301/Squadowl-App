@@ -1860,27 +1860,31 @@ async deleteTryout(id: string): Promise<void> {
 
     const eventId = row.id;
 
-    try {
-      const season = await this.getSeason(seasonId);
-      if (season) {
-        // Find which players are selected (default to all if none provided)
-        const selectedPlayerIds = form.playerIds && form.playerIds.length > 0
-          ? form.playerIds
-          : season.roster.map(p => p.id);
+    const season = await this.getSeason(seasonId);
+    if (season) {
+      // Find which players are selected (default to all if none provided)
+      const selectedPlayerIds = form.playerIds && form.playerIds.length > 0
+        ? form.playerIds
+        : season.roster.map(p => p.id);
 
-        // Pre-populate event_availability for these players
-        const availInserts = season.roster
-          .filter(p => selectedPlayerIds.includes(p.id))
-          .map(p => ({
-            season_event_id: eventId,
-            roster_id: p.id,
-            response: 'pending' as const,
-          }));
-        
-        if (availInserts.length > 0) {
-          unwrap(await supabase.from('event_availability').insert(availInserts));
-        }
+      // Pre-populate event_availability for these players. This is what later
+      // gates who receives schedule/reminder emails, so a failure here must
+      // surface — don't swallow it, or the event silently ends up with no
+      // recipients even though players are attached.
+      const availInserts = season.roster
+        .filter(p => selectedPlayerIds.includes(p.id))
+        .map(p => ({
+          season_event_id: eventId,
+          roster_id: p.id,
+          response: 'pending' as const,
+        }));
 
+      if (availInserts.length > 0) {
+        unwrap(await supabase.from('event_availability').insert(availInserts));
+      }
+
+      // Emailing on create is best-effort — never fail event creation over it.
+      try {
         // Find all guardians related to the selected players and send them emails.
         const emails = Array.from(new Set(
           season.roster
@@ -1888,7 +1892,7 @@ async deleteTryout(id: string): Promise<void> {
             .map(p => p.guardianEmail)
             .filter(Boolean)
         ));
-        
+
         for (const email of emails) {
           if (email) {
             await this.sendEmail('schedule_update', email, {
@@ -1899,9 +1903,9 @@ async deleteTryout(id: string): Promise<void> {
             });
           }
         }
+      } catch (e) {
+        console.error('Failed to send schedule emails', e);
       }
-    } catch (e) {
-      console.error('Failed to send schedule emails', e);
     }
 
     return this.rowToSeasonEvent(row, {});
@@ -2083,11 +2087,20 @@ async deleteTryout(id: string): Promise<void> {
 
     const assignedRosterIds = new Set(availData.map((a: any) => a.roster_id));
 
+    // Restrict to players assigned to an event. If no availability rows exist at
+    // all (e.g. events created before availability was pre-populated, or a failed
+    // pre-population), fall back to the full roster so players who have emails
+    // still receive the schedule instead of silently getting nothing.
+    const restrictToAssigned = assignedRosterIds.size > 0;
+
     const emails = new Set<string>();
     for (const p of season.roster) {
-      if (assignedRosterIds.has(p.id)) {
+      if (!restrictToAssigned || assignedRosterIds.has(p.id)) {
         if (p.playerEmail) emails.add(p.playerEmail);
         if (p.guardianEmail) emails.add(p.guardianEmail);
+        if (p.portalInviteEmails) {
+          for (const e of p.portalInviteEmails) if (e) emails.add(e);
+        }
       }
     }
 
@@ -2493,7 +2506,14 @@ async deleteTryout(id: string): Promise<void> {
     });
 
     if (fnError) {
-      throw new Error(fnError.message || 'Failed to create user account');
+      // A non-2xx status surfaces as a generic FunctionsHttpError ("Edge Function
+      // returned a non-2xx status code"); the real reason is in the response body.
+      let msg = fnError.message;
+      try {
+        const body = await (fnError as any).context.json();
+        if (body?.error) msg = body.error;
+      } catch {}
+      throw new Error(msg || 'Failed to create user account');
     }
 
     // If the Edge Function returned an error in the response body
@@ -2546,20 +2566,20 @@ async deleteTryout(id: string): Promise<void> {
 
   async updateOrgMemberRole(memberId: string, role: import('../types').OrgRole): Promise<import('../types').OrgMember> {
     const { supabase } = await this.ctx();
-    
-    const { data, error } = await supabase
-      .from('memberships')
-      .update({ role })
-      .eq('id', memberId)
-      .select()
-      .maybeSingle();
 
-    if (!error && !data) {
-      await supabase.from('tryout_assessors').update({ role }).eq('id', memberId);
-    } else if (error) {
-      throw new Error(error.message);
-    }
-    return {} as any;
+    // Route through a SECURITY DEFINER RPC. A direct `memberships` update is
+    // subject to RLS and silently affects zero rows (no error) when the policy
+    // filters it out, which made the UI report success while the role never
+    // changed. The RPC authorizes the caller, updates the row, and raises a
+    // real exception on failure or a no-op.
+    const { data, error } = await supabase.rpc('update_org_member_role', {
+      member_id: memberId,
+      new_role: role,
+    });
+
+    if (error) throw new Error(error.message);
+
+    return (data ?? {}) as import('../types').OrgMember;
   }
 
   async removeOrgMember(memberId: string): Promise<void> {

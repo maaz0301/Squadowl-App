@@ -248,6 +248,8 @@ export function PhoneField({ label, value = '', onChange, error, placeholder = '
   };
 
   const handleNumberChange = (num: string) => {
+    // Cap at 15 digits (ignoring formatting) — matches the 10–15 validation rule.
+    if (num.replace(/\D/g, '').length > 15) return;
     onChange(`${parsed.code} ${num}`);
   };
 

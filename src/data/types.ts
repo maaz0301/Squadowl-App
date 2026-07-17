@@ -1,5 +1,21 @@
 import { z } from 'zod';
 
+/**
+ * Validate a guardian phone number as 10–15 digits.
+ * PhoneField stores the value as "+<code> <number>" (e.g. "+1 1234567890"), while
+ * plain Input fields store just the national number. In both cases the country code
+ * is excluded from the count so the "10–15 digits" rule applies to the number the
+ * user actually types, regardless of which country code is selected.
+ */
+const isValidGuardianPhone = (val?: string) => {
+  if (!val) return true;
+  const trimmed = val.trim();
+  const spaceIdx = trimmed.indexOf(' ');
+  const national = trimmed.startsWith('+') && spaceIdx !== -1 ? trimmed.slice(spaceIdx + 1) : trimmed;
+  const digits = national.replace(/\D/g, '');
+  return digits.length >= 10 && digits.length <= 15;
+};
+
 export const SPORTS = [
   'Hockey',
   'Soccer',
@@ -299,7 +315,7 @@ export const AddPlayerFormSchema = z.object({
   positionTryingOutFor: z.string().optional(),
   guardianName: z.string().optional(),
   guardianEmail: z.string().optional().refine(val => !val || z.string().email().safeParse(val).success, { message: 'Please enter a valid email address' }),
-  guardianPhone: z.string().optional().refine(val => { if (!val) return true; const digits = val.replace(/\D/g, ''); return digits.length >= 10 && digits.length <= 15; }, { message: 'Phone number must be between 10 and 15 digits' }),
+  guardianPhone: z.string().optional().refine(isValidGuardianPhone, { message: 'Phone number must be between 10 and 15 digits' }),
   currentTeam: z.string().optional(),
   currentLevel: z.string().optional(),
   aboutChild: z.string().optional(),
@@ -319,7 +335,7 @@ export const RegistrationSubmitSchema = z.object({
   positionTryingOutFor: z.string().optional(),
   guardianName: z.string().min(1, 'Guardian name is required'),
   guardianEmail: z.string().email(),
-  guardianPhone: z.string().optional().refine(val => { if (!val) return true; const digits = val.replace(/\D/g, ''); return digits.length >= 10 && digits.length <= 15; }, { message: 'Phone number must be between 10 and 15 digits' }),
+  guardianPhone: z.string().optional().refine(isValidGuardianPhone, { message: 'Phone number must be between 10 and 15 digits' }),
   currentTeam: z.string().optional(),
   currentLevel: z.string().optional(),
   aboutPlayer: z.string().optional(),

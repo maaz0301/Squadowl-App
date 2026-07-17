@@ -87,7 +87,7 @@ export default function SeasonScheduleScreen() {
       const emails = Array.from(new Set(
         season.roster
           .filter(p => assignedRosterIds.has(p.id))
-          .map(p => p.guardianEmail)
+          .flatMap(p => [p.playerEmail, p.guardianEmail, ...(p.portalInviteEmails ?? [])])
           .filter(Boolean)
       ));
       

@@ -61,7 +61,7 @@ export function RegistrationForm({ loading, onSubmit }: Props) {
         control={control}
         name="guardianPhone"
         render={({ field: { onChange, onBlur, value } }) => (
-          <Input label="Guardian Phone" onBlur={onBlur} onChangeText={onChange} value={value} keyboardType="phone-pad" />
+          <Input label="Guardian Phone" onBlur={onBlur} onChangeText={(t) => { if (t.replace(/\D/g, '').length <= 15) onChange(t); }} value={value} keyboardType="phone-pad" />
         )}
       />
       <Button label="Submit Registration" onPress={handleSubmit(onSubmit)} loading={loading} />
