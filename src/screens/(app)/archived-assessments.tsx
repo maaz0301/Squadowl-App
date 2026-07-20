@@ -36,7 +36,7 @@ export default function ArchivedAssessmentsScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: 16, paddingBottom: 32, flexGrow: 1 }}
         ListEmptyComponent={
-          <EmptyState title="No archived assessments" message="Archived assessments appear here for restore." />
+          <EmptyState title="No archived assessments" message="Assessments you archive will appear here. You can restore them to active status at any time." />
         }
         renderItem={({ item }) => (
           <Card className="mb-3 gap-2">

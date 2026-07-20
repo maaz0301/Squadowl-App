@@ -102,9 +102,11 @@ export default function OrganizationMembersScreen() {
         keyExtractor={(m) => m.id}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
         ListEmptyComponent={
-          <View className="items-center justify-center py-10">
-            <Text style={{ color: colors.inkMuted }}>
-              No {tab} members found.
+          <View className="items-center justify-center py-10 px-4">
+            <Text style={{ color: colors.inkMuted, textAlign: 'center' }}>
+              {tab === 'staff'
+                ? 'No staff members added yet. Invite coaches or evaluators above.'
+                : 'No linked guardians found in this organization.'}
             </Text>
           </View>
         }

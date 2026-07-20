@@ -46,7 +46,7 @@ export default function LoginScreen() {
           {APP_CONFIG.appName}
         </Text>
         <Text className="text-lg" style={{ color: colors.inkMuted }}>
-          Coach login — run tryouts from the sideline
+          Sign in to manage tryouts and evaluate players
         </Text>
       </View>
 
@@ -119,7 +119,7 @@ export default function LoginScreen() {
         </View>
 
         <View className="flex-row justify-center gap-1 py-2">
-          <Text style={{ color: colors.inkMuted }}>New coach?</Text>
+          <Text style={{ color: colors.inkMuted }}>Don't have an account?</Text>
           <Pressable onPress={() => navigation.navigate('Signup')}>
             <Text className="font-bold" style={{ color: colors.primary }}>
               Create account

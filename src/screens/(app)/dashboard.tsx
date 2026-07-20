@@ -15,10 +15,8 @@ import {
   Header,
   LoadingState,
   Screen,
-  Tabs,
 } from '@/components/ui';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
-import { PlanGate } from '@/components/PlanGate';
 import { useAuthStore, useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import {
@@ -33,98 +31,6 @@ import {
 import { APP_CONFIG } from '@/config/app';
 import { canUseFeature, isAtAssessmentLimit } from '@/data/plans';
 
-function OnboardingChecklist() {
-  const colors = useThemeColors();
-  const navigation = useNavigation<any>();
-  const authUser = useUser();
-  const profileQuery = useProfileQuery();
-  const user = profileQuery.data ?? authUser;
-  const guardianQuery = useGuardianRostersQuery();
-  const tryoutsQuery = useTryoutsQuery(false);
-  const seasonsQuery = useSeasonsQuery();
-  const teamsQuery = useTeamsQuery();
-
-  const { isGuardian } = usePermissions();
-
-  if (!user || user.onboardingCompleted) return null;
-
-  const isGuardianOnly = isGuardian;
-
-  const steps = isGuardianOnly ? [
-    {
-      key: 'changePassword',
-      label: 'Change password',
-      done: user.onboardingSteps?.changePassword === true,
-      action: () => navigation.navigate('Profile'),
-    }
-  ] : [
-    {
-      key: 'createTeam',
-      label: 'Create a team',
-      done: user.onboardingSteps.createTeam,
-      action: () => navigation.navigate('NewTeam'),
-    },
-    {
-      key: 'createAssessment',
-      label: 'Create an assessment',
-      done: user.onboardingSteps.createAssessment,
-      action: () => navigation.navigate('NewAssessment'),
-    },
-    {
-      key: 'inviteAssessors',
-      label: 'Invite assessors',
-      done: user.onboardingSteps.inviteAssessors,
-      action: () => {
-        const tryout = useSessionStore.getState().currentTryoutId;
-        if (tryout) navigation.navigate('AssessmentFlow', { screen: 'AssessmentSettings', params: { id: tryout } });
-        else navigation.navigate('NewAssessment');
-      },
-    },
-    {
-      key: 'addPlayers',
-      label: 'Add players',
-      done: user.onboardingSteps.addPlayers,
-      action: () => {
-        const tryout = useSessionStore.getState().currentTryoutId;
-        if (tryout) navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: tryout } });
-        else navigation.navigate('NewAssessment');
-      },
-    },
-    {
-      key: 'scorePlayers',
-      label: 'Score players',
-      done: user.onboardingSteps.scorePlayers,
-      action: () => {
-        const tryout = useSessionStore.getState().currentTryoutId;
-        if (tryout) navigation.navigate('AssessmentFlow', { screen: 'AssessmentRinkside', params: { id: tryout } });
-        else navigation.navigate('NewAssessment');
-      },
-    },
-  ];
-  const doneCount = steps.filter((s) => s.done).length;
-
-  if (doneCount === steps.length) {
-    return null;
-  }
-
-  return (
-    <Card accent className="mb-4 gap-3">
-      <View className="flex-row justify-between items-center">
-        <Text className="text-md font-display font-bold" style={{ color: colors.ink }}>
-          Getting Started
-        </Text>
-        <Badge label={`${doneCount}/${steps.length}`} variant="brand" />
-      </View>
-      {steps.map((s) => (
-        <Pressable key={s.key} onPress={s.done ? undefined : s.action} className="flex-row items-center gap-3">
-          <Text style={{ color: s.done ? colors.success : colors.inkMuted }}>{s.done ? '✓' : '○'}</Text>
-          <Text style={{ color: s.done ? colors.inkMuted : colors.ink }}>{s.label}</Text>
-        </Pressable>
-      ))}
-    </Card>
-  );
-}
-
 export default function DashboardScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
@@ -134,14 +40,13 @@ export default function DashboardScreen() {
   const setActiveAssessor = useSessionStore((s) => s.setActiveAssessor);
   const combineIds = useSessionStore((s) => s.combineTryoutIds);
   const toggleCombineTryout = useSessionStore((s) => s.toggleCombineTryout);
-  const [tab, setTab] = useState('assessments');
+  
+  const [tab, setTab] = useState<'assessments' | 'teams' | 'seasons'>('assessments');
   const listRef = useRef<FlatList>(null);
   const scrollOffsets = useRef<Record<string, number>>({});
   const currentOffset = useRef(0);
 
-  const handleTabChange = (nextTab: string) => {
-    // Remember where the current tab was scrolled to, then restore the
-    // target tab's own last-known scroll position instead of jumping to top.
+  const handleTabChange = (nextTab: 'assessments' | 'teams' | 'seasons') => {
     scrollOffsets.current[tab] = currentOffset.current;
     const restored = scrollOffsets.current[nextTab] ?? 0;
     setTab(nextTab);
@@ -149,6 +54,7 @@ export default function DashboardScreen() {
       listRef.current?.scrollToOffset({ offset: restored, animated: false });
     });
   };
+
   const [combineMode, setCombineMode] = useState(false);
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
   const [assignedExpanded, setAssignedExpanded] = useState(true);
@@ -158,9 +64,8 @@ export default function DashboardScreen() {
   const seasonsQuery = useSeasonsQuery();
   const assignedQuery = useAssignedTryoutsQuery();
   const guardianQuery = useGuardianRostersQuery();
-  const rejectAssignmentMut = useRejectAssignmentMutation();
 
-  const { role, isGuardian } = usePermissions();
+  const { isGuardian } = usePermissions();
   const isGuardianOnly = isGuardian;
 
   const openAssigned = (id: string) => {
@@ -226,7 +131,8 @@ export default function DashboardScreen() {
     }
   };
 
-
+  const fabLabel =
+    tab === 'seasons' ? '+ New Season' : tab === 'teams' ? '+ New Team' : '+ New Assessment';
 
   const listData = isGuardianOnly
     ? []
@@ -248,8 +154,8 @@ export default function DashboardScreen() {
               {item.teamName} · {item.sport} · {item.year}
             </Text>
             <View className="flex-row gap-2 mt-2">
-              <Badge label={`${item.roster.length} players`} />
-              <Badge label={`${item.events.length} events`} variant="info" />
+              <Badge label={`${item.roster?.length ?? 0} players`} />
+              <Badge label={`${item.events?.length ?? 0} events`} variant="info" />
             </View>
           </Card>
         </Pressable>
@@ -293,7 +199,7 @@ export default function DashboardScreen() {
               ) : null}
             </View>
             <View className="items-end gap-1">
-              <Badge label={`${item.roster.length} players`} />
+              <Badge label={`${item.roster?.length ?? 0} players`} />
               {selected ? <Badge label="Selected" variant="brand" /> : null}
             </View>
           </View>
@@ -307,13 +213,13 @@ export default function DashboardScreen() {
     if (tab === 'seasons') {
       return (
         <EmptyState
-          title="No seasons yet"
+          title="No active seasons"
           message={
             canUseFeature(user?.planTier ?? 'free', 'seasonHub')
-              ? 'Create a season to manage schedule, roster, and guardian portals.'
-              : 'Upgrade to Coach plan for Team Hub / Season Builder.'
+              ? 'Create a season to manage team schedules, rosters, and guardian updates.'
+              : 'Upgrade to a Coach plan to unlock Team Hub and Season management.'
           }
-          actionLabel={canUseFeature(user?.planTier ?? 'free', 'seasonHub') ? 'Create Season' : 'View Plans'}
+          actionLabel={canUseFeature(user?.planTier ?? 'free', 'seasonHub') ? 'Create Season' : 'View Upgrade Options'}
           onAction={() =>
             canUseFeature(user?.planTier ?? 'free', 'seasonHub')
               ? navigation.navigate('NewSeason')
@@ -325,8 +231,8 @@ export default function DashboardScreen() {
     if (tab === 'teams') {
       return (
         <EmptyState
-          title="No teams yet"
-          message="Create a team to organize your assessments."
+          title="No teams created"
+          message="Create a team to group rosters and manage assessments."
           actionLabel="Create Team"
           onAction={() => navigation.navigate('NewTeam')}
         />
@@ -335,15 +241,16 @@ export default function DashboardScreen() {
     return (
       <EmptyState
         title="No assessments yet"
-        message="Create your first tryout or assessment to get started."
+        message="Create your first tryout or evaluation to begin scoring players."
         actionLabel="Create Assessment"
         onAction={() => navigation.navigate('NewAssessment')}
       />
     );
   };
 
-  const fabLabel =
-    tab === 'seasons' ? '+ New Season' : tab === 'teams' ? '+ New Team' : '+ New Assessment';
+  const evalCount = tryoutsQuery.data?.length ?? 0;
+  const teamCount = teamsQuery.data?.length ?? 0;
+  const seasonCount = seasonsQuery.data?.length ?? 0;
 
   return (
     <Screen padded={false}>
@@ -388,7 +295,72 @@ export default function DashboardScreen() {
                 </View>
               }
             />
-            <OnboardingChecklist />
+
+            {/* HUB Landing Overview Cards */}
+            {!isGuardianOnly && (
+              <View className="mb-4">
+                <Text
+                  className="text-xs font-bold uppercase tracking-wider mb-2"
+                  style={{ color: colors.inkMuted }}
+                >
+                  Overview & Jump Points
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-4 px-4 flex-row gap-3">
+                  <Pressable onPress={() => handleTabChange('assessments')} className="mr-2">
+                    <Card accent={tab === 'assessments'} className="w-36 gap-1 p-3">
+                      <View className="flex-row justify-between items-center">
+                        <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                          <Path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" stroke={colors.primary} strokeWidth={2} strokeLinecap="round" />
+                        </Svg>
+                        <Badge label={`${evalCount}`} variant={tab === 'assessments' ? 'brand' : 'default'} />
+                      </View>
+                      <Text className="font-bold text-sm mt-1" style={{ color: colors.ink }}>
+                        Evaluations
+                      </Text>
+                      <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                        Tryouts & Tests
+                      </Text>
+                    </Card>
+                  </Pressable>
+
+                  <Pressable onPress={() => handleTabChange('teams')} className="mr-2">
+                    <Card accent={tab === 'teams'} className="w-36 gap-1 p-3">
+                      <View className="flex-row justify-between items-center">
+                        <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                          <Path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" stroke={colors.primary} strokeWidth={2} strokeLinecap="round" />
+                        </Svg>
+                        <Badge label={`${teamCount}`} variant={tab === 'teams' ? 'brand' : 'default'} />
+                      </View>
+                      <Text className="font-bold text-sm mt-1" style={{ color: colors.ink }}>
+                        Teams
+                      </Text>
+                      <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                        Rosters & Groups
+                      </Text>
+                    </Card>
+                  </Pressable>
+
+                  <Pressable onPress={() => handleTabChange('seasons')} className="mr-2">
+                    <Card accent={tab === 'seasons'} className="w-36 gap-1 p-3">
+                      <View className="flex-row justify-between items-center">
+                        <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                          <Path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke={colors.primary} strokeWidth={2} strokeLinecap="round" />
+                        </Svg>
+                        <Badge label={`${seasonCount}`} variant={tab === 'seasons' ? 'brand' : 'default'} />
+                      </View>
+                      <Text className="font-bold text-sm mt-1" style={{ color: colors.ink }}>
+                        Events
+                      </Text>
+                      <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                        Season Hub
+                      </Text>
+                    </Card>
+                  </Pressable>
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Assigned Tryouts */}
             {assignedQuery.data && assignedQuery.data.length > 0 ? (
               <View className="mb-4">
                 <Pressable
@@ -420,7 +392,7 @@ export default function DashboardScreen() {
                           {t.name}
                         </Text>
                         <Text className="text-sm mt-1" style={{ color: colors.inkMuted }}>
-                          {t.sport} · {t.roster.length} players
+                          {t.sport} · {t.roster?.length ?? 0} players
                         </Text>
                       </View>
                       <View className="flex-row items-center gap-2">
@@ -431,107 +403,190 @@ export default function DashboardScreen() {
                 ))}
               </View>
             ) : null}
-            
-          {guardianQuery.data && guardianQuery.data.length > 0 ? (
-  <View className="mb-4">
-    <Text
-      className="text-xs font-bold uppercase tracking-wider mb-2"
-      style={{ color: colors.inkMuted }}
-    >
-      My Athletes
-    </Text>
-    {guardianQuery.data.map((ath) => (
-      <Pressable key={ath.id} onPress={() => navigation.navigate('GuardianPortal', { playerId: ath.id })}>
-        <Card className="mb-2">
-          <Text className="text-base font-display font-bold mb-1" style={{ color: colors.ink }}>
-            {ath.firstName} {ath.lastName}
-          </Text>
-          
-          {ath.tryouts.length === 0 && ath.seasons.length === 0 ? (
-            <Text className="text-sm" style={{ color: colors.inkMuted }}>
-              Not assigned to any tryouts or seasons yet.
-            </Text>
-          ) : null}
 
-          {ath.tryouts.length > 0 ? (
-            <View className="mt-2">
-              <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Tryouts</Text>
-              {ath.tryouts.map(t => (
-                /* 
-                  CRITICAL FIX: Changed key from t.id to t.participantId.
-                  This ensures that if a player is in two tryouts, React renders 
-                  each entry as a unique, independent item.
-                */
-                <Text key={t.participantId} className="text-sm" style={{ color: colors.primary }}>
-                  • {t.name} ({t.sport})
+            {/* Guardian View */}
+            {guardianQuery.data && guardianQuery.data.length > 0 ? (
+              <View className="mb-4">
+                <Text
+                  className="text-xs font-bold uppercase tracking-wider mb-2"
+                  style={{ color: colors.inkMuted }}
+                >
+                  My Athletes
                 </Text>
-              ))}
-            </View>
-          ) : null}
+                {guardianQuery.data.map((ath) => (
+                  <Pressable key={ath.id} onPress={() => navigation.navigate('GuardianPortal', { playerId: ath.id })}>
+                    <Card className="mb-2">
+                      <Text className="text-base font-display font-bold mb-1" style={{ color: colors.ink }}>
+                        {ath.firstName} {ath.lastName}
+                      </Text>
+                      
+                      {ath.tryouts.length === 0 && ath.seasons.length === 0 ? (
+                        <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                          No active tryouts or seasons assigned yet.
+                        </Text>
+                      ) : null}
 
-          {ath.seasons.length > 0 ? (
-            <View className="mt-2">
-              <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Seasons</Text>
-              {ath.seasons.map(s => (
-                <Text key={s.id} className="text-sm" style={{ color: colors.primary }}>• {s.name} - {s.teamName}</Text>
-              ))}
-            </View>
-          ) : null}
-        </Card>
-      </Pressable>
-    ))}
-  </View>
-) : null}
+                      {ath.tryouts.length > 0 ? (
+                        <View className="mt-2">
+                          <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Tryouts</Text>
+                          {ath.tryouts.map(t => (
+                            <Text key={t.participantId} className="text-sm" style={{ color: colors.primary }}>
+                              • {t.name} ({t.sport})
+                            </Text>
+                          ))}
+                        </View>
+                      ) : null}
 
-            {!isGuardianOnly && (
-              <Tabs
-                tabs={[
-                  { key: 'assessments', label: 'Assessments', badge: tryoutsQuery.data?.length },
-                  { key: 'seasons', label: 'Team Hub', badge: seasonsQuery.data?.length },
-                  { key: 'teams', label: 'Teams', badge: teamsQuery.data?.length },
-                ]}
-                activeKey={tab}
-                onChange={handleTabChange}
-                className="mb-2"
-              />
-            )}
-            {!isGuardianOnly && tab === 'assessments' ? (
-              <View className="flex-row flex-wrap gap-2 mb-2">
-                <Button
-                  label={combineMode ? 'Cancel Combine' : 'Combine Mode'}
-                  size="sm"
-                  variant={combineMode ? 'primary' : 'secondary'}
-                  onPress={() => setCombineMode((m) => !m)}
-                />
-                {combineMode && combineIds.length >= 2 ? (
-                  <Button label="View Combined" size="sm" onPress={() => navigation.navigate('Combine')} />
-                ) : null}
-                <Button
-                  label="Archived"
-                  size="sm"
-                  variant="ghost"
-                  onPress={() => navigation.navigate('ArchivedAssessments')}
-                />
+                      {ath.seasons.length > 0 ? (
+                        <View className="mt-2">
+                          <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Seasons</Text>
+                          {ath.seasons.map(s => (
+                            <Text key={s.id} className="text-sm" style={{ color: colors.primary }}>• {s.name} - {s.teamName}</Text>
+                          ))}
+                        </View>
+                      ) : null}
+                    </Card>
+                  </Pressable>
+                ))}
               </View>
             ) : null}
+
+            {/* Sub-Header Actions & Section Create Button */}
+            {!isGuardianOnly && (
+              <View className="mb-3">
+                <View className="flex-row justify-between items-center mb-2">
+                  <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                    {tab === 'seasons' ? 'Seasons & Events' : tab === 'teams' ? 'Teams' : 'Assessments & Tryouts'}
+                  </Text>
+                  <Button
+                    label={fabLabel}
+                    size="sm"
+                    onPress={fabAction}
+                  />
+                </View>
+
+                {tab === 'assessments' && (
+                  <View className="flex-row flex-wrap gap-2 mt-1">
+                    <Button
+                      label={combineMode ? 'Cancel Combine' : 'Combine Mode'}
+                      size="sm"
+                      variant={combineMode ? 'primary' : 'secondary'}
+                      onPress={() => setCombineMode((m) => !m)}
+                    />
+                    {combineMode && combineIds.length >= 2 ? (
+                      <Button label="View Combined" size="sm" onPress={() => navigation.navigate('Combine')} />
+                    ) : null}
+                    <Button
+                      label="Archived"
+                      size="sm"
+                      variant="ghost"
+                      onPress={() => navigation.navigate('ArchivedAssessments')}
+                    />
+                  </View>
+                )}
+              </View>
+            )}
           </View>
         }
         ListEmptyComponent={getEmptyState()}
         renderItem={renderItem}
       />
 
-      {!isGuardianOnly && (
-        <View
-          className="px-4 pt-4 border-t"
-          style={{
-            backgroundColor: colors.bg,
-            borderColor: colors.border,
-            paddingBottom: Math.max(24, insets.bottom + 12),
-          }}
-        >
-          <Button label={fabLabel} onPress={fabAction} />
+      {/* Persistent Bottom Navigation Bar */}
+      <View
+        style={{
+          backgroundColor: colors.card,
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
+          paddingBottom: Math.max(12, insets.bottom),
+          paddingTop: 8,
+          paddingHorizontal: 16,
+        }}
+      >
+        <View className="flex-row justify-around items-center">
+          <Pressable
+            onPress={() => handleTabChange('assessments')}
+            className="items-center justify-center flex-1 py-1"
+          >
+            <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+              <Path
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                stroke={tab === 'assessments' ? colors.primary : colors.inkMuted}
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
+            <Text
+              className="text-xs font-medium mt-1"
+              style={{ color: tab === 'assessments' ? colors.primary : colors.inkMuted }}
+            >
+              Evaluations
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => handleTabChange('teams')}
+            className="items-center justify-center flex-1 py-1"
+          >
+            <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+              <Path
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
+                stroke={tab === 'teams' ? colors.primary : colors.inkMuted}
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
+            <Text
+              className="text-xs font-medium mt-1"
+              style={{ color: tab === 'teams' ? colors.primary : colors.inkMuted }}
+            >
+              Teams
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => handleTabChange('seasons')}
+            className="items-center justify-center flex-1 py-1"
+          >
+            <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+              <Path
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                stroke={tab === 'seasons' ? colors.primary : colors.inkMuted}
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
+            <Text
+              className="text-xs font-medium mt-1"
+              style={{ color: tab === 'seasons' ? colors.primary : colors.inkMuted }}
+            >
+              Events
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => navigation.navigate('Profile')}
+            className="items-center justify-center flex-1 py-1"
+          >
+            <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+              <Path
+                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                stroke={colors.inkMuted}
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
+            <Text className="text-xs font-medium mt-1" style={{ color: colors.inkMuted }}>
+              Profile
+            </Text>
+          </Pressable>
         </View>
-      )}
+      </View>
+
       <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
     </Screen>
   );
