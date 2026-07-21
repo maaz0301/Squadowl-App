@@ -371,6 +371,9 @@ export class SupabaseDataSource implements DataSource {
     const rawRole = membership?.role;
     const role = rawRole === 'owner' ? 'admin' : rawRole;
 
+    const { data: uData } = await supabase.auth.getUser();
+    const emailVerified = uData?.user?.email_confirmed_at != null || uData?.user?.confirmed_at != null || !uData?.user;
+
     const result = {
       id: profile.id,
       email: profile.email,
@@ -383,6 +386,7 @@ export class SupabaseDataSource implements DataSource {
       onboardingCompleted: profile.onboarding_completed,
       onboardingSteps: profile.onboarding_steps,
       role: role ?? undefined,
+      emailVerified,
     };
     this.profileCache[userId] = result;
     return result;
@@ -503,6 +507,15 @@ export class SupabaseDataSource implements DataSource {
   async updatePassword(password: string): Promise<void> {
     const { supabase } = await this.ctx();
     const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw new Error(error.message);
+  }
+
+  async resendVerificationEmail(email: string): Promise<void> {
+    const supabase = getSupabase();
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+    });
     if (error) throw new Error(error.message);
   }
 

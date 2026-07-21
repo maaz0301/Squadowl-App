@@ -1,4 +1,4 @@
-import { Pressable, Text, View } from 'react-native';
+import { Image, Pressable, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -7,11 +7,12 @@ interface HeaderProps {
   title: string;
   subtitle?: string;
   showBack?: boolean;
+  showLogo?: boolean;
   onBack?: () => void;
   right?: React.ReactNode;
 }
 
-export function Header({ title, subtitle, showBack, onBack, right }: HeaderProps) {
+export function Header({ title, subtitle, showBack, showLogo, onBack, right }: HeaderProps) {
   const colors = useThemeColors();
   const navigation = useNavigation();
   
@@ -49,6 +50,14 @@ export function Header({ title, subtitle, showBack, onBack, right }: HeaderProps
             </Svg>
           </Pressable>
         ) : null}
+        
+        {showLogo || title === 'TryoutHQ' ? (
+          <Image
+            source={require('../../../assets/images/TryoutHQ T- logo.png')}
+            style={{ width: 32, height: 32, borderRadius: 6 }}
+          />
+        ) : null}
+
         <View className="flex-1">
           <Text className="text-2xl font-display font-bold" style={{ color: colors.ink }}>
             {title}

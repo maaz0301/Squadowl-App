@@ -411,9 +411,22 @@ export default function PlayerHubScreen() {
           variant="danger"
           className="mt-6"
           loading={deletePlayer.isPending}
-          onPress={async () => {
-            await deletePlayer.mutateAsync(playerId!);
-            navigation.goBack();
+          onPress={() => {
+            Alert.alert(
+              'Delete Player',
+              'Are you sure you want to delete this player? This cannot be undone.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: async () => {
+                    await deletePlayer.mutateAsync(playerId!);
+                    navigation.goBack();
+                  },
+                },
+              ]
+            );
           }}
         />
       )}

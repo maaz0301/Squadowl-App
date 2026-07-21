@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Text, View, Pressable } from 'react-native';
+import { Text, View, Pressable, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 import { useForm, Controller } from 'react-hook-form';
@@ -15,11 +15,16 @@ export default function SignupScreen() {
   const signup = useAuthStore((s) => s.signup);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
 
   const { control, handleSubmit } = useForm({
     resolver: zodResolver(SignupFormSchema),
-    defaultValues: { displayName: '', email: '', password: '', accountType: 'coach' as const },
+    defaultValues: {
+      displayName: '',
+      email: '',
+      password: '',
+      confirmPassword: '',
+      accountType: 'coach' as const,
+    },
   });
 
   const onSubmit = handleSubmit(async (data) => {
@@ -38,7 +43,16 @@ export default function SignupScreen() {
   return (
     <Screen scroll>
       <Header title="Create Account" showBack right={<ThemeToggle />} />
-      <View className="gap-4 mt-4">
+      
+      {/* Brand Hero Banner */}
+      <View className="items-center my-4">
+        <Image
+          source={require('../../../assets/images/TryoutHQ logo.png')}
+          style={{ width: '100%', height: 90, resizeMode: 'contain' }}
+        />
+      </View>
+
+      <View className="gap-4 mt-2">
         <Controller
           control={control}
           name="displayName"
@@ -61,35 +75,34 @@ export default function SignupScreen() {
             />
           )}
         />
-        <View>
-          <Controller
-            control={control}
-            name="password"
-            render={({ field: { onChange, onBlur, value }, fieldState: { error: fe } }) => (
-              <Input label="Password" secureTextEntry={!showPassword} onBlur={onBlur} onChangeText={onChange} value={value} error={fe?.message} />
-            )}
-          />
-          <Pressable 
-            onPress={() => setShowPassword(!showPassword)} 
-            className="flex-row items-center gap-2 mt-4 ml-1 mb-1"
-          >
-            <View 
-              style={{ 
-                width: 20, 
-                height: 20, 
-                borderWidth: 1, 
-                borderColor: showPassword ? colors.primary : colors.border, 
-                borderRadius: 4, 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                backgroundColor: showPassword ? colors.primary : 'transparent' 
-              }}
-            >
-              {showPassword && <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>✓</Text>}
-            </View>
-            <Text style={{ color: colors.inkMuted }}>Show password</Text>
-          </Pressable>
-        </View>
+        <Controller
+          control={control}
+          name="password"
+          render={({ field: { onChange, onBlur, value }, fieldState: { error: fe } }) => (
+            <Input
+              label="Password"
+              isPassword
+              onBlur={onBlur}
+              onChangeText={onChange}
+              value={value}
+              error={fe?.message}
+            />
+          )}
+        />
+        <Controller
+          control={control}
+          name="confirmPassword"
+          render={({ field: { onChange, onBlur, value }, fieldState: { error: fe } }) => (
+            <Input
+              label="Confirm Password"
+              isPassword
+              onBlur={onBlur}
+              onChangeText={onChange}
+              value={value}
+              error={fe?.message}
+            />
+          )}
+        />
 
         {error ? (
           <Text className="text-sm" style={{ color: colors.danger }}>

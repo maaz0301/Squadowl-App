@@ -203,20 +203,6 @@ export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
           <Input label="Medical Info" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} multiline numberOfLines={2} />
         )}
       />
-      <Controller
-        control={control}
-        name="friend1Name"
-        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
-          <Input label="Friend 1" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
-        )}
-      />
-      <Controller
-        control={control}
-        name="friend2Name"
-        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
-          <Input label="Friend 2" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
-        )}
-      />
       <Button
         label="Save Player"
         onPress={handleSubmit(onSubmit, (errors) => {

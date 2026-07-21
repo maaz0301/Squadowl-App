@@ -254,6 +254,7 @@ export const UserProfileSchema = z.object({
       changePassword: false,
     }),
   role: z.string().optional(),
+  emailVerified: z.boolean().default(true),
 });
 
 export type UserProfile = z.infer<typeof UserProfileSchema>;
@@ -284,7 +285,11 @@ export const SignupFormSchema = z.object({
   displayName: z.string().min(2, 'Name required'),
   email: z.string().email('Valid email required'),
   password: PasswordSchema,
+  confirmPassword: z.string().min(1, 'Please confirm your password'),
   accountType: z.enum(['coach', 'guardian']).default('coach'),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: 'Passwords do not match',
+  path: ['confirmPassword'],
 });
 
 /** Create assessment form */

@@ -43,6 +43,7 @@ export interface DataSource {
   requestPasswordReset(email: string): Promise<void>;
   verifyPasswordResetOtp(email: string, token: string): Promise<void>;
   resetPasswordWithOtp(email: string, token: string, newPassword: string): Promise<void>;
+  resendVerificationEmail(email: string): Promise<void>;
   checkUserExistsByEmail(email: string): Promise<boolean>;
   uploadCoachPhoto(userId: string, fileUri: string, fileType: string): Promise<string>;
 

@@ -20,6 +20,7 @@ interface AuthState {
   verifyPasswordResetOtp: (email: string, token: string) => Promise<void>;
   resetPasswordWithOtp: (email: string, token: string, newPassword: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
+  resendVerificationEmail: (email: string) => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -108,6 +109,9 @@ export const useAuthStore = create<AuthState>()(
           queryClient.clear();
         }
         set({ session });
+      },
+      resendVerificationEmail: async (email) => {
+        await getDataSource().resendVerificationEmail(email);
       },
     }),
     {
