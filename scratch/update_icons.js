@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const srcLogo = path.join(__dirname, '../assets/images/TryoutHQ T- logo.png');
+const srcLogo = path.join(__dirname, '../assets/images/tryouthq_t_logo.png');
 const rootDir = path.join(__dirname, '..');
 
 const targets = [

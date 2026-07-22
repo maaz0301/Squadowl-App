@@ -47,7 +47,7 @@ export default function SignupScreen() {
       {/* Brand Hero Banner */}
       <View className="items-center my-4">
         <Image
-          source={require('../../../assets/images/TryoutHQ logo.png')}
+          source={require('../../../assets/images/tryouthq_logo.png')}
           style={{ width: '100%', height: 90, resizeMode: 'contain' }}
         />
       </View>

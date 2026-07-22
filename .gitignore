@@ -37,11 +37,26 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
-# generated native folders
-/ios
-/android
+# native build output (android/ and ios/ are source of truth in this bare RN project)
+android/.gradle/
+android/.idea/
+android/local.properties
+android/build/
+android/app/build/
+android/app/.cxx/
+android/captures/
+*.hprof
+
+ios/build/
+ios/Pods/
+ios/.xcode.env.local
+ios/DerivedData/
+*.xcuserdatad
+xcuserdata/
 
 # Firebase / Google Services
 google-services.json
 android/app/google-services.json
+GoogleService-Info.plist
+ios/AASTryout/GoogleService-Info.plist
 

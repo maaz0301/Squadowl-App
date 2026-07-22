@@ -51,9 +51,9 @@ export function Header({ title, subtitle, showBack, showLogo, onBack, right }: H
           </Pressable>
         ) : null}
         
-        {showLogo || title === 'TryoutHQ' ? (
+        {showLogo || title?.toLowerCase() === 'tryouthq' ? (
           <Image
-            source={require('../../../assets/images/TryoutHQ T- logo.png')}
+            source={require('../../../assets/images/tryouthq_t_logo.png')}
             style={{ width: 32, height: 32, borderRadius: 6 }}
           />
         ) : null}

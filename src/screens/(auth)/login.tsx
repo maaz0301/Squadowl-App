@@ -43,7 +43,7 @@ export default function LoginScreen() {
       {/* Brand Hero Banner */}
       <View className="items-center mb-6 pt-6">
         <Image
-          source={require('../../../assets/images/TryoutHQ logo.png')}
+          source={require('../../../assets/images/tryouthq_logo.png')}
           style={{ width: '100%', height: 120, resizeMode: 'contain' }}
         />
         <Text className="text-base text-center mt-2 font-medium" style={{ color: colors.inkMuted }}>
