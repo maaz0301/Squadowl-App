@@ -55,10 +55,21 @@ export const AssessorSchema = z.object({
 
 export type Assessor = z.infer<typeof AssessorSchema>;
 
+export const SCORING_TYPES = ['skill', 'time', 'distance', 'speed'] as const;
+export type ScoringType = (typeof SCORING_TYPES)[number];
+
+export const RANKING_DIRECTIONS = ['higher_is_better', 'lower_is_better'] as const;
+export type RankingDirection = (typeof RANKING_DIRECTIONS)[number];
+
 export const CustomRubricSchema = z.object({
   key: z.string(),
   label: z.string(),
-  scale: z.enum(SCORE_SCALES).default('1-5'),
+  scoringType: z.enum(SCORING_TYPES).default('skill'),
+  scale: z.enum(['1-5', '1-10']).optional().default('1-5'),
+  unit: z.string().optional(),
+  minVal: z.number().optional(),
+  maxVal: z.number().optional(),
+  rankingDirection: z.enum(RANKING_DIRECTIONS).default('higher_is_better'),
   role: z.enum(['skater', 'goalie', 'all']).optional(),
 });
 

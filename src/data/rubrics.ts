@@ -1,4 +1,4 @@
-import type { Evaluation, Sport } from './types';
+import type { Evaluation, Sport, ScoringType, RankingDirection } from './types';
 
 export type Scale = '1-5' | '1-10';
 
@@ -6,7 +6,12 @@ export type Scale = '1-5' | '1-10';
 export interface SubSkill {
   key: string;
   label: string;
-  scale: Scale;
+  scale?: Scale;
+  scoringType?: ScoringType;
+  unit?: string;
+  minVal?: number;
+  maxVal?: number;
+  rankingDirection?: RankingDirection;
 }
 
 /** A weighted group of sub-skills, e.g. "Skating" → 5 sub-skills. */
@@ -17,178 +22,19 @@ export interface RubricCategory {
   subskills: SubSkill[];
 }
 
-const S = (key: string, label: string): SubSkill => ({ key, label, scale: '1-5' });
-
-// ─── Hockey (matches the web prototype 1:1) ──────────────────────────────────
-const HOCKEY_SKATER: RubricCategory[] = [
-  {
-    key: 'skating',
-    label: 'Skating',
-    role: 'skater',
-    subskills: [
-      S('SK1 Accel', 'Acceleration / First 3 Steps'),
-      S('SK2 Speed', 'Top-End Speed'),
-      S('SK3 Edges', 'Edge Control'),
-      S('SK4 Agility', 'Agility / Change of Direction'),
-      S('SK5 Balance', 'Balance / Strength on Skates'),
-    ],
-  },
-  {
-    key: 'passing',
-    label: 'Passing',
-    role: 'skater',
-    subskills: [
-      S('PA1 Accuracy', 'Pass Accuracy'),
-      S('PA2 Reception', 'Pass Reception'),
-      S('PA3 Vision', 'Vision / Awareness'),
-      S('PA4 Decisions', 'Decision Making'),
-      S('PA5 Timing', 'Pass Strength & Timing'),
-    ],
-  },
-  {
-    key: 'shooting',
-    label: 'Shooting',
-    role: 'skater',
-    subskills: [
-      S('SH1 Power', 'Shot Power'),
-      S('SH2 Accuracy', 'Shot Accuracy'),
-      S('SH3 Release', 'Release Speed'),
-      S('SH4 Selection', 'Shot Selection'),
-      S('SH5 Instincts', 'Scoring Instincts'),
-    ],
-  },
-  {
-    key: 'iq',
-    label: 'IQ',
-    role: 'skater',
-    subskills: [
-      S('IQ1 HockeyIQ', 'Hockey IQ'),
-      S('IQ2 Coachability', 'Coachability'),
-      S('IQ3 Compete', 'Compete / Work Ethic'),
-      S('IQ4 Defensive', 'Defensive Awareness'),
-      S('IQ5 Consistency', 'Consistency'),
-    ],
-  },
-];
-
-const HOCKEY_GOALIE: RubricCategory[] = [
-  {
-    key: 'movement',
-    label: 'Movement',
-    role: 'goalie',
-    subskills: [
-      S('GM1 Crease', 'Crease Movement / T-Push'),
-      S('GM2 Posts', 'Post Integration / RVH'),
-      S('GM3 Angles', 'Angle Management'),
-      S('GM4 Depth', 'Depth Control'),
-      S('GM5 Recovery', 'Recovery Speed'),
-    ],
-  },
-  {
-    key: 'saves',
-    label: 'Saves',
-    role: 'goalie',
-    subskills: [
-      S('GS1 Tracking', 'Tracking / Eyes'),
-      S('GS2 Hands', 'Glove & Blocker Control'),
-      S('GS3 Body', 'Body Control / Stance'),
-      S('GS4 Rebounds', 'Rebound Control'),
-      S('GS5 Compete', 'Compete / Battle Level'),
-    ],
-  },
-  {
-    key: 'puck',
-    label: 'Puck Play',
-    role: 'goalie',
-    subskills: [
-      S('GP1 Handling', 'Puck Handling / Stops'),
-      S('GP2 Passing', 'Passing / Outlet'),
-      S('GP3 Comm', 'Communication'),
-      S('GP4 Reads', 'Reads / Anticipation'),
-      S('GP5 Consistency', 'Consistency'),
-    ],
-  },
-  {
-    key: 'iq',
-    label: 'IQ',
-    role: 'goalie',
-    subskills: [
-      S('GIQ1 Awareness', 'Situational Awareness'),
-      S('GIQ2 Coachability', 'Coachability'),
-      S('GIQ3 Toughness', 'Mental Toughness'),
-      S('GIQ4 Focus', 'Focus / Reset Ability'),
-      S('GIQ5 Consistency', 'Consistency'),
-    ],
-  },
-];
-
-const HOCKEY_SK_WEIGHTS = { skating: 0.35, passing: 0.25, shooting: 0.25, iq: 0.15 };
-const HOCKEY_GO_WEIGHTS = { movement: 0.35, saves: 0.3, puck: 0.2, iq: 0.15 };
-
-// ─── Generic fallback for non-hockey sports ──────────────────────────────────
-const GENERIC_SKATER: RubricCategory[] = [
-  {
-    key: 'technical',
-    label: 'Technical',
-    role: 'skater',
-    subskills: [
-      S('TE1 Control', 'Ball / Implement Control'),
-      S('TE2 FirstTouch', 'First Touch / Handling'),
-      S('TE3 Technique', 'Core Technique'),
-    ],
-  },
-  {
-    key: 'athleticism',
-    label: 'Athleticism',
-    role: 'skater',
-    subskills: [
-      S('AT1 Speed', 'Speed'),
-      S('AT2 Agility', 'Agility'),
-      S('AT3 Strength', 'Strength / Balance'),
-    ],
-  },
-  {
-    key: 'compete',
-    label: 'Compete',
-    role: 'skater',
-    subskills: [
-      S('CO1 Effort', 'Effort / Work Rate'),
-      S('CO2 Battles', 'Battle Level'),
-      S('CO3 Coachability', 'Coachability'),
-    ],
-  },
-  {
-    key: 'iq',
-    label: 'Game IQ',
-    role: 'skater',
-    subskills: [
-      S('GI1 Decisions', 'Decision Making'),
-      S('GI2 Positioning', 'Positioning / Awareness'),
-      S('GI3 Consistency', 'Consistency'),
-    ],
-  },
-];
-
-export function getDefaultRubrics(sport: Sport): {
+export function getDefaultRubrics(_sport: Sport): {
   skater: RubricCategory[];
   goalie: RubricCategory[];
 } {
-  if (sport === 'Hockey') return { skater: HOCKEY_SKATER, goalie: HOCKEY_GOALIE };
-  return { skater: GENERIC_SKATER, goalie: [] };
+  // 7.1 Template Rubrics Removed: All rubrics are built custom from scratch by assessor
+  return { skater: [], goalie: [] };
 }
 
-export function getDefaultWeights(sport: Sport): {
+export function getDefaultWeights(_sport: Sport): {
   skater: Record<string, number>;
   goalie: Record<string, number>;
 } {
-  if (sport === 'Hockey') {
-    return { skater: { ...HOCKEY_SK_WEIGHTS }, goalie: { ...HOCKEY_GO_WEIGHTS } };
-  }
-  const defaults = getDefaultRubrics(sport);
-  return {
-    skater: buildDefaultWeights(defaults.skater),
-    goalie: buildDefaultWeights(defaults.goalie),
-  };
+  return { skater: {}, goalie: {} };
 }
 
 export function isGoaliePosition(pos?: string): boolean {
@@ -197,16 +43,39 @@ export function isGoaliePosition(pos?: string): boolean {
   return p === 'GTL' || p.includes('GOAL');
 }
 
+export function compareSubskillScores(
+  valA: number | undefined,
+  valB: number | undefined,
+  direction: RankingDirection = 'higher_is_better',
+): number {
+  if (valA == null && valB == null) return 0;
+  if (valA == null) return 1;
+  if (valB == null) return -1;
+  return direction === 'lower_is_better' ? valA - valB : valB - valA;
+}
+
 function customToCategory(
-  r: { key: string; label: string; scale: string; role?: string },
+  r: {
+    key: string;
+    label: string;
+    scale?: string;
+    scoringType?: ScoringType;
+    unit?: string;
+    minVal?: number;
+    maxVal?: number;
+    rankingDirection?: RankingDirection;
+    role?: string;
+  },
   role: 'skater' | 'goalie',
 ): RubricCategory {
   const scale: Scale = r.scale === '1-10' ? '1-10' : '1-5';
+  const scoringType: ScoringType = r.scoringType ?? 'skill';
+  const rankingDirection: RankingDirection = r.rankingDirection ?? (scoringType === 'time' ? 'lower_is_better' : 'higher_is_better');
   return {
     key: r.key,
     label: r.label,
     role,
-    subskills: [{ key: r.key, label: r.label, scale }],
+    subskills: [{ key: r.key, label: r.label, scale, scoringType, unit: r.unit, minVal: r.minVal, maxVal: r.maxVal, rankingDirection }],
   };
 }
 
@@ -214,16 +83,24 @@ function customToCategory(
 export function getPlayerCategories(
   sport: Sport,
   pos?: string,
-  customRubrics: { key: string; label: string; scale: string; role?: string }[] = [],
+  customRubrics: {
+    key: string;
+    label: string;
+    scale?: string;
+    scoringType?: ScoringType;
+    unit?: string;
+    minVal?: number;
+    maxVal?: number;
+    rankingDirection?: RankingDirection;
+    role?: string;
+  }[] = [],
 ): RubricCategory[] {
-  const defaults = getDefaultRubrics(sport);
   const goalie = isGoaliePosition(pos);
-  const base = goalie && defaults.goalie.length ? defaults.goalie : defaults.skater;
   const role: 'skater' | 'goalie' = goalie ? 'goalie' : 'skater';
   const customs = customRubrics
     .filter((r) => !r.role || r.role === 'all' || r.role === role)
     .map((r) => customToCategory(r, role));
-  return [...base, ...customs];
+  return customs;
 }
 
 /** Backwards-compatible alias returning categories for a player. */
@@ -233,7 +110,17 @@ export const getPlayerRubrics = getPlayerCategories;
 export function getPlayerSubskills(
   sport: Sport,
   pos?: string,
-  customRubrics: { key: string; label: string; scale: string; role?: string }[] = [],
+  customRubrics: {
+    key: string;
+    label: string;
+    scale?: string;
+    scoringType?: ScoringType;
+    unit?: string;
+    minVal?: number;
+    maxVal?: number;
+    rankingDirection?: RankingDirection;
+    role?: string;
+  }[] = [],
 ): SubSkill[] {
   return getPlayerCategories(sport, pos, customRubrics).flatMap((c) => c.subskills);
 }
@@ -247,9 +134,36 @@ export function buildDefaultWeights(categories: RubricCategory[]): Record<string
 
 // ─── Scoring math (matches the web prototype) ────────────────────────────────
 
-/** 1–10 scores normalize onto the 1–5 scale by halving; other scales pass through. */
-export function normalizeScore(value: number | undefined, scale: Scale): number | null {
+/** 1–10 scores or metric benchmarks normalize onto the 1–5 scale. */
+export function normalizeScore(
+  value: number | undefined,
+  scale: Scale = '1-5',
+  scoringType: ScoringType = 'skill',
+  minVal?: number,
+  maxVal?: number,
+): number | null {
   if (value == null || Number.isNaN(value)) return null;
+
+  if (scoringType !== 'skill') {
+    if (minVal != null && maxVal != null && maxVal !== minVal) {
+      if (scoringType === 'time') {
+        // Lower is better (minVal = best = 5, maxVal = worst = 1)
+        if (value <= minVal) return 5;
+        if (value >= maxVal) return 1;
+        const ratio = (value - minVal) / (maxVal - minVal);
+        return Math.round((5 - ratio * 4) * 100) / 100;
+      } else {
+        // Distance or Speed: Higher is better (maxVal = best = 5, minVal = worst = 1)
+        if (value >= maxVal) return 5;
+        if (value <= minVal) return 1;
+        const ratio = (value - minVal) / (maxVal - minVal);
+        return Math.round((1 + ratio * 4) * 100) / 100;
+      }
+    }
+    // If no min/max benchmark is defined, return raw metric
+    return value;
+  }
+
   const max = scale === '1-10' ? 10 : 5;
   const clamped = Math.max(1, Math.min(max, value));
   return scale === '1-10' ? clamped / 2 : clamped;
@@ -285,7 +199,7 @@ export function categoryAverage(
 ): number | null {
   const vals: number[] = [];
   for (const s of subskills) {
-    const v = normalizeScore(scores[s.key], s.scale);
+    const v = normalizeScore(scores[s.key], s.scale ?? '1-5', s.scoringType ?? 'skill', s.minVal, s.maxVal);
     if (v !== null) vals.push(v);
   }
   return mean(vals);
@@ -299,7 +213,7 @@ export function categoryAverageAcrossEvals(
   const vals: number[] = [];
   for (const e of evals) {
     for (const s of subskills) {
-      const v = normalizeScore(e.scores?.[s.key], s.scale);
+      const v = normalizeScore(e.scores?.[s.key], s.scale ?? '1-5', s.scoringType ?? 'skill', s.minVal, s.maxVal);
       if (v !== null) vals.push(v);
     }
   }
@@ -324,7 +238,12 @@ export function weightedOverall(
 ): number {
   let sum = 0;
   let wsum = 0;
-  for (const cat of categories) {
+  const skillCats = categories.filter((cat) =>
+    cat.subskills.some((s) => !s.scoringType || s.scoringType === 'skill'),
+  );
+  const targetCats = skillCats.length > 0 ? skillCats : categories;
+
+  for (const cat of targetCats) {
     const avg = categoryAverage(scores, cat.subskills);
     if (avg === null) continue;
     const w = weightOf(cat.key, weights, categories);
@@ -343,7 +262,12 @@ export function weightedOverallAcrossEvals(
 ): number {
   let sum = 0;
   let wsum = 0;
-  for (const cat of categories) {
+  const skillCats = categories.filter((cat) =>
+    cat.subskills.some((s) => !s.scoringType || s.scoringType === 'skill'),
+  );
+  const targetCats = skillCats.length > 0 ? skillCats : categories;
+
+  for (const cat of targetCats) {
     const avg = categoryAverageAcrossEvals(evals, cat.subskills);
     if (avg === null) continue;
     const w = weightOf(cat.key, weights, categories);

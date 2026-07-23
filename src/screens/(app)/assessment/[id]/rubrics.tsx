@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Text, View, Alert, Pressable, Platform } from 'react-native';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Button, Card, Chip, ErrorState, Header, Input, LoadingState, Screen } from '@/components/ui';
+import { Button, Card, Chip, ErrorState, Header, Input, LoadingState, Screen, Badge } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
 import { useTryoutQuery, useUpdateTryoutMutation } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
-import { getDefaultRubrics, buildDefaultWeights } from '@/data/rubrics';
 import { useUser } from '@/state/authStore';
 import { getPlanDefinition } from '@/data/plans';
+import type { ScoringType, RankingDirection } from '@/data/types';
 
 export default function RubricsScreen() {
   const id = useAssessmentId();
@@ -15,9 +15,14 @@ export default function RubricsScreen() {
   const user = useUser();
   const tryoutQuery = useTryoutQuery(id);
   const updateTryout = useUpdateTryoutMutation();
-  const [role, setRole] = useState<'skater' | 'goalie'>('skater');
+
+  const [role, setRole] = useState<'skater' | 'goalie' | 'all'>('skater');
   const [label, setLabel] = useState('');
+  const [scoringType, setScoringType] = useState<ScoringType>('skill');
   const [scale, setScale] = useState<'1-5' | '1-10'>('1-5');
+  const [unit, setUnit] = useState('');
+  const [minValStr, setMinValStr] = useState('');
+  const [maxValStr, setMaxValStr] = useState('');
 
   const showAlert = (title: string, message: string) => {
     if (Platform.OS === 'web') {
@@ -35,8 +40,6 @@ export default function RubricsScreen() {
   }
 
   const tryout = tryoutQuery.data;
-
-  const defaults = getDefaultRubrics(tryout.sport);
   const custom = tryout.settings.customRubrics ?? [];
   const plan = getPlanDefinition(user?.planTier ?? 'free');
   const customLimit = plan.limits.customRubrics;
@@ -46,51 +49,52 @@ export default function RubricsScreen() {
   const addCustom = async () => {
     if (!label.trim() || atCustomLimit) return;
     const key = label.trim().toLowerCase().replace(/\s+/g, '_');
-    const next = [
-      ...custom,
-      { key, label: label.trim(), scale, role: (role === 'goalie' ? 'goalie' : 'skater') as 'skater' | 'goalie' },
-    ];
+
+    let rankingDirection: RankingDirection = 'higher_is_better';
+    let defaultUnit = unit.trim();
+
+    if (scoringType === 'time') {
+      rankingDirection = 'lower_is_better';
+      if (!defaultUnit) defaultUnit = 'sec';
+    } else if (scoringType === 'distance') {
+      rankingDirection = 'higher_is_better';
+      if (!defaultUnit) defaultUnit = 'ft';
+    } else if (scoringType === 'speed') {
+      rankingDirection = 'higher_is_better';
+      if (!defaultUnit) defaultUnit = 'mph';
+    }
+
+    const minNum = minValStr.trim() !== '' ? parseFloat(minValStr) : undefined;
+    const maxNum = maxValStr.trim() !== '' ? parseFloat(maxValStr) : undefined;
+
+    const nextItem = {
+      key,
+      label: label.trim(),
+      scoringType,
+      scale: scoringType === 'skill' ? scale : '1-5',
+      unit: scoringType !== 'skill' ? defaultUnit : undefined,
+      minVal: !isNaN(minNum as number) ? minNum : undefined,
+      maxVal: !isNaN(maxNum as number) ? maxNum : undefined,
+      rankingDirection,
+      role,
+    };
+
+    const next = [...custom, nextItem];
+
     await updateTryout.mutateAsync({
       id: tryout.id,
       updates: {
         settings: {
           ...tryout.settings,
           customRubrics: next,
-          skaterWeights: tryout.settings.skaterWeights,
-          goalieWeights: tryout.settings.goalieWeights,
         },
       },
     });
-    setLabel('');
-  };
 
-  const resetWeights = async (forRole: 'skater' | 'goalie') => {
-    try {
-      const baseCats = forRole === 'goalie' ? defaults.goalie : defaults.skater;
-      const customCats = custom
-        .filter((r) => r.role === forRole || r.role === 'all' || !r.role)
-        .map((r) => ({
-          key: r.key,
-          label: r.label,
-          role: forRole,
-          subskills: [
-            { key: r.key, label: r.label, scale: (r.scale === '1-10' ? '1-10' : '1-5') as '1-5' | '1-10' },
-          ],
-        }));
-      const weights = buildDefaultWeights([...baseCats, ...customCats]);
-      await updateTryout.mutateAsync({
-        id: tryout.id,
-        updates: {
-          settings: {
-            ...tryout.settings,
-            [forRole === 'goalie' ? 'goalieWeights' : 'skaterWeights']: weights,
-          },
-        },
-      });
-      showAlert('Success', `${forRole.charAt(0).toUpperCase() + forRole.slice(1)} weights successfully reset to default values.`);
-    } catch (err: any) {
-      showAlert('Error', err.message || 'Failed to reset weights.');
-    }
+    setLabel('');
+    setUnit('');
+    setMinValStr('');
+    setMaxValStr('');
   };
 
   const removeCustom = async (keyToRemove: string) => {
@@ -123,85 +127,167 @@ export default function RubricsScreen() {
       <Header title="Assessment Rubrics" showBack />
       <Card accent className="mb-4 gap-2">
         <Text className="font-display font-bold" style={{ color: colors.ink }}>
-          Rubric Builder
+          Custom Rubric Builder
         </Text>
         <Text style={{ color: colors.inkMuted }}>
-          Default {defaults.skater.length} skater + {defaults.goalie.length} goalie categories for{' '}
-          {tryout.sport}.
+          All rubrics are fully custom. Define drill categories, metric units, and min/max score benchmarks.
         </Text>
       </Card>
 
-      <Card className="mb-4 gap-2">
-        <Text className="font-display font-bold" style={{ color: colors.ink }}>
-          Default Skater Rubrics
-        </Text>
-        {defaults.skater.map((r) => (
-          <Text key={r.key} style={{ color: colors.ink }}>
-            {r.label} · {r.subskills.length} skills
-          </Text>
-        ))}
-        {/* <Button label="Reset Skater Weights" size="sm" variant="ghost" onPress={() => resetWeights('skater')} /> */}
-      </Card>
-
-      {defaults.goalie.length > 0 ? (
-        <Card className="mb-4 gap-2">
+      <Card className="mb-4 gap-3">
+        <View className="flex-row items-center justify-between">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>
-            Default Goalie Rubrics
+            Created Rubrics ({custom.length}
+            {customLimit !== 'unlimited' ? ` / ${customLimit}` : ''})
           </Text>
-          {defaults.goalie.map((r) => (
-            <Text key={r.key} style={{ color: colors.ink }}>
-              {r.label} · {r.subskills.length} skills
-            </Text>
-          ))}
-          {/* <Button label="Reset Goalie Weights" size="sm" variant="ghost" onPress={() => resetWeights('goalie')} /> */}
-        </Card>
-      ) : null}
+        </View>
 
-      <Card className="mb-4 gap-2">
-        <Text className="font-display font-bold" style={{ color: colors.ink }}>
-          Custom Rubrics ({custom.length}
-          {customLimit !== 'unlimited' ? ` / ${customLimit}` : ''})
-        </Text>
-        {custom.map((r) => (
-          <View key={r.key} className="flex-row items-center justify-between py-1">
-            <Text style={{ color: colors.ink }} className="flex-1 mr-2">
-              {r.label} · {r.scale} · {r.role ?? 'all'}
-            </Text>
-            <Pressable 
-              onPress={() => removeCustom(r.key)}
-              hitSlop={8}
-              className="px-2"
-            >
-              <Text style={{ color: colors.danger, fontSize: 24, fontWeight: 'bold' }}>
-                -
-              </Text>
-            </Pressable>
-          </View>
-        ))}
+        {custom.map((r) => {
+          const typeLabel = r.scoringType ?? 'skill';
+          const ruleText = r.rankingDirection === 'lower_is_better' ? 'Shortest wins' : 'Highest wins';
+          let details = r.scoringType === 'skill' || !r.scoringType
+            ? `${r.scale ?? '1-5'} scale`
+            : `${r.unit ?? ''} (${ruleText})`;
+
+          if (r.minVal != null && r.maxVal != null) {
+            details += ` · Range: ${r.minVal} to ${r.maxVal}`;
+          }
+
+          return (
+            <View key={r.key} className="flex-row items-center justify-between py-2 border-b" style={{ borderColor: colors.border }}>
+              <View className="flex-1 mr-2 gap-1">
+                <View className="flex-row items-center gap-2">
+                  <Text className="font-bold text-base" style={{ color: colors.ink }}>
+                    {r.label}
+                  </Text>
+                  <Badge label={typeLabel.toUpperCase()} variant="brand" />
+                  <Badge label={r.role ?? 'all'} variant="default" />
+                </View>
+                <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                  {details}
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={() => removeCustom(r.key)}
+                hitSlop={8}
+                className="px-2"
+              >
+                <Text style={{ color: colors.danger, fontSize: 22, fontWeight: 'bold' }}>
+                  ✕
+                </Text>
+              </Pressable>
+            </View>
+          );
+        })}
+
         {custom.length === 0 ? (
-          <Text style={{ color: colors.inkMuted }}>No custom rubrics yet.</Text>
+          <Text style={{ color: colors.inkMuted }}>
+            No custom rubrics added yet. Use the builder below to add drills & categories.
+          </Text>
         ) : null}
       </Card>
 
       <PlanGate feature="customRubrics" title="Custom Rubrics (Coach+)">
         <Card accent className="gap-3">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>
-            Add Custom Category
+            Add Custom Drill / Category
           </Text>
-          <View className="flex-row flex-wrap">
+
+          <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+            1. Role
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
             <Chip label="Skater" active={role === 'skater'} onPress={() => setRole('skater')} />
             <Chip label="Goalie" active={role === 'goalie'} onPress={() => setRole('goalie')} />
+            <Chip label="All Players" active={role === 'all'} onPress={() => setRole('all')} />
           </View>
-          <Input label="Category name" value={label} onChangeText={setLabel} placeholder="Leadership" />
-          <View className="flex-row flex-wrap">
-            <Chip label="1-5" active={scale === '1-5'} onPress={() => setScale('1-5')} />
-            <Chip label="1-10" active={scale === '1-10'} onPress={() => setScale('1-10')} />
+
+          <Input
+            label="2. Drill / Category Name"
+            value={label}
+            onChangeText={setLabel}
+            placeholder="e.g. 40-Yard Dash, Long Throw, Shot Speed"
+          />
+
+          <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+            3. Scoring Type
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            <Chip label="Skill / Technique" active={scoringType === 'skill'} onPress={() => setScoringType('skill')} />
+            <Chip label="Time-based" active={scoringType === 'time'} onPress={() => setScoringType('time')} />
+            <Chip label="Distance-based" active={scoringType === 'distance'} onPress={() => setScoringType('distance')} />
+            <Chip label="Speed-based" active={scoringType === 'speed'} onPress={() => setScoringType('speed')} />
           </View>
+
+          {scoringType === 'skill' ? (
+            <View className="gap-2">
+              <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                4. Scale Choice
+              </Text>
+              <View className="flex-row flex-wrap gap-2">
+                <Chip label="1-5 Scale" active={scale === '1-5'} onPress={() => setScale('1-5')} />
+                <Chip label="1-10 Scale" active={scale === '1-10'} onPress={() => setScale('1-10')} />
+              </View>
+              <Text className="text-xs italic" style={{ color: colors.inkMuted }}>
+                Ranking Rule: Highest number = highest rank (Score 5)
+              </Text>
+            </View>
+          ) : (
+            <View className="gap-3">
+              <Input
+                label="4. Unit Label (Optional)"
+                value={unit}
+                onChangeText={setUnit}
+                placeholder={
+                  scoringType === 'time'
+                    ? 'sec (default)'
+                    : scoringType === 'speed'
+                    ? 'mph (default)'
+                    : 'ft (default)'
+                }
+              />
+
+              <Text className="text-xs font-bold uppercase tracking-wider mt-1" style={{ color: colors.inkMuted }}>
+                5. Score Range Benchmarks (Min & Max)
+              </Text>
+              <View className="flex-row gap-2">
+                <View className="flex-1">
+                  <Input
+                    label="Min Value"
+                    value={minValStr}
+                    onChangeText={setMinValStr}
+                    keyboardType="numeric"
+                    placeholder={scoringType === 'time' ? '12 (Best)' : '5 (Worst)'}
+                  />
+                </View>
+                <View className="flex-1">
+                  <Input
+                    label="Max Value"
+                    value={maxValStr}
+                    onChangeText={setMaxValStr}
+                    keyboardType="numeric"
+                    placeholder={scoringType === 'time' ? '25 (Worst)' : '25 (Best)'}
+                  />
+                </View>
+              </View>
+
+              <Text className="text-xs italic font-bold" style={{ color: colors.primary }}>
+                Interpolation Rule:{' '}
+                {scoringType === 'time'
+                  ? `Min (${minValStr || '12'}) = Score 5.0  ·  Max (${maxValStr || '25'}) = Score 1.0 (Shortest time wins)`
+                  : scoringType === 'distance'
+                  ? `Min (${minValStr || '5'}) = Score 1.0  ·  Max (${maxValStr || '25'}) = Score 5.0 (Largest distance wins)`
+                  : `Min (${minValStr || '10'}) = Score 1.0  ·  Max (${maxValStr || '60'}) = Score 5.0 (Fastest speed wins)`}
+              </Text>
+            </View>
+          )}
+
           <Button
-            label="Add Rubric"
+            label="Add Rubric Category"
             onPress={addCustom}
             loading={updateTryout.isPending}
-            disabled={atCustomLimit}
+            disabled={atCustomLimit || !label.trim()}
           />
         </Card>
       </PlanGate>

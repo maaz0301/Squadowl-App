@@ -1,18 +1,103 @@
-import { Pressable, Text, View } from 'react-native';
+import { useState, useEffect } from 'react';
+import { Pressable, Text, View, TextInput } from 'react-native';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { getScoreHeatLevel } from '@/data/rubrics';
+import { getScoreHeatLevel, normalizeScore } from '@/data/rubrics';
 import { themeTokens } from '@/theme/tokens';
+import type { ScoringType } from '@/data/types';
 
 interface ScorePadProps {
-  rubricKey: string;
+  rubricKey?: string;
   label: string;
-  scale: '1-5' | '1-10';
+  scale?: '1-5' | '1-10';
+  scoringType?: ScoringType;
+  unit?: string;
+  minVal?: number;
+  maxVal?: number;
   value?: number;
   onChange: (value: number) => void;
 }
 
-export function ScorePad({ label, scale, value, onChange }: ScorePadProps) {
+export function ScorePad({
+  label,
+  scale = '1-5',
+  scoringType = 'skill',
+  unit,
+  minVal,
+  maxVal,
+  value,
+  onChange,
+}: ScorePadProps) {
   const colors = useThemeColors();
+  const [textVal, setTextVal] = useState(value != null ? String(value) : '');
+
+  useEffect(() => {
+    setTextVal(value != null ? String(value) : '');
+  }, [value]);
+
+  if (scoringType && scoringType !== 'skill') {
+    const unitText = unit ? unit : (scoringType === 'time' ? 'sec' : scoringType === 'speed' ? 'mph' : 'ft');
+    const ruleText = scoringType === 'time' ? 'Shortest time = highest score' : scoringType === 'speed' ? 'Fastest speed = highest score' : 'Largest distance = highest score';
+
+    const parsed = parseFloat(textVal);
+    const calculatedScore = !isNaN(parsed) && minVal != null && maxVal != null
+      ? normalizeScore(parsed, scale, scoringType, minVal, maxVal)
+      : null;
+
+    return (
+      <View className="mb-4">
+        <View className="flex-row items-center justify-between mb-1">
+          <Text className="text-sm font-bold" style={{ color: colors.inkMuted }}>
+            {label}
+          </Text>
+          <View className="flex-row items-center gap-2">
+            {calculatedScore !== null ? (
+              <Text className="text-xs font-extrabold px-2 py-0.5 rounded" style={{ backgroundColor: colors.primary + '20', color: colors.primary }}>
+                Score: {calculatedScore.toFixed(1)} / 5.0
+              </Text>
+            ) : null}
+            <Text className="text-xs italic font-medium" style={{ color: colors.inkFaint }}>
+              ({ruleText})
+            </Text>
+          </View>
+        </View>
+        <View className="flex-row items-center gap-2">
+          <TextInput
+            value={textVal}
+            onChangeText={(txt) => {
+              setTextVal(txt);
+              const p = parseFloat(txt);
+              if (!isNaN(p)) {
+                onChange(p);
+              }
+            }}
+            keyboardType="decimal-pad"
+            placeholder={`Enter numeric ${scoringType}...`}
+            placeholderTextColor={colors.inkFaint}
+            className="flex-1 h-12 px-3 rounded border text-base font-bold"
+            style={{
+              backgroundColor: colors.field,
+              borderColor: colors.border,
+              color: colors.ink,
+            }}
+          />
+          <View
+            className="h-12 px-4 rounded justify-center items-center"
+            style={{ backgroundColor: colors.tile, borderColor: colors.border, borderWidth: 1 }}
+          >
+            <Text className="font-bold text-sm" style={{ color: colors.primary }}>
+              {unitText}
+            </Text>
+          </View>
+        </View>
+        {minVal != null && maxVal != null ? (
+          <Text className="text-xs mt-1" style={{ color: colors.inkMuted }}>
+            Benchmarked Range: Min = {minVal} {unitText} · Max = {maxVal} {unitText}
+          </Text>
+        ) : null}
+      </View>
+    );
+  }
+
   const max = scale === '1-10' ? 10 : 5;
   const options = Array.from({ length: max }, (_, i) => i + 1);
 

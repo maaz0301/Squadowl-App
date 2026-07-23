@@ -462,6 +462,10 @@ export default function ScoreScreen() {
                 rubricKey={s.key}
                 label={s.label}
                 scale={s.scale}
+                scoringType={s.scoringType}
+                unit={s.unit}
+                minVal={s.minVal}
+                maxVal={s.maxVal}
                 value={scores?.[s.key]}
                 onChange={(v) => {
                   const newScores = { ...workingScores, [s.key]: v };
