@@ -497,6 +497,10 @@ export default function RinksideScreen() {
                     rubricKey={s.key}
                     label={s.label}
                     scale={s.scale}
+                    scoringType={s.scoringType}
+                    unit={s.unit}
+                    minVal={s.minVal}
+                    maxVal={s.maxVal}
                     value={workingScores[s.key]}
                     onChange={(v) => setWorkingScores({ ...workingScores, [s.key]: v })}
                   />
