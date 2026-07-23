@@ -491,6 +491,20 @@ export function useAddSeasonEventMutation(seasonId: string) {
   });
 }
 
+export function useUpdateSeasonEventMutation(seasonId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      eventId,
+      updates,
+    }: {
+      eventId: string;
+      updates: Partial<import('@/data/types').SeasonEvent>;
+    }) => getDataSource().updateSeasonEvent(seasonId, eventId, updates),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.season(seasonId) }),
+  });
+}
+
 export function useDeleteSeasonEventMutation(seasonId: string) {
   const qc = useQueryClient();
   return useMutation({

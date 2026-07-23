@@ -1,36 +1,32 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, ScrollView, Text, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { useRoute } from '@react-navigation/native';
 
-import { useForm, Controller } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { ScoreFormSchema, RECOMMENDATIONS, type ScoreForm } from '@/data/types';
-import { useThemeColors } from '@/theme/ThemeProvider';
 import {
   Button,
-  Card,
   Chip,
   ErrorState,
   Header,
   Input,
   LoadingState,
-  Modal,
   ScorePad,
-  Screen,
-  Badge,
+  Screen
 } from '@/components/ui';
-import { useTryoutQuery, useSaveEvaluationMutation, useSeasonsQuery, useAddSeasonPlayerMutation, useAthleteHistoryQuery } from '@/features/queries';
-import { useAssessmentId } from '@/features/useAssessmentId';
-import { useSessionStore } from '@/state/sessionStore';
 import {
   categoryAverage,
   getPlayerCategories,
   isGoaliePosition,
+  mapLegacyScores,
   playerDisplayName,
   weightedOverall,
-  mapLegacyScores,
 } from '@/data/rubrics';
+import { RECOMMENDATIONS, ScoreFormSchema, type ScoreForm } from '@/data/types';
+import { useAthleteHistoryQuery, useSaveEvaluationMutation, useTryoutQuery } from '@/features/queries';
+import { useAssessmentId } from '@/features/useAssessmentId';
+import { useSessionStore } from '@/state/sessionStore';
+import { useThemeColors } from '@/theme/ThemeProvider';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Controller, useForm } from 'react-hook-form';
 
 export default function ScoreScreen() {
   const id = useAssessmentId();
@@ -68,7 +64,7 @@ export default function ScoreScreen() {
   const baseHighestSessionNum = useMemo(() => {
     return (tryoutQuery.data?.evals || []).reduce((max, ev) => {
       if (!ev.session) return max;
-      
+
       const hasScores = ev.scores && Object.values(ev.scores).some(val => val !== undefined && val !== null && val > 0);
       if (!hasScores) return max;
 

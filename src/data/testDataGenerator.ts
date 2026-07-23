@@ -139,3 +139,81 @@ export function pickRecommendation(ability: number): Recommendation {
   if (ability > 0.3) return 'Bubble';
   return 'Release';
 }
+
+/**
+ * Coerce an AI-supplied raw score into the valid range for a sub-skill,
+ * respecting its scoring type / scale / benchmarks. Returns null if the value
+ * isn't a usable number, so the caller can fall back to a derived score. This
+ * is the guard that keeps AI-generated scores from breaking the ranking math.
+ */
+export function clampScoreToRubric(value: unknown, s: SubSkill): number | null {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!isFinite(n)) return null;
+  const type = s.scoringType ?? 'skill';
+  if (type === 'skill') {
+    const max = s.scale === '1-10' ? 10 : 5;
+    return clamp(Math.round(n), 1, max);
+  }
+  // time / distance / speed — benchmark bounds, in either direction.
+  const a = s.minVal ?? (type === 'time' ? 4.5 : 8);
+  const b = s.maxVal ?? (type === 'time' ? 7.5 : 40);
+  return round2(clamp(n, Math.min(a, b), Math.max(a, b)));
+}
+
+/** One player as returned by the AI test-data generator (before DB mapping). */
+export interface AITestPlayer {
+  form: AddPlayerForm;
+  ability: number;
+  /** Raw score per rubric key; may be partial — missing keys fall back to derived scores. */
+  scores: Record<string, number>;
+  recommendation?: Recommendation;
+}
+
+/**
+ * Convert one raw player object from the `generate-test-players` edge function
+ * into the same `{form, ability, scores}` shape the DB-insert path consumes.
+ * Sanitizes every field so a malformed AI response can't corrupt the batch;
+ * returns null for an unusable record (caller drops it and tops up locally).
+ */
+export function mapAIPlayer(
+  raw: any,
+  sport: Sport,
+  currentYear: number,
+): AITestPlayer | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const first = String(raw.firstName ?? '').trim();
+  const last = String(raw.lastName ?? '').trim();
+  if (!first || !last) return null;
+
+  const positions = POSITIONS_BY_SPORT[sport] ?? POSITIONS_BY_SPORT.Other;
+  const pos = positions.includes(raw.position) ? raw.position : pick(positions);
+  const ageNum = Number(raw.age);
+  const age = isFinite(ageNum) ? clamp(Math.round(ageNum), 8, 18) : randInt(8, 18);
+  const level = LEVELS.includes(raw.level) ? raw.level : pick(LEVELS);
+  const abilityNum = Number(raw.ability);
+  const ability = isFinite(abilityNum) ? clamp(abilityNum, 0, 1) : Math.random();
+
+  const scores: Record<string, number> = {};
+  if (raw.scores && typeof raw.scores === 'object') {
+    for (const [k, v] of Object.entries(raw.scores)) {
+      const num = Number(v);
+      if (isFinite(num)) scores[k] = num;
+    }
+  }
+
+  return {
+    ability,
+    scores,
+    recommendation: typeof raw.recommendation === 'string' ? raw.recommendation : undefined,
+    form: {
+      first,
+      last,
+      jersey: String(randInt(1, 99)),
+      pos,
+      yearOfBirth: String(currentYear - age),
+      currentTeam: TEST_DATA_TAG,
+      currentLevel: level,
+      aboutChild: typeof raw.bio === 'string' ? raw.bio.slice(0, 200) : undefined,
+    },
+  };
+}

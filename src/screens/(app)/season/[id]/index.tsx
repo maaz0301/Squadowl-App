@@ -79,6 +79,14 @@ export default function SeasonHubScreen() {
             <Text className="text-sm" style={{ color: colors.inkMuted }}>
               {ev.date} · {ev.startTime ?? '—'} · {ev.location ?? 'TBD'}
             </Text>
+            <View className="flex-row mt-2">
+              <Button
+                label="Edit"
+                variant="secondary"
+                size="sm"
+                onPress={() => navigation.navigate('SeasonSchedule', { id: id, editEventId: ev.id })}
+              />
+            </View>
           </Card>
         ))
       )}

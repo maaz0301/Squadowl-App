@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { FlatList, Text, View, ScrollView, Pressable } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 
@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Chip, EmptyState, ErrorState, Input, LoadingState, Modal, Screen, DateField, TimeField, Header } from '@/components/ui';
-import { useSeasonQuery, useAddSeasonEventMutation, useDeleteSeasonEventMutation } from '@/features/queries';
+import { useSeasonQuery, useAddSeasonEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation } from '@/features/queries';
 import { getDataSource } from '@/data';
 import { Alert, Platform } from 'react-native';
 
@@ -17,8 +17,10 @@ export default function SeasonScheduleScreen() {
   const colors = useThemeColors();
   const seasonQuery = useSeasonQuery(id);
   const addEvent = useAddSeasonEventMutation(id!);
+  const updateEvent = useUpdateSeasonEventMutation(id!);
   const deleteEvent = useDeleteSeasonEventMutation(id!);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [reminding, setReminding] = useState<string | null>(null);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
 
@@ -35,18 +37,59 @@ export default function SeasonScheduleScreen() {
   const eventType = watch('type');
 
   useEffect(() => {
-    if (showAdd && season?.roster) {
+    if (showAdd && !editingEventId && season?.roster) {
       setSelectedPlayerIds(season.roster.map((p) => p.id));
     }
-  }, [showAdd, season?.roster]);
+  }, [showAdd, editingEventId, season?.roster]);
+
+  const openAdd = () => {
+    setEditingEventId(null);
+    reset({ type: 'Practice', title: '', date: '', startTime: '', endTime: '', location: '', notes: '', playerIds: [] });
+    setShowAdd(true);
+  };
+
+  const openEdit = (event: import('@/data/types').SeasonEvent) => {
+    setEditingEventId(event.id);
+    reset({
+      type: event.type,
+      title: event.title,
+      date: event.date,
+      startTime: event.startTime ?? '',
+      endTime: event.endTime ?? '',
+      location: event.location ?? '',
+      notes: event.notes ?? '',
+      playerIds: [],
+    });
+    setShowAdd(true);
+  };
+
+  const closeModal = () => {
+    setShowAdd(false);
+    setEditingEventId(null);
+    reset();
+  };
+
+  // If navigated here with an editEventId (e.g. from the Season Hub's Upcoming
+  // Events), open that event in the edit modal once, after the season loads.
+  const editParamHandled = useRef(false);
+  useEffect(() => {
+    if (editParamHandled.current) return;
+    const editId = route.params?.editEventId;
+    if (!editId) return;
+    const ev = season.events.find((e) => e.id === editId);
+    if (ev) {
+      editParamHandled.current = true;
+      openEdit(ev);
+    }
+  }, [route.params?.editEventId, season.events]);
 
   const onSubmit = handleSubmit(
     async (data) => {
-      // Validate that event is between today (current time onwards) and up to two days from now
+      // Validate that event is scheduled from today (current time) onwards
       const [y, m, d] = data.date.split('-').map(Number);
       const [hour, min] = (data.startTime || '00:00').split(':').map(Number);
       const eventDate = new Date(y, m - 1, d, hour, min);
-      
+
       const now = new Date();
 
       if (eventDate < now) {
@@ -63,12 +106,26 @@ export default function SeasonScheduleScreen() {
         return;
       }
 
-      await addEvent.mutateAsync({
-        ...data,
-        playerIds: selectedPlayerIds,
-      });
-      reset();
-      setShowAdd(false);
+      if (editingEventId) {
+        await updateEvent.mutateAsync({
+          eventId: editingEventId,
+          updates: {
+            type: data.type,
+            title: data.title,
+            date: data.date,
+            startTime: data.startTime,
+            endTime: data.endTime,
+            location: data.location,
+            notes: data.notes,
+          },
+        });
+      } else {
+        await addEvent.mutateAsync({
+          ...data,
+          playerIds: selectedPlayerIds,
+        });
+      }
+      closeModal();
     },
     (errors) => {
       const msg = errors.date?.message || errors.title?.message || 'Please check the required fields and date format.';
@@ -121,7 +178,7 @@ export default function SeasonScheduleScreen() {
     <Screen padded={false}>
       <Header title="Schedule" showBack />
       <View className="px-4 py-3">
-        <Button label="+ Add Event" onPress={() => setShowAdd(true)} />
+        <Button label="+ Add Event" onPress={openAdd} />
       </View>
       <FlatList
         data={[...season.events].sort((a, b) => a.date.localeCompare(b.date))}
@@ -140,13 +197,14 @@ export default function SeasonScheduleScreen() {
             {item.location ? <Text style={{ color: colors.inkFaint }}>{item.location}</Text> : null}
             <View className="flex-row gap-2 mt-2">
               <Button label="Send Reminder" variant="secondary" size="sm" onPress={() => sendReminder(item)} loading={reminding === item.id} />
+              <Button label="Edit" variant="secondary" size="sm" onPress={() => openEdit(item)} />
               <Button label="Delete" variant="ghost" size="sm" onPress={() => deleteEvent.mutate(item.id)} />
             </View>
           </Card>
         )}
       />
 
-      <Modal visible={showAdd} title="Add Event" onClose={() => setShowAdd(false)}>
+      <Modal visible={showAdd} title={editingEventId ? 'Edit Event' : 'Add Event'} onClose={closeModal}>
         <View className="gap-3">
           <View className="flex-row flex-wrap">
             {EVENT_KINDS.map((t) => (
@@ -165,37 +223,41 @@ export default function SeasonScheduleScreen() {
           <Controller control={control} name="location" render={({ field: { onChange, onBlur, value } }) => (
             <Input label="Location" onBlur={onBlur} onChangeText={onChange} value={value} />
           )} />
-          <Text className="font-bold text-xs uppercase tracking-wider mt-2" style={{ color: colors.inkMuted }}>
-            Roster Assignment ({selectedPlayerIds.length}/{season.roster.length})
-          </Text>
-          <ScrollView style={{ maxHeight: 150 }} nestedScrollEnabled>
-            {season.roster.map((player) => {
-              const isSelected = selectedPlayerIds.includes(player.id);
-              return (
-                <Pressable
-                  key={player.id}
-                  onPress={() => {
-                    if (isSelected) {
-                      setSelectedPlayerIds(selectedPlayerIds.filter(id => id !== player.id));
-                    } else {
-                      setSelectedPlayerIds([...selectedPlayerIds, player.id]);
-                    }
-                  }}
-                  className="flex-row items-center justify-between py-2 border-b"
-                  style={{ borderColor: colors.border }}
-                >
-                  <Text style={{ color: colors.ink }}>
-                    {player.firstName} {player.lastName}
-                  </Text>
-                  <Badge
-                    label={isSelected ? 'Selected' : 'Deselected'}
-                    variant={isSelected ? 'success' : 'default'}
-                  />
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-          <Button label="Save Event" onPress={onSubmit} loading={addEvent.isPending} />
+          {editingEventId ? null : (
+            <>
+              <Text className="font-bold text-xs uppercase tracking-wider mt-2" style={{ color: colors.inkMuted }}>
+                Roster Assignment ({selectedPlayerIds.length}/{season.roster.length})
+              </Text>
+              <ScrollView style={{ maxHeight: 150 }} nestedScrollEnabled>
+                {season.roster.map((player) => {
+                  const isSelected = selectedPlayerIds.includes(player.id);
+                  return (
+                    <Pressable
+                      key={player.id}
+                      onPress={() => {
+                        if (isSelected) {
+                          setSelectedPlayerIds(selectedPlayerIds.filter(id => id !== player.id));
+                        } else {
+                          setSelectedPlayerIds([...selectedPlayerIds, player.id]);
+                        }
+                      }}
+                      className="flex-row items-center justify-between py-2 border-b"
+                      style={{ borderColor: colors.border }}
+                    >
+                      <Text style={{ color: colors.ink }}>
+                        {player.firstName} {player.lastName}
+                      </Text>
+                      <Badge
+                        label={isSelected ? 'Selected' : 'Deselected'}
+                        variant={isSelected ? 'success' : 'default'}
+                      />
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </>
+          )}
+          <Button label={editingEventId ? 'Update Event' : 'Save Event'} onPress={onSubmit} loading={addEvent.isPending || updateEvent.isPending} />
         </View>
       </Modal>
     </Screen>

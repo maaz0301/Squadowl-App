@@ -52,9 +52,12 @@ export default function FriendPackagesScreen() {
             <Badge label={`${pkg.seats} seat${pkg.seats > 1 ? 's' : ''}`} variant="brand" />
           </View>
           <Text style={{ color: colors.inkMuted }}>{pkg.description}</Text>
-          <Text className="text-xl font-display font-bold" style={{ color: colors.primary }}>
-            {pkg.price}
-          </Text>
+          <View className="flex-row items-baseline">
+            <Text className="text-sm font-sans mr-1" style={{ color: colors.inkMuted }}>CAD</Text>
+            <Text className="text-xl font-display font-bold" style={{ color: colors.primary }}>
+              {pkg.price}
+            </Text>
+          </View>
           <Button label="Purchase (Demo)" variant={pkg.highlight ? 'primary' : 'secondary'} />
         </Card>
       ))}

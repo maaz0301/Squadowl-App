@@ -213,8 +213,8 @@ export default function RegistrationsScreen() {
             Testing Tools
           </Text>
           <Text className="text-xs" style={{ color: colors.inkMuted }}>
-            Generate a batch of dummy players with realistic scores across every rubric to test
-            rankings, filters, and reports at scale.
+            AI-generate a batch of realistic dummy players — varied names, positions, and ages —
+            with scores across every rubric to test rankings, filters, and reports at scale.
           </Text>
           <View className="flex-row flex-wrap gap-2 mt-1">
             <Button

@@ -44,6 +44,10 @@ import {
   generateDummyPlayers,
   generateScoresForPlayer,
   pickRecommendation,
+  clampScoreToRubric,
+  mapAIPlayer,
+  POSITIONS_BY_SPORT,
+  type AITestPlayer,
 } from '../testDataGenerator';
 
 // ─── small helpers ──────────────────────────────────────────────────────────
@@ -1397,7 +1401,8 @@ async deleteTryout(id: string): Promise<void> {
 
     const n = Math.max(1, Math.min(500, Math.floor(count) || 0));
     const currentYear = new Date().getFullYear();
-    const generated = generateDummyPlayers(n, tryout.sport, currentYear);
+    // AI-generate realistic profiles + scores, falling back to local generation.
+    const generated = await this.generateAITestPlayers(supabase, tryout, rubrics, n, currentYear);
 
     // 1. Bulk-insert canonical athletes (no guardian contact → no side effects).
     const athletes = unwrap(
@@ -1470,9 +1475,14 @@ async deleteTryout(id: string): Promise<void> {
     evals.forEach((e, idx) => {
       const g = generated[evalPlayerIndex[idx]];
       const subskills = getPlayerSubskills(tryout.sport, g.form.pos, rubrics);
-      const scores = generateScoresForPlayer(subskills, g.ability);
-      for (const [rubric_key, value] of Object.entries(scores)) {
-        scoreRows.push({ evaluation_id: e.id, rubric_key, value });
+      // Prefer the AI-generated raw score per rubric (validated against its
+      // benchmarks); fall back to an ability-derived score for any rubric the
+      // AI didn't score, so ranking logic always has a full score set.
+      const derived = generateScoresForPlayer(subskills, g.ability);
+      for (const s of subskills) {
+        const aiScore = g.scores ? clampScoreToRubric(g.scores[s.key], s) : null;
+        const value = aiScore ?? derived[s.key];
+        if (value !== undefined) scoreRows.push({ evaluation_id: e.id, rubric_key: s.key, value });
       }
     });
     for (let i = 0; i < scoreRows.length; i += 500) {
@@ -1481,6 +1491,69 @@ async deleteTryout(id: string): Promise<void> {
 
     await this.markOnboarding({ addPlayers: true, scorePlayers: true });
     return { players: participants.length, evaluations: evals.length };
+  }
+
+  /**
+   * Generate `count` dummy players (identity + scores) via the AI edge function,
+   * in bounded chunks with limited concurrency. Any chunk that fails or returns
+   * too few players is topped up with the local deterministic generator, so the
+   * feature always yields a full batch even if AI is unavailable.
+   */
+  private async generateAITestPlayers(
+    supabase: any,
+    tryout: any,
+    rubrics: any[],
+    count: number,
+    currentYear: number,
+  ): Promise<Array<{ form: AITestPlayer['form']; ability: number; scores?: Record<string, number> }>> {
+    const sport = tryout.sport;
+    const positions = POSITIONS_BY_SPORT[sport as keyof typeof POSITIONS_BY_SPORT] ?? POSITIONS_BY_SPORT.Other;
+    const rubricDescriptors = rubrics.map((r) => ({
+      key: r.key,
+      label: r.label,
+      scoringType: r.scoringType,
+      scale: r.scale,
+      minVal: r.minVal,
+      maxVal: r.maxVal,
+      rankingDirection: r.rankingDirection,
+    }));
+
+    // Chunk so each Claude call stays within a comfortable output size.
+    const CHUNK = 20;
+    const CONCURRENCY = 4;
+    const chunkSizes: number[] = [];
+    for (let remaining = count; remaining > 0; remaining -= CHUNK) {
+      chunkSizes.push(Math.min(CHUNK, remaining));
+    }
+
+    const collected: AITestPlayer[] = [];
+    for (let i = 0; i < chunkSizes.length; i += CONCURRENCY) {
+      const batch = chunkSizes.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(async (chunkCount) => {
+          try {
+            const { data, error } = await supabase.functions.invoke('generate-test-players', {
+              body: { sport, count: chunkCount, positions, rubrics: rubricDescriptors },
+            });
+            if (error || !data || data.error || !Array.isArray(data.players)) return [];
+            return (data.players as any[])
+              .map((p) => mapAIPlayer(p, sport, currentYear))
+              .filter((p): p is AITestPlayer => p !== null);
+          } catch {
+            return [];
+          }
+        }),
+      );
+      for (const r of results) collected.push(...r);
+    }
+
+    // Top up any shortfall (partial or total AI failure) with local generation.
+    if (collected.length < count) {
+      const filler = generateDummyPlayers(count - collected.length, sport, currentYear);
+      for (const f of filler) collected.push({ form: f.form, ability: f.ability, scores: {} });
+    }
+
+    return collected.slice(0, count);
   }
 
   async clearTestData(tryoutId: string): Promise<{ removed: number }> {
