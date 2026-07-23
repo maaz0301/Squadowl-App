@@ -6,9 +6,9 @@ import RNFS from 'react-native-fs';
 import RNShare from 'react-native-share';
 import { EXPO_PUBLIC_WEB_URL } from '@env';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Avatar, Badge, Button, Card, ErrorState, Header, LoadingState, Screen, Modal, EmptyState, Tabs } from '@/components/ui';
+import { Avatar, Badge, Button, Card, ErrorState, Header, Input, LoadingState, Screen, Modal, EmptyState, Tabs } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
-import { isAtPlayerLimit } from '@/data/plans';
+import { canUseFeature, isAtPlayerLimit } from '@/data/plans';
 import { useUser } from '@/state/authStore';
 import {
   useTryoutQuery,
@@ -17,6 +17,8 @@ import {
   useAddRegistrationToRosterMutation,
   useDismissRegistrationMutation,
   useSubmitRegistrationMutation,
+  useGenerateTestDataMutation,
+  useClearTestDataMutation,
 } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { RegistrationForm } from '@/components/assessment/RegistrationForm';
@@ -34,12 +36,23 @@ export default function RegistrationsScreen() {
   const addToRoster = useAddRegistrationToRosterMutation(id!);
   const dismissReg = useDismissRegistrationMutation(id!);
   const submitReg = useSubmitRegistrationMutation(id!);
+  const genTest = useGenerateTestDataMutation(id!);
+  const clearTest = useClearTestDataMutation(id!);
   const user = useUser();
   const [showQr, setShowQr] = useState(false);
   const [showSimulate, setShowSimulate] = useState(false);
+  const [showTestGen, setShowTestGen] = useState(false);
+  const [testCount, setTestCount] = useState('50');
   const [tab, setTab] = useState<RegTab>('pending');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
+
+  const isAssociation = canUseFeature(user?.planTier ?? 'free', 'enterprise');
+
+  const showAlert = (title: string, message: string) => {
+    if (Platform.OS === 'web') alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
 
   useEffect(() => {
     if (id && tryoutQuery.data && !tryoutQuery.data.cloud?.id) {
@@ -129,6 +142,33 @@ export default function RegistrationsScreen() {
     }
   };
 
+  const hasRubrics = (tryout.settings.customRubrics?.length ?? 0) > 0;
+
+  const runGenerate = async () => {
+    const n = Math.max(10, Math.min(250, parseInt(testCount, 10) || 50));
+    try {
+      const res = await genTest.mutateAsync(n);
+      setShowTestGen(false);
+      showAlert(
+        'Test data added',
+        `Generated ${res.players} players with ${res.evaluations} evaluations. Open Results to see rankings.`,
+      );
+    } catch (e: any) {
+      showAlert('Error', e?.message === 'NO_RUBRICS'
+        ? 'Add at least one rubric before generating test players.'
+        : e?.message || 'Failed to generate test data.');
+    }
+  };
+
+  const clearTestData = async () => {
+    try {
+      const res = await clearTest.mutateAsync();
+      showAlert('Cleared', `Removed ${res.removed} generated player${res.removed === 1 ? '' : 's'}.`);
+    } catch (e: any) {
+      showAlert('Error', e?.message || 'Failed to clear test data.');
+    }
+  };
+
   return (
     <Screen padded={false}>
       <Header title="Registrations" showBack />
@@ -166,6 +206,32 @@ export default function RegistrationsScreen() {
         ) : null}
         <Button label="Export CSV" variant="ghost" size="sm" onPress={exportCsv} />
       </View>
+
+      {isAssociation ? (
+        <Card className="mx-4 mb-2 gap-2">
+          <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+            Testing Tools
+          </Text>
+          <Text className="text-xs" style={{ color: colors.inkMuted }}>
+            Generate a batch of dummy players with realistic scores across every rubric to test
+            rankings, filters, and reports at scale.
+          </Text>
+          <View className="flex-row flex-wrap gap-2 mt-1">
+            <Button
+              label="Generate Test Players"
+              size="sm"
+              onPress={() => setShowTestGen(true)}
+            />
+            <Button
+              label="Clear Test Data"
+              size="sm"
+              variant="ghost"
+              loading={clearTest.isPending}
+              onPress={clearTestData}
+            />
+          </View>
+        </Card>
+      ) : null}
 
       <FlatList
         data={filtered}
@@ -250,6 +316,45 @@ export default function RegistrationsScreen() {
           }}
         />
       </Modal>
+
+      <Modal visible={showTestGen} title="Generate Test Players" onClose={() => setShowTestGen(false)}>
+        {!hasRubrics ? (
+          <View className="gap-4 py-2">
+            <Text className="text-sm" style={{ color: colors.ink }}>
+              Test players are scored against this assessment's rubrics, but none are defined yet.
+              Add at least one rubric — ideally covering skill, time, distance, and speed — then
+              come back to generate players.
+            </Text>
+            <Button
+              label="Add Rubrics"
+              onPress={() => {
+                setShowTestGen(false);
+                navigation.navigate('AssessmentRubrics');
+              }}
+            />
+          </View>
+        ) : (
+          <View className="gap-4 py-2">
+            <Text className="text-sm" style={{ color: colors.inkMuted }}>
+              How many players to generate? Each gets a varied age, position, and realistic scores
+              across every rubric. A few are left unscored to test filters.
+            </Text>
+            <Input
+              label="Number of players (10–250)"
+              value={testCount}
+              onChangeText={setTestCount}
+              keyboardType="number-pad"
+              placeholder="50"
+            />
+            <Button
+              label={`Generate ${Math.max(10, Math.min(250, parseInt(testCount, 10) || 50))} Players`}
+              loading={genTest.isPending}
+              onPress={runGenerate}
+            />
+          </View>
+        )}
+      </Modal>
+
       <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
     </Screen>
   );

@@ -294,6 +294,29 @@ export function useDismissRegistrationMutation(tryoutId: string) {
   });
 }
 
+export function useGenerateTestDataMutation(tryoutId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (count: number) => getDataSource().generateTestData(tryoutId, count),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
+      qc.invalidateQueries({ queryKey: queryKeys.results(tryoutId) });
+      qc.invalidateQueries({ queryKey: queryKeys.profile });
+    },
+  });
+}
+
+export function useClearTestDataMutation(tryoutId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => getDataSource().clearTestData(tryoutId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
+      qc.invalidateQueries({ queryKey: queryKeys.results(tryoutId) });
+    },
+  });
+}
+
 import { computeAssessorProgress, computePlayerResults } from '@/data/scoring';
 
 export { computeAssessorProgress, computePlayerResults } from '@/data/scoring';

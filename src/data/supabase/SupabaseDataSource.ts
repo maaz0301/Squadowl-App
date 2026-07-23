@@ -38,7 +38,13 @@ import type {
 import type { TeamBuilderConfig, TeamBuilderState } from '../teamBuilder';
 import { buildTeams, formatExportCsv, mockAiCompare, mockAiPlayerSummary } from '../teamBuilder';
 import type { FeedbackSubmission } from '../extras';
-import { generateCloudCode, generateId, getDefaultWeights } from '../rubrics';
+import { generateCloudCode, generateId, getDefaultWeights, getPlayerSubskills } from '../rubrics';
+import {
+  TEST_DATA_TAG,
+  generateDummyPlayers,
+  generateScoresForPlayer,
+  pickRecommendation,
+} from '../testDataGenerator';
 
 // ─── small helpers ──────────────────────────────────────────────────────────
 type Row = Record<string, any>;
@@ -1372,6 +1378,123 @@ async deleteTryout(id: string): Promise<void> {
         scores: scoreMap,
       });
     }
+  }
+
+  // ─── Testing utilities (association/enterprise) ───────────────────────────────
+  async generateTestData(
+    tryoutId: string,
+    count: number,
+  ): Promise<{ players: number; evaluations: number }> {
+    const { supabase, accountId, userId } = await this.ctx();
+    const tryout = await this.getTryout(tryoutId);
+    if (!tryout) throw new Error('Assessment not found');
+
+    const rubrics = tryout.settings.customRubrics ?? [];
+    if (rubrics.length === 0) {
+      // Surfaced to the UI, which prompts the user to add rubrics first.
+      throw new Error('NO_RUBRICS');
+    }
+
+    const n = Math.max(1, Math.min(500, Math.floor(count) || 0));
+    const currentYear = new Date().getFullYear();
+    const generated = generateDummyPlayers(n, tryout.sport, currentYear);
+
+    // 1. Bulk-insert canonical athletes (no guardian contact → no side effects).
+    const athletes = unwrap(
+      await supabase
+        .from('athletes')
+        .insert(
+          generated.map((g) => ({
+            account_id: accountId,
+            first_name: g.form.first,
+            last_name: g.form.last,
+            year_of_birth: g.form.yearOfBirth ? Number(g.form.yearOfBirth) : null,
+          })),
+        )
+        .select('id'),
+    ) as Row[];
+
+    // 2. Bulk-insert participants, tagged via current_team so they can be cleared.
+    const participants = unwrap(
+      await supabase
+        .from('tryout_participants')
+        .insert(
+          generated.map((g, i) => ({
+            tryout_id: tryoutId,
+            athlete_id: athletes[i].id,
+            jersey: g.form.jersey || null,
+            position: g.form.pos || null,
+            current_team: TEST_DATA_TAG,
+            current_level: g.form.currentLevel || null,
+            registration_source: 'import',
+          })),
+        )
+        .select('id'),
+    ) as Row[];
+
+    // 3. Build evaluations: ~10% left unscored (to exercise the unscored filter),
+    //    ~30% scored across two sessions, spread across the tryout's assessors.
+    const profile = await this.loadUserProfile(userId);
+    const assessorNames = tryout.assessors.length
+      ? tryout.assessors.map((a) => a.name)
+      : [profile.displayName];
+
+    const evalRows: Row[] = [];
+    const evalPlayerIndex: number[] = [];
+    generated.forEach((g, i) => {
+      const roll = Math.random();
+      if (roll < 0.1) return; // leave unscored
+      const sessions = roll > 0.7 ? ['Session 1', 'Session 2'] : ['Session 1'];
+      sessions.forEach((session, sIdx) => {
+        const evaluatorName = assessorNames[(i + sIdx) % assessorNames.length];
+        const isOwner = evaluatorName === profile.displayName;
+        evalRows.push({
+          tryout_id: tryoutId,
+          participant_id: participants[i].id,
+          evaluator_user_id: isOwner ? userId : null,
+          evaluator_name: evaluatorName,
+          session,
+          recommendation: REC_TO_DB[pickRecommendation(g.ability) as Exclude<Recommendation, ''>] ?? null,
+          source: 'manual',
+        });
+        evalPlayerIndex.push(i);
+      });
+    });
+
+    const evals = evalRows.length
+      ? (unwrap(await supabase.from('evaluations').insert(evalRows).select('id')) as Row[])
+      : [];
+
+    // 4. Build and chunk-insert scores for every applicable rubric per eval.
+    const scoreRows: Row[] = [];
+    evals.forEach((e, idx) => {
+      const g = generated[evalPlayerIndex[idx]];
+      const subskills = getPlayerSubskills(tryout.sport, g.form.pos, rubrics);
+      const scores = generateScoresForPlayer(subskills, g.ability);
+      for (const [rubric_key, value] of Object.entries(scores)) {
+        scoreRows.push({ evaluation_id: e.id, rubric_key, value });
+      }
+    });
+    for (let i = 0; i < scoreRows.length; i += 500) {
+      unwrap(await supabase.from('evaluation_scores').insert(scoreRows.slice(i, i + 500)).select('id'));
+    }
+
+    await this.markOnboarding({ addPlayers: true, scorePlayers: true });
+    return { players: participants.length, evaluations: evals.length };
+  }
+
+  async clearTestData(tryoutId: string): Promise<{ removed: number }> {
+    const { supabase } = await this.ctx();
+    // Deleting participants cascades to their evaluations and scores.
+    const rows = unwrap(
+      await supabase
+        .from('tryout_participants')
+        .delete()
+        .eq('tryout_id', tryoutId)
+        .eq('current_team', TEST_DATA_TAG)
+        .select('id'),
+    ) as Row[];
+    return { removed: rows.length };
   }
 
   // ─── Registration ───────────────────────────────────────────────────────────

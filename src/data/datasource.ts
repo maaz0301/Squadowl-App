@@ -141,4 +141,9 @@ export interface DataSource {
   updateTeam(id: string, updates: Partial<Team>): Promise<Team>;
   importScanScores(tryoutId: string, scores: { playerId: string; rubricKey: string; value: number }[]): Promise<void>;
   getGuardianRosters(): Promise<GuardianRosterAthlete[]>;
+
+  // Testing utilities (association/enterprise): bulk-generate dummy players with
+  // realistic scores across every rubric, and clear a previously generated batch.
+  generateTestData(tryoutId: string, count: number): Promise<{ players: number; evaluations: number }>;
+  clearTestData(tryoutId: string): Promise<{ removed: number }>;
 }
