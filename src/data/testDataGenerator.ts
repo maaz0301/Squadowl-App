@@ -1,4 +1,4 @@
-import type { AddPlayerForm, Recommendation, Sport } from './types';
+import type { AddPlayerForm, CustomRubric, Recommendation, RegistrationSubmit, Sport } from './types';
 import type { SubSkill } from './rubrics';
 
 /**
@@ -68,6 +68,53 @@ export interface GeneratedPlayer {
   ability: number;
 }
 
+/** What a "Dummy Data" run should create inside an assessment. */
+export type DummyTarget = 'registrations' | 'roster' | 'both';
+
+/** Shared shape for the Dummy Data modal → DataSource round trip. */
+export interface DummyDataOptions {
+  target: DummyTarget;
+  /** Players to create (or, for `both`, players on each side). */
+  count: number;
+  /** When false, roster players are inserted with no evaluations at all. */
+  withScores: boolean;
+  /** Scoring sessions ("assessments") to generate per rostered player. */
+  sessionsPerPlayer: number;
+}
+
+/** Options for the New Team screen's dummy button. */
+export interface DummyTeamOptions {
+  /** Teams to create. Each gets one linked assessment. */
+  teams: number;
+  playersPerTeam: number;
+  withScores: boolean;
+  sessionsPerPlayer: number;
+}
+
+export interface DummyDataResult {
+  registrations: number;
+  players: number;
+  evaluations: number;
+}
+
+export interface DummyTeamResult extends DummyDataResult {
+  teams: number;
+  assessments: number;
+}
+
+export const DUMMY_LIMITS = {
+  /** Bounds mirror the DataSource's own clamps, so the UI can't ask for more. */
+  count: { min: 1, max: 250 },
+  teams: { min: 1, max: 10 },
+  playersPerTeam: { min: 1, max: 100 },
+  sessionsPerPlayer: { min: 1, max: 5 },
+} as const;
+
+export function clampOption(value: string, { min, max }: { min: number; max: number }, fallback: number): number {
+  const n = parseInt(value, 10);
+  return clamp(isFinite(n) ? n : fallback, min, max);
+}
+
 /**
  * Build `count` dummy players for the given sport with varied ages, positions,
  * and levels. Guardian contact fields are intentionally omitted so no guardian
@@ -96,6 +143,102 @@ export function generateDummyPlayers(
     });
   }
   return out;
+}
+
+/**
+ * Reserved domain (RFC 2606) — dummy guardian addresses can never route to a
+ * real inbox, so a test batch can't trigger outbound mail to a real person.
+ */
+const DUMMY_EMAIL_DOMAIN = 'example.com';
+
+const ABOUT_SNIPPETS = [
+  'Plays year-round and is looking to move up a level this season.',
+  'Strong work ethic, still developing consistency under pressure.',
+  'Returning athlete, was on the bubble at last season’s tryout.',
+  'New to the association, moved from out of province over the summer.',
+  'Coachable and vocal — often ends up leading warmups.',
+];
+
+const MEDICAL_SNIPPETS = [
+  'No known allergies or conditions.',
+  'Mild seasonal asthma — carries an inhaler.',
+  'Recovered from a wrist sprain in the spring, fully cleared.',
+  'Peanut allergy, carries an EpiPen.',
+];
+
+/**
+ * Turn a generated player into a pending registration, inventing the guardian
+ * contact block the roster path deliberately leaves blank. Emails are unique
+ * per record (index-suffixed) so re-running the generator can't collide on the
+ * citext guardian_email column.
+ */
+export function generateDummyRegistration(
+  player: GeneratedPlayer,
+  index: number,
+  positions: string[],
+): RegistrationSubmit {
+  const { first, last } = player.form;
+  const guardianFirst = pick(FIRST_NAMES);
+  const slug = `${guardianFirst}.${last}`.toLowerCase().replace(/[^a-z.]/g, '');
+  return {
+    firstName: first,
+    lastName: last,
+    yearOfBirth: player.form.yearOfBirth,
+    positionTryingOutFor: player.form.pos || pick(positions),
+    guardianName: `${guardianFirst} ${last}`,
+    guardianEmail: `${slug}.${index + 1}@${DUMMY_EMAIL_DOMAIN}`,
+    guardianPhone: `555${String(randInt(1000000, 9999999))}`,
+    currentTeam: TEST_DATA_TAG,
+    currentLevel: player.form.currentLevel,
+    aboutPlayer: pick(ABOUT_SNIPPETS),
+    medicalInfo: pick(MEDICAL_SNIPPETS),
+  };
+}
+
+const TEAM_PLACES = [
+  'Northside', 'Riverdale', 'Lakeshore', 'Westhill', 'Fairview', 'Summit',
+  'Harbour', 'Ironwood', 'Redstone', 'Glenmore', 'Eastport', 'Silvercreek',
+];
+
+const TEAM_MASCOTS = [
+  'Wolves', 'Thunder', 'Rangers', 'Titans', 'Falcons', 'Kings',
+  'Storm', 'Blazers', 'Sharks', 'Wildcats', 'Rapids', 'Comets',
+];
+
+/**
+ * Distinct "Place Mascot" names for a batch of dummy teams. Falls back to a
+ * numeric suffix once the name pool is exhausted so `count` is always met.
+ */
+export function generateDummyTeamNames(count: number): string[] {
+  const used = new Set<string>();
+  const names: string[] = [];
+  for (let i = 0; i < count; i++) {
+    let name = '';
+    for (let attempt = 0; attempt < 20 && (!name || used.has(name)); attempt++) {
+      name = `${pick(TEAM_PLACES)} ${pick(TEAM_MASCOTS)}`;
+    }
+    if (used.has(name)) name = `${name} ${i + 1}`;
+    used.add(name);
+    names.push(name);
+  }
+  return names;
+}
+
+/**
+ * A ready-to-score rubric set spanning every scoring type, used when the dummy
+ * generator has to stand up an assessment from scratch (the team flow). New
+ * assessments ship with `customRubrics: []`, and scoring needs at least one
+ * rubric — these give the ranking/report pipeline something to chew on.
+ */
+export function generateDummyRubrics(): CustomRubric[] {
+  return [
+    { key: 'dummy_skating', label: 'Skating / Movement', scoringType: 'skill', scale: '1-5', rankingDirection: 'higher_is_better', role: 'all' },
+    { key: 'dummy_skills', label: 'Technical Skills', scoringType: 'skill', scale: '1-5', rankingDirection: 'higher_is_better', role: 'all' },
+    { key: 'dummy_compete', label: 'Compete Level', scoringType: 'skill', scale: '1-10', rankingDirection: 'higher_is_better', role: 'all' },
+    { key: 'dummy_sprint', label: 'Sprint Time', scoringType: 'time', scale: '1-5', unit: 's', minVal: 4.5, maxVal: 7.5, rankingDirection: 'lower_is_better', role: 'all' },
+    { key: 'dummy_jump', label: 'Vertical Jump', scoringType: 'distance', scale: '1-5', unit: 'in', minVal: 8, maxVal: 40, rankingDirection: 'higher_is_better', role: 'all' },
+    { key: 'dummy_topspeed', label: 'Top Speed', scoringType: 'speed', scale: '1-5', unit: 'km/h', minVal: 8, maxVal: 24, rankingDirection: 'higher_is_better', role: 'all' },
+  ];
 }
 
 /**

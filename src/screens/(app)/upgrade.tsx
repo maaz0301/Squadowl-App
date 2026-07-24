@@ -152,12 +152,11 @@ export default function UpgradeScreen() {
                     {item.name}
                   </Text>
                   <View className="flex-row items-baseline mb-4">
-                    <Text className="text-lg font-sans mr-1" style={{ color: colors.inkMuted }}>CAD</Text>
-                    <Text className="text-4xl font-bold font-display" style={{ color: colors.primary }}>
+                    <Text className="text-3xl font-bold font-display" style={{ color: colors.primary }}>
                       {item.price}
                     </Text>
-                    <Text className="text-sm font-sans ml-1" style={{ color: colors.inkMuted }}>
-                      /year
+                    <Text className="text-sm font-sans ml-1.5" style={{ color: colors.inkMuted }}>
+                      {item.priceNote}
                     </Text>
                   </View>
                 </View>

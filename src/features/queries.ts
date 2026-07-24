@@ -1,4 +1,5 @@
 import { getDataSource } from '@/data';
+import type { DummyDataOptions, DummyTeamOptions } from '@/data/testDataGenerator';
 import {
   getPlayerRubrics,
   type RubricCategory
@@ -41,6 +42,34 @@ export function useCreateTeamMutation() {
     mutationFn: ({ name, season }: { name: string; season?: string }) =>
       withTimeout(getDataSource().createTeam(name, season), 15000),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teams }),
+  });
+}
+
+// ---- Team roster ----
+const teamRosterKey = (teamId: string) => ['teams', teamId, 'roster'] as const;
+
+export function useTeamRosterQuery(teamId: string | undefined) {
+  return useQuery({
+    queryKey: teamRosterKey(teamId ?? ''),
+    queryFn: () => getDataSource().listTeamRoster(teamId!),
+    enabled: !!teamId,
+  });
+}
+
+export function useAddTeamRosterPlayersMutation(teamId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (entries: { athleteId: string; jersey?: string; pos?: string; sourceTryoutId?: string }[]) =>
+      getDataSource().addTeamRosterPlayers(teamId, entries),
+    onSuccess: () => qc.invalidateQueries({ queryKey: teamRosterKey(teamId) }),
+  });
+}
+
+export function useRemoveTeamRosterPlayerMutation(teamId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (athleteId: string) => getDataSource().removeTeamRosterPlayer(teamId, athleteId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: teamRosterKey(teamId) }),
   });
 }
 
@@ -297,10 +326,11 @@ export function useDismissRegistrationMutation(tryoutId: string) {
 export function useGenerateTestDataMutation(tryoutId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (count: number) => getDataSource().generateTestData(tryoutId, count),
+    mutationFn: (options: DummyDataOptions) => getDataSource().generateTestData(tryoutId, options),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.results(tryoutId) });
+      qc.invalidateQueries({ queryKey: queryKeys.registrations(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.profile });
     },
   });
@@ -313,6 +343,31 @@ export function useClearTestDataMutation(tryoutId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.results(tryoutId) });
+      qc.invalidateQueries({ queryKey: queryKeys.registrations(tryoutId) });
+    },
+  });
+}
+
+export function useGenerateDummyTeamsMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (options: DummyTeamOptions) => getDataSource().generateDummyTeams(options),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.teams });
+      // Prefix match — invalidates every archived/unarchived tryout list.
+      qc.invalidateQueries({ queryKey: ['tryouts'] });
+      qc.invalidateQueries({ queryKey: queryKeys.profile });
+    },
+  });
+}
+
+export function useClearDummyTeamsMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => getDataSource().clearDummyTeams(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.teams });
+      qc.invalidateQueries({ queryKey: ['tryouts'] });
     },
   });
 }

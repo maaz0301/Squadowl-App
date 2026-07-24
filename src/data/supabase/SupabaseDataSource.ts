@@ -1,8 +1,29 @@
 /// <reference types="node" />
-import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '@/lib/supabase';
-import { APP_CONFIG } from '@/config/app';
+import { type Session, type SupabaseClient } from '@supabase/supabase-js';
 import type { DataSource } from '../datasource';
+import type { FeedbackSubmission } from '../extras';
+import { generateCloudCode, generateId, getDefaultWeights, getPlayerSubskills } from '../rubrics';
+import type { TeamBuilderConfig, TeamBuilderState } from '../teamBuilder';
+import { buildTeams, formatExportCsv } from '../teamBuilder';
+import {
+  POSITIONS_BY_SPORT,
+  TEST_DATA_TAG,
+  clampScoreToRubric,
+  generateDummyPlayers,
+  generateDummyRegistration,
+  generateDummyRubrics,
+  generateDummyTeamNames,
+  generateScoresForPlayer,
+  mapAIPlayer,
+  pickRecommendation,
+  type AITestPlayer,
+  type DummyDataOptions,
+  type DummyDataResult,
+  type DummyTeamOptions,
+  type DummyTeamResult,
+  type GeneratedPlayer,
+} from '../testDataGenerator';
 import type {
   AddPlayerForm,
   AdminStats,
@@ -10,6 +31,8 @@ import type {
   AiCompareSummary,
   AiPlayerSummary,
   Assessor,
+  Athlete,
+  AthleteHistory,
   AuthSession,
   CreateAssessmentForm,
   CreateEventForm,
@@ -17,8 +40,8 @@ import type {
   Database,
   EnterprisePayment,
   Evaluation,
-  EventType,
   EventKind,
+  EventType,
   ExportFormat,
   Org,
   Player,
@@ -29,26 +52,11 @@ import type {
   Season,
   SeasonEvent,
   SeasonPlayer,
-  Athlete,
-  AthleteHistory,
   Team,
+  TeamRosterPlayer,
   Tryout,
   UserProfile,
 } from '../types';
-import type { TeamBuilderConfig, TeamBuilderState } from '../teamBuilder';
-import { buildTeams, formatExportCsv, mockAiCompare, mockAiPlayerSummary } from '../teamBuilder';
-import type { FeedbackSubmission } from '../extras';
-import { generateCloudCode, generateId, getDefaultWeights, getPlayerSubskills } from '../rubrics';
-import {
-  TEST_DATA_TAG,
-  generateDummyPlayers,
-  generateScoresForPlayer,
-  pickRecommendation,
-  clampScoreToRubric,
-  mapAIPlayer,
-  POSITIONS_BY_SPORT,
-  type AITestPlayer,
-} from '../testDataGenerator';
 
 // ─── small helpers ──────────────────────────────────────────────────────────
 type Row = Record<string, any>;
@@ -60,6 +68,18 @@ function unwrap<T>(res: { data: T; error: { message: string } | null }): T {
 
 function toMs(iso: string | null | undefined): number {
   return iso ? new Date(iso).getTime() : 0;
+}
+
+/**
+ * A generated dummy player, with the AI's raw per-rubric scores when the batch
+ * was AI-generated and without them when it was produced locally.
+ */
+type ScorableDummyPlayer = GeneratedPlayer & { scores?: Record<string, number> };
+
+/** Coerce a caller-supplied count into a safe range, falling back if unusable. */
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+  const n = Math.floor(Number(value));
+  return Math.max(min, Math.min(max, isFinite(n) && n > 0 ? n : fallback));
 }
 function toIso(ms: number | null | undefined): string | null {
   return ms != null ? new Date(ms).toISOString() : null;
@@ -133,7 +153,7 @@ export class SupabaseDataSource implements DataSource {
         .eq('user_id', uId)
         .order('created_at', { ascending: true });
       const memberships = m.data ?? [];
-      
+
       // Prefer a non-owner membership (e.g. guardian in a coach's org) over the user's own account
       const nonOwner = memberships.find((r: any) => r.role !== 'owner');
       const accId: string | null = nonOwner?.account_id ?? memberships[0]?.account_id ?? null;
@@ -284,14 +304,14 @@ export class SupabaseDataSource implements DataSource {
       for (const e of eByT[tryoutId]) {
         const key = `${e.participant_id}-${e.evaluator_user_id}-${e.session}`;
         const existing = uniqueEvals.get(key);
-        
+
         const currentScoresLen = e.evaluation_scores?.length ?? 0;
         const existingScoresLen = existing?.evaluation_scores?.length ?? 0;
-        
+
         // Prefer the duplicate that actually has scores; if tied, take the newest one
         if (
-          !existing || 
-          currentScoresLen > existingScoresLen || 
+          !existing ||
+          currentScoresLen > existingScoresLen ||
           (currentScoresLen === existingScoresLen && new Date(e.created_at) > new Date(existing.created_at))
         ) {
           uniqueEvals.set(key, e);
@@ -377,7 +397,7 @@ export class SupabaseDataSource implements DataSource {
     const account = Array.isArray(membership?.accounts)
       ? membership.accounts[0]
       : (membership?.accounts as Row | undefined);
-    
+
     const rawRole = membership?.role;
     const role = rawRole === 'owner' ? 'admin' : rawRole;
 
@@ -531,7 +551,7 @@ export class SupabaseDataSource implements DataSource {
 
   async requestPasswordReset(email: string): Promise<void> {
     const supabase = getSupabase();
-    
+
     // Check if the user email is registered using RLS-safe function
     const exists = await this.checkUserExistsByEmail(email);
     if (!exists) {
@@ -717,6 +737,86 @@ export class SupabaseDataSource implements DataSource {
     ) as Row;
     await this.markOnboarding({ createTeam: true });
     return this.rowToTeam(row);
+  }
+
+  /**
+   * A team's own roster. Independent of assessments — an athlete stays on the
+   * team even if the assessment they were picked from is archived or deleted.
+   */
+  async listTeamRoster(teamId: string): Promise<TeamRosterPlayer[]> {
+    const { supabase } = await this.ctx();
+    const rows = unwrap(
+      await supabase
+        .from('team_roster')
+        .select('*, athletes(*), tryouts:source_tryout_id(name)')
+        .eq('team_id', teamId)
+        .order('created_at', { ascending: true }),
+    ) as Row[];
+    return rows.map((r) => this.rowToTeamRosterPlayer(r));
+  }
+
+  private rowToTeamRosterPlayer(r: Row): TeamRosterPlayer {
+    const rawAthlete = r.athletes;
+    const a = (Array.isArray(rawAthlete) ? rawAthlete[0] : rawAthlete) ?? {};
+    const rawSource = r.tryouts;
+    const src = (Array.isArray(rawSource) ? rawSource[0] : rawSource) ?? {};
+    return {
+      id: r.id,
+      athleteId: r.athlete_id,
+      first: a.first_name ?? '',
+      last: a.last_name ?? '',
+      jersey: r.jersey ?? undefined,
+      pos: r.position ?? undefined,
+      yearOfBirth: a.year_of_birth ?? undefined,
+      sourceTryoutId: r.source_tryout_id ?? undefined,
+      sourceTryoutName: src.name ?? undefined,
+    };
+  }
+
+  /**
+   * Attach athletes to a team. Upserts on (team_id, athlete_id) so re-adding
+   * someone already on the roster refreshes their jersey/position instead of
+   * failing the whole batch on the unique constraint.
+   */
+  async addTeamRosterPlayers(
+    teamId: string,
+    entries: { athleteId: string; jersey?: string; pos?: string; sourceTryoutId?: string }[],
+  ): Promise<TeamRosterPlayer[]> {
+    if (entries.length === 0) return [];
+    const { supabase } = await this.ctx();
+    // Collapse duplicate athletes within the batch — upsert rejects a payload
+    // that hits the same conflict target twice.
+    const byAthlete = new Map<string, (typeof entries)[number]>();
+    for (const e of entries) if (e.athleteId) byAthlete.set(e.athleteId, e);
+
+    unwrap(
+      await supabase
+        .from('team_roster')
+        .upsert(
+          [...byAthlete.values()].map((e) => ({
+            team_id: teamId,
+            athlete_id: e.athleteId,
+            jersey: e.jersey || null,
+            position: e.pos || null,
+            source_tryout_id: e.sourceTryoutId || null,
+          })),
+          { onConflict: 'team_id,athlete_id' },
+        )
+        .select('id'),
+    );
+    return this.listTeamRoster(teamId);
+  }
+
+  async removeTeamRosterPlayer(teamId: string, athleteId: string): Promise<void> {
+    const { supabase } = await this.ctx();
+    unwrap(
+      await supabase
+        .from('team_roster')
+        .delete()
+        .eq('team_id', teamId)
+        .eq('athlete_id', athleteId)
+        .select('id'),
+    );
   }
 
   async deleteTeam(id: string): Promise<void> {
@@ -905,7 +1005,7 @@ export class SupabaseDataSource implements DataSource {
     return this.updateTryout(id, { archived: false });
   }
 
-async deleteTryout(id: string): Promise<void> {
+  async deleteTryout(id: string): Promise<void> {
     const { supabase } = await this.ctx();
     unwrap(await supabase.from('tryouts').delete().eq('id', id).select().maybeSingle());
   }
@@ -920,7 +1020,7 @@ async deleteTryout(id: string): Promise<void> {
       try {
         const body = await error.context.json();
         if (body?.error) msg = body.error;
-      } catch {}
+      } catch { }
       throw new Error(msg);
     }
   }
@@ -1000,18 +1100,18 @@ async deleteTryout(id: string): Promise<void> {
           const defaultPassword = Math.random().toString(36).slice(-8) + 'Aa1!';
           const name = fields.guardian_name || 'Guardian';
           const { data: newUserId, error } = await supabase.rpc('create_user_with_password', {
-             email: fields.guardian_email,
-             password: defaultPassword,
-             display_name: name,
-             account_type: 'guardian'
+            email: fields.guardian_email,
+            password: defaultPassword,
+            display_name: name,
+            account_type: 'guardian'
           });
           if (newUserId && !error) {
-             fields.guardian_user_id = typeof newUserId === 'object' && newUserId !== null ? (newUserId as any).id || newUserId : newUserId;
-             try {
-               await this.sendEmail('org_invite', fields.guardian_email, { role: 'guardian', password: defaultPassword });
-             } catch (emailErr) {
-               console.warn('Failed to send auto-created guardian invite email:', emailErr);
-             }
+            fields.guardian_user_id = typeof newUserId === 'object' && newUserId !== null ? (newUserId as any).id || newUserId : newUserId;
+            try {
+              await this.sendEmail('org_invite', fields.guardian_email, { role: 'guardian', password: defaultPassword });
+            } catch (emailErr) {
+              console.warn('Failed to send auto-created guardian invite email:', emailErr);
+            }
           }
         }
       } catch (err) {
@@ -1030,7 +1130,7 @@ async deleteTryout(id: string): Promise<void> {
     if (typeof tryoutId === 'object' && tryoutId !== null) {
       tryoutId = String((tryoutId as any).id || tryoutId);
     }
-    
+
     let athleteId = form.athleteId;
     if (typeof athleteId === 'object' && athleteId !== null) {
       athleteId = String((athleteId as any).id || athleteId);
@@ -1294,7 +1394,7 @@ async deleteTryout(id: string): Promise<void> {
       const { data: existingRows } = await query;
       if (existingRows && existingRows.length > 0) {
         id = existingRows[0].id;
-        
+
         // Clean up duplicate evaluation rows if they exist in the DB (fixes 'two go remove and one remain')
         if (existingRows.length > 1) {
           const extraIds = existingRows.slice(1).map((r) => r.id);
@@ -1343,7 +1443,7 @@ async deleteTryout(id: string): Promise<void> {
     const scoreRows = Object.entries(form.scores)
       .filter(([, v]) => v != null && !Number.isNaN(v))
       .map(([rubric_key, value]) => ({ evaluation_id: id, rubric_key, value }));
-    
+
     if (scoreRows.length) {
       const keys = scoreRows.map(r => r.rubric_key);
       // Save scores and clean up old ones in parallel
@@ -1358,8 +1458,8 @@ async deleteTryout(id: string): Promise<void> {
       unwrap(await supabase.from('evaluation_scores').delete().eq('evaluation_id', id));
     }
 
-    this.markOnboarding({ scorePlayers: true }).catch(() => {});
-    
+    this.markOnboarding({ scorePlayers: true }).catch(() => { });
+
     savedData.evaluation_scores = scoreRows;
     return this.rowToEval(savedData);
   }
@@ -1385,24 +1485,117 @@ async deleteTryout(id: string): Promise<void> {
   }
 
   // ─── Testing utilities (association/enterprise) ───────────────────────────────
-  async generateTestData(
-    tryoutId: string,
-    count: number,
-  ): Promise<{ players: number; evaluations: number }> {
+  async generateTestData(tryoutId: string, options: DummyDataOptions): Promise<DummyDataResult> {
     const { supabase, accountId, userId } = await this.ctx();
     const tryout = await this.getTryout(tryoutId);
     if (!tryout) throw new Error('Assessment not found');
 
+    const target = options?.target ?? 'roster';
+    const wantsRoster = target === 'roster' || target === 'both';
+    const wantsRegistrations = target === 'registrations' || target === 'both';
+    // Scores only exist on rostered players — a registration has nowhere to hang them.
+    const withScores = wantsRoster && options?.withScores !== false;
+
     const rubrics = tryout.settings.customRubrics ?? [];
-    if (rubrics.length === 0) {
+    if (withScores && rubrics.length === 0) {
       // Surfaced to the UI, which prompts the user to add rubrics first.
       throw new Error('NO_RUBRICS');
     }
 
-    const n = Math.max(1, Math.min(500, Math.floor(count) || 0));
+    const n = clampInt(options?.count, 1, 250, 50);
     const currentYear = new Date().getFullYear();
-    // AI-generate realistic profiles + scores, falling back to local generation.
-    const generated = await this.generateAITestPlayers(supabase, tryout, rubrics, n, currentYear);
+
+    // Only pay for the AI round trip when the batch actually needs scores;
+    // an unscored batch just needs names, so generate those locally.
+    const generated: ScorableDummyPlayer[] = withScores
+      ? await this.generateAITestPlayers(supabase, tryout, rubrics, n, currentYear)
+      : generateDummyPlayers(n, tryout.sport, currentYear);
+
+    let registrations = 0;
+    if (wantsRegistrations) {
+      // `both` creates two distinct cohorts so the pending queue isn't just a
+      // duplicate of the roster — generate a second batch of names for it.
+      const regPlayers = target === 'both'
+        ? generateDummyPlayers(n, tryout.sport, currentYear)
+        : generated;
+      registrations = await this.insertDummyRegistrations(supabase, tryout, regPlayers);
+    }
+
+    let players = 0;
+    let evaluations = 0;
+    if (wantsRoster) {
+      const res = await this.insertDummyRoster(supabase, accountId, userId, tryout, generated, {
+        withScores,
+        sessionsPerPlayer: clampInt(options?.sessionsPerPlayer, 1, 5, 1),
+      });
+      players = res.players;
+      evaluations = res.evaluations;
+    }
+
+    // Only set flags we actually earned — `markOnboarding` spreads the patch, so
+    // an `undefined` value would wipe a step the user had already completed.
+    const steps: Record<string, boolean> = {};
+    if (players > 0) steps.addPlayers = true;
+    if (evaluations > 0) steps.scorePlayers = true;
+    if (Object.keys(steps).length) await this.markOnboarding(steps);
+
+    return { registrations, players, evaluations };
+  }
+
+  /**
+   * Insert a batch of pending registrations for `tryout`, inventing the guardian
+   * contact block that the roster path deliberately omits. Addresses use a
+   * reserved domain, so nothing here can mail a real person.
+   */
+  private async insertDummyRegistrations(
+    supabase: any,
+    tryout: Tryout,
+    generated: GeneratedPlayer[],
+  ): Promise<number> {
+    const positions =
+      POSITIONS_BY_SPORT[tryout.sport as keyof typeof POSITIONS_BY_SPORT] ?? POSITIONS_BY_SPORT.Other;
+    const rows = generated.map((g, i) => {
+      const form = generateDummyRegistration(g, i, positions);
+      return {
+        tryout_id: tryout.id,
+        first_name: form.firstName,
+        last_name: form.lastName,
+        year_of_birth: form.yearOfBirth ? Number(form.yearOfBirth) : null,
+        position_trying_out_for: form.positionTryingOutFor || null,
+        guardian_name: form.guardianName,
+        guardian_email: form.guardianEmail,
+        guardian_phone: form.guardianPhone || null,
+        current_team: TEST_DATA_TAG,
+        current_level: form.currentLevel || null,
+        about_player: form.aboutPlayer || null,
+        medical_info: form.medicalInfo || null,
+        status: 'pending',
+      };
+    });
+    let inserted = 0;
+    for (let i = 0; i < rows.length; i += 200) {
+      const chunk = unwrap(
+        await supabase.from('registrations').insert(rows.slice(i, i + 200)).select('id'),
+      ) as Row[];
+      inserted += chunk.length;
+    }
+    return inserted;
+  }
+
+  /**
+   * Insert generated players straight onto the roster, optionally with
+   * `sessionsPerPlayer` scored evaluations each. Shared by the in-assessment
+   * dummy button and the New Team flow.
+   */
+  private async insertDummyRoster(
+    supabase: any,
+    accountId: string,
+    userId: string,
+    tryout: Tryout,
+    generated: ScorableDummyPlayer[],
+    opts: { withScores: boolean; sessionsPerPlayer: number },
+  ): Promise<{ players: number; evaluations: number; athleteIds: string[] }> {
+    if (generated.length === 0) return { players: 0, evaluations: 0, athleteIds: [] };
 
     // 1. Bulk-insert canonical athletes (no guardian contact → no side effects).
     const athletes = unwrap(
@@ -1425,7 +1618,7 @@ async deleteTryout(id: string): Promise<void> {
         .from('tryout_participants')
         .insert(
           generated.map((g, i) => ({
-            tryout_id: tryoutId,
+            tryout_id: tryout.id,
             athlete_id: athletes[i].id,
             jersey: g.form.jersey || null,
             position: g.form.pos || null,
@@ -1437,8 +1630,14 @@ async deleteTryout(id: string): Promise<void> {
         .select('id'),
     ) as Row[];
 
-    // 3. Build evaluations: ~10% left unscored (to exercise the unscored filter),
-    //    ~30% scored across two sessions, spread across the tryout's assessors.
+    const athleteIds = athletes.map((a) => a.id as string);
+    if (!opts.withScores) return { players: participants.length, evaluations: 0, athleteIds };
+
+    const rubrics = tryout.settings.customRubrics ?? [];
+
+    // 3. Build evaluations: ~10% are left unscored to exercise the unscored
+    //    filter; the rest get exactly `sessionsPerPlayer` sessions, spread
+    //    across the assessment's assessors.
     const profile = await this.loadUserProfile(userId);
     const assessorNames = tryout.assessors.length
       ? tryout.assessors.map((a) => a.name)
@@ -1447,28 +1646,31 @@ async deleteTryout(id: string): Promise<void> {
     const evalRows: Row[] = [];
     const evalPlayerIndex: number[] = [];
     generated.forEach((g, i) => {
-      const roll = Math.random();
-      if (roll < 0.1) return; // leave unscored
-      const sessions = roll > 0.7 ? ['Session 1', 'Session 2'] : ['Session 1'];
-      sessions.forEach((session, sIdx) => {
+      if (Math.random() < 0.1) return; // leave unscored
+      for (let sIdx = 0; sIdx < opts.sessionsPerPlayer; sIdx++) {
         const evaluatorName = assessorNames[(i + sIdx) % assessorNames.length];
         const isOwner = evaluatorName === profile.displayName;
         evalRows.push({
-          tryout_id: tryoutId,
+          tryout_id: tryout.id,
           participant_id: participants[i].id,
           evaluator_user_id: isOwner ? userId : null,
           evaluator_name: evaluatorName,
-          session,
+          session: `Session ${sIdx + 1}`,
           recommendation: REC_TO_DB[pickRecommendation(g.ability) as Exclude<Recommendation, ''>] ?? null,
           source: 'manual',
         });
         evalPlayerIndex.push(i);
-      });
+      }
     });
 
-    const evals = evalRows.length
-      ? (unwrap(await supabase.from('evaluations').insert(evalRows).select('id')) as Row[])
-      : [];
+    const evals: Row[] = [];
+    for (let i = 0; i < evalRows.length; i += 500) {
+      evals.push(
+        ...(unwrap(
+          await supabase.from('evaluations').insert(evalRows.slice(i, i + 500)).select('id'),
+        ) as Row[]),
+      );
+    }
 
     // 4. Build and chunk-insert scores for every applicable rubric per eval.
     const scoreRows: Row[] = [];
@@ -1489,8 +1691,147 @@ async deleteTryout(id: string): Promise<void> {
       unwrap(await supabase.from('evaluation_scores').insert(scoreRows.slice(i, i + 500)).select('id'));
     }
 
-    await this.markOnboarding({ addPlayers: true, scorePlayers: true });
-    return { players: participants.length, evaluations: evals.length };
+    return { players: participants.length, evaluations: evals.length, athleteIds };
+  }
+
+  /**
+   * Stand up whole dummy teams from the New Team screen. Teams hold no roster of
+   * their own, so each one gets a linked assessment (seeded with a rubric set
+   * spanning every scoring type) and that assessment carries the players. The
+   * assessment is flagged `settings.isTestData` so `clearDummyTeams` can undo
+   * the entire bundle later.
+   */
+  async generateDummyTeams(options: DummyTeamOptions): Promise<DummyTeamResult> {
+    const { supabase, accountId, userId } = await this.ctx();
+    const profile = await this.loadUserProfile(userId);
+
+    const teamCount = clampInt(options?.teams, 1, 10, 1);
+    const playersPerTeam = clampInt(options?.playersPerTeam, 1, 100, 20);
+    const sessionsPerPlayer = clampInt(options?.sessionsPerPlayer, 1, 5, 1);
+    const withScores = options?.withScores !== false;
+    const currentYear = new Date().getFullYear();
+
+    const rubrics = generateDummyRubrics();
+    const names = generateDummyTeamNames(teamCount);
+    const result: DummyTeamResult = {
+      teams: 0,
+      assessments: 0,
+      registrations: 0,
+      players: 0,
+      evaluations: 0,
+    };
+
+    for (const name of names) {
+      const team = unwrap(
+        await supabase
+          .from('teams')
+          .insert({ account_id: accountId, name, season_label: `${currentYear}-${String((currentYear + 1) % 100).padStart(2, '0')}` })
+          .select()
+          .single(),
+      ) as Row;
+      result.teams++;
+
+      const tryoutRow = unwrap(
+        await supabase
+          .from('tryouts')
+          .insert({
+            account_id: accountId,
+            team_id: team.id,
+            name: `${name} Tryout`,
+            event_type: 'tryout',
+            sport: 'Hockey',
+            tryout_date: new Date().toISOString().slice(0, 10),
+            head_coach: profile.displayName,
+            head_assessor: profile.displayName,
+            settings: {
+              skaterWeights: {},
+              goalieWeights: {},
+              customRubrics: rubrics,
+              isTestData: true,
+            },
+          })
+          .select()
+          .single(),
+      ) as Row;
+      result.assessments++;
+
+      // Seed the creator as lead assessor, matching `createTryout`.
+      await supabase.from('tryout_assessors').insert({
+        tryout_id: tryoutRow.id,
+        user_id: userId,
+        name: profile.displayName,
+        email: profile.email,
+        role: 'lead',
+        joined_at: new Date().toISOString(),
+      });
+
+      const [tryout] = await this.assembleTryouts([tryoutRow]);
+      const generated = withScores
+        ? await this.generateAITestPlayers(supabase, tryout, rubrics, playersPerTeam, currentYear)
+        : generateDummyPlayers(playersPerTeam, tryout.sport, currentYear);
+
+      const res = await this.insertDummyRoster(supabase, accountId, userId, tryout, generated, {
+        withScores,
+        sessionsPerPlayer,
+      });
+      result.players += res.players;
+      result.evaluations += res.evaluations;
+
+      // Put the same athletes on the team's own roster, so a generated team
+      // shows players immediately rather than an empty Players list.
+      await this.addTeamRosterPlayers(
+        team.id,
+        res.athleteIds.map((athleteId, i) => ({
+          athleteId,
+          jersey: generated[i]?.form.jersey,
+          pos: generated[i]?.form.pos,
+          sourceTryoutId: tryout.id,
+        })),
+      );
+    }
+
+    const steps: Record<string, boolean> = { createTeam: true, createAssessment: true };
+    if (result.players > 0) steps.addPlayers = true;
+    if (result.evaluations > 0) steps.scorePlayers = true;
+    await this.markOnboarding(steps);
+
+    return result;
+  }
+
+  /**
+   * Delete every team/assessment bundle created by `generateDummyTeams`.
+   * Assessments are found by their `settings.isTestData` flag; deleting them
+   * cascades to participants, evaluations, and scores. A team is only removed
+   * once it has no assessments left, so a team the user has since attached real
+   * work to survives.
+   */
+  async clearDummyTeams(): Promise<{ teams: number; assessments: number }> {
+    const { supabase, accountId } = await this.ctx();
+    const rows = unwrap(
+      await supabase
+        .from('tryouts')
+        .select('id, team_id, settings')
+        .eq('account_id', accountId)
+        .contains('settings', { isTestData: true }),
+    ) as Row[];
+    if (rows.length === 0) return { teams: 0, assessments: 0 };
+
+    const ids = rows.map((r) => r.id);
+    unwrap(await supabase.from('tryouts').delete().in('id', ids).select('id'));
+
+    const teamIds = [...new Set(rows.map((r) => r.team_id).filter(Boolean))] as string[];
+    let teams = 0;
+    for (const teamId of teamIds) {
+      const remaining = unwrap(
+        await supabase.from('tryouts').select('id').eq('team_id', teamId).limit(1),
+      ) as Row[];
+      if (remaining.length > 0) continue;
+      const deleted = unwrap(
+        await supabase.from('teams').delete().eq('id', teamId).select('id'),
+      ) as Row[];
+      teams += deleted.length;
+    }
+    return { teams, assessments: ids.length };
   }
 
   /**
@@ -1567,7 +1908,17 @@ async deleteTryout(id: string): Promise<void> {
         .eq('current_team', TEST_DATA_TAG)
         .select('id'),
     ) as Row[];
-    return { removed: rows.length };
+    // Generated registrations carry the same tag, so a pending queue filled by
+    // the dummy button is cleared by the same action.
+    const regs = unwrap(
+      await supabase
+        .from('registrations')
+        .delete()
+        .eq('tryout_id', tryoutId)
+        .eq('current_team', TEST_DATA_TAG)
+        .select('id'),
+    ) as Row[];
+    return { removed: rows.length + regs.length };
   }
 
   // ─── Registration ───────────────────────────────────────────────────────────
@@ -1632,7 +1983,7 @@ async deleteTryout(id: string): Promise<void> {
 
   async submitPublicRegistration(eventIdOrCode: string, form: RegistrationSubmit): Promise<Registration> {
     const supabase = getSupabase();
-    
+
     const { data, error } = await supabase.rpc('submit_public_registration', {
       code: eventIdOrCode,
       payload: form,
@@ -1693,7 +2044,7 @@ async deleteTryout(id: string): Promise<void> {
   async generateTeamBuilder(tryoutId: string, config: TeamBuilderConfig): Promise<TeamBuilderState> {
     const tryout = await this.getTryout(tryoutId);
     if (!tryout) throw new Error('Tryout not found');
-    
+
     let result: TeamBuilderState;
     if (config.prompt) {
       // Call Claude via edge function
@@ -1707,7 +2058,7 @@ async deleteTryout(id: string): Promise<void> {
       if (data?.error) {
         throw new Error(data.message || data.error);
       }
-      
+
       // Merge Claude's response with local state structure
       result = {
         generatedAt: Date.now(),
@@ -1724,7 +2075,7 @@ async deleteTryout(id: string): Promise<void> {
         teams: (data.teams || []).map((t: any, i: number) => ({
           index: i,
           id: `ai-team-${i}`,
-          name: t.name || `Team ${i+1}`,
+          name: t.name || `Team ${i + 1}`,
           players: t.players || [],
           skaters: t.skaters || [],
           goalies: t.goalies || []
@@ -1733,7 +2084,7 @@ async deleteTryout(id: string): Promise<void> {
     } else {
       result = buildTeams(tryout, config);
     }
-    
+
     await this.updateTryout(tryoutId, { teamBuilder: result });
     return result;
   }
@@ -1829,11 +2180,11 @@ async deleteTryout(id: string): Promise<void> {
     if (!tryout) throw new Error('Tryout not found');
     const token = generateId('share').slice(0, 12);
     const expiresAt = Date.now() + 7 * 86400000;
-    
+
     // Store in settings to avoid needing a schema migration
     const newSettings = { ...tryout.settings, shareToken: token, shareExpiresAt: expiresAt };
     await this.updateTryout(tryoutId, { settings: newSettings });
-    
+
     return { token, expiresAt };
   }
 
@@ -2358,7 +2709,7 @@ async deleteTryout(id: string): Promise<void> {
       try {
         const body = await error.context.json();
         if (body?.error) msg = body.error;
-      } catch {}
+      } catch { }
       throw new Error(msg);
     }
   }
@@ -2387,11 +2738,11 @@ async deleteTryout(id: string): Promise<void> {
       .select('*, tryout_participants(current_team, current_level, jersey, created_at)')
       .eq('account_id', accountId)
       .order('first_name', { ascending: true });
-      
+
     if (!athletes) return [];
-    
+
     return athletes.map(a => {
-      const parts = (a.tryout_participants as any[])?.sort((p1, p2) => 
+      const parts = (a.tryout_participants as any[])?.sort((p1, p2) =>
         new Date(p1.created_at).getTime() - new Date(p2.created_at).getTime()
       ) || [];
       const recentPart = parts.length > 0 ? parts[parts.length - 1] : null;
@@ -2446,7 +2797,7 @@ async deleteTryout(id: string): Promise<void> {
       .from('tryout_participants')
       .select('id')
       .eq('athlete_id', athleteId);
-    
+
     let pastEvaluations: Evaluation[] = [];
     if (tryoutRosterRows && tryoutRosterRows.length > 0) {
       const rosterIds = tryoutRosterRows.map(r => r.id);
@@ -2605,7 +2956,7 @@ async deleteTryout(id: string): Promise<void> {
   // ─── Org Members ─────────────────────────────────────────────────────────────
   async listOrgMembers(): Promise<import('../types').OrgMember[]> {
     const { supabase, accountId } = await this.ctx();
-    
+
     // Fetch memberships
     const { data: memData } = await supabase
       .from('memberships')
@@ -2617,7 +2968,7 @@ async deleteTryout(id: string): Promise<void> {
       .from('tryouts')
       .select('id')
       .eq('account_id', accountId);
-    
+
     let assData: any[] = [];
     if (tryouts && tryouts.length > 0) {
       const tryoutIds = tryouts.map(t => t.id);
@@ -2675,7 +3026,7 @@ async deleteTryout(id: string): Promise<void> {
       const email = a.guardian_email;
       if (!email) continue;
       const emailKey = email.toLowerCase();
-      
+
       if (!members.has(emailKey)) {
         members.set(emailKey, {
           id: a.id,
@@ -2721,7 +3072,7 @@ async deleteTryout(id: string): Promise<void> {
       try {
         const body = await (fnError as any).context.json();
         if (body?.error) msg = body.error;
-      } catch {}
+      } catch { }
       throw new Error(msg || 'Failed to create user account');
     }
 
@@ -2768,7 +3119,7 @@ async deleteTryout(id: string): Promise<void> {
       try {
         const body = await error.context.json();
         if (body?.error) msg = body.error;
-      } catch {}
+      } catch { }
       throw new Error(msg);
     }
   }
@@ -2937,10 +3288,10 @@ async deleteTryout(id: string): Promise<void> {
   //     tryouts: (row.tryout_participants || [])
   //       .map((tp: any) => {
   //         if (!tp.tryouts) return null;
-          
+
   //         const evals = tp.evaluations || [];
   //         const sessionMap = new Map<string, { result: string; date: number; scores: Record<string, number> }>();
-          
+
   //         for (const e of evals) {
   //           if (e.recommendation) {
   //             const sessionName = e.session || 'Session 1';
@@ -2956,7 +3307,7 @@ async deleteTryout(id: string): Promise<void> {
   //                   }
   //                 }
   //               }
-                
+
   //               sessionMap.set(sessionName, { 
   //                 result: REC_FROM_DB[e.recommendation] || e.recommendation, 
   //                 date: t,
@@ -2965,7 +3316,7 @@ async deleteTryout(id: string): Promise<void> {
   //             }
   //           }
   //         }
-          
+
   //         const sessions = Array.from(sessionMap.entries()).map(([name, data]) => ({
   //           name,
   //           result: data.result,
@@ -2984,7 +3335,7 @@ async deleteTryout(id: string): Promise<void> {
   //       .filter(Boolean),
   //   }));
   // }
-async getGuardianRosters(): Promise<import('../types').GuardianRosterAthlete[]> {
+  async getGuardianRosters(): Promise<import('../types').GuardianRosterAthlete[]> {
     const { supabase, userId } = await this.ctx();
     if (!userId) return [];
 
@@ -3098,7 +3449,7 @@ async getGuardianRosters(): Promise<import('../types').GuardianRosterAthlete[]> 
           return {
             ...tp.tryouts,
             // Globally unique ID prevents multiple dashboard row items from collapsing
-            participantId: tp.id, 
+            participantId: tp.id,
             sessions,
           };
         })

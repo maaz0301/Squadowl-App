@@ -79,6 +79,9 @@ export const TryoutSettingsSchema = z.object({
   skaterWeights: z.record(z.string(), z.number()),
   goalieWeights: z.record(z.string(), z.number()),
   customRubrics: z.array(CustomRubricSchema).default([]),
+  /** Marks an assessment stood up by the dummy-data generator, so the whole
+   *  bundle (team + assessment + players) can be cleared again in one action. */
+  isTestData: z.boolean().optional(),
 });
 
 export type TryoutSettings = z.infer<typeof TryoutSettingsSchema>;
@@ -236,6 +239,22 @@ export const TeamSchema = z.object({
 });
 
 export type Team = z.infer<typeof TeamSchema>;
+
+/** A player on a team's own roster, independent of any assessment. */
+export const TeamRosterPlayerSchema = z.object({
+  id: z.string(),
+  athleteId: z.string(),
+  first: z.string(),
+  last: z.string(),
+  jersey: z.string().optional(),
+  pos: z.string().optional(),
+  yearOfBirth: z.number().optional(),
+  /** Assessment the athlete was added from, when known. */
+  sourceTryoutId: z.string().optional(),
+  sourceTryoutName: z.string().optional(),
+});
+
+export type TeamRosterPlayer = z.infer<typeof TeamRosterPlayerSchema>;
 
 export const UserProfileSchema = z.object({
   id: z.string(),

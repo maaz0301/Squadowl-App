@@ -280,18 +280,6 @@ export default function ProfileScreen() {
         </>
       )}
 
-      {!isGuardianOnly && canUseFeature(user?.planTier ?? 'free', 'enterprise') ? (
-        <>
-          <Button label="Enterprise Dashboard" onPress={() => navigation.navigate('Enterprise')} className="mb-3" />
-          <Button
-            label="Admin Portal (Demo)"
-            variant="secondary"
-            onPress={() => navigation.navigate('Admin')}
-            className="mb-3"
-          />
-        </>
-      ) : null}
-
       <Button
         label="Log Out"
         variant="danger"

@@ -296,6 +296,29 @@ export default function DashboardScreen() {
               }
             />
 
+            {/* Enterprise entry point — full width above the jump-point row, which
+                scrolls horizontally and would push a fourth card off-screen. */}
+            {!isGuardianOnly && canUseFeature(user?.planTier ?? 'free', 'enterprise') ? (
+              <Pressable onPress={() => navigation.navigate('Enterprise')} className="mb-4">
+                <Card accent className="flex-row items-center gap-3 p-4">
+                  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+                    <Path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1M9 13h1m4 0h1M9 17h1m4 0h1" stroke={colors.primary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                  <View className="flex-1">
+                    <Text className="font-bold text-base" style={{ color: colors.ink }}>
+                      Enterprise Dashboard
+                    </Text>
+                    <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
+                      Organization-wide reporting & members
+                    </Text>
+                  </View>
+                  <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                    <Path d="M9 5l7 7-7 7" stroke={colors.inkMuted} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                </Card>
+              </Pressable>
+            ) : null}
+
             {/* HUB Landing Overview Cards */}
             {!isGuardianOnly && (
               <View className="mb-4">
@@ -356,6 +379,7 @@ export default function DashboardScreen() {
                       </Text>
                     </Card>
                   </Pressable>
+
                 </ScrollView>
               </View>
             )}

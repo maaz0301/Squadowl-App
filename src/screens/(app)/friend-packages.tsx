@@ -6,14 +6,14 @@ const PACKAGES = [
   {
     id: 'starter',
     name: 'Starter Gift',
-    price: '$29.99',
+    price: 'CAD$29.99',
     description: '1 year Coach plan for a fellow coach',
     seats: 1,
   },
   {
     id: 'club',
     name: 'Club Bundle',
-    price: '$149.99',
+    price: 'CAD$149.99',
     description: '3 Club plan seats — great for assistant coaches',
     seats: 3,
     highlight: true,
@@ -21,7 +21,7 @@ const PACKAGES = [
   {
     id: 'team',
     name: 'Team Pack',
-    price: '$399.99',
+    price: 'CAD$399.99',
     description: 'Full season for an entire coaching staff (5 seats)',
     seats: 5,
   },
@@ -53,7 +53,6 @@ export default function FriendPackagesScreen() {
           </View>
           <Text style={{ color: colors.inkMuted }}>{pkg.description}</Text>
           <View className="flex-row items-baseline">
-            <Text className="text-sm font-sans mr-1" style={{ color: colors.inkMuted }}>CAD</Text>
             <Text className="text-xl font-display font-bold" style={{ color: colors.primary }}>
               {pkg.price}
             </Text>

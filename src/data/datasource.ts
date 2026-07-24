@@ -139,11 +139,27 @@ export interface DataSource {
   importSeasonPlayersFromTeam(seasonId: string): Promise<import('./types').SeasonPlayer[]>;
   emailScheduleToPlayers(seasonId: string): Promise<void>;
   updateTeam(id: string, updates: Partial<Team>): Promise<Team>;
+
+  // Team roster: a team's own players, selectable from any assessment's roster.
+  listTeamRoster(teamId: string): Promise<import('./types').TeamRosterPlayer[]>;
+  addTeamRosterPlayers(
+    teamId: string,
+    entries: { athleteId: string; jersey?: string; pos?: string; sourceTryoutId?: string }[],
+  ): Promise<import('./types').TeamRosterPlayer[]>;
+  removeTeamRosterPlayer(teamId: string, athleteId: string): Promise<void>;
   importScanScores(tryoutId: string, scores: { playerId: string; rubricKey: string; value: number }[]): Promise<void>;
   getGuardianRosters(): Promise<GuardianRosterAthlete[]>;
 
-  // Testing utilities (association/enterprise): bulk-generate dummy players with
-  // realistic scores across every rubric, and clear a previously generated batch.
-  generateTestData(tryoutId: string, count: number): Promise<{ players: number; evaluations: number }>;
+  // Testing utilities (association/enterprise): bulk-generate dummy registrations
+  // and/or scored roster players, stand up whole dummy teams, and clear either
+  // batch again. See `testDataGenerator.ts` for the option shapes.
+  generateTestData(
+    tryoutId: string,
+    options: import('./testDataGenerator').DummyDataOptions,
+  ): Promise<import('./testDataGenerator').DummyDataResult>;
   clearTestData(tryoutId: string): Promise<{ removed: number }>;
+  generateDummyTeams(
+    options: import('./testDataGenerator').DummyTeamOptions,
+  ): Promise<import('./testDataGenerator').DummyTeamResult>;
+  clearDummyTeams(): Promise<{ teams: number; assessments: number }>;
 }

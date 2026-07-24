@@ -1,28 +1,30 @@
-import { useEffect, useMemo, useState } from 'react';
-import { FlatList, Share, Text, View, Platform, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import QRCode from 'react-native-qrcode-svg';
-import RNFS from 'react-native-fs';
-import RNShare from 'react-native-share';
-import { EXPO_PUBLIC_WEB_URL } from '@env';
-import { useThemeColors } from '@/theme/ThemeProvider';
-import { Avatar, Badge, Button, Card, ErrorState, Header, Input, LoadingState, Screen, Modal, EmptyState, Tabs } from '@/components/ui';
+import { RegistrationForm } from '@/components/assessment/RegistrationForm';
+import { DummyDataModal } from '@/components/DummyDataModal';
+import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { PlanGate } from '@/components/PlanGate';
+import { Badge, Button, Card, EmptyState, ErrorState, Header, LoadingState, Modal, Screen, Tabs } from '@/components/ui';
 import { canUseFeature, isAtPlayerLimit } from '@/data/plans';
-import { useUser } from '@/state/authStore';
+import type { DummyDataOptions } from '@/data/testDataGenerator';
 import {
-  useTryoutQuery,
-  useRegistrationsQuery,
-  useEnsureCloudSessionMutation,
   useAddRegistrationToRosterMutation,
-  useDismissRegistrationMutation,
-  useSubmitRegistrationMutation,
-  useGenerateTestDataMutation,
   useClearTestDataMutation,
+  useDismissRegistrationMutation,
+  useEnsureCloudSessionMutation,
+  useGenerateTestDataMutation,
+  useRegistrationsQuery,
+  useSubmitRegistrationMutation,
+  useTryoutQuery,
 } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
-import { RegistrationForm } from '@/components/assessment/RegistrationForm';
-import { LimitReachedModal } from '@/components/LimitReachedModal';
+import { useUser } from '@/state/authStore';
+import { useThemeColors } from '@/theme/ThemeProvider';
+import { EXPO_PUBLIC_WEB_URL } from '@env';
+import { useNavigation } from '@react-navigation/native';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, FlatList, Platform, Share, Text, View } from 'react-native';
+import RNFS from 'react-native-fs';
+import QRCode from 'react-native-qrcode-svg';
+import RNShare from 'react-native-share';
 
 type RegTab = 'pending' | 'all' | 'dismissed';
 
@@ -42,7 +44,6 @@ export default function RegistrationsScreen() {
   const [showQr, setShowQr] = useState(false);
   const [showSimulate, setShowSimulate] = useState(false);
   const [showTestGen, setShowTestGen] = useState(false);
-  const [testCount, setTestCount] = useState('50');
   const [tab, setTab] = useState<RegTab>('pending');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
@@ -107,7 +108,7 @@ export default function RegistrationsScreen() {
   const exportCsv = async () => {
     const data = regsQuery.data ?? [];
     if (data.length === 0) return;
-    
+
     const rows = data.map(
       (r) =>
         `${r.firstName},${r.lastName},${r.guardianEmail},${r.status},${r.paymentStatus ?? 'unpaid'}`,
@@ -144,35 +145,36 @@ export default function RegistrationsScreen() {
 
   const hasRubrics = (tryout.settings.customRubrics?.length ?? 0) > 0;
 
-  const runGenerate = async () => {
-    const n = Math.max(10, Math.min(250, parseInt(testCount, 10) || 50));
+  const runGenerate = async (options: DummyDataOptions) => {
     try {
-      const res = await genTest.mutateAsync(n);
+      const res = await genTest.mutateAsync(options);
       setShowTestGen(false);
-      showAlert(
-        'Test data added',
-        `Generated ${res.players} players with ${res.evaluations} evaluations. Open Results to see rankings.`,
-      );
+      const parts = [
+        res.registrations ? `${res.registrations} pending registrations` : null,
+        res.players ? `${res.players} roster players` : null,
+        res.evaluations ? `${res.evaluations} evaluations` : null,
+      ].filter(Boolean);
+      showAlert('Dummy data added', `Created ${parts.join(', ')}.`);
     } catch (e: any) {
       showAlert('Error', e?.message === 'NO_RUBRICS'
-        ? 'Add at least one rubric before generating test players.'
-        : e?.message || 'Failed to generate test data.');
+        ? 'Add at least one rubric before generating scored players.'
+        : e?.message || 'Failed to generate dummy data.');
     }
   };
 
   const clearTestData = async () => {
     try {
       const res = await clearTest.mutateAsync();
-      showAlert('Cleared', `Removed ${res.removed} generated player${res.removed === 1 ? '' : 's'}.`);
+      showAlert('Cleared', `Removed ${res.removed} generated record${res.removed === 1 ? '' : 's'}.`);
     } catch (e: any) {
-      showAlert('Error', e?.message || 'Failed to clear test data.');
+      showAlert('Error', e?.message || 'Failed to clear dummy data.');
     }
   };
 
   return (
     <Screen padded={false}>
       <Header title="Registrations" showBack />
-      
+
       {/* Overview Stats */}
       <View className="px-4 pb-2 pt-2 flex-row gap-2">
         <PlanGate feature="qrRegistration" title="QR Registration (Coach+)">
@@ -213,17 +215,18 @@ export default function RegistrationsScreen() {
             Testing Tools
           </Text>
           <Text className="text-xs" style={{ color: colors.inkMuted }}>
-            AI-generate a batch of realistic dummy players — varied names, positions, and ages —
-            with scores across every rubric to test rankings, filters, and reports at scale.
+            AI-generate a batch of realistic dummy records — pending registrations, rostered
+            players, or both — optionally scored across every rubric, to test rankings, filters,
+            and reports at scale.
           </Text>
           <View className="flex-row flex-wrap gap-2 mt-1">
             <Button
-              label="Generate Test Players"
+              label="Dummy Data"
               size="sm"
               onPress={() => setShowTestGen(true)}
             />
             <Button
-              label="Clear Test Data"
+              label="Clear Dummy Data"
               size="sm"
               variant="ghost"
               loading={clearTest.isPending}
@@ -317,43 +320,18 @@ export default function RegistrationsScreen() {
         />
       </Modal>
 
-      <Modal visible={showTestGen} title="Generate Test Players" onClose={() => setShowTestGen(false)}>
-        {!hasRubrics ? (
-          <View className="gap-4 py-2">
-            <Text className="text-sm" style={{ color: colors.ink }}>
-              Test players are scored against this assessment's rubrics, but none are defined yet.
-              Add at least one rubric — ideally covering skill, time, distance, and speed — then
-              come back to generate players.
-            </Text>
-            <Button
-              label="Add Rubrics"
-              onPress={() => {
-                setShowTestGen(false);
-                navigation.navigate('AssessmentRubrics');
-              }}
-            />
-          </View>
-        ) : (
-          <View className="gap-4 py-2">
-            <Text className="text-sm" style={{ color: colors.inkMuted }}>
-              How many players to generate? Each gets a varied age, position, and realistic scores
-              across every rubric. A few are left unscored to test filters.
-            </Text>
-            <Input
-              label="Number of players (10–250)"
-              value={testCount}
-              onChangeText={setTestCount}
-              keyboardType="number-pad"
-              placeholder="50"
-            />
-            <Button
-              label={`Generate ${Math.max(10, Math.min(250, parseInt(testCount, 10) || 50))} Players`}
-              loading={genTest.isPending}
-              onPress={runGenerate}
-            />
-          </View>
-        )}
-      </Modal>
+      <DummyDataModal
+        variant="assessment"
+        visible={showTestGen}
+        loading={genTest.isPending}
+        hasRubrics={hasRubrics}
+        onAddRubrics={() => {
+          setShowTestGen(false);
+          navigation.navigate('AssessmentRubrics');
+        }}
+        onClose={() => setShowTestGen(false)}
+        onSubmit={runGenerate}
+      />
 
       <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
     </Screen>

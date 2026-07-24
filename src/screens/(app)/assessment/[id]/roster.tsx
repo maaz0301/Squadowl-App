@@ -1,9 +1,10 @@
-import { useMemo, useState, useEffect } from 'react';
-import { FlatList, Pressable, Text, View, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { useRoute } from '@react-navigation/native';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, FlatList, Platform, Pressable, Text, View } from 'react-native';
 
-import { useThemeColors } from '@/theme/ThemeProvider';
+import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
+import { DummyDataModal } from '@/components/DummyDataModal';
+import { LimitReachedModal } from '@/components/LimitReachedModal';
 import {
   Avatar,
   Badge,
@@ -16,14 +17,19 @@ import {
   Modal,
   Screen,
 } from '@/components/ui';
-import { useTryoutQuery, useAddPlayerMutation, useUploadPlayerPhotoMutation } from '@/features/queries';
-import { useAssessmentId } from '@/features/useAssessmentId';
-import { useSessionStore } from '@/state/sessionStore';
-import { useUser } from '@/state/authStore';
+import { canUseFeature, isAtPlayerLimit } from '@/data/plans';
 import { playerDisplayName } from '@/data/rubrics';
-import { isAtPlayerLimit } from '@/data/plans';
-import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
-import { LimitReachedModal } from '@/components/LimitReachedModal';
+import {
+  useAddPlayerMutation,
+  useClearTestDataMutation,
+  useGenerateTestDataMutation,
+  useTryoutQuery,
+  useUploadPlayerPhotoMutation,
+} from '@/features/queries';
+import { useAssessmentId } from '@/features/useAssessmentId';
+import { useUser } from '@/state/authStore';
+import { useSessionStore } from '@/state/sessionStore';
+import { useThemeColors } from '@/theme/ThemeProvider';
 
 export default function RosterScreen() {
   const id = useAssessmentId();
@@ -32,6 +38,8 @@ export default function RosterScreen() {
   const tryoutQuery = useTryoutQuery(id);
   const addPlayer = useAddPlayerMutation(id!);
   const uploadPhoto = useUploadPlayerPhotoMutation(id!);
+  const genTest = useGenerateTestDataMutation(id!);
+  const clearTest = useClearTestDataMutation(id!);
   const rosterFilter = useSessionStore((s) => s.rosterFilter);
   const setRosterFilter = useSessionStore((s) => s.setRosterFilter);
   const activeAssessor = useSessionStore((s) => s.activeAssessor);
@@ -40,7 +48,10 @@ export default function RosterScreen() {
   const user = useUser();
   const [showAdd, setShowAdd] = useState(false);
   const [showTools, setShowTools] = useState(false);
+  const [showTestGen, setShowTestGen] = useState(false);
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
+
+  const isAssociation = canUseFeature(user?.planTier ?? 'free', 'enterprise');
 
   useEffect(() => {
     if (tryoutQuery.data && user && !activeAssessor) {
@@ -249,7 +260,7 @@ export default function RosterScreen() {
               setShowAdd(false);
             } catch (err: any) {
               Alert.alert(
-                'Save Error', 
+                'Save Error',
                 err.message || 'Failed to add player.',
                 [
                   { text: 'Cancel', style: 'cancel' },
@@ -279,6 +290,27 @@ export default function RosterScreen() {
               desc: 'Import scores from printed OCR scanning sheets.',
               go: () => navigation.navigate('AssessmentFlow', { screen: 'AssessmentScanSheet', params: { id: id } }),
             },
+            ...(isAssociation ? [
+              {
+                label: 'Dummy Data Generator',
+                desc: 'Generate batch of realistic dummy players with optional scoring data across rubrics.',
+                go: () => setShowTestGen(true),
+              },
+              {
+                label: 'Clear Dummy Data',
+                desc: 'Remove all generated dummy players and evaluation scores.',
+                go: async () => {
+                  try {
+                    const res = await clearTest.mutateAsync();
+                    if (Platform.OS === 'web') alert(`Cleared ${res.removed} dummy records.`);
+                    else Alert.alert('Cleared', `Removed ${res.removed} generated record${res.removed === 1 ? '' : 's'}.`);
+                  } catch (e: any) {
+                    if (Platform.OS === 'web') alert(e?.message || 'Failed to clear dummy data.');
+                    else Alert.alert('Error', e?.message || 'Failed to clear dummy data.');
+                  }
+                },
+              },
+            ] : []),
           ] as const
         ).map((t) => (
           <Pressable
@@ -299,6 +331,37 @@ export default function RosterScreen() {
           </Pressable>
         ))}
       </Modal>
+
+      <DummyDataModal
+        variant="assessment"
+        visible={showTestGen}
+        loading={genTest.isPending}
+        hasRubrics={(tryout.settings?.customRubrics?.length ?? 0) > 0}
+        onAddRubrics={() => {
+          setShowTestGen(false);
+          navigation.navigate('AssessmentFlow', { screen: 'AssessmentRubrics', params: { id: id } });
+        }}
+        onClose={() => setShowTestGen(false)}
+        onSubmit={async (options) => {
+          try {
+            const res = await genTest.mutateAsync(options);
+            setShowTestGen(false);
+            const parts = [
+              res.registrations ? `${res.registrations} pending registrations` : null,
+              res.players ? `${res.players} roster players` : null,
+              res.evaluations ? `${res.evaluations} evaluations` : null,
+            ].filter(Boolean);
+            if (Platform.OS === 'web') alert(`Dummy data added: Created ${parts.join(', ')}.`);
+            else Alert.alert('Dummy data added', `Created ${parts.join(', ')}.`);
+          } catch (e: any) {
+            const msg = e?.message === 'NO_RUBRICS'
+              ? 'Add at least one rubric before generating scored players.'
+              : e?.message || 'Failed to generate dummy data.';
+            if (Platform.OS === 'web') alert(msg);
+            else Alert.alert('Error', msg);
+          }
+        }}
+      />
       <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
     </Screen>
   );

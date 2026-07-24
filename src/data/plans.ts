@@ -32,7 +32,7 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
   {
     tier: 'free',
     name: 'Free',
-    price: '$0',
+    price: 'CAD$0',
     priceNote: 'forever',
     features: [
       { label: '1 assessment', included: true },
@@ -59,7 +59,7 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
   {
     tier: 'coach',
     name: 'Coach',
-    price: '$29.99',
+    price: 'CAD$29.99',
     priceNote: '/year',
     highlight: true,
     features: [
@@ -87,7 +87,7 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
   {
     tier: 'club',
     name: 'Club',
-    price: '$59.99',
+    price: 'CAD$59.99',
     priceNote: '/year',
     features: [
       { label: 'Team Builder (Sort Out)', included: true },
@@ -114,7 +114,7 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
   {
     tier: 'pro',
     name: 'Pro',
-    price: '$99.99',
+    price: 'CAD$99.99',
     priceNote: '/year',
     features: [
       { label: '8 teams', included: true },
@@ -140,7 +140,7 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
   {
     tier: 'association',
     name: 'Association',
-    price: '$249.99',
+    price: 'CAD$249.99',
     priceNote: '/year',
     features: [
       { label: '15 teams (+$15/add-on)', included: true },
