@@ -2934,16 +2934,30 @@ export class SupabaseDataSource implements DataSource {
     const { data, error } = await supabase.functions.invoke('create-checkout-session', {
       body: { planTier }
     });
-    if (error) throw new Error(error.message);
-    if (data.error) throw new Error(data.error);
+    if (error) {
+      let detail = '';
+      try {
+        const body = await error.context?.json();
+        if (body?.error) detail = body.error;
+      } catch (_) {}
+      throw new Error(detail || error.message || 'Failed to create checkout session');
+    }
+    if (data?.error) throw new Error(data.error);
     return data;
   }
 
   async createPortalSession(): Promise<{ url: string }> {
     const { supabase } = await this.ctx();
     const { data, error } = await supabase.functions.invoke('create-portal-session');
-    if (error) throw new Error(error.message);
-    if (data.error) throw new Error(data.error);
+    if (error) {
+      let detail = '';
+      try {
+        const body = await error.context?.json();
+        if (body?.error) detail = body.error;
+      } catch (_) {}
+      throw new Error(detail || error.message || 'Failed to open portal session');
+    }
+    if (data?.error) throw new Error(data.error);
     return data;
   }
 

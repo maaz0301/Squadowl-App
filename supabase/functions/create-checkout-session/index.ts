@@ -61,38 +61,85 @@ serve(async (req) => {
         .eq('id', accountId);
     }
 
-    // Determine price based on planTier
-    // In production, you would look up the Price ID from Stripe or your database.
-    // For this implementation, we will use hardcoded price IDs or map them.
-    // Ensure you have these environment variables set in Supabase.
-    const priceId = Deno.env.get(`STRIPE_PRICE_ID_${planTier.toUpperCase()}`);
-    if (!priceId) {
-      throw new Error(`Price ID not found for tier: ${planTier}`);
+    // Price mapping for CAD currency fallback
+    const TIER_PRICES_CAD: Record<string, { name: string; amount: number }> = {
+      coach: { name: 'Coach Plan', amount: 2999 },
+      club: { name: 'Club Plan', amount: 5999 },
+      pro: { name: 'Pro Plan', amount: 9999 },
+      association: { name: 'Association Plan', amount: 24999 },
+      enterprise: { name: 'Enterprise Plan', amount: 24999 },
+    };
+
+    const rawPriceId = Deno.env.get(`STRIPE_PRICE_ID_${planTier.toUpperCase()}`);
+    const priceId = rawPriceId && rawPriceId.trim() !== '' && rawPriceId !== 'undefined' && rawPriceId !== 'null' ? rawPriceId.trim() : null;
+
+    let lineItem: any;
+    if (priceId) {
+      lineItem = { price: priceId, quantity: 1 };
+    } else {
+      const tierInfo = TIER_PRICES_CAD[planTier.toLowerCase()];
+      if (!tierInfo) {
+        throw new Error(`Invalid plan tier: ${planTier}`);
+      }
+      lineItem = {
+        price_data: {
+          currency: 'cad',
+          product_data: {
+            name: `TryoutHQ ${tierInfo.name}`,
+          },
+          unit_amount: tierInfo.amount,
+          recurring: {
+            interval: 'year',
+          },
+        },
+        quantity: 1,
+      };
     }
 
-    const session = await stripe.checkout.sessions.create({
+    let session;
+    const createSessionParams = {
       customer: customerId,
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      mode: 'subscription',
+      line_items: [lineItem],
+      mode: 'subscription' as const,
       success_url: `aastryout://upgrade?success=true`,
       cancel_url: `aastryout://upgrade?canceled=true`,
       metadata: {
         accountId: accountId,
         planTier: planTier,
       },
-    });
+    };
+
+    try {
+      session = await stripe.checkout.sessions.create(createSessionParams);
+    } catch (checkoutErr: any) {
+      if (checkoutErr.message && checkoutErr.message.includes('cannot combine currencies')) {
+        // Customer has legacy currency (e.g. USD) attached. Create a new Stripe Customer for CAD.
+        const newCustomer = await stripe.customers.create({
+          email: user.email,
+          metadata: { accountId: accountId },
+        });
+        customerId = newCustomer.id;
+        await supabaseAdmin
+          .from('accounts')
+          .update({ stripe_customer_id: customerId })
+          .eq('id', accountId);
+
+        session = await stripe.checkout.sessions.create({
+          ...createSessionParams,
+          customer: customerId,
+        });
+      } else {
+        throw checkoutErr;
+      }
+    }
 
     return new Response(JSON.stringify({ url: session.url }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    console.error('Error in create-checkout-session:', err.message || err);
+    return new Response(JSON.stringify({ error: err.message || 'Internal server error' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
     });
