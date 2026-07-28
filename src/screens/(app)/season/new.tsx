@@ -1,6 +1,6 @@
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import { useCallback } from 'react';
 
 import { ScrollView, Text, View } from 'react-native';
@@ -13,18 +13,24 @@ import { PlanGate } from '@/components/PlanGate';
 export default function NewSeasonScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const createSeason = useCreateSeasonMutation();
   const teamsQuery = useTeamsQuery();
 
+  // Arriving from a team's Events section pre-links that team so the coach
+  // doesn't have to re-pick it.
+  const presetTeamId: string | undefined = route.params?.teamId;
+  const presetTeamName: string = route.params?.teamName ?? '';
+
   const { control, handleSubmit, watch, setValue, reset } = useForm<CreateSeasonForm>({
     resolver: zodResolver(CreateSeasonFormSchema),
-    defaultValues: { name: '', teamName: '', sport: 'Hockey', year: '2025-26' },
+    defaultValues: { name: '', teamName: presetTeamName, sport: 'Hockey', year: '2025-26', teamId: presetTeamId },
   });
 
   useFocusEffect(
     useCallback(() => {
-      reset({ name: '', teamName: '', sport: 'Hockey', year: '2025-26' });
-    }, [reset])
+      reset({ name: '', teamName: presetTeamName, sport: 'Hockey', year: '2025-26', teamId: presetTeamId });
+    }, [reset, presetTeamId, presetTeamName])
   );
 
   const sport = watch('sport');
@@ -85,12 +91,24 @@ export default function NewSeasonScreen() {
               <Input label="Division" onBlur={onBlur} onChangeText={onChange} value={value} placeholder="U14 AA" />
             )}
           />
-          {teamsQuery.data?.length ? (
+          {presetTeamId ? (
+            // Created from inside a team's Events section — the linked team is
+            // that team, so it's shown as a fact rather than a choice.
+            <View>
+              <Text className="text-xs font-bold uppercase mb-2" style={{ color: colors.inkMuted }}>Linked Team</Text>
+              <Chip label={presetTeamName} active />
+            </View>
+          ) : teamsQuery.data?.length ? (
             <View>
               <Text className="text-xs font-bold uppercase mb-2" style={{ color: colors.inkMuted }}>Link Team</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 {teamsQuery.data.map((t) => (
-                  <Chip key={t.id} label={t.name} onPress={() => { setValue('teamId', t.id); setValue('teamName', t.name); }} />
+                  <Chip
+                    key={t.id}
+                    label={t.name}
+                    active={watch('teamId') === t.id}
+                    onPress={() => { setValue('teamId', t.id); setValue('teamName', t.name); }}
+                  />
                 ))}
               </ScrollView>
             </View>

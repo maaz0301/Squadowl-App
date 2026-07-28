@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ScrollView, Text, View, Pressable, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -16,6 +16,7 @@ import { LimitReachedModal } from '@/components/LimitReachedModal';
 export default function NewAssessmentScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const createTryout = useCreateTryoutMutation();
   const setCurrentTryout = useSessionStore((s) => s.setCurrentTryout);
   const teamsQuery = useTeamsQuery();
@@ -32,6 +33,8 @@ export default function NewAssessmentScreen() {
       tryoutDate: '',
       startTime: '',
       rink: '',
+      // Pre-linked when created from a team's Events section.
+      teamId: route.params?.teamId,
     },
   });
 

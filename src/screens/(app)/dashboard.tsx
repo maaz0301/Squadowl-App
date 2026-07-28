@@ -1,8 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable, ScrollView, Text, View, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
@@ -16,13 +15,13 @@ import {
   LoadingState,
   Screen,
 } from '@/components/ui';
+import { BottomNav } from '@/components/BottomNav';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { useAuthStore, useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import {
   useTeamsQuery,
   useTryoutsQuery,
-  useSeasonsQuery,
   useAssignedTryoutsQuery,
   useRejectAssignmentMutation,
   useGuardianRostersQuery,
@@ -34,19 +33,25 @@ import { canUseFeature, isAtAssessmentLimit } from '@/data/plans';
 export default function DashboardScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
-  const insets = useSafeAreaInsets();
   const user = useUser();
   const setCurrentTryout = useSessionStore((s) => s.setCurrentTryout);
   const setActiveAssessor = useSessionStore((s) => s.setActiveAssessor);
   const combineIds = useSessionStore((s) => s.combineTryoutIds);
   const toggleCombineTryout = useSessionStore((s) => s.toggleCombineTryout);
   
-  const [tab, setTab] = useState<'assessments' | 'teams' | 'seasons'>('assessments');
+  const [tab, setTab] = useState<'assessments' | 'teams'>('assessments');
   const listRef = useRef<FlatList>(null);
   const scrollOffsets = useRef<Record<string, number>>({});
   const currentOffset = useRef(0);
 
-  const handleTabChange = (nextTab: 'assessments' | 'teams' | 'seasons') => {
+  // The bottom nav on other screens routes back here with the tab it wants.
+  const route = useRoute<any>();
+  useEffect(() => {
+    const requested = route.params?.tab;
+    if (requested === 'assessments' || requested === 'teams') setTab(requested);
+  }, [route.params?.tab]);
+
+  const handleTabChange = (nextTab: 'assessments' | 'teams') => {
     scrollOffsets.current[tab] = currentOffset.current;
     const restored = scrollOffsets.current[nextTab] ?? 0;
     setTab(nextTab);
@@ -61,7 +66,6 @@ export default function DashboardScreen() {
 
   const teamsQuery = useTeamsQuery();
   const tryoutsQuery = useTryoutsQuery(false);
-  const seasonsQuery = useSeasonsQuery();
   const assignedQuery = useAssignedTryoutsQuery();
   const guardianQuery = useGuardianRostersQuery();
 
@@ -87,22 +91,18 @@ export default function DashboardScreen() {
       );
     }
   } else {
-    if (teamsQuery.isLoading || tryoutsQuery.isLoading || seasonsQuery.isLoading) {
+    if (teamsQuery.isLoading || tryoutsQuery.isLoading) {
       return <LoadingState message="Loading dashboard..." />;
     }
-    if (teamsQuery.isError || tryoutsQuery.isError || seasonsQuery.isError) {
+    if (teamsQuery.isError || tryoutsQuery.isError) {
       const errorMsg =
-        teamsQuery.error?.message ||
-        tryoutsQuery.error?.message ||
-        seasonsQuery.error?.message ||
-        'Unknown error';
+        teamsQuery.error?.message || tryoutsQuery.error?.message || 'Unknown error';
       return (
         <ErrorState
           message={`Could not load dashboard data: ${errorMsg}`}
           onRetry={() => {
             teamsQuery.refetch();
             tryoutsQuery.refetch();
-            seasonsQuery.refetch();
           }}
         />
       );
@@ -119,8 +119,7 @@ export default function DashboardScreen() {
   };
 
   const fabAction = () => {
-    if (tab === 'seasons') navigation.navigate('NewSeason');
-    else if (tab === 'teams') navigation.navigate('NewTeam');
+    if (tab === 'teams') navigation.navigate('NewTeam');
     else {
       const count = tryoutsQuery.data?.length ?? 0;
       if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
@@ -131,37 +130,11 @@ export default function DashboardScreen() {
     }
   };
 
-  const fabLabel =
-    tab === 'seasons' ? '+ New Season' : tab === 'teams' ? '+ New Team' : '+ New Assessment';
+  const fabLabel = tab === 'teams' ? '+ New Team' : '+ New Assessment';
 
-  const listData = isGuardianOnly
-    ? []
-    : tab === 'seasons'
-    ? seasonsQuery.data
-    : tab === 'teams'
-    ? teamsQuery.data
-    : tryoutsQuery.data;
+  const listData = isGuardianOnly ? [] : tab === 'teams' ? teamsQuery.data : tryoutsQuery.data;
 
   const renderItem = ({ item }: { item: any }) => {
-    if (tab === 'seasons') {
-      return (
-        <Pressable onPress={() => navigation.navigate('SeasonDetail', { id: item.id })}>
-          <Card accent className="mb-3">
-            <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
-              {item.name}
-            </Text>
-            <Text className="text-sm mt-1" style={{ color: colors.inkMuted }}>
-              {item.teamName} · {item.sport} · {item.year}
-            </Text>
-            <View className="flex-row gap-2 mt-2">
-              <Badge label={`${item.roster?.length ?? 0} players`} />
-              <Badge label={`${item.events?.length ?? 0} events`} variant="info" />
-            </View>
-          </Card>
-        </Pressable>
-      );
-    }
-
     if (tab === 'teams') {
       return (
         <Pressable onPress={() => navigation.navigate('TeamDetail', { id: item.id })}>
@@ -210,29 +183,11 @@ export default function DashboardScreen() {
 
   const getEmptyState = () => {
     if (isGuardianOnly) return null;
-    if (tab === 'seasons') {
-      return (
-        <EmptyState
-          title="No active seasons"
-          message={
-            canUseFeature(user?.planTier ?? 'free', 'seasonHub')
-              ? 'Create a season to manage team schedules, rosters, and guardian updates.'
-              : 'Upgrade to a Coach plan to unlock Team Hub and Season management.'
-          }
-          actionLabel={canUseFeature(user?.planTier ?? 'free', 'seasonHub') ? 'Create Season' : 'View Upgrade Options'}
-          onAction={() =>
-            canUseFeature(user?.planTier ?? 'free', 'seasonHub')
-              ? navigation.navigate('NewSeason')
-              : navigation.navigate('Upgrade')
-          }
-        />
-      );
-    }
     if (tab === 'teams') {
       return (
         <EmptyState
           title="No teams created"
-          message="Create a team to group rosters and manage assessments."
+          message="Create a team to group rosters, schedule practices and games, and manage assessments."
           actionLabel="Create Team"
           onAction={() => navigation.navigate('NewTeam')}
         />
@@ -250,7 +205,6 @@ export default function DashboardScreen() {
 
   const evalCount = tryoutsQuery.data?.length ?? 0;
   const teamCount = teamsQuery.data?.length ?? 0;
-  const seasonCount = seasonsQuery.data?.length ?? 0;
 
   return (
     <Screen padded={false}>
@@ -358,24 +312,7 @@ export default function DashboardScreen() {
                         Teams
                       </Text>
                       <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                        Rosters & Groups
-                      </Text>
-                    </Card>
-                  </Pressable>
-
-                  <Pressable onPress={() => handleTabChange('seasons')} className="mr-2">
-                    <Card accent={tab === 'seasons'} className="w-36 gap-1 p-3">
-                      <View className="flex-row justify-between items-center">
-                        <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-                          <Path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke={colors.primary} strokeWidth={2} strokeLinecap="round" />
-                        </Svg>
-                        <Badge label={`${seasonCount}`} variant={tab === 'seasons' ? 'brand' : 'default'} />
-                      </View>
-                      <Text className="font-bold text-sm mt-1" style={{ color: colors.ink }}>
-                        Events
-                      </Text>
-                      <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                        Season Hub
+                        Rosters & Schedules
                       </Text>
                     </Card>
                   </Pressable>
@@ -480,7 +417,7 @@ export default function DashboardScreen() {
               <View className="mb-3">
                 <View className="flex-row justify-between items-center mb-2">
                   <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-                    {tab === 'seasons' ? 'Seasons & Events' : tab === 'teams' ? 'Teams' : 'Assessments & Tryouts'}
+                    {tab === 'teams' ? 'Teams' : 'Assessments & Tryouts'}
                   </Text>
                   <Button
                     label={fabLabel}
@@ -516,100 +453,7 @@ export default function DashboardScreen() {
         renderItem={renderItem}
       />
 
-      {/* Persistent Bottom Navigation Bar */}
-      <View
-        style={{
-          backgroundColor: colors.card,
-          borderTopWidth: 1,
-          borderTopColor: colors.border,
-          paddingBottom: Math.max(12, insets.bottom),
-          paddingTop: 8,
-          paddingHorizontal: 16,
-        }}
-      >
-        <View className="flex-row justify-around items-center">
-          <Pressable
-            onPress={() => handleTabChange('assessments')}
-            className="items-center justify-center flex-1 py-1"
-          >
-            <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-              <Path
-                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                stroke={tab === 'assessments' ? colors.primary : colors.inkMuted}
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </Svg>
-            <Text
-              className="text-xs font-medium mt-1"
-              style={{ color: tab === 'assessments' ? colors.primary : colors.inkMuted }}
-            >
-              Evaluations
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => handleTabChange('teams')}
-            className="items-center justify-center flex-1 py-1"
-          >
-            <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-              <Path
-                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
-                stroke={tab === 'teams' ? colors.primary : colors.inkMuted}
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </Svg>
-            <Text
-              className="text-xs font-medium mt-1"
-              style={{ color: tab === 'teams' ? colors.primary : colors.inkMuted }}
-            >
-              Teams
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => handleTabChange('seasons')}
-            className="items-center justify-center flex-1 py-1"
-          >
-            <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-              <Path
-                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                stroke={tab === 'seasons' ? colors.primary : colors.inkMuted}
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </Svg>
-            <Text
-              className="text-xs font-medium mt-1"
-              style={{ color: tab === 'seasons' ? colors.primary : colors.inkMuted }}
-            >
-              Events
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => navigation.navigate('Profile')}
-            className="items-center justify-center flex-1 py-1"
-          >
-            <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-              <Path
-                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                stroke={colors.inkMuted}
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </Svg>
-            <Text className="text-xs font-medium mt-1" style={{ color: colors.inkMuted }}>
-              Profile
-            </Text>
-          </Pressable>
-        </View>
-      </View>
+      <BottomNav active={tab} onTabPress={handleTabChange} />
 
       <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
     </Screen>

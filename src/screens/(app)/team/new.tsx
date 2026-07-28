@@ -9,6 +9,7 @@ import { canUseFeature, isAtTeamLimit } from '@/data/plans';
 import type { DummyTeamOptions } from '@/data/testDataGenerator';
 import {
   useClearDummyTeamsMutation,
+  useCreateSeasonMutation,
   useCreateTeamMutation,
   useGenerateDummyTeamsMutation,
   useTeamsQuery,
@@ -30,6 +31,7 @@ export default function NewTeamScreen() {
   const navigation = useNavigation<any>();
   const colors = useThemeColors();
   const createTeam = useCreateTeamMutation();
+  const createSeason = useCreateSeasonMutation();
   const teamsQuery = useTeamsQuery();
   const genDummy = useGenerateDummyTeamsMutation();
   const clearDummy = useClearDummyTeamsMutation();
@@ -55,7 +57,20 @@ export default function NewTeamScreen() {
       setLimitMsg('You have reached the maximum number of teams for your current plan.');
       return;
     }
-    await createTeam.mutateAsync({ name: data.name, season: data.season });
+    const team = await createTeam.mutateAsync({ name: data.name, season: data.season });
+    // Events hang off a season, so every team gets one up front — the coach
+    // never sees it, they just add practices and games on the team screen.
+    try {
+      await createSeason.mutateAsync({
+        name: data.season ? `${data.name} ${data.season}` : `${data.name} Season`,
+        teamName: data.name,
+        sport: 'Hockey',
+        year: data.season,
+        teamId: team.id,
+      });
+    } catch {
+      // Non-fatal: the team exists, and its first event will create the season.
+    }
     navigation.goBack();
   });
 

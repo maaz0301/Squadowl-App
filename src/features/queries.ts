@@ -546,6 +546,80 @@ export function useAddSeasonEventMutation(seasonId: string) {
   });
 }
 
+/**
+ * Copies any team-roster player missing from the season roster across, then
+ * returns the season roster. Availability (and therefore guardian portal
+ * visibility) is keyed on season roster entries, so this is what makes a team
+ * player actually receive events.
+ */
+async function syncSeasonRosterFromTeam(teamId: string, seasonId: string) {
+  const ds = getDataSource();
+  const [teamRoster, season] = await Promise.all([
+    ds.listTeamRoster(teamId),
+    ds.getSeason(seasonId),
+  ]);
+  const alreadyOnSeason = new Set((season?.roster ?? []).map((p) => p.athleteId).filter(Boolean));
+  const missing = teamRoster.filter((p) => p.athleteId && !alreadyOnSeason.has(p.athleteId));
+  if (missing.length === 0) return season?.roster ?? [];
+
+  for (const p of missing) {
+    try {
+      await ds.addSeasonPlayer(seasonId, {
+        athleteId: p.athleteId,
+        firstName: p.first,
+        lastName: p.last,
+        jersey: p.jersey,
+      });
+    } catch (e: any) {
+      // Already on the season roster (unique athlete-per-season constraint) —
+      // that's the state we wanted, so don't fail the event that triggered this.
+      const duplicate =
+        e?.code === '23505' || /duplicate key value/i.test(e?.message ?? '');
+      if (!duplicate) throw e;
+    }
+  }
+  const refreshed = await ds.getSeason(seasonId);
+  return refreshed?.roster ?? [];
+}
+
+/**
+ * Events belong to a season, but the UI only exposes them at the team level —
+ * coaches add practices and games from the team screen and never see the season
+ * machinery. A team that has no season yet gets one silently on its first event,
+ * which also covers teams created before seasons were auto-provisioned.
+ */
+export function useAddTeamEventMutation(
+  teamId: string,
+  teamName: string,
+  seasonId: string | undefined,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (form: import('@/data/types').CreateEventForm) => {
+      let sid = seasonId;
+      if (!sid) {
+        const season = await getDataSource().createSeason({
+          name: `${teamName} Season`,
+          teamName,
+          sport: 'Hockey',
+          teamId,
+        });
+        sid = season.id;
+      }
+      // Everyone on the team's Players list is invited, so a player added to the
+      // team after the season existed still gets the event (and their guardian
+      // sees it in the portal).
+      const roster = await syncSeasonRosterFromTeam(teamId, sid);
+      await getDataSource().addSeasonEvent(sid, { ...form, playerIds: roster.map((p) => p.id) });
+      return sid;
+    },
+    onSuccess: (sid) => {
+      qc.invalidateQueries({ queryKey: queryKeys.seasons });
+      qc.invalidateQueries({ queryKey: queryKeys.season(sid) });
+    },
+  });
+}
+
 export function useUpdateSeasonEventMutation(seasonId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -919,7 +993,12 @@ export function useDeleteTeamMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => getDataSource().deleteTeam(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teams }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.teams });
+      // Deleting a team detaches its assessments and retires its season.
+      qc.invalidateQueries({ queryKey: ['tryouts'] });
+      qc.invalidateQueries({ queryKey: queryKeys.seasons });
+    },
   });
 }
 

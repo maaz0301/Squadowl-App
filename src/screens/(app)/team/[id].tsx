@@ -1,15 +1,48 @@
 import { useState } from 'react';
-import { Text, View, Alert, ScrollView, Pressable } from 'react-native';
+import { Text, View, Alert, Pressable, Platform, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Avatar, Badge, Button, Card, ErrorState, Header, Input, LoadingState, Modal, Screen } from '@/components/ui';
-import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useGenerateTestDataMutation, useClearTestDataMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useRemoveTeamRosterPlayerMutation } from '@/features/queries';
+import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
+import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useGenerateTestDataMutation, useClearTestDataMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useRemoveTeamRosterPlayerMutation, useSeasonsQuery, useSeasonQuery, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation } from '@/features/queries';
 import { useUser } from '@/state/authStore';
 import { canUseFeature } from '@/data/plans';
+import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
+import { BottomNav } from '@/components/BottomNav';
 import { DummyDataModal } from '@/components/DummyDataModal';
 import type { DummyDataOptions } from '@/data/testDataGenerator';
+
+type Rsvp = 'yes' | 'maybe' | 'no' | 'pending';
+
+const RSVP_LABEL: Record<Rsvp, string> = {
+  yes: 'Yes',
+  maybe: 'Maybe',
+  no: 'No',
+  pending: 'No reply',
+};
+
+const RSVP_VARIANT: Record<Rsvp, 'success' | 'warning' | 'danger' | 'default'> = {
+  yes: 'success',
+  maybe: 'warning',
+  no: 'danger',
+  pending: 'default',
+};
+
+function StatTile({ label, value, colors }: { label: string; value: number; colors: any }) {
+  return (
+    <View className="flex-1 rounded-xl p-3" style={{ backgroundColor: colors.tile }}>
+      <Text className="text-xl font-display font-bold" style={{ color: colors.ink }}>
+        {value}
+      </Text>
+      <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
+        {label}
+      </Text>
+    </View>
+  );
+}
 
 export default function TeamDetailScreen() {
   const route = useRoute<any>();
@@ -29,10 +62,34 @@ export default function TeamDetailScreen() {
   const [showDummy, setShowDummy] = useState(false);
   const [showAddPlayers, setShowAddPlayers] = useState(false);
   const [pickedAthletes, setPickedAthletes] = useState<Set<string>>(new Set());
+  const [showAddEvent, setShowAddEvent] = useState(false);
+  const [tab, setTab] = useState('schedule');
+  const [openRsvpEventId, setOpenRsvpEventId] = useState<string | null>(null);
 
   const rosterQuery = useTeamRosterQuery(id);
   const addRosterPlayers = useAddTeamRosterPlayersMutation(id);
   const removeRosterPlayer = useRemoveTeamRosterPlayerMutation(id);
+
+  // Events live on the season attached to this team, but that's an implementation
+  // detail — the team screen is the only place a coach touches them, and the
+  // season is provisioned for them.
+  const seasonsQuery = useSeasonsQuery();
+  const teamSeasonId = (seasonsQuery.data ?? []).find((s) => s.teamId === id)?.id;
+  const seasonQuery = useSeasonQuery(teamSeasonId);
+  const addEvent = useAddTeamEventMutation(
+    id,
+    teamsQuery.data?.find((t) => t.id === id)?.name ?? 'Team',
+    teamSeasonId,
+  );
+  const updateEvent = useUpdateSeasonEventMutation(teamSeasonId ?? '');
+  const deleteEvent = useDeleteSeasonEventMutation(teamSeasonId ?? '');
+
+  const eventForm = useForm<CreateEventForm>({
+    resolver: zodResolver(CreateEventFormSchema),
+    defaultValues: { type: 'Practice', title: '', date: '', startTime: '', location: '', playerIds: [] },
+  });
+  const eventType = eventForm.watch('type');
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
   // A team has no roster table of its own — its players are the participants of
   // the assessments linked to it. Resolve the target assessment before the early
@@ -141,6 +198,114 @@ export default function TeamDetailScreen() {
     ]);
   };
 
+  const teamSeason = seasonQuery.data;
+  const upcomingEvents = [...(teamSeason?.events ?? [])]
+    .filter((e) => e.date >= new Date().toISOString().split('T')[0])
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  // Availability is stored per invited season-roster player; the coach sees it
+  // as a Yes/Maybe/No tally that expands into the actual names.
+  const rsvpSummary = (ev: SeasonEvent) => {
+    const byId = new Map((teamSeason?.roster ?? []).map((p) => [p.id, p]));
+    const counts: Record<Rsvp, number> = { yes: 0, maybe: 0, no: 0, pending: 0 };
+    const rows = Object.entries(ev.availability ?? {}).map(([playerId, response]) => {
+      const r = (response ?? 'pending') as Rsvp;
+      counts[r] += 1;
+      const player = byId.get(playerId);
+      return {
+        playerId,
+        name: player ? `${player.firstName} ${player.lastName}` : 'Removed player',
+        response: r,
+      };
+    });
+    const order: Rsvp[] = ['yes', 'maybe', 'no', 'pending'];
+    rows.sort((a, b) => order.indexOf(a.response) - order.indexOf(b.response));
+    return { counts, rows };
+  };
+
+  const openEventModal = (kind: EventKind) => {
+    setEditingEventId(null);
+    eventForm.reset({
+      type: kind,
+      title: '',
+      date: '',
+      startTime: '',
+      endTime: '',
+      location: '',
+      notes: '',
+      playerIds: [],
+    });
+    setShowAddEvent(true);
+  };
+
+  const openEditEventModal = (ev: SeasonEvent) => {
+    setEditingEventId(ev.id);
+    eventForm.reset({
+      type: ev.type,
+      title: ev.title,
+      date: ev.date,
+      startTime: ev.startTime ?? '',
+      endTime: ev.endTime ?? '',
+      location: ev.location ?? '',
+      notes: ev.notes ?? '',
+      playerIds: [],
+    });
+    setShowAddEvent(true);
+  };
+
+  const alertMsg = (title: string, message: string) => {
+    if (Platform.OS === 'web') alert(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
+
+  const submitEvent = eventForm.handleSubmit(
+    async (data) => {
+      const [y, m, d] = data.date.split('-').map(Number);
+      const [hour, min] = (data.startTime || '00:00').split(':').map(Number);
+      if (new Date(y, m - 1, d, hour, min) < new Date()) {
+        const msg = 'Event must be scheduled from today onwards.';
+        eventForm.setError('date', { type: 'manual', message: msg });
+        alertMsg('Validation Error', msg);
+        return;
+      }
+      try {
+        if (editingEventId) {
+          await updateEvent.mutateAsync({
+            eventId: editingEventId,
+            updates: {
+              type: data.type,
+              title: data.title,
+              date: data.date,
+              startTime: data.startTime,
+              endTime: data.endTime,
+              location: data.location,
+              notes: data.notes,
+            },
+          });
+        } else {
+          await addEvent.mutateAsync(data);
+        }
+        setShowAddEvent(false);
+        setEditingEventId(null);
+      } catch (e: any) {
+        alertMsg('Error', e?.message || 'Could not save the event.');
+      }
+    },
+    (errors) => {
+      alertMsg(
+        'Validation Error',
+        errors.date?.message || errors.title?.message || 'Please check the required fields.',
+      );
+    },
+  );
+
+  const confirmDeleteEvent = (eventId: string, label: string) => {
+    Alert.alert('Delete Event', `Delete "${label}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteEvent.mutate(eventId) },
+    ]);
+  };
+
   const runDummy = async (options: DummyDataOptions) => {
     try {
       const res = await genTest.mutateAsync(options);
@@ -187,7 +352,7 @@ export default function TeamDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             await deleteTeam.mutateAsync(team.id);
-            navigation.replace('DashboardMain');
+            navigation.replace('DashboardMain', { tab: 'teams' });
           },
         },
       ]
@@ -195,142 +360,277 @@ export default function TeamDetailScreen() {
   };
 
   return (
-    <Screen scroll>
-      <Header title={team.name} showBack />
-      <Card accent className="mt-4 mb-4 gap-2">
-        {editing ? (
-          <View className="gap-3">
-            <Input label="Team name" value={name} onChangeText={setName} />
-            <Input label="Season" value={season} onChangeText={setSeason} />
-            <View className="flex-row gap-2">
-              <Button label="Save" onPress={save} loading={updateTeam.isPending} />
-              <Button label="Cancel" variant="ghost" onPress={() => setEditing(false)} />
+    <Screen padded={false}>
+      <ScrollView
+        className="flex-1 px-4"
+        contentContainerStyle={{ paddingBottom: 24 }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Header
+          title={team.name}
+          subtitle={team.season || undefined}
+          showBack
+          right={<Button label="Edit" variant="ghost" size="sm" onPress={startEdit} />}
+        />
+
+        <View className="flex-row gap-2 mt-2 mb-4">
+          <StatTile label="Players" value={teamPlayers.length} colors={colors} />
+          <StatTile label="Upcoming" value={upcomingEvents.length} colors={colors} />
+          <StatTile label="Assessments" value={linkedTryouts.length} colors={colors} />
+        </View>
+
+        <Tabs
+          tabs={[
+            { key: 'schedule', label: 'Schedule', badge: upcomingEvents.length },
+            { key: 'players', label: 'Players', badge: teamPlayers.length },
+            { key: 'assessments', label: 'Assessments', badge: linkedTryouts.length },
+            { key: 'settings', label: 'Settings' },
+          ]}
+          activeKey={tab}
+          onChange={setTab}
+          className="mb-4"
+        />
+
+        {tab === 'schedule' ? (
+          <View>
+            <View className="flex-row flex-wrap gap-2 mb-3">
+              <Button label="+ Practice" size="sm" onPress={() => openEventModal('Practice')} />
+              <Button label="+ Game" size="sm" variant="secondary" onPress={() => openEventModal('Game')} />
             </View>
+
+            {seasonsQuery.isLoading || seasonQuery.isLoading ? (
+              <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading events...</Text>
+            ) : upcomingEvents.length === 0 ? (
+              <Card className="items-center py-6 gap-1">
+                <Text className="font-bold" style={{ color: colors.ink }}>No upcoming events</Text>
+                <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
+                  Add a practice or game — everyone on the roster is invited and their guardians can
+                  RSVP from the portal.
+                </Text>
+              </Card>
+            ) : (
+              upcomingEvents.map((ev) => {
+                const rsvp = rsvpSummary(ev);
+                const expanded = openRsvpEventId === ev.id;
+                return (
+                  <Card key={ev.id} className="mb-3 gap-2">
+                    <View className="flex-row justify-between items-start">
+                      <View className="flex-1 pr-2">
+                        <Text className="font-bold text-base" style={{ color: colors.ink }}>
+                          {ev.title}
+                        </Text>
+                        <Text className="text-sm mt-0.5" style={{ color: colors.inkMuted }}>
+                          {ev.date}
+                          {ev.startTime ? ` · ${ev.startTime}` : ''}
+                          {ev.location ? ` · ${ev.location}` : ''}
+                        </Text>
+                      </View>
+                      <Badge label={ev.type} variant={ev.type === 'Game' ? 'brand' : 'info'} />
+                    </View>
+
+                    <Pressable
+                      onPress={() => setOpenRsvpEventId(expanded ? null : ev.id)}
+                      className="flex-row items-center gap-2 py-1"
+                      hitSlop={6}
+                    >
+                      <Badge label={`${rsvp.counts.yes} yes`} variant="success" />
+                      <Badge label={`${rsvp.counts.maybe} maybe`} variant="warning" />
+                      <Badge label={`${rsvp.counts.no} no`} variant="danger" />
+                      {rsvp.counts.pending > 0 ? (
+                        <Badge label={`${rsvp.counts.pending} pending`} />
+                      ) : null}
+                      <Text className="text-xs font-bold ml-auto" style={{ color: colors.primary }}>
+                        {expanded ? 'Hide' : 'Who?'}
+                      </Text>
+                    </Pressable>
+
+                    {expanded ? (
+                      <View className="rounded-md border" style={{ borderColor: colors.border }}>
+                        {rsvp.rows.length === 0 ? (
+                          <Text className="text-xs p-3" style={{ color: colors.inkMuted }}>
+                            Nobody was invited to this event yet.
+                          </Text>
+                        ) : (
+                          rsvp.rows.map((r, i) => (
+                            <View
+                              key={r.playerId}
+                              className="flex-row items-center justify-between px-3 py-2"
+                              style={{
+                                borderTopWidth: i === 0 ? 0 : 1,
+                                borderTopColor: colors.border,
+                              }}
+                            >
+                              <Text className="text-sm flex-1 pr-2" style={{ color: colors.ink }}>
+                                {r.name}
+                              </Text>
+                              <Badge label={RSVP_LABEL[r.response]} variant={RSVP_VARIANT[r.response]} />
+                            </View>
+                          ))
+                        )}
+                      </View>
+                    ) : null}
+
+                    <View className="flex-row gap-2">
+                      <Button label="Edit" variant="secondary" size="sm" onPress={() => openEditEventModal(ev)} />
+                      <Button
+                        label="Delete"
+                        variant="ghost"
+                        size="sm"
+                        onPress={() => confirmDeleteEvent(ev.id, ev.title)}
+                      />
+                    </View>
+                  </Card>
+                );
+              })
+            )}
+          </View>
+        ) : tab === 'players' ? (
+          <View>
+            <Button
+              label="Add Players from Assessments"
+              size="sm"
+              className="mb-3 self-start"
+              onPress={() => {
+                setPickedAthletes(new Set());
+                setShowAddPlayers(true);
+              }}
+            />
+            {rosterQuery.isLoading ? (
+              <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading roster...</Text>
+            ) : teamPlayers.length === 0 ? (
+              <Card className="items-center py-6 gap-1">
+                <Text className="font-bold" style={{ color: colors.ink }}>No players yet</Text>
+                <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
+                  Pull players in from any assessment roster to build this team.
+                </Text>
+              </Card>
+            ) : (
+              teamPlayers.map((p) => (
+                <Card key={p.id} className="mb-2 flex-row items-center gap-3">
+                  <Avatar first={p.first} last={p.last} size={36} pos={p.pos} />
+                  <View className="flex-1">
+                    <Text className="font-bold" style={{ color: colors.ink }}>
+                      {p.first} {p.last}
+                    </Text>
+                    <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
+                      {[p.jersey ? `#${p.jersey}` : null, p.pos, p.sourceTryoutName].filter(Boolean).join(' · ')}
+                    </Text>
+                  </View>
+                  <Button
+                    label="Remove"
+                    size="sm"
+                    variant="ghost"
+                    onPress={() => confirmRemovePlayer(p.athleteId, `${p.first} ${p.last}`)}
+                  />
+                </Card>
+              ))
+            )}
+          </View>
+        ) : tab === 'assessments' ? (
+          <View>
+            <View className="flex-row gap-2 mb-3">
+              <Button
+                label="Create"
+                size="sm"
+                className="flex-1"
+                onPress={() => navigation.navigate('NewAssessment', { teamId: team.id })}
+              />
+              <Button
+                label="Attach Existing"
+                variant="secondary"
+                size="sm"
+                className="flex-1"
+                onPress={() => setShowAttachModal(true)}
+              />
+            </View>
+            {linkedTryouts.length === 0 ? (
+              <Card className="items-center py-6 gap-1">
+                <Text className="font-bold" style={{ color: colors.ink }}>No assessments linked</Text>
+                <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
+                  Create a tryout or evaluation for this team, or attach one you already have.
+                </Text>
+              </Card>
+            ) : (
+              linkedTryouts.map((t) => (
+                <Pressable
+                  key={t.id}
+                  onPress={() =>
+                    navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: t.id } })
+                  }
+                >
+                  <Card className="mb-2 flex-row items-center justify-between">
+                    <View className="flex-1 pr-2">
+                      <Text className="font-bold" style={{ color: colors.ink }}>{t.name}</Text>
+                      <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
+                        {t.sport} · {t.eventType} · {t.roster?.length ?? 0} players
+                      </Text>
+                    </View>
+                    <Badge label="Open" variant="brand" />
+                  </Card>
+                </Pressable>
+              ))
+            )}
           </View>
         ) : (
-          <>
-            <Text className="text-xl font-display font-bold" style={{ color: colors.ink }}>
-              {team.name}
-            </Text>
-            {team.season ? (
-              <Text style={{ color: colors.inkMuted }}>{team.season}</Text>
+          <View>
+            <Card className="mb-3 gap-2">
+              <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                Team
+              </Text>
+              <Button label="Edit Team Details" variant="secondary" size="sm" onPress={startEdit} />
+            </Card>
+
+            {isAssociation ? (
+              <Card className="mb-3 gap-2">
+                <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                  Testing Tools
+                </Text>
+                {dummyTarget ? (
+                  <>
+                    <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                      Generate dummy players — optionally scored — into{' '}
+                      <Text className="font-bold">{dummyTarget.name}</Text>. They appear under Players.
+                    </Text>
+                    <View className="flex-row flex-wrap gap-2 mt-1">
+                      <Button label="Dummy Players" size="sm" onPress={() => setShowDummy(true)} />
+                      <Button
+                        label="Clear Dummy Data"
+                        size="sm"
+                        variant="ghost"
+                        loading={clearTest.isPending}
+                        onPress={runClearDummy}
+                      />
+                    </View>
+                  </>
+                ) : (
+                  <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                    Link an assessment to this team first — dummy players are added to an assessment's
+                    roster, which is what fills the Players list.
+                  </Text>
+                )}
+              </Card>
             ) : null}
-            <Badge label={`${linkedTryouts.length} assessments`} variant="brand" />
-            <Button label="Edit Team" variant="secondary" size="sm" onPress={startEdit} />
-          </>
-        )}
-      </Card>
 
-      <Text className="font-display font-bold mb-2" style={{ color: colors.ink }}>
-        Linked Assessments
-      </Text>
-      {linkedTryouts.length === 0 ? (
-        <Text style={{ color: colors.inkMuted }}>No assessments linked to this team yet.</Text>
-      ) : (
-        linkedTryouts.map((t) => (
-          <Card key={t.id} className="mb-2">
-            <Button
-              label={t.name}
-              variant="ghost"
-              onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: t.id } })}
-            />
-          </Card>
-        ))
-      )}
-
-      <View className="flex-row gap-2 mt-4">
-        <Button
-          label="Create Assessment"
-          className="flex-1"
-          onPress={() => navigation.navigate('NewAssessment')}
-        />
-        <Button
-          label="Attach Assessment"
-          variant="secondary"
-          className="flex-1"
-          onPress={() => setShowAttachModal(true)}
-        />
-      </View>
-
-      <View className="flex-row items-center justify-between mt-6 mb-2">
-        <Text className="font-display font-bold" style={{ color: colors.ink }}>
-          Players
-        </Text>
-        <Badge label={`${teamPlayers.length}`} variant={teamPlayers.length ? 'brand' : 'default'} />
-      </View>
-      {rosterQuery.isLoading ? (
-        <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading roster...</Text>
-      ) : teamPlayers.length === 0 ? (
-        <Text className="text-sm" style={{ color: colors.inkMuted }}>
-          No players on this team yet — add them from any assessment below.
-        </Text>
-      ) : (
-        teamPlayers.map((p) => (
-          <Card key={p.id} className="mb-2 flex-row items-center gap-3">
-            <Avatar first={p.first} last={p.last} size={36} pos={p.pos} />
-            <View className="flex-1">
-              <Text className="font-bold" style={{ color: colors.ink }}>
-                {p.first} {p.last}
+            <Card className="gap-2">
+              <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.danger }}>
+                Danger Zone
               </Text>
-              <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
-                {[p.jersey ? `#${p.jersey}` : null, p.pos, p.sourceTryoutName].filter(Boolean).join(' · ')}
-              </Text>
-            </View>
-            <Button
-              label="Remove"
-              size="sm"
-              variant="ghost"
-              onPress={() => confirmRemovePlayer(p.athleteId, `${p.first} ${p.last}`)}
-            />
-          </Card>
-        ))
-      )}
-
-      <Button
-        label="Add Players from Assessments"
-        variant="secondary"
-        className="mt-2"
-        onPress={() => {
-          setPickedAthletes(new Set());
-          setShowAddPlayers(true);
-        }}
-      />
-
-      {isAssociation ? (
-        <Card className="mt-6 gap-2">
-          <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-            Testing Tools
-          </Text>
-          {dummyTarget ? (
-            <>
               <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                Generate dummy players — optionally scored — into{' '}
-                <Text className="font-bold">{dummyTarget.name}</Text>. They appear in Players above.
+                Deleting a team removes its roster, schedule, and links to assessments.
               </Text>
-              <View className="flex-row flex-wrap gap-2 mt-1">
-                <Button label="Dummy Players" size="sm" onPress={() => setShowDummy(true)} />
-                <Button
-                  label="Clear Dummy Data"
-                  size="sm"
-                  variant="ghost"
-                  loading={clearTest.isPending}
-                  onPress={runClearDummy}
-                />
-              </View>
-            </>
-          ) : (
-            <Text className="text-xs" style={{ color: colors.inkMuted }}>
-              Link an assessment to this team first — dummy players are added to an assessment's
-              roster, which is what fills the Players list above.
-            </Text>
-          )}
-        </Card>
-      ) : null}
+              <Button label="Delete Team" variant="danger" size="sm" onPress={handleDelete} loading={deleteTeam.isPending} />
+            </Card>
+          </View>
+        )}
+      </ScrollView>
 
-      <Card className="mt-6 gap-2">
-        <Text className="font-bold" style={{ color: colors.danger }}>Danger Zone</Text>
-        <Button label="Delete Team" variant="danger" onPress={handleDelete} loading={deleteTeam.isPending} />
-      </Card>
+      <Modal visible={editing} title="Edit Team" onClose={() => setEditing(false)}>
+        <View className="gap-3">
+          <Input label="Team name" value={name} onChangeText={setName} />
+          <Input label="Season" value={season} onChangeText={setSeason} />
+          <Button label="Save Changes" onPress={save} loading={updateTeam.isPending} />
+        </View>
+      </Modal>
 
       <Modal visible={showAttachModal} title="Attach Assessment" onClose={() => setShowAttachModal(false)}>
         <View style={{ gap: 2 }}>
@@ -452,6 +752,61 @@ export default function TeamDetailScreen() {
         )}
       </Modal>
 
+      <Modal
+        visible={showAddEvent}
+        title={editingEventId ? `Edit ${eventType}` : `Add ${eventType}`}
+        onClose={() => {
+          setShowAddEvent(false);
+          setEditingEventId(null);
+        }}
+      >
+        <View className="gap-3">
+          <View className="flex-row flex-wrap">
+            {EVENT_KINDS.map((t) => (
+              <Chip key={t} label={t} active={eventType === t} onPress={() => eventForm.setValue('type', t)} />
+            ))}
+          </View>
+          <Controller
+            control={eventForm.control}
+            name="title"
+            render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
+              <Input label="Title" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
+            )}
+          />
+          <Controller
+            control={eventForm.control}
+            name="date"
+            render={({ field: { onChange, value }, fieldState: { error } }) => (
+              <DateField label="Date" value={value} onChange={onChange} placeholder="Select a date" error={error?.message} disablePast />
+            )}
+          />
+          <Controller
+            control={eventForm.control}
+            name="startTime"
+            render={({ field: { onChange, value }, fieldState: { error } }) => (
+              <TimeField label="Start Time" value={value} onChange={onChange} placeholder="Select a time" error={error?.message} disablePast dateValue={eventForm.watch('date')} />
+            )}
+          />
+          <Controller
+            control={eventForm.control}
+            name="location"
+            render={({ field: { onChange, onBlur, value } }) => (
+              <Input label="Location" onBlur={onBlur} onChangeText={onChange} value={value} />
+            )}
+          />
+          {editingEventId ? null : (
+            <Text className="text-xs" style={{ color: colors.inkMuted }}>
+              Everyone on the roster is invited by default.
+            </Text>
+          )}
+          <Button
+            label={editingEventId ? 'Update Event' : 'Save Event'}
+            onPress={submitEvent}
+            loading={addEvent.isPending || updateEvent.isPending}
+          />
+        </View>
+      </Modal>
+
       <DummyDataModal
         variant="assessment"
         visible={showDummy}
@@ -469,6 +824,8 @@ export default function TeamDetailScreen() {
         onClose={() => setShowDummy(false)}
         onSubmit={runDummy}
       />
+
+      <BottomNav active="teams" />
     </Screen>
   );
 }

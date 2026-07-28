@@ -821,6 +821,11 @@ export class SupabaseDataSource implements DataSource {
 
   async deleteTeam(id: string): Promise<void> {
     const { supabase } = await this.ctx();
+    // Assessments outlive the team they were grouped under — detach them so they
+    // show up as unlinked and can be attached to another team.
+    unwrap(await supabase.from('tryouts').update({ team_id: null }).eq('team_id', id).select());
+    // The team's schedule goes with it; a new team provisions its own season.
+    unwrap(await supabase.from('seasons').update({ archived: true }).eq('team_id', id).select());
     unwrap(await supabase.from('teams').update({ archived: true }).eq('id', id).select().maybeSingle());
   }
 
@@ -2211,6 +2216,9 @@ export class SupabaseDataSource implements DataSource {
     const myInvites = invites.filter((i) => i.athlete_id === a.id);
     return {
       id: r.id,
+      // Callers dedupe roster entries by athlete (e.g. syncing a team roster
+      // into a season), so this has to survive the mapping.
+      athleteId: a.id ?? r.athlete_id ?? undefined,
       firstName: a.first_name ?? '',
       lastName: a.last_name ?? '',
       jersey: r.jersey ?? undefined,

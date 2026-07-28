@@ -6,6 +6,7 @@ buildscript {
         targetSdkVersion = 36
         ndkVersion = "27.1.12297006"
         kotlinVersion = "2.1.20"
+        media3Version = "1.4.1"
     }
     repositories {
         google()
@@ -16,6 +17,24 @@ buildscript {
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
         classpath("com.google.gms:google-services:4.4.1")
+    }
+}
+
+allprojects {
+    configurations.all {
+        resolutionStrategy {
+            force "androidx.media3:media3-exoplayer:1.4.1"
+            force "androidx.media3:media3-exoplayer-dash:1.4.1"
+            force "androidx.media3:media3-exoplayer-hls:1.4.1"
+            force "androidx.media3:media3-exoplayer-smoothstreaming:1.4.1"
+            force "androidx.media3:media3-exoplayer-rtsp:1.4.1"
+            force "androidx.media3:media3-ui:1.4.1"
+            force "androidx.media3:media3-common:1.4.1"
+            force "androidx.media3:media3-datasource:1.4.1"
+            force "androidx.media3:media3-datasource-okhttp:1.4.1"
+            force "androidx.media3:media3-decoder:1.4.1"
+            force "androidx.media3:media3-session:1.4.1"
+        }
     }
 }
 
