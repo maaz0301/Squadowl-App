@@ -208,16 +208,18 @@ export default function TeamDetailScreen() {
   const rsvpSummary = (ev: SeasonEvent) => {
     const byId = new Map((teamSeason?.roster ?? []).map((p) => [p.id, p]));
     const counts: Record<Rsvp, number> = { yes: 0, maybe: 0, no: 0, pending: 0 };
-    const rows = Object.entries(ev.availability ?? {}).map(([playerId, response]) => {
-      const r = (response ?? 'pending') as Rsvp;
-      counts[r] += 1;
-      const player = byId.get(playerId);
-      return {
-        playerId,
-        name: player ? `${player.firstName} ${player.lastName}` : 'Removed player',
-        response: r,
-      };
-    });
+    const rows = Object.entries(ev.availability ?? {})
+      .filter(([playerId]) => byId.has(playerId))
+      .map(([playerId, response]) => {
+        const r = (response ?? 'pending') as Rsvp;
+        counts[r] += 1;
+        const player = byId.get(playerId)!;
+        return {
+          playerId,
+          name: `${player.firstName} ${player.lastName}`,
+          response: r,
+        };
+      });
     const order: Rsvp[] = ['yes', 'maybe', 'no', 'pending'];
     rows.sort((a, b) => order.indexOf(a.response) - order.indexOf(b.response));
     return { counts, rows };
