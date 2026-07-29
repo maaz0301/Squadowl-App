@@ -24,13 +24,27 @@ serve(async (req: Request) => {
     });
 
     if (existingUserId) {
-      // User exists — update their password using the official admin API
+      // User exists — check existing metadata to preserve their staff role if present
+      const { data: userData } = await supabaseAdmin.auth.admin.getUserById(existingUserId);
+      const existingMeta = userData?.user?.user_metadata || {};
+
+      // Any existing non-guardian account_type (admin/coach/assessor/owner) wins: linking
+      // an existing staff user as a guardian must never downgrade their access.
+      const existingType = existingMeta.account_type;
+      const finalAccountType = existingType && existingType !== 'guardian'
+        ? existingType
+        : effectiveAccountType;
+
       const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
         existingUserId,
         {
           password,
           email_confirm: true,
-          user_metadata: { display_name: display_name, account_type: effectiveAccountType },
+          user_metadata: {
+            ...existingMeta,
+            display_name: display_name || existingMeta.display_name || 'User',
+            account_type: finalAccountType,
+          },
         }
       );
 

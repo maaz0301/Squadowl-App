@@ -154,9 +154,15 @@ export class SupabaseDataSource implements DataSource {
         .order('created_at', { ascending: true });
       const memberships = m.data ?? [];
 
-      // Prefer a non-owner membership (e.g. guardian in a coach's org) over the user's own account
-      const nonOwner = memberships.find((r: any) => r.role !== 'owner');
-      const accId: string | null = nonOwner?.account_id ?? memberships[0]?.account_id ?? null;
+      // Pick the highest-privilege membership. Writes are gated by RLS on
+      // has_account_role(account_id, ['owner','admin','coach']), so a staff user who is
+      // *also* a guardian/assessor somewhere must still resolve to the account they can
+      // write to. Only a pure guardian falls through to the coach's org.
+      const RANK: Record<string, number> = { admin: 0, coach: 1, owner: 2, assessor: 3, guardian: 4 };
+      const best = [...memberships].sort(
+        (a: any, b: any) => (RANK[a.role] ?? 99) - (RANK[b.role] ?? 99),
+      )[0];
+      const accId: string | null = best?.account_id ?? null;
       if (!accId) throw new Error('No account for user');
       this.accountId = accId;
     }
@@ -398,10 +404,11 @@ export class SupabaseDataSource implements DataSource {
       ? membership.accounts[0]
       : (membership?.accounts as Row | undefined);
 
-    const rawRole = membership?.role;
+    const { data: uData } = await supabase.auth.getUser();
+    const metaAccountType = uData?.user?.user_metadata?.account_type;
+    const rawRole = membership?.role ?? metaAccountType ?? 'coach';
     const role = rawRole === 'owner' ? 'admin' : rawRole;
 
-    const { data: uData } = await supabase.auth.getUser();
     const emailVerified = uData?.user?.email_confirmed_at != null || uData?.user?.confirmed_at != null || !uData?.user;
 
     const result = {
@@ -1117,6 +1124,12 @@ export class SupabaseDataSource implements DataSource {
             } catch (emailErr) {
               console.warn('Failed to send auto-created guardian invite email:', emailErr);
             }
+          }
+        } else {
+          // User already exists (e.g. an existing coach account) — link guardian_user_id without touching password or role!
+          const { data: existingId } = await supabase.rpc('get_user_id_by_email', { lookup_email: fields.guardian_email });
+          if (existingId) {
+            fields.guardian_user_id = typeof existingId === 'object' && existingId !== null ? (existingId as any).id || existingId : existingId;
           }
         }
       } catch (err) {
@@ -2947,7 +2960,7 @@ export class SupabaseDataSource implements DataSource {
       try {
         const body = await error.context?.json();
         if (body?.error) detail = body.error;
-      } catch (_) {}
+      } catch (_) { }
       throw new Error(detail || error.message || 'Failed to create checkout session');
     }
     if (data?.error) throw new Error(data.error);
@@ -2962,7 +2975,7 @@ export class SupabaseDataSource implements DataSource {
       try {
         const body = await error.context?.json();
         if (body?.error) detail = body.error;
-      } catch (_) {}
+      } catch (_) { }
       throw new Error(detail || error.message || 'Failed to open portal session');
     }
     if (data?.error) throw new Error(data.error);
@@ -3069,7 +3082,9 @@ export class SupabaseDataSource implements DataSource {
           existing.userId = a.guardian_user_id;
           existing.status = 'active';
         }
-        existing.role = 'guardian';
+        if (!existing.role) {
+          existing.role = 'guardian';
+        }
       }
     }
 
@@ -3219,10 +3234,23 @@ export class SupabaseDataSource implements DataSource {
   async linkGuardianToAthlete(guardianId: string, tryoutId: string, playerId: string): Promise<import('../types').Player> {
     const { supabase } = await this.ctx();
 
+    // 1. Resolve actual athlete_id (playerId could be tryout_participant.id or athlete.id)
+    let athleteId = playerId;
+    const { data: tpCheck } = await supabase
+      .from('tryout_participants')
+      .select('id, athlete_id')
+      .or(`id.eq.${playerId},athlete_id.eq.${playerId}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (tpCheck?.athlete_id) {
+      athleteId = tpCheck.athlete_id;
+    }
+
     const { data, error } = await supabase
       .from('athletes')
       .update({ guardian_user_id: guardianId })
-      .eq('id', playerId)
+      .eq('id', athleteId)
       .select(`
         id,
         first_name,
@@ -3234,7 +3262,8 @@ export class SupabaseDataSource implements DataSource {
         guardian_phone,
         guardian_user_id
       `)
-      .single();
+      .limit(1)
+      .maybeSingle();
 
     if (error) throw error;
 
@@ -3255,24 +3284,26 @@ export class SupabaseDataSource implements DataSource {
           guardian_user_id
         )
       `)
-      .eq('athlete_id', playerId)
+      .eq('athlete_id', athleteId)
       .eq('tryout_id', tryoutId)
-      .single();
+      .limit(1)
+      .maybeSingle();
 
     if (fetchError) throw fetchError;
 
-    const ath = Array.isArray(updatedPlayer.athletes) ? updatedPlayer.athletes[0] : updatedPlayer.athletes;
+    const tp: any = updatedPlayer || {};
+    const ath: any = Array.isArray(tp.athletes) ? tp.athletes[0] : (tp.athletes || data || {});
 
     return {
-      id: ath.id,
-      first: ath.first_name,
-      last: ath.last_name,
-      pos: updatedPlayer.position,
-      jersey: updatedPlayer.jersey,
+      id: tp.id || athleteId,
+      first: ath.first_name || '',
+      last: ath.last_name || '',
+      pos: tp.position || ath.default_position,
+      jersey: tp.jersey,
       guardianName: ath.guardian_name,
       guardianEmail: ath.guardian_email,
       linkedGuardianId: ath.guardian_user_id,
-      athleteId: ath.id,
+      athleteId: ath.id || athleteId,
     } as import('../types').Player;
   }
 

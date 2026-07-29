@@ -38,10 +38,15 @@ BEGIN
   SELECT id INTO existing_user_id FROM auth.users WHERE auth.users.email = create_user_with_password.email;
 
   IF existing_user_id IS NOT NULL THEN
-    -- Update the password and metadata for the existing user
-    UPDATE auth.users 
+    -- Update the password and metadata for the existing user (preserve staff account_type)
+    UPDATE auth.users
     SET encrypted_password = extensions.crypt(password, extensions.gen_salt('bf')),
-        raw_user_meta_data = raw_user_meta_data || jsonb_build_object('display_name', display_name, 'account_type', account_type),
+        raw_user_meta_data = CASE
+          WHEN COALESCE(raw_user_meta_data->>'account_type', '') NOT IN ('', 'guardian') THEN
+            raw_user_meta_data || jsonb_build_object('display_name', COALESCE(display_name, raw_user_meta_data->>'display_name'))
+          ELSE
+            raw_user_meta_data || jsonb_build_object('display_name', display_name, 'account_type', account_type)
+        END,
         email_confirmed_at = COALESCE(email_confirmed_at, now()),
         updated_at = now()
     WHERE id = existing_user_id;
