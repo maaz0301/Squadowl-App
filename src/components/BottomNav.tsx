@@ -4,6 +4,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { usePermissions } from '@/state/authStore';
 
 export type BottomNavKey = 'assessments' | 'teams' | 'profile';
 
@@ -34,6 +35,11 @@ export function BottomNav({ active, onTabPress }: BottomNavProps) {
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
+  const { isGuardian, role } = usePermissions();
+
+  if (isGuardian || role === 'guardian') {
+    return null;
+  }
 
   const press = (key: BottomNavKey) => {
     if (key === 'profile') {
