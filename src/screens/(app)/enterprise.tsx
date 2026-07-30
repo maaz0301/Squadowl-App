@@ -16,7 +16,6 @@ import type { Tryout } from '@/data/types';
 
 const ENT_TABS = [
   { key: 'overview', label: 'Overview' },
-  { key: 'financials', label: 'Financials' },
   { key: 'actions', label: 'Actions' },
   { key: 'members', label: 'Members' },
 ] as const;
@@ -327,70 +326,7 @@ export default function EnterpriseScreen() {
         </ScrollView>
       ) : null}
 
-      {tab === 'financials' ? (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
-          <View className="flex-row flex-wrap gap-2 mb-4">
-            <Stat
-              label="Collected"
-              value={money(finance.collected)}
-              hint={`${finance.paidCount} payments`}
-              tone={colors.success}
-            />
-            <Stat
-              label="Pending"
-              value={money(finance.pending)}
-              hint={`${finance.pendingCount} outstanding`}
-              tone={colors.warning}
-            />
-            <Stat label="Refunded" value={money(finance.refunded)} tone={colors.danger} />
-          </View>
 
-          {finance.collected + finance.pending > 0 ? (
-            <Card className="mb-4 gap-3">
-              <Text className="font-display font-bold" style={{ color: colors.ink }}>
-                Collection Rate
-              </Text>
-              <ShareBar
-                parts={[
-                  { label: 'Collected', value: finance.collected, color: colors.success },
-                  { label: 'Outstanding', value: finance.pending, color: colors.warning },
-                ]}
-              />
-            </Card>
-          ) : null}
-
-          <Text className="text-md font-display font-bold mb-3" style={{ color: colors.ink }}>
-            Payment Ledger
-          </Text>
-          {finance.rows.length === 0 ? (
-            <Text className="text-sm" style={{ color: colors.inkMuted }}>
-              No payments recorded yet.
-            </Text>
-          ) : (
-            finance.rows.map((item) => (
-              <Card key={item.id} className="mb-2 flex-row justify-between items-center">
-                <View className="flex-1 pr-2">
-                  <Text className="font-bold" style={{ color: colors.ink }}>
-                    {item.playerName}
-                  </Text>
-                  <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                    {item.assessmentName}
-                  </Text>
-                </View>
-                <View className="items-end gap-1">
-                  <Text className="font-display font-bold" style={{ color: colors.ink }}>
-                    {money(item.amount)}
-                  </Text>
-                  <Badge
-                    label={item.status}
-                    variant={item.status === 'paid' ? 'success' : item.status === 'pending' ? 'warning' : 'danger'}
-                  />
-                </View>
-              </Card>
-            ))
-          )}
-        </ScrollView>
-      ) : null}
 
       {tab === 'actions' ? (
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
