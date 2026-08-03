@@ -14,6 +14,7 @@ interface ScorePadProps {
   minVal?: number;
   maxVal?: number;
   value?: number;
+  rankingDirection?: import('@/data/types').RankingDirection;
   onChange: (value: number) => void;
 }
 
@@ -25,6 +26,7 @@ export function ScorePad({
   minVal,
   maxVal,
   value,
+  rankingDirection,
   onChange,
 }: ScorePadProps) {
   const colors = useThemeColors();
@@ -35,8 +37,9 @@ export function ScorePad({
   }, [value]);
 
   if (scoringType && scoringType !== 'skill') {
-    const unitText = unit ? unit : (scoringType === 'time' ? 'sec' : scoringType === 'speed' ? 'mph' : 'ft');
-    const ruleText = scoringType === 'time' ? 'Shortest time = highest score' : scoringType === 'speed' ? 'Fastest speed = highest score' : 'Largest distance = highest score';
+    const unitText = unit ? unit : '';
+    const isLower = rankingDirection === 'lower_is_better' || (scoringType === 'time' && !rankingDirection);
+    const ruleText = isLower ? 'Shortest / lowest number = highest score' : 'Largest / highest number = highest score';
 
     const parsed = parseFloat(textVal);
     const calculatedScore = !isNaN(parsed) && minVal != null && maxVal != null

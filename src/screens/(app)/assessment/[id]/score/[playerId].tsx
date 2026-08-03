@@ -459,6 +459,7 @@ export default function ScoreScreen() {
                 label={s.label}
                 scale={s.scale}
                 scoringType={s.scoringType}
+                rankingDirection={s.rankingDirection}
                 unit={s.unit}
                 minVal={s.minVal}
                 maxVal={s.maxVal}

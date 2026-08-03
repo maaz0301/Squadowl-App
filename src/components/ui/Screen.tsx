@@ -1,5 +1,6 @@
-import { KeyboardAvoidingView, Platform, ScrollView, View, type ViewProps } from 'react-native';
+import { Platform, View, type ViewProps, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { cn } from '@/lib/cn';
 
@@ -35,21 +36,24 @@ export function Screen({
   );
 
   const mainView = scroll ? (
-    <ScrollView
+    <KeyboardAwareScrollView
       className="flex-1"
       contentContainerStyle={{ flexGrow: 1, paddingBottom: 32 }}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
+      enableOnAndroid={true}
+      extraScrollHeight={Platform.OS === 'ios' ? 20 : 0}
+      viewIsInsideTabBar={true}
     >
       {innerContent}
-    </ScrollView>
+    </KeyboardAwareScrollView>
   ) : (
     innerContent
   );
 
   return (
     <SafeAreaView className="flex-1" edges={edges} style={{ backgroundColor: colors.bg }}>
-      {keyboardAvoiding ? (
+      {!scroll && keyboardAvoiding ? (
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
