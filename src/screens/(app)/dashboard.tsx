@@ -13,6 +13,7 @@ import {
   ErrorState,
   Header,
   LoadingState,
+  Modal,
   Screen,
 } from '@/components/ui';
 import { BottomNav } from '@/components/BottomNav';
@@ -26,6 +27,9 @@ import {
   useRejectAssignmentMutation,
   useGuardianRostersQuery,
   useProfileQuery,
+  useDeleteTeamMutation,
+  useDeleteTryoutMutation,
+  useArchiveTryoutMutation,
 } from '@/features/queries';
 import { APP_CONFIG } from '@/config/app';
 import { canUseFeature, isAtAssessmentLimit } from '@/data/plans';
@@ -60,17 +64,41 @@ export default function DashboardScreen() {
     });
   };
 
+  const { isGuardian } = usePermissions();
+  const isGuardianOnly = isGuardian;
+
   const [combineMode, setCombineMode] = useState(false);
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
   const [assignedExpanded, setAssignedExpanded] = useState(true);
+  const [actionTryout, setActionTryout] = useState<{ id: string; name: string } | null>(null);
+  const [myAthletesExpanded, setMyAthletesExpanded] = useState(isGuardianOnly);
 
   const teamsQuery = useTeamsQuery();
   const tryoutsQuery = useTryoutsQuery(false);
   const assignedQuery = useAssignedTryoutsQuery();
   const guardianQuery = useGuardianRostersQuery();
+  const deleteTeam = useDeleteTeamMutation();
+  const deleteTryout = useDeleteTryoutMutation();
+  const archiveTryout = useArchiveTryoutMutation();
 
-  const { isGuardian } = usePermissions();
-  const isGuardianOnly = isGuardian;
+  const handleDeleteTeam = (id: string, name: string) => {
+    Alert.alert(
+      'Delete Team',
+      `Are you sure you want to delete "${name}"? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteTeam.mutate(id),
+        },
+      ]
+    );
+  };
+
+  const handleDeleteAssessment = (id: string, name: string) => {
+    setActionTryout({ id, name });
+  };
 
   const openAssigned = (id: string) => {
     setCurrentTryout(id);
@@ -139,14 +167,34 @@ export default function DashboardScreen() {
       return (
         <Pressable onPress={() => navigation.navigate('TeamDetail', { id: item.id })}>
           <Card className="mb-3">
-            <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
-              {item.name}
-            </Text>
-            {item.season ? (
-              <Text className="text-sm mt-1" style={{ color: colors.inkMuted }}>
-                {item.season}
-              </Text>
-            ) : null}
+            <View className="flex-row justify-between items-center">
+              <View className="flex-1 flex-row items-center">
+                {item.logoUrl ? (
+                  <View className="mr-4">
+                    <Avatar uri={item.logoUrl} first="T" last="M" size={48} />
+                  </View>
+                ) : null}
+                <View className="flex-1">
+                  <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
+                    {item.name}
+                  </Text>
+                  {item.season ? (
+                    <Text className="text-sm mt-0.5" style={{ color: colors.inkMuted }}>
+                      {item.season}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+              <Pressable
+                onPress={() => handleDeleteTeam(item.id, item.name)}
+                hitSlop={8}
+                className="p-1"
+              >
+                <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                  <Path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" stroke={colors.danger} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+              </Pressable>
+            </View>
           </Card>
         </Pressable>
       );
@@ -158,7 +206,7 @@ export default function DashboardScreen() {
       <Pressable onPress={() => openTryout(item.id)}>
         <Card accent={selected || combineMode} className="mb-3">
           <View className="flex-row justify-between items-start">
-            <View className="flex-1">
+            <View className="flex-1 pr-2">
               <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
                 {item.name}
               </Text>
@@ -171,8 +219,19 @@ export default function DashboardScreen() {
                 </Text>
               ) : null}
             </View>
-            <View className="items-end gap-1">
-              <Badge label={`${item.roster?.length ?? 0} players`} />
+            <View className="items-end gap-2">
+              <View className="flex-row items-center gap-2">
+                <Badge label={`${item.roster?.length ?? 0} players`} />
+                <Pressable
+                  onPress={() => handleDeleteAssessment(item.id, item.name)}
+                  hitSlop={8}
+                  className="p-1"
+                >
+                  <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                    <Path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" stroke={colors.danger} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                </Pressable>
+              </View>
               {selected ? <Badge label="Selected" variant="brand" /> : null}
             </View>
           </View>
@@ -282,9 +341,9 @@ export default function DashboardScreen() {
                 >
                   Overview & Jump Points
                 </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-4 px-4 flex-row gap-3">
-                  <Pressable onPress={() => handleTabChange('assessments')} className="mr-2">
-                    <Card accent={tab === 'assessments'} className="w-36 gap-1 p-3">
+                <View className="flex-row gap-3">
+                  <Pressable onPress={() => handleTabChange('assessments')} className="flex-1">
+                    <Card accent={tab === 'assessments'} className="gap-1 p-3">
                       <View className="flex-row justify-between items-center">
                         <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
                           <Path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" stroke={colors.primary} strokeWidth={2} strokeLinecap="round" />
@@ -300,8 +359,8 @@ export default function DashboardScreen() {
                     </Card>
                   </Pressable>
 
-                  <Pressable onPress={() => handleTabChange('teams')} className="mr-2">
-                    <Card accent={tab === 'teams'} className="w-36 gap-1 p-3">
+                  <Pressable onPress={() => handleTabChange('teams')} className="flex-1">
+                    <Card accent={tab === 'teams'} className="gap-1 p-3">
                       <View className="flex-row justify-between items-center">
                         <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
                           <Path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" stroke={colors.primary} strokeWidth={2} strokeLinecap="round" />
@@ -316,8 +375,7 @@ export default function DashboardScreen() {
                       </Text>
                     </Card>
                   </Pressable>
-
-                </ScrollView>
+                </View>
               </View>
             )}
 
@@ -368,44 +426,87 @@ export default function DashboardScreen() {
             {/* Guardian View */}
             {guardianQuery.data && guardianQuery.data.length > 0 ? (
               <View className="mb-4">
-                <Text
-                  className="text-xs font-bold uppercase tracking-wider mb-2"
-                  style={{ color: colors.inkMuted }}
+                <Pressable
+                  onPress={() => setMyAthletesExpanded(!myAthletesExpanded)}
+                  className="flex-row items-center justify-between py-2 mb-1"
+                  hitSlop={8}
                 >
-                  My Athletes
-                </Text>
-                {guardianQuery.data.map((ath) => (
+                  <Text
+                    className="text-xs font-bold uppercase tracking-wider"
+                    style={{ color: colors.inkMuted }}
+                  >
+                    My Athletes
+                  </Text>
+                  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                    <Path
+                      d={myAthletesExpanded ? "M6 9l6 6 6-6" : "M9 5l7 7-7 7"}
+                      stroke={colors.inkMuted}
+                      strokeWidth={2.5}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </Svg>
+                </Pressable>
+
+                {myAthletesExpanded && guardianQuery.data.map((ath) => (
                   <Pressable key={ath.id} onPress={() => navigation.navigate('GuardianPortal', { playerId: ath.id })}>
-                    <Card className="mb-2">
-                      <Text className="text-base font-display font-bold mb-1" style={{ color: colors.ink }}>
-                        {ath.firstName} {ath.lastName}
-                      </Text>
+                    <Card accent className="mb-3 px-4 py-4 border-l-4" style={{ borderLeftColor: colors.primary }}>
+                      <View className="flex-row items-center justify-between mb-3">
+                        <View className="flex-row items-center gap-3">
+                          <Avatar
+                            first={ath.firstName}
+                            last={ath.lastName}
+                            size={44}
+                          />
+                          <View>
+                            <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
+                              {ath.firstName} {ath.lastName}
+                            </Text>
+                            <Text className="text-sm font-medium" style={{ color: colors.primary }}>
+                              View Athlete Profile
+                            </Text>
+                          </View>
+                        </View>
+                        <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+                          <Path d="M9 5l7 7-7 7" stroke={colors.inkMuted} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                        </Svg>
+                      </View>
                       
+                      <View className="h-[1px] w-full mb-3" style={{ backgroundColor: colors.border }} />
+
                       {ath.tryouts.length === 0 && ath.seasons.length === 0 ? (
-                        <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                        <Text className="text-sm italic" style={{ color: colors.inkMuted }}>
                           No active tryouts or seasons assigned yet.
                         </Text>
-                      ) : null}
+                      ) : (
+                        <View className="gap-3">
+                          {ath.tryouts.length > 0 ? (
+                            <View className="flex-row items-start gap-2">
+                              <Badge label="Tryouts" variant="brand" className="mt-0.5" />
+                              <View className="flex-1 flex-row flex-wrap gap-2 pt-1">
+                                {ath.tryouts.map(t => (
+                                  <Text key={t.participantId} className="text-sm" style={{ color: colors.ink }}>
+                                    • {t.name}
+                                  </Text>
+                                ))}
+                              </View>
+                            </View>
+                          ) : null}
 
-                      {ath.tryouts.length > 0 ? (
-                        <View className="mt-2">
-                          <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Tryouts</Text>
-                          {ath.tryouts.map(t => (
-                            <Text key={t.participantId} className="text-sm" style={{ color: colors.primary }}>
-                              • {t.name} ({t.sport})
-                            </Text>
-                          ))}
+                          {ath.seasons.length > 0 ? (
+                            <View className="flex-row items-start gap-2">
+                              <Badge label="Seasons" variant="info" className="mt-0.5" />
+                              <View className="flex-1 flex-row flex-wrap gap-2 pt-1">
+                                {ath.seasons.map(s => (
+                                  <Text key={s.id} className="text-sm" style={{ color: colors.ink }}>
+                                    • {s.name}
+                                  </Text>
+                                ))}
+                              </View>
+                            </View>
+                          ) : null}
                         </View>
-                      ) : null}
-
-                      {ath.seasons.length > 0 ? (
-                        <View className="mt-2">
-                          <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>Seasons</Text>
-                          {ath.seasons.map(s => (
-                            <Text key={s.id} className="text-sm" style={{ color: colors.primary }}>• {s.name} - {s.teamName}</Text>
-                          ))}
-                        </View>
-                      ) : null}
+                      )}
                     </Card>
                   </Pressable>
                 ))}
@@ -454,6 +555,34 @@ export default function DashboardScreen() {
       />
 
       <BottomNav active={tab} onTabPress={handleTabChange} />
+
+      <Modal
+        visible={!!actionTryout}
+        title="Assessment Actions"
+        onClose={() => setActionTryout(null)}
+      >
+        <View className="gap-3">
+          <Text className="text-base mb-4" style={{ color: colors.inkMuted }}>
+            What would you like to do with "{actionTryout?.name}"?
+          </Text>
+          <Button
+            label="Archive Assessment"
+            variant="secondary"
+            onPress={() => {
+              if (actionTryout) archiveTryout.mutate(actionTryout.id);
+              setActionTryout(null);
+            }}
+          />
+          <Button
+            label="Delete Permanently"
+            variant="danger"
+            onPress={() => {
+              if (actionTryout) deleteTryout.mutate(actionTryout.id);
+              setActionTryout(null);
+            }}
+          />
+        </View>
+      </Modal>
 
       <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
     </Screen>

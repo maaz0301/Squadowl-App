@@ -710,10 +710,20 @@ export class SupabaseDataSource implements DataSource {
 
   // ─── Teams ───────────────────────────────────────────────────────────────────
   private rowToTeam(t: Row): Team {
+    let season = t.season_label ?? undefined;
+    let logoUrl = t.logo_url ?? undefined;
+    
+    if (season && season.includes('|LOGO|')) {
+      const parts = season.split('|LOGO|');
+      season = parts[0] || undefined;
+      logoUrl = parts[1];
+    }
+
     return {
       id: t.id,
       name: t.name,
-      season: t.season_label ?? undefined,
+      logoUrl,
+      season,
       createdAt: toMs(t.created_at),
       updatedAt: t.updated_at ? toMs(t.updated_at) : undefined,
       archived: t.archived || undefined,
@@ -744,6 +754,60 @@ export class SupabaseDataSource implements DataSource {
     ) as Row;
     await this.markOnboarding({ createTeam: true });
     return this.rowToTeam(row);
+  }
+
+
+  async uploadTeamLogo(teamId: string, fileUri: string, fileType: string): Promise<string> {
+    const { supabase } = await this.ctx();
+    const RNFS = require('react-native-fs');
+
+    const decodeBase64 = (base64Str: string): ArrayBuffer => {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+      const lookup = new Uint8Array(256);
+      for (let i = 0; i < chars.length; i++) {
+        lookup[chars.charCodeAt(i)] = i;
+      }
+      let bufferLength = base64Str.length * 0.75;
+      if (base64Str.endsWith('==')) bufferLength -= 2;
+      else if (base64Str.endsWith('=')) bufferLength -= 1;
+      const arraybuffer = new ArrayBuffer(bufferLength);
+      const bytes = new Uint8Array(arraybuffer);
+      let p = 0;
+      for (let i = 0; i < base64Str.length; i += 4) {
+        const encoded1 = lookup[base64Str.charCodeAt(i)];
+        const encoded2 = lookup[base64Str.charCodeAt(i + 1)];
+        const encoded3 = lookup[base64Str.charCodeAt(i + 2)];
+        const encoded4 = lookup[base64Str.charCodeAt(i + 3)];
+        bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
+        bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
+        bytes[p++] = ((encoded3 & 3) << 6) | (encoded4 & 63);
+      }
+      return arraybuffer;
+    };
+
+    const base64 = await RNFS.readFile(fileUri, 'base64');
+    const buffer = decodeBase64(base64);
+
+    const fileExtension = fileType.split('/')[1] || 'jpg';
+    const filePath = `teams/${teamId}.${fileExtension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, buffer, {
+        contentType: fileType,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      throw new Error(`Upload failed: ${uploadError.message}`);
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(filePath);
+
+    const publicUrlWithCacheBuster = `${publicUrl}?v=${Date.now()}`;
+    return publicUrlWithCacheBuster;
   }
 
   /**
@@ -838,12 +902,39 @@ export class SupabaseDataSource implements DataSource {
 
   async updateTeam(id: string, updates: Partial<Team>): Promise<Team> {
     const { supabase } = await this.ctx();
-    const patch: Row = {};
+    const patch: any = {};
     if (updates.name !== undefined) patch.name = updates.name;
-    if (updates.season !== undefined) patch.season_label = updates.season;
     if (updates.archived !== undefined) patch.archived = updates.archived;
-    const row = unwrap(await supabase.from('teams').update(patch).eq('id', id).select().single()) as Row;
-    return this.rowToTeam(row);
+    
+    // Fetch existing to preserve season/logo during hijacking
+    const existingRow = unwrap(await supabase.from('teams').select().eq('id', id).single()) as Row;
+    const currentTeam = this.rowToTeam(existingRow);
+    
+    const newSeason = updates.season !== undefined ? updates.season : currentTeam.season;
+    const newLogoUrl = updates.logoUrl !== undefined ? updates.logoUrl : currentTeam.logoUrl;
+
+    if (updates.logoUrl !== undefined) patch.logo_url = updates.logoUrl;
+    if (updates.season !== undefined) patch.season_label = updates.season;
+
+    // Try standard update first
+    const { data, error } = await supabase.from('teams').update(patch).eq('id', id).select().single();
+    
+    if (error) {
+      if (error.message.includes('logo_url')) {
+        // Fallback: encode logo in season_label
+        delete patch.logo_url;
+        if (newLogoUrl) {
+          patch.season_label = `${newSeason || ''}|LOGO|${newLogoUrl}`;
+        } else {
+          patch.season_label = newSeason || null;
+        }
+        const fallbackRow = unwrap(await supabase.from('teams').update(patch).eq('id', id).select().single()) as Row;
+        return this.rowToTeam(fallbackRow);
+      }
+      unwrap({ error, data: null }); // throw other errors
+    }
+    
+    return this.rowToTeam(data as Row);
   }
 
   // ─── Tryouts ──────────────────────────────────────────────────────────────────
@@ -931,6 +1022,32 @@ export class SupabaseDataSource implements DataSource {
       role: 'lead',
       joined_at: new Date().toISOString(),
     });
+
+    // When the assessment is created inside a team, auto-import the team's
+    // roster so the coach doesn't have to re-add every player manually.
+    if (form.teamId) {
+      try {
+        const teamRosterRows = unwrap(
+          await supabase
+            .from('team_roster')
+            .select('athlete_id, jersey, position')
+            .eq('team_id', form.teamId),
+        ) as Row[];
+
+        if (teamRosterRows.length > 0) {
+          const participants = teamRosterRows.map((r) => ({
+            tryout_id: row.id,
+            athlete_id: r.athlete_id,
+            jersey: r.jersey ?? null,
+            position: r.position ?? null,
+            registration_source: 'manual' as const,
+          }));
+          await supabase.from('tryout_participants').insert(participants);
+        }
+      } catch {
+        // Non-fatal: the assessment is created, the coach can add players later.
+      }
+    }
 
     await this.markOnboarding({ createAssessment: true });
     const [assembled] = await this.assembleTryouts([row]);
@@ -2065,10 +2182,28 @@ export class SupabaseDataSource implements DataSource {
 
     let result: TeamBuilderState;
     if (config.prompt) {
+      // Map UUIDs to short IDs to drastically reduce token usage and prevent truncation
+      const idMap = new Map<string, string>(); // shortId -> realId
+      const realToShort = new Map<string, string>(); // realId -> shortId
+      
+      const shortTryout = {
+        ...tryout,
+        roster: tryout.roster.map((p, i) => {
+          const shortId = `p${i}`;
+          idMap.set(shortId, p.id);
+          realToShort.set(p.id, shortId);
+          return { ...p, id: shortId };
+        }),
+        evals: tryout.evals.map(e => ({
+          ...e,
+          playerId: realToShort.get(e.playerId) || e.playerId
+        }))
+      };
+
       // Call Claude via edge function
       const { supabase } = await this.ctx();
       const { data, error } = await supabase.functions.invoke('generate-ai-insights', {
-        body: { action: 'team_builder', tryout, prompt: config.prompt }
+        body: { action: 'team_builder', tryout: shortTryout, prompt: config.prompt }
       });
       if (error) {
         throw new Error(error.message);
@@ -2076,6 +2211,9 @@ export class SupabaseDataSource implements DataSource {
       if (data?.error) {
         throw new Error(data.message || data.error);
       }
+
+      // Restore real UUIDs
+      const restoreIds = (arr: string[] = []) => arr.map(short => idMap.get(short) || short);
 
       // Merge Claude's response with local state structure
       result = {
@@ -2094,9 +2232,9 @@ export class SupabaseDataSource implements DataSource {
           index: i,
           id: `ai-team-${i}`,
           name: t.name || `Team ${i + 1}`,
-          players: t.players || [],
-          skaters: t.skaters || [],
-          goalies: t.goalies || []
+          players: restoreIds(t.players),
+          skaters: restoreIds(t.skaters),
+          goalies: restoreIds(t.goalies)
         }))
       };
     } else {

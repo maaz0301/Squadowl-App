@@ -1,16 +1,19 @@
 import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
-import { Alert, Platform, Text, View } from 'react-native';
+import { Alert, Platform, Text, View, Pressable } from 'react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
 
 import { DummyDataModal } from '@/components/DummyDataModal';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
-import { Button, Card, ErrorState, Header, Input, LoadingState, Screen } from '@/components/ui';
+import { Button, Card, ErrorState, Header, Input, LoadingState, Screen, Avatar } from '@/components/ui';
 import { canUseFeature, isAtTeamLimit } from '@/data/plans';
 import type { DummyTeamOptions } from '@/data/testDataGenerator';
 import {
   useClearDummyTeamsMutation,
   useCreateSeasonMutation,
   useCreateTeamMutation,
+  useUpdateTeamMutation,
+  useUploadTeamLogoMutation,
   useGenerateDummyTeamsMutation,
   useTeamsQuery,
 } from '@/features/queries';
@@ -38,6 +41,10 @@ export default function NewTeamScreen() {
   const user = useUser();
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
   const [showDummy, setShowDummy] = useState(false);
+  const [logo, setLogo] = useState<{ uri: string; type: string } | null>(null);
+
+  const updateTeam = useUpdateTeamMutation();
+  const uploadLogo = useUploadTeamLogoMutation();
 
   const isAssociation = canUseFeature(user?.planTier ?? 'free', 'enterprise');
 
@@ -50,6 +57,24 @@ export default function NewTeamScreen() {
     resolver: zodResolver(FormSchema),
     defaultValues: { name: '', season: '2025-26' },
   });
+
+  const handleSelectLogo = async () => {
+    try {
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
+        selectionLimit: 1,
+        includeBase64: false,
+      });
+      if (result.didCancel || !result.assets?.length) return;
+      
+      const asset = result.assets[0];
+      if (asset.uri && asset.type) {
+        setLogo({ uri: asset.uri, type: asset.type });
+      }
+    } catch (e: any) {
+      showAlert('Error', 'Failed to select image: ' + e.message);
+    }
+  };
 
   const onSubmit = handleSubmit(async (data) => {
     const count = teamsQuery.data?.length ?? 0;
@@ -71,6 +96,20 @@ export default function NewTeamScreen() {
     } catch {
       // Non-fatal: the team exists, and its first event will create the season.
     }
+    
+    if (logo) {
+      try {
+        const logoUrl = await uploadLogo.mutateAsync({
+          teamId: team.id,
+          fileUri: logo.uri,
+          fileType: logo.type,
+        });
+        await updateTeam.mutateAsync({ id: team.id, updates: { logoUrl } });
+      } catch (e: any) {
+        showAlert('Logo Upload Error', 'The team was created, but uploading the logo failed: ' + e.message);
+      }
+    }
+    
     navigation.goBack();
   });
 
@@ -125,6 +164,20 @@ export default function NewTeamScreen() {
     <Screen scroll>
       <Header title="New Team" showBack />
       <View className="gap-4 mt-2">
+        <Pressable onPress={handleSelectLogo} className="items-center mb-2 mt-4">
+          <View className="mb-3">
+            <Avatar
+              uri={logo?.uri}
+              first="T"
+              last="M"
+              size={80}
+            />
+          </View>
+          <Text className="font-bold text-sm" style={{ color: colors.primary }}>
+            {logo ? 'Change Team Logo' : 'Upload Team Logo'}
+          </Text>
+        </Pressable>
+
         <Controller
           control={control}
           name="name"
@@ -139,7 +192,7 @@ export default function NewTeamScreen() {
             <Input label="Season (optional)" onBlur={onBlur} onChangeText={onChange} value={value ?? ''} />
           )}
         />
-        <Button label="Create Team" onPress={onSubmit} loading={createTeam.isPending} />
+        <Button label="Create Team" onPress={onSubmit} loading={createTeam.isPending || uploadLogo.isPending || updateTeam.isPending} />
       </View>
 
       {isAssociation ? (

@@ -6,18 +6,14 @@ import WelcomeScreen from '../screens/(onboarding)/welcome';
 import WizardScreen from '../screens/(onboarding)/wizard';
 import VerifyEmailScreen from '../screens/(auth)/verify-email';
 import { useAuthStore } from '@/state/authStore';
-import { SplashScreen } from '@/components/ui';
+
 
 const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
   const { session, isHydrated } = useAuthStore();
-  const [splashPlayed, setSplashPlayed] = useState(false);
-
-  // The intro plays through even if auth hydrates first; if it's still running
-  // when hydration finishes, it holds the screen until it ends.
-  if (!isHydrated || !splashPlayed) {
-    return <SplashScreen onFinish={() => setSplashPlayed(true)} />;
+  if (!isHydrated) {
+    return null;
   }
 
   const isEmailUnverified = session?.user && session.user.emailVerified === false;

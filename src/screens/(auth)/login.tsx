@@ -10,6 +10,13 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { Button, Input, Screen, ThemeToggle } from '@/components/ui';
 import { APP_CONFIG } from '@/config/app';
 
+let Video: any = null;
+try {
+  Video = require('react-native-video').default;
+} catch {
+  Video = null;
+}
+
 export default function LoginScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
@@ -42,10 +49,23 @@ export default function LoginScreen() {
       
       {/* Brand Hero Banner */}
       <View className="items-center mb-6 pt-6">
-        <Image
-          source={require('../../../assets/images/tryouthq_logo.png')}
-          style={{ width: '100%', height: 120, resizeMode: 'contain' }}
-        />
+        {Video ? (
+          <Video
+            source={require('../../../assets/video/splash.mp4')}
+            style={{ width: '100%', height: 120 }}
+            resizeMode="contain"
+            muted
+            repeat
+            controls={false}
+            playInBackground={false}
+            ignoreSilentSwitch="obey"
+          />
+        ) : (
+          <Image
+            source={require('../../../assets/images/tryouthq_logo.png')}
+            style={{ width: '100%', height: 120, resizeMode: 'contain' }}
+          />
+        )}
         <Text className="text-base text-center mt-2 font-medium" style={{ color: colors.inkMuted }}>
           Sign in to manage tryouts and evaluate players
         </Text>

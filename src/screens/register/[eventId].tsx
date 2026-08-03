@@ -88,9 +88,9 @@ export default function PublicRegistration() {
   }
 
   return (
-    <Screen>
+    <Screen scroll>
       <Header title="Event Registration" />
-      <ScrollView className="flex-1 px-4 py-6" contentContainerStyle={{ gap: 16 }}>
+      <View className="gap-4 py-4">
         <Text className="text-lg font-bold" style={{ color: colors.ink }}>
           Register for Event
         </Text>
@@ -205,7 +205,7 @@ export default function PublicRegistration() {
             disabled={isSubmitting}
           />
         </View>
-      </ScrollView>
+      </View>
     </Screen>
   );
 }

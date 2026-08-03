@@ -40,8 +40,19 @@ export function useCreateTeamMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ name, season }: { name: string; season?: string }) =>
-      withTimeout(getDataSource().createTeam(name, season), 15000),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teams }),
+      getDataSource().createTeam(name, season),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.teams });
+    },
+  });
+}
+
+
+export function useUploadTeamLogoMutation() {
+  return useMutation({
+    mutationFn: async ({ teamId, fileUri, fileType }: { teamId: string; fileUri: string; fileType: string }) => {
+      return getDataSource().uploadTeamLogo(teamId, fileUri, fileType);
+    },
   });
 }
 

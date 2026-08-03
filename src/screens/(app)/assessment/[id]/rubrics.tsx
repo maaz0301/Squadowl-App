@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Text, View, Alert, Pressable, Platform } from 'react-native';
+import { Text, View, Alert, Pressable, Platform, Switch } from 'react-native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Button, Card, Chip, ErrorState, Header, Input, LoadingState, Screen, Badge } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
@@ -16,13 +16,22 @@ export default function RubricsScreen() {
   const tryoutQuery = useTryoutQuery(id);
   const updateTryout = useUpdateTryoutMutation();
 
-  const [role, setRole] = useState<'skater' | 'goalie' | 'all'>('skater');
   const [label, setLabel] = useState('');
   const [scoringType, setScoringType] = useState<ScoringType>('skill');
   const [scale, setScale] = useState<'1-5' | '1-10'>('1-5');
   const [unit, setUnit] = useState('');
   const [minValStr, setMinValStr] = useState('');
   const [maxValStr, setMaxValStr] = useState('');
+  const [rankingDirection, setRankingDirection] = useState<RankingDirection>('higher_is_better');
+
+  const handleScoringTypeChange = (type: ScoringType) => {
+    setScoringType(type);
+    if (type === 'time') {
+      setRankingDirection('lower_is_better');
+    } else {
+      setRankingDirection('higher_is_better');
+    }
+  };
 
   const showAlert = (title: string, message: string) => {
     if (Platform.OS === 'web') {
@@ -50,19 +59,10 @@ export default function RubricsScreen() {
     if (!label.trim() || atCustomLimit) return;
     const key = label.trim().toLowerCase().replace(/\s+/g, '_');
 
-    let rankingDirection: RankingDirection = 'higher_is_better';
     let defaultUnit = unit.trim();
-
-    if (scoringType === 'time') {
-      rankingDirection = 'lower_is_better';
-      if (!defaultUnit) defaultUnit = 'sec';
-    } else if (scoringType === 'distance') {
-      rankingDirection = 'higher_is_better';
-      if (!defaultUnit) defaultUnit = 'ft';
-    } else if (scoringType === 'speed') {
-      rankingDirection = 'higher_is_better';
-      if (!defaultUnit) defaultUnit = 'mph';
-    }
+    if (scoringType === 'time' && !defaultUnit) defaultUnit = 'sec';
+    else if (scoringType === 'distance' && !defaultUnit) defaultUnit = 'ft';
+    else if (scoringType === 'speed' && !defaultUnit) defaultUnit = 'mph';
 
     const minNum = minValStr.trim() !== '' ? parseFloat(minValStr) : undefined;
     const maxNum = maxValStr.trim() !== '' ? parseFloat(maxValStr) : undefined;
@@ -76,7 +76,6 @@ export default function RubricsScreen() {
       minVal: !isNaN(minNum as number) ? minNum : undefined,
       maxVal: !isNaN(maxNum as number) ? maxNum : undefined,
       rankingDirection,
-      role,
     };
 
     const next = [...custom, nextItem];
@@ -161,7 +160,6 @@ export default function RubricsScreen() {
                     {r.label}
                   </Text>
                   <Badge label={typeLabel.toUpperCase()} variant="brand" />
-                  <Badge label={r.role ?? 'all'} variant="default" />
                 </View>
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
                   {details}
@@ -194,36 +192,25 @@ export default function RubricsScreen() {
             Add Custom Drill / Category
           </Text>
 
-          <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-            1. Role
-          </Text>
-          <View className="flex-row flex-wrap gap-2">
-            <Chip label="Skater" active={role === 'skater'} onPress={() => setRole('skater')} />
-            <Chip label="Goalie" active={role === 'goalie'} onPress={() => setRole('goalie')} />
-            <Chip label="All Players" active={role === 'all'} onPress={() => setRole('all')} />
-          </View>
-
           <Input
-            label="2. Drill / Category Name"
+            label="1. Drill / Category Name"
             value={label}
             onChangeText={setLabel}
             placeholder="e.g. 40-Yard Dash, Long Throw, Shot Speed"
           />
 
           <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-            3. Scoring Type
+            2. Scoring Type
           </Text>
           <View className="flex-row flex-wrap gap-2">
-            <Chip label="Skill / Technique" active={scoringType === 'skill'} onPress={() => setScoringType('skill')} />
-            <Chip label="Time-based" active={scoringType === 'time'} onPress={() => setScoringType('time')} />
-            <Chip label="Distance-based" active={scoringType === 'distance'} onPress={() => setScoringType('distance')} />
-            <Chip label="Speed-based" active={scoringType === 'speed'} onPress={() => setScoringType('speed')} />
+            <Chip label="Subjective (1-5/1-10 Scale)" active={scoringType === 'skill'} onPress={() => handleScoringTypeChange('skill')} />
+            <Chip label="Objective (Measurable)" active={scoringType === 'time' || scoringType === 'distance' || scoringType === 'speed'} onPress={() => handleScoringTypeChange('time')} />
           </View>
 
           {scoringType === 'skill' ? (
             <View className="gap-2">
               <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-                4. Scale Choice
+                3. Scale Choice
               </Text>
               <View className="flex-row flex-wrap gap-2">
                 <Chip label="1-5 Scale" active={scale === '1-5'} onPress={() => setScale('1-5')} />
@@ -236,20 +223,32 @@ export default function RubricsScreen() {
           ) : (
             <View className="gap-3">
               <Input
-                label="4. Unit Label (Optional)"
+                label="3. Unit Label (Free-form)"
                 value={unit}
                 onChangeText={setUnit}
-                placeholder={
-                  scoringType === 'time'
-                    ? 'sec (default)'
-                    : scoringType === 'speed'
-                    ? 'mph (default)'
-                    : 'ft (default)'
-                }
+                placeholder="e.g. sec, mph, ft, meters"
               />
 
+              <Pressable
+                onPress={() => setRankingDirection(rankingDirection === 'lower_is_better' ? 'higher_is_better' : 'lower_is_better')}
+                className="flex-row items-center justify-between rounded-lg border px-4 py-4 mt-1"
+                style={{ borderColor: colors.border, backgroundColor: colors.field }}
+              >
+                <View className="flex-1 pr-3">
+                  <Text className="font-bold text-sm" style={{ color: colors.ink }}>
+                    Shortest time / lowest number is highest ranked?
+                  </Text>
+                </View>
+                <Switch
+                  value={rankingDirection === 'lower_is_better'}
+                  onValueChange={(val) => setRankingDirection(val ? 'lower_is_better' : 'higher_is_better')}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#fff"
+                />
+              </Pressable>
+
               <Text className="text-xs font-bold uppercase tracking-wider mt-1" style={{ color: colors.inkMuted }}>
-                5. Score Range Benchmarks (Min & Max)
+                Optional: Score Benchmarks (Min & Max)
               </Text>
               <View className="flex-row gap-2">
                 <View className="flex-1">
@@ -258,7 +257,7 @@ export default function RubricsScreen() {
                     value={minValStr}
                     onChangeText={setMinValStr}
                     keyboardType="numeric"
-                    placeholder={scoringType === 'time' ? '12 (Best)' : '5 (Worst)'}
+                    placeholder={rankingDirection === 'lower_is_better' ? 'e.g. 10.5 (Best)' : 'e.g. 5.0 (Worst)'}
                   />
                 </View>
                 <View className="flex-1">
@@ -267,19 +266,10 @@ export default function RubricsScreen() {
                     value={maxValStr}
                     onChangeText={setMaxValStr}
                     keyboardType="numeric"
-                    placeholder={scoringType === 'time' ? '25 (Worst)' : '25 (Best)'}
+                    placeholder={rankingDirection === 'lower_is_better' ? 'e.g. 25.0 (Worst)' : 'e.g. 25.0 (Best)'}
                   />
                 </View>
               </View>
-
-              <Text className="text-xs italic font-bold" style={{ color: colors.primary }}>
-                Interpolation Rule:{' '}
-                {scoringType === 'time'
-                  ? `Min (${minValStr || '12'}) = Score 5.0  ·  Max (${maxValStr || '25'}) = Score 1.0 (Shortest time wins)`
-                  : scoringType === 'distance'
-                  ? `Min (${minValStr || '5'}) = Score 1.0  ·  Max (${maxValStr || '25'}) = Score 5.0 (Largest distance wins)`
-                  : `Min (${minValStr || '10'}) = Score 1.0  ·  Max (${maxValStr || '60'}) = Score 5.0 (Fastest speed wins)`}
-              </Text>
             </View>
           )}
 

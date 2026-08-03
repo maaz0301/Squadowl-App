@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Text, View, Alert, Pressable, Platform, ScrollView } from 'react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 import { useForm, Controller } from 'react-hook-form';
@@ -7,7 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
-import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useGenerateTestDataMutation, useClearTestDataMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useRemoveTeamRosterPlayerMutation, useSeasonsQuery, useSeasonQuery, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation } from '@/features/queries';
+import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useGenerateTestDataMutation, useClearTestDataMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useRemoveTeamRosterPlayerMutation, useSeasonsQuery, useSeasonQuery, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation } from '@/features/queries';
 import { useUser } from '@/state/authStore';
 import { canUseFeature } from '@/data/plans';
 import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
@@ -54,10 +55,12 @@ export default function TeamDetailScreen() {
   const updateTeam = useUpdateTeamMutation();
   const deleteTeam = useDeleteTeamMutation();
   const updateTryout = useUpdateTryoutMutation();
+  const uploadLogo = useUploadTeamLogoMutation();
   const user = useUser();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
   const [season, setSeason] = useState('');
+  const [logo, setLogo] = useState<{ uri: string; type: string } | null>(null);
   const [showAttachModal, setShowAttachModal] = useState(false);
   const [showDummy, setShowDummy] = useState(false);
   const [showAddPlayers, setShowAddPlayers] = useState(false);
@@ -335,11 +338,43 @@ export default function TeamDetailScreen() {
   const startEdit = () => {
     setName(team.name);
     setSeason(team.season ?? '');
+    setLogo(null);
     setEditing(true);
   };
 
+  const handleSelectLogo = async () => {
+    try {
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
+        selectionLimit: 1,
+        includeBase64: false,
+      });
+      if (result.didCancel || !result.assets?.length) return;
+      
+      const asset = result.assets[0];
+      if (asset.uri && asset.type) {
+        setLogo({ uri: asset.uri, type: asset.type });
+      }
+    } catch (e: any) {
+      Alert.alert('Error', 'Failed to select image: ' + e.message);
+    }
+  };
+
   const save = async () => {
-    await updateTeam.mutateAsync({ id: team.id, updates: { name: name.trim(), season: season.trim() || undefined } });
+    let logoUrl = team.logoUrl;
+    if (logo) {
+      try {
+        logoUrl = await uploadLogo.mutateAsync({
+          teamId: team.id,
+          fileUri: logo.uri,
+          fileType: logo.type,
+        });
+      } catch (e: any) {
+        Alert.alert('Logo Upload Error', 'Failed to upload logo: ' + e.message);
+        return;
+      }
+    }
+    await updateTeam.mutateAsync({ id: team.id, updates: { name: name.trim(), season: season.trim() || undefined, logoUrl } });
     setEditing(false);
   };
 
@@ -374,6 +409,11 @@ export default function TeamDetailScreen() {
           showBack
           right={<Button label="Edit" variant="ghost" size="sm" onPress={startEdit} />}
         />
+        {team.logoUrl ? (
+          <View className="items-center mt-2 mb-4">
+            <Avatar uri={team.logoUrl} first="T" last="M" size={80} />
+          </View>
+        ) : null}
 
         <View className="flex-row gap-2 mt-2 mb-4">
           <StatTile label="Players" value={teamPlayers.length} colors={colors} />
@@ -628,9 +668,22 @@ export default function TeamDetailScreen() {
 
       <Modal visible={editing} title="Edit Team" onClose={() => setEditing(false)}>
         <View className="gap-3">
+          <Pressable onPress={handleSelectLogo} className="items-center mb-2 mt-4">
+            <View className="mb-3">
+              <Avatar
+                uri={logo?.uri || team?.logoUrl}
+                first="T"
+                last="M"
+                size={80}
+              />
+            </View>
+            <Text className="font-bold text-sm" style={{ color: colors.primary }}>
+              Change Team Logo
+            </Text>
+          </Pressable>
           <Input label="Team name" value={name} onChangeText={setName} />
           <Input label="Season" value={season} onChangeText={setSeason} />
-          <Button label="Save Changes" onPress={save} loading={updateTeam.isPending} />
+          <Button label="Save Changes" onPress={save} loading={updateTeam.isPending || uploadLogo.isPending} />
         </View>
       </Modal>
 

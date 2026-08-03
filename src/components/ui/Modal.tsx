@@ -23,7 +23,8 @@ export function Modal({ visible, title, onClose, children, footer }: ModalProps)
   return (
     <RNModal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
         className="flex-1 justify-end"
         style={{ backgroundColor: colors.overlay }}
       >
@@ -42,7 +43,13 @@ export function Modal({ visible, title, onClose, children, footer }: ModalProps)
               </Text>
             </Pressable>
           </View>
-          <ScrollView showsVerticalScrollIndicator={false}>{children}</ScrollView>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: 16 }}
+          >
+            {children}
+          </ScrollView>
           {footer ?? (
             <View className="mt-4">
               <Button label="Close" variant="secondary" onPress={onClose} />

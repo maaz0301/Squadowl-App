@@ -54,6 +54,8 @@ export interface DataSource {
   // Teams
   listTeams(): Promise<Team[]>;
   createTeam(name: string, season?: string): Promise<Team>;
+  updateTeam(id: string, updates: Partial<Team>): Promise<Team>;
+  uploadTeamLogo(teamId: string, fileUri: string, fileType: string): Promise<string>;
   deleteTeam(id: string): Promise<void>;
 
   // Tryouts
