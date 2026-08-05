@@ -1029,7 +1029,7 @@ export class SupabaseDataSource implements DataSource {
           event_type: EVENT_TYPE_TO_DB[form.eventType] ?? 'tryout',
           sport: form.sport,
           sport_other: form.sportOther ?? null,
-          tryout_date: form.tryoutDate ?? null,
+          tryout_date: form.tryoutDate || null,
           start_time: form.startTime ?? null,
           location: form.rink ?? null,
           head_coach: form.headCoach ?? profile.displayName,
@@ -2204,12 +2204,18 @@ export class SupabaseDataSource implements DataSource {
       medical_info: reg.medical_info || null,
       about: reg.about_player || null,
     });
+    // Real athletes never pick their own jersey at registration — a coach
+    // assigns it after roster placement. Test data gets a random one instead so
+    // a dummy-data batch looks fully populated without manual entry per player.
+    const isTestData = reg.current_team === TEST_DATA_TAG;
     const participant = unwrap(
       await supabase
         .from('tryout_participants')
         .insert({
           tryout_id: tryoutId,
           athlete_id: athleteId,
+          jersey: isTestData ? String(Math.floor(1 + Math.random() * 99)) : null,
+          position: reg.position_trying_out_for || null,
           position_trying_out_for: reg.position_trying_out_for || null,
           current_team: reg.current_team || null,
           current_level: reg.current_level || null,

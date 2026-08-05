@@ -95,13 +95,26 @@ export default function RegistrationsScreen() {
     });
   };
 
+  const pendingIds = (regsQuery.data ?? []).filter((r) => r.status === 'pending').map((r) => r.id);
+  const allPendingSelected = pendingIds.length > 0 && pendingIds.every((regId) => selected.has(regId));
+  const toggleSelectAll = () => {
+    setSelected(allPendingSelected ? new Set() : new Set(pendingIds));
+  };
+
+  // Fires in small concurrent batches instead of one request at a time — with
+  // "Select All" this can be hundreds of registrations, and awaiting them
+  // sequentially made bulk-add visibly crawl. Batched (not all-at-once) so a
+  // huge selection doesn't fire hundreds of simultaneous requests at the backend.
+  const BULK_ADD_BATCH_SIZE = 10;
   const bulkAdd = async () => {
     if (isAtPlayerLimit(user?.planTier ?? 'free', (tryoutQuery.data?.roster.length ?? 0) + selected.size - 1)) {
       setLimitMsg('You have reached the maximum number of players for your current plan.');
       return;
     }
-    for (const regId of selected) {
-      await addToRoster.mutateAsync(regId);
+    const ids = [...selected];
+    for (let i = 0; i < ids.length; i += BULK_ADD_BATCH_SIZE) {
+      const batch = ids.slice(i, i + BULK_ADD_BATCH_SIZE);
+      await Promise.all(batch.map((regId) => addToRoster.mutateAsync(regId)));
     }
     setSelected(new Set());
   };
@@ -179,71 +192,86 @@ export default function RegistrationsScreen() {
     <Screen padded={false}>
       <Header title="Registrations" showBack />
 
-      {/* Overview Stats */}
-      <View className="px-4 pb-2 pt-2 flex-row gap-2">
-        <PlanGate feature="qrRegistration" title="QR Registration (Coach+)">
-          <Card accent className="items-center gap-3">
-            <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-              Registration Code
-            </Text>
-            <Text className="text-3xl font-display font-bold tracking-widest" style={{ color: colors.primary }}>
-              {cloudCode}
-            </Text>
-            <View className="flex-row flex-wrap gap-2 justify-center">
-              <Button label="Show QR" size="sm" onPress={() => setShowQr(true)} />
-              <Button label="Share" size="sm" variant="secondary" onPress={shareQr} />
-              <Button label="Simulate QR Reg" size="sm" variant="ghost" onPress={() => setShowSimulate(true)} />
-            </View>
-          </Card>
-        </PlanGate>
-
-        <Tabs
-          tabs={[
-            { key: 'pending', label: 'Pending', badge: pendingCount || undefined },
-            { key: 'all', label: 'All' },
-            { key: 'dismissed', label: 'Dismissed' },
-          ]}
-          activeKey={tab}
-          onChange={(k) => setTab(k as RegTab)}
-        />
-
-        {tab === 'pending' && selected.size > 0 ? (
-          <Button label={`Add ${selected.size} to Roster`} onPress={bulkAdd} loading={addToRoster.isPending} />
-        ) : null}
-        <Button label="Export CSV" variant="ghost" size="sm" onPress={exportCsv} />
-      </View>
-
-      {isAssociation ? (
-        <Card className="mx-4 mb-2 gap-2">
-          <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-            Testing Tools
-          </Text>
-          <Text className="text-xs" style={{ color: colors.inkMuted }}>
-            AI-generate a batch of realistic dummy records — pending registrations, rostered
-            players, or both — optionally scored across every rubric, to test rankings, filters,
-            and reports at scale.
-          </Text>
-          <View className="flex-row flex-wrap gap-2 mt-1">
-            <Button
-              label="Dummy Data"
-              size="sm"
-              onPress={() => setShowTestGen(true)}
-            />
-            <Button
-              label="Clear Dummy Data"
-              size="sm"
-              variant="ghost"
-              loading={clearTest.isPending}
-              onPress={clearTestData}
-            />
-          </View>
-        </Card>
-      ) : null}
-
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24, flexGrow: 1 }}
+        ListHeaderComponent={
+          <View>
+            {/* Overview Stats */}
+            <View className="pb-2 pt-2 gap-3">
+              <PlanGate feature="qrRegistration" title="QR Registration (Coach+)">
+                <Card accent className="items-center gap-3">
+                  <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                    Registration Code
+                  </Text>
+                  <Text className="text-3xl font-display font-bold tracking-widest" style={{ color: colors.primary }}>
+                    {cloudCode}
+                  </Text>
+                  <View className="flex-row flex-wrap gap-2 justify-center">
+                    <Button label="Show QR" size="sm" onPress={() => setShowQr(true)} />
+                    <Button label="Share" size="sm" variant="secondary" onPress={shareQr} />
+                    <Button label="Simulate QR Reg" size="sm" variant="ghost" onPress={() => setShowSimulate(true)} />
+                  </View>
+                </Card>
+              </PlanGate>
+
+              <Tabs
+                tabs={[
+                  { key: 'pending', label: 'Pending', badge: pendingCount || undefined },
+                  { key: 'all', label: 'All' },
+                  { key: 'dismissed', label: 'Dismissed' },
+                ]}
+                activeKey={tab}
+                onChange={(k) => setTab(k as RegTab)}
+              />
+
+              <View className="flex-row flex-wrap items-center gap-2">
+                {tab === 'pending' && pendingIds.length > 0 ? (
+                  <>
+                    <Button
+                      label={allPendingSelected ? 'Clear All' : 'Select All'}
+                      size="sm"
+                      variant="secondary"
+                      onPress={toggleSelectAll}
+                    />
+                    {selected.size > 0 ? (
+                      <Button label={`Add ${selected.size} to Roster`} size="sm" onPress={bulkAdd} loading={addToRoster.isPending} />
+                    ) : null}
+                  </>
+                ) : null}
+                <Button label="Export CSV" variant="ghost" size="sm" onPress={exportCsv} />
+              </View>
+            </View>
+
+            {isAssociation ? (
+              <Card className="mb-2 gap-2">
+                <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                  Testing Tools
+                </Text>
+                <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                  AI-generate a batch of realistic dummy records — pending registrations, rostered
+                  players, or both — optionally scored across every rubric, to test rankings, filters,
+                  and reports at scale.
+                </Text>
+                <View className="flex-row flex-wrap gap-2 mt-1">
+                  <Button
+                    label="Dummy Data"
+                    size="sm"
+                    onPress={() => setShowTestGen(true)}
+                  />
+                  <Button
+                    label="Clear Dummy Data"
+                    size="sm"
+                    variant="ghost"
+                    loading={clearTest.isPending}
+                    onPress={clearTestData}
+                  />
+                </View>
+              </Card>
+            ) : null}
+          </View>
+        }
         ListEmptyComponent={
           <EmptyState
             title={`No ${tab} registrations`}

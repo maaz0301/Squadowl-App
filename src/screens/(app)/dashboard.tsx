@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { FlatList, Pressable, ScrollView, Text, View, Alert } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, View, Alert } from 'react-native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -72,6 +72,15 @@ export default function DashboardScreen() {
   const [assignedExpanded, setAssignedExpanded] = useState(true);
   const [actionTryout, setActionTryout] = useState<{ id: string; name: string } | null>(null);
   const [myAthletesExpanded, setMyAthletesExpanded] = useState(isGuardianOnly);
+  const [navigatingId, setNavigatingId] = useState<string | null>(null);
+  // Tracks which card is mid delete/archive so the spinner shows immediately and
+  // deterministically — relying on the mutation object's own isPending/variables
+  // was flaky here because the modal closes (and re-renders the list) in the same
+  // tick mutate() fires, before its pending state has propagated.
+  const [busyId, setBusyId] = useState<string | null>(null);
+  useFocusEffect(() => {
+    setNavigatingId(null);
+  });
 
   const teamsQuery = useTeamsQuery();
   const tryoutsQuery = useTryoutsQuery(false);
@@ -90,7 +99,10 @@ export default function DashboardScreen() {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => deleteTeam.mutate(id),
+          onPress: () => {
+            setBusyId(id);
+            deleteTeam.mutate(id, { onSettled: () => setBusyId(null) });
+          },
         },
       ]
     );
@@ -143,7 +155,13 @@ export default function DashboardScreen() {
       return;
     }
     setCurrentTryout(id);
+    setNavigatingId(id);
     navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: id } });
+  };
+
+  const openTeam = (id: string) => {
+    setNavigatingId(id);
+    navigation.navigate('TeamDetail', { id });
   };
 
   const fabAction = () => {
@@ -164,9 +182,11 @@ export default function DashboardScreen() {
 
   const renderItem = ({ item }: { item: any }) => {
     if (tab === 'teams') {
+      const isNavigating = navigatingId === item.id;
+      const isDeleting = busyId === item.id;
       return (
-        <Pressable onPress={() => navigation.navigate('TeamDetail', { id: item.id })}>
-          <Card className="mb-3">
+        <Pressable onPress={() => openTeam(item.id)} disabled={isDeleting}>
+          <Card className="mb-3" style={isDeleting ? { opacity: 0.5 } : undefined}>
             <View className="flex-row justify-between items-center">
               <View className="flex-1 flex-row items-center">
                 {item.logoUrl ? (
@@ -185,15 +205,19 @@ export default function DashboardScreen() {
                   ) : null}
                 </View>
               </View>
-              <Pressable
-                onPress={() => handleDeleteTeam(item.id, item.name)}
-                hitSlop={8}
-                className="p-1"
-              >
-                <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-                  <Path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" stroke={colors.danger} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                </Svg>
-              </Pressable>
+              {isNavigating || isDeleting ? (
+                <ActivityIndicator size="small" color={isDeleting ? colors.danger : colors.primary} />
+              ) : (
+                <Pressable
+                  onPress={() => handleDeleteTeam(item.id, item.name)}
+                  hitSlop={8}
+                  className="p-1"
+                >
+                  <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                    <Path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" stroke={colors.danger} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                </Pressable>
+              )}
             </View>
           </Card>
         </Pressable>
@@ -202,9 +226,11 @@ export default function DashboardScreen() {
 
     // Assessments
     const selected = combineIds.includes(item.id);
+    const isNavigating = navigatingId === item.id;
+    const isBusy = busyId === item.id;
     return (
-      <Pressable onPress={() => openTryout(item.id)}>
-        <Card accent={selected || combineMode} className="mb-3">
+      <Pressable onPress={() => openTryout(item.id)} disabled={isBusy}>
+        <Card accent={selected || combineMode} className="mb-3" style={isBusy ? { opacity: 0.5 } : undefined}>
           <View className="flex-row justify-between items-start">
             <View className="flex-1 pr-2">
               <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
@@ -222,6 +248,9 @@ export default function DashboardScreen() {
             <View className="items-end gap-2">
               <View className="flex-row items-center gap-2">
                 <Badge label={`${item.roster?.length ?? 0} players`} />
+                {isNavigating || isBusy ? (
+                  <ActivityIndicator size="small" color={isBusy ? colors.danger : colors.primary} />
+                ) : (
                 <Pressable
                   onPress={() => handleDeleteAssessment(item.id, item.name)}
                   hitSlop={8}
@@ -231,6 +260,7 @@ export default function DashboardScreen() {
                     <Path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" stroke={colors.danger} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
                   </Svg>
                 </Pressable>
+                )}
               </View>
               {selected ? <Badge label="Selected" variant="brand" /> : null}
             </View>
@@ -271,6 +301,7 @@ export default function DashboardScreen() {
         key={isGuardianOnly ? 'guardian' : 'coach'}
         ref={listRef}
         data={listData}
+        extraData={[navigatingId, busyId]}
         keyExtractor={(item) => item.id}
         onScroll={(e) => {
           currentOffset.current = e.nativeEvent.contentOffset.y;
@@ -569,7 +600,10 @@ export default function DashboardScreen() {
             label="Archive Assessment"
             variant="secondary"
             onPress={() => {
-              if (actionTryout) archiveTryout.mutate(actionTryout.id);
+              if (actionTryout) {
+                setBusyId(actionTryout.id);
+                archiveTryout.mutate(actionTryout.id, { onSettled: () => setBusyId(null) });
+              }
               setActionTryout(null);
             }}
           />
@@ -577,7 +611,10 @@ export default function DashboardScreen() {
             label="Delete Permanently"
             variant="danger"
             onPress={() => {
-              if (actionTryout) deleteTryout.mutate(actionTryout.id);
+              if (actionTryout) {
+                setBusyId(actionTryout.id);
+                deleteTryout.mutate(actionTryout.id, { onSettled: () => setBusyId(null) });
+              }
               setActionTryout(null);
             }}
           />

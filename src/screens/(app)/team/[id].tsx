@@ -1,8 +1,7 @@
-import { useState } from 'react';
-import { Text, View, Alert, Pressable, Platform, ScrollView } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Text, View, Alert, Pressable, Platform, ScrollView, ActivityIndicator, FlatList } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
-import { useNavigation } from '@react-navigation/native';
-import { useRoute } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQueryClient } from '@tanstack/react-query';
@@ -69,6 +68,10 @@ export default function TeamDetailScreen() {
     current: Rsvp;
   } | null>(null);
   const [playerSearch, setPlayerSearch] = useState('');
+  const [navigatingId, setNavigatingId] = useState<string | null>(null);
+  useFocusEffect(() => {
+    setNavigatingId(null);
+  });
 
   const rosterQuery = useTeamRosterQuery(id);
   const addRosterPlayers = useAddTeamRosterPlayersMutation(id);
@@ -108,6 +111,66 @@ export default function TeamDetailScreen() {
   const genTest = useGenerateTestDataMutation(dummyTarget?.id ?? '', (done, total) => setDummyProgress({ done, total }));
   const clearTest = useClearTestDataMutation(dummyTarget?.id ?? '');
 
+  // Candidates for the "Add Players from Assessments" picker: every athlete on
+  // any assessment's roster, from ALL assessments (not just this team's),
+  // deduped. Athletes already on the team are kept in the list and flagged
+  // rather than hidden, so it's obvious they're accounted for instead of
+  // looking like they went missing.
+  // Every tryout an athlete actually appears on is tracked (not just the first
+  // one seen) so filtering by assessment and "enroll everywhere" below are both
+  // accurate for athletes shared across multiple assessments.
+  // Memoized because this is a rescan of every roster across every assessment —
+  // with dummy data counts up to 1000, redoing it on every keystroke/render
+  // while the picker modal is open was visibly laggy.
+  const candidates = useMemo(() => {
+    const onRosterIds = new Set((rosterQuery.data ?? []).map((p) => p.athleteId));
+    const candidatesByAthlete = new Map<
+      string,
+      {
+        athleteId: string;
+        first: string;
+        last: string;
+        jersey?: string;
+        pos?: string;
+        yearOfBirth?: string;
+        tryoutId: string;
+        tryoutName: string;
+        tryoutIds: Set<string>;
+        tryoutNames: Set<string>;
+        alreadyOnTeam: boolean;
+      }
+    >();
+    for (const t of tryoutsQuery.data ?? []) {
+      for (const p of t.roster ?? []) {
+        const athleteId = p.athleteId;
+        if (!athleteId) continue;
+        const existing = candidatesByAthlete.get(athleteId);
+        if (existing) {
+          existing.tryoutIds.add(t.id);
+          existing.tryoutNames.add(t.name);
+          continue;
+        }
+        candidatesByAthlete.set(athleteId, {
+          athleteId,
+          first: p.first,
+          last: p.last,
+          jersey: p.jersey,
+          pos: p.pos,
+          yearOfBirth: p.yearOfBirth,
+          tryoutId: t.id,
+          tryoutName: t.name,
+          tryoutIds: new Set([t.id]),
+          tryoutNames: new Set([t.name]),
+          alreadyOnTeam: onRosterIds.has(athleteId),
+        });
+      }
+    }
+    const list = [...candidatesByAthlete.values()];
+    // Already-on-team entries sink to the bottom so the actionable ones lead.
+    list.sort((a, b) => Number(a.alreadyOnTeam) - Number(b.alreadyOnTeam));
+    return list;
+  }, [tryoutsQuery.data, rosterQuery.data]);
+
   if (teamsQuery.isLoading || tryoutsQuery.isLoading) return <LoadingState message="Loading team..." />;
   if (teamsQuery.isError || tryoutsQuery.isError) {
     return (
@@ -139,64 +202,12 @@ export default function TeamDetailScreen() {
   const isAssociation = canUseFeature(user?.planTier ?? 'free', 'enterprise');
 
   const teamPlayers = rosterQuery.data ?? [];
-  const onRoster = new Set(teamPlayers.map((p) => p.athleteId));
   const filteredTeamPlayers = playerSearch.trim()
     ? teamPlayers.filter((p) =>
         `${p.first} ${p.last}`.toLowerCase().includes(playerSearch.trim().toLowerCase()),
       )
     : teamPlayers;
 
-  // Candidates for the picker: every athlete on any assessment's roster, from
-  // ALL assessments (not just this team's), deduped. Athletes already on the
-  // team are kept in the list and flagged rather than hidden, so it's obvious
-  // they're accounted for instead of looking like they went missing.
-  // Every tryout an athlete actually appears on is tracked (not just the first
-  // one seen) so filtering by assessment and "enroll everywhere" below are both
-  // accurate for athletes shared across multiple assessments.
-  const candidatesByAthlete = new Map<
-    string,
-    {
-      athleteId: string;
-      first: string;
-      last: string;
-      jersey?: string;
-      pos?: string;
-      yearOfBirth?: string;
-      tryoutId: string;
-      tryoutName: string;
-      tryoutIds: Set<string>;
-      tryoutNames: Set<string>;
-      alreadyOnTeam: boolean;
-    }
-  >();
-  for (const t of tryoutsQuery.data ?? []) {
-    for (const p of t.roster ?? []) {
-      const athleteId = p.athleteId;
-      if (!athleteId) continue;
-      const existing = candidatesByAthlete.get(athleteId);
-      if (existing) {
-        existing.tryoutIds.add(t.id);
-        existing.tryoutNames.add(t.name);
-        continue;
-      }
-      candidatesByAthlete.set(athleteId, {
-        athleteId,
-        first: p.first,
-        last: p.last,
-        jersey: p.jersey,
-        pos: p.pos,
-        yearOfBirth: p.yearOfBirth,
-        tryoutId: t.id,
-        tryoutName: t.name,
-        tryoutIds: new Set([t.id]),
-        tryoutNames: new Set([t.name]),
-        alreadyOnTeam: onRoster.has(athleteId),
-      });
-    }
-  }
-  const candidates = [...candidatesByAthlete.values()];
-  // Already-on-team entries sink to the bottom so the actionable ones lead.
-  candidates.sort((a, b) => Number(a.alreadyOnTeam) - Number(b.alreadyOnTeam));
   const availableCount = candidates.filter((c) => !c.alreadyOnTeam).length;
   const filteredCandidates = candidates
     .filter((c) => !candidateTryoutFilter || c.tryoutIds.has(candidateTryoutFilter))
@@ -205,6 +216,8 @@ export default function TeamDetailScreen() {
         ? `${c.first} ${c.last}`.toLowerCase().includes(candidateSearch.trim().toLowerCase())
         : true,
     );
+
+  const isAddingPlayers = addRosterPlayers.isPending || enrollingAssessments;
 
   const addPickedPlayers = async () => {
     const picked = candidates.filter((c) => pickedAthletes.has(c.athleteId));
@@ -462,36 +475,197 @@ export default function TeamDetailScreen() {
     );
   };
 
+  const headerBlock = (
+    <>
+      <Header
+        title={team.name}
+        subtitle={team.season || undefined}
+        showBack
+        right={<Button label="Edit" variant="ghost" size="sm" onPress={startEdit} />}
+      />
+      {team.logoUrl ? (
+        <View className="items-center mt-2 mb-4">
+          <Avatar uri={team.logoUrl} first="T" last="M" size={80} />
+        </View>
+      ) : null}
+
+      <Tabs
+        tabs={[
+          { key: 'schedule', label: 'Schedule', badge: upcomingEvents.length },
+          { key: 'players', label: 'Players', badge: teamPlayers.length },
+          { key: 'assessments', label: 'Assessments', badge: linkedTryouts.length },
+          { key: 'settings', label: 'Settings' },
+        ]}
+        activeKey={tab}
+        onChange={setTab}
+        className="mt-2 mb-4"
+      />
+    </>
+  );
+
   return (
     <Screen padded={false}>
+      {tab === 'players' ? (
+        // Players can number in the hundreds (dummy data goes up to 1000), so this
+        // tab renders as a virtualized FlatList instead of the plain ScrollView the
+        // other tabs use — mapping that many Cards into a ScrollView mounts every
+        // row at once and visibly freezes the tab switch. The header/search/add
+        // controls live outside the FlatList (not in ListHeaderComponent) so they
+        // stay fixed on screen instead of scrolling away with the roster.
+        <View className="flex-1">
+          <View className="px-4">
+            {headerBlock}
+            <Button
+              label="Add Players from Assessments"
+              size="sm"
+              className="mb-3 self-start"
+              onPress={() => {
+                setPickedAthletes(new Set());
+                setCandidateSearch('');
+                setCandidateTryoutFilter(null);
+                setShowAddPlayers(true);
+              }}
+            />
+            {teamPlayers.length > 0 ? (
+              <Input
+                value={playerSearch}
+                onChangeText={setPlayerSearch}
+                placeholder="Search players by name"
+                autoCapitalize="none"
+                containerClassName="mb-3"
+              />
+            ) : null}
+          </View>
+          <FlatList
+            className="flex-1 px-4"
+            contentContainerStyle={{ paddingBottom: 24 }}
+            keyboardShouldPersistTaps="handled"
+            data={rosterQuery.isLoading ? [] : filteredTeamPlayers}
+            keyExtractor={(p) => p.id}
+            extraData={navigatingId}
+            ListEmptyComponent={
+              rosterQuery.isLoading ? (
+                <View className="items-center py-6 gap-2">
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading roster...</Text>
+                </View>
+              ) : teamPlayers.length === 0 ? (
+                <Card className="items-center py-6 gap-1">
+                  <Text className="font-bold" style={{ color: colors.ink }}>No players yet</Text>
+                  <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
+                    Pull players in from any assessment roster to build this team.
+                  </Text>
+                </Card>
+              ) : (
+                <Card className="items-center py-6 gap-1">
+                  <Text className="font-bold" style={{ color: colors.ink }}>No matches</Text>
+                  <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
+                    No players match "{playerSearch}".
+                  </Text>
+                </Card>
+              )
+            }
+            renderItem={({ item: p }) => (
+              <Pressable
+                onPress={() => {
+                  setNavigatingId(p.athleteId);
+                  navigation.navigate('TeamPlayer', { id: team.id, playerId: p.athleteId });
+                }}
+              >
+                <Card className="mb-2 flex-row items-center gap-3">
+                  <Avatar first={p.first} last={p.last} size={36} pos={p.pos} />
+                  <View className="flex-1">
+                    <Text className="font-bold" style={{ color: colors.ink }}>
+                      {p.first} {p.last}
+                    </Text>
+                    <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
+                      {[p.jersey ? `#${p.jersey}` : null, p.pos, p.sourceTryoutName].filter(Boolean).join(' · ')}
+                    </Text>
+                  </View>
+                  {navigatingId === p.athleteId ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Button
+                      label="Remove"
+                      size="sm"
+                      variant="ghost"
+                      loading={removeRosterPlayer.isPending && removeRosterPlayer.variables === p.athleteId}
+                      onPress={() => confirmRemovePlayer(p.athleteId, `${p.first} ${p.last}`)}
+                    />
+                  )}
+                </Card>
+              </Pressable>
+            )}
+          />
+        </View>
+      ) : tab === 'assessments' ? (
+        // Same rationale as the Players tab: an association could have many linked
+        // assessments, so this scrolls as a virtualized FlatList with the
+        // header/actions fixed above it rather than scrolling away.
+        <View className="flex-1">
+          <View className="px-4">
+            {headerBlock}
+            <View className="flex-row gap-2 mb-3">
+              <Button
+                label="Create"
+                size="sm"
+                className="flex-1"
+                onPress={() => navigation.navigate('NewAssessment', { teamId: team.id })}
+              />
+              <Button
+                label="Attach Existing"
+                variant="secondary"
+                size="sm"
+                className="flex-1"
+                onPress={() => setShowAttachModal(true)}
+              />
+            </View>
+          </View>
+          <FlatList
+            className="flex-1 px-4"
+            contentContainerStyle={{ paddingBottom: 24 }}
+            data={linkedTryouts}
+            keyExtractor={(t) => t.id}
+            extraData={navigatingId}
+            ListEmptyComponent={
+              <Card className="items-center py-6 gap-1">
+                <Text className="font-bold" style={{ color: colors.ink }}>No assessments linked</Text>
+                <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
+                  Create a tryout or evaluation for this team, or attach one you already have.
+                </Text>
+              </Card>
+            }
+            renderItem={({ item: t }) => (
+              <Pressable
+                onPress={() => {
+                  setNavigatingId(t.id);
+                  navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: t.id } });
+                }}
+              >
+                <Card className="mb-2 flex-row items-center justify-between">
+                  <View className="flex-1 pr-2">
+                    <Text className="font-bold" style={{ color: colors.ink }}>{t.name}</Text>
+                    <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
+                      {t.sport} · {t.eventType} · {t.roster?.length ?? 0} players
+                    </Text>
+                  </View>
+                  {navigatingId === t.id ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Badge label="Open" variant="brand" />
+                  )}
+                </Card>
+              </Pressable>
+            )}
+          />
+        </View>
+      ) : (
       <ScrollView
         className="flex-1 px-4"
         contentContainerStyle={{ paddingBottom: 24 }}
         keyboardShouldPersistTaps="handled"
       >
-        <Header
-          title={team.name}
-          subtitle={team.season || undefined}
-          showBack
-          right={<Button label="Edit" variant="ghost" size="sm" onPress={startEdit} />}
-        />
-        {team.logoUrl ? (
-          <View className="items-center mt-2 mb-4">
-            <Avatar uri={team.logoUrl} first="T" last="M" size={80} />
-          </View>
-        ) : null}
-
-        <Tabs
-          tabs={[
-            { key: 'schedule', label: 'Schedule', badge: upcomingEvents.length },
-            { key: 'players', label: 'Players', badge: teamPlayers.length },
-            { key: 'assessments', label: 'Assessments', badge: linkedTryouts.length },
-            { key: 'settings', label: 'Settings' },
-          ]}
-          activeKey={tab}
-          onChange={setTab}
-          className="mt-2 mb-4"
-        />
+        {headerBlock}
 
         {tab === 'schedule' ? (
           <View>
@@ -501,7 +675,10 @@ export default function TeamDetailScreen() {
             </View>
 
             {seasonsQuery.isLoading || seasonQuery.isLoading ? (
-              <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading events...</Text>
+              <View className="items-center py-6 gap-2">
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading events...</Text>
+              </View>
             ) : upcomingEvents.length === 0 ? (
               <Card className="items-center py-6 gap-1">
                 <Text className="font-bold" style={{ color: colors.ink }}>No upcoming events</Text>
@@ -586,122 +763,13 @@ export default function TeamDetailScreen() {
                         label="Delete"
                         variant="ghost"
                         size="sm"
+                        loading={deleteEvent.isPending && deleteEvent.variables === ev.id}
                         onPress={() => confirmDeleteEvent(ev.id, ev.title)}
                       />
                     </View>
                   </Card>
                 );
               })
-            )}
-          </View>
-        ) : tab === 'players' ? (
-          <View>
-            <Button
-              label="Add Players from Assessments"
-              size="sm"
-              className="mb-3 self-start"
-              onPress={() => {
-                setPickedAthletes(new Set());
-                setCandidateSearch('');
-                setCandidateTryoutFilter(null);
-                setShowAddPlayers(true);
-              }}
-            />
-            {teamPlayers.length > 0 ? (
-              <Input
-                value={playerSearch}
-                onChangeText={setPlayerSearch}
-                placeholder="Search players by name"
-                autoCapitalize="none"
-                containerClassName="mb-3"
-              />
-            ) : null}
-            {rosterQuery.isLoading ? (
-              <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading roster...</Text>
-            ) : teamPlayers.length === 0 ? (
-              <Card className="items-center py-6 gap-1">
-                <Text className="font-bold" style={{ color: colors.ink }}>No players yet</Text>
-                <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
-                  Pull players in from any assessment roster to build this team.
-                </Text>
-              </Card>
-            ) : filteredTeamPlayers.length === 0 ? (
-              <Card className="items-center py-6 gap-1">
-                <Text className="font-bold" style={{ color: colors.ink }}>No matches</Text>
-                <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
-                  No players match "{playerSearch}".
-                </Text>
-              </Card>
-            ) : (
-              filteredTeamPlayers.map((p) => (
-                <Pressable
-                  key={p.id}
-                  onPress={() => navigation.navigate('TeamPlayer', { id: team.id, playerId: p.athleteId })}
-                >
-                  <Card className="mb-2 flex-row items-center gap-3">
-                    <Avatar first={p.first} last={p.last} size={36} pos={p.pos} />
-                    <View className="flex-1">
-                      <Text className="font-bold" style={{ color: colors.ink }}>
-                        {p.first} {p.last}
-                      </Text>
-                      <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
-                        {[p.jersey ? `#${p.jersey}` : null, p.pos, p.sourceTryoutName].filter(Boolean).join(' · ')}
-                      </Text>
-                    </View>
-                    <Button
-                      label="Remove"
-                      size="sm"
-                      variant="ghost"
-                      onPress={() => confirmRemovePlayer(p.athleteId, `${p.first} ${p.last}`)}
-                    />
-                  </Card>
-                </Pressable>
-              ))
-            )}
-          </View>
-        ) : tab === 'assessments' ? (
-          <View>
-            <View className="flex-row gap-2 mb-3">
-              <Button
-                label="Create"
-                size="sm"
-                className="flex-1"
-                onPress={() => navigation.navigate('NewAssessment', { teamId: team.id })}
-              />
-              <Button
-                label="Attach Existing"
-                variant="secondary"
-                size="sm"
-                className="flex-1"
-                onPress={() => setShowAttachModal(true)}
-              />
-            </View>
-            {linkedTryouts.length === 0 ? (
-              <Card className="items-center py-6 gap-1">
-                <Text className="font-bold" style={{ color: colors.ink }}>No assessments linked</Text>
-                <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
-                  Create a tryout or evaluation for this team, or attach one you already have.
-                </Text>
-              </Card>
-            ) : (
-              linkedTryouts.map((t) => (
-                <Pressable
-                  key={t.id}
-                  onPress={() =>
-                    navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: t.id } })
-                  }
-                >
-                  <Card className="mb-2 flex-row items-center justify-between">
-                    <View className="flex-1 pr-2">
-                      <Text className="font-bold" style={{ color: colors.ink }}>{t.name}</Text>
-                      <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
-                        {t.sport} · {t.eventType} · {t.roster?.length ?? 0} players
-                      </Text>
-                    </View>
-                    <Badge label="Open" variant="brand" />
-                  </Card>
-                </Pressable>
-              ))
             )}
           </View>
         ) : (
@@ -756,6 +824,7 @@ export default function TeamDetailScreen() {
           </View>
         )}
       </ScrollView>
+      )}
 
       <Modal visible={editing} title="Edit Team" onClose={() => setEditing(false)}>
         <View className="gap-3">
@@ -778,14 +847,24 @@ export default function TeamDetailScreen() {
         </View>
       </Modal>
 
-      <Modal visible={showAttachModal} title="Attach Assessment" onClose={() => setShowAttachModal(false)}>
+      <Modal
+        visible={showAttachModal}
+        title="Attach Assessment"
+        onClose={() => {
+          if (updateTryout.isPending) return;
+          setShowAttachModal(false);
+        }}
+      >
         <View style={{ gap: 2 }}>
           {unlinkedTryouts.length === 0 ? (
             <Text style={{ color: colors.inkMuted, padding: 12 }}>No assessments available to link.</Text>
           ) : (
-            unlinkedTryouts.map((t) => (
+            unlinkedTryouts.map((t) => {
+              const isAttaching = updateTryout.isPending && updateTryout.variables?.id === t.id;
+              return (
               <Pressable
                 key={t.id}
+                disabled={updateTryout.isPending}
                 onPress={async () => {
                   try {
                     await updateTryout.mutateAsync({ id: t.id, updates: { teamId: team.id } });
@@ -800,15 +879,17 @@ export default function TeamDetailScreen() {
                     backgroundColor: pressed ? colors.border : 'transparent',
                     borderBottomWidth: 1,
                     borderBottomColor: colors.border,
+                    opacity: updateTryout.isPending && !isAttaching ? 0.5 : 1,
                   }
                 ]}
               >
                 <Text className="font-bold" style={{ color: colors.ink }}>{t.name}</Text>
                 <Text className="text-xs mt-1" style={{ color: colors.inkMuted }}>
-                  {t.sport} · {t.roster.length} players
+                  {isAttaching ? 'Attaching...' : `${t.sport} · ${t.roster.length} players`}
                 </Text>
               </Pressable>
-            ))
+              );
+            })
           )}
         </View>
       </Modal>
@@ -816,19 +897,24 @@ export default function TeamDetailScreen() {
       <Modal
         visible={showAddPlayers}
         title="Add Players from Assessments"
-        onClose={() => setShowAddPlayers(false)}
+        onClose={() => {
+          if (isAddingPlayers) return;
+          setShowAddPlayers(false);
+        }}
         footer={
           <View className="mt-4">
             <Button
               label={pickedAthletes.size === 0 ? 'Select players to add' : `Add ${pickedAthletes.size} to ${team.name}`}
-              disabled={pickedAthletes.size === 0}
-              loading={addRosterPlayers.isPending || enrollingAssessments}
+              disabled={pickedAthletes.size === 0 || isAddingPlayers}
+              loading={isAddingPlayers}
               onPress={addPickedPlayers}
             />
           </View>
         }
       >
-        {candidates.length === 0 ? (
+        {isAddingPlayers ? (
+          <LoadingState message="Adding players..." />
+        ) : candidates.length === 0 ? (
           <Text className="text-sm py-3" style={{ color: colors.inkMuted }}>
             No assessments have players yet — add players to an assessment roster first.
           </Text>

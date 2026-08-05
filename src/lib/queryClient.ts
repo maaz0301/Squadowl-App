@@ -17,7 +17,9 @@ export const queryClient = new QueryClient({
     queries: {
       staleTime: 30_000,
       retry: 1,
-      refetchOnWindowFocus: false,
+      // Refetch stale queries when the app returns to the foreground — wired up
+      // via AppState in App.tsx, since RN has no window-focus events of its own.
+      refetchOnWindowFocus: true,
     },
     mutations: {
       retry: 0,
