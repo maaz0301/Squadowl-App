@@ -46,7 +46,7 @@ export default function TeamBuilderScreen() {
   if (tryoutQuery.isLoading) return <LoadingState message="Loading..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
     return (
-      <Screen scroll>
+      <Screen scroll insideTabBar>
         <Header title="Team Builder" showBack />
         <ErrorState message="Could not load team builder." onRetry={() => tryoutQuery.refetch()} />
       </Screen>
@@ -68,7 +68,7 @@ export default function TeamBuilderScreen() {
   };
 
   return (
-    <Screen scroll>
+    <Screen scroll insideTabBar>
       <Header title="Team Builder" subtitle="Sort Out — balanced teams" showBack onBack={() => navigation.navigate('AssessmentResults')} />
 
       <PlanGate feature="teamBuilder" title="Team Builder (Club+)">

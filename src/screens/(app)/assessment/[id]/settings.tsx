@@ -202,7 +202,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <Screen scroll>
+    <Screen scroll insideTabBar>
       <Header title="Assessment Settings" showBack />
       <Card accent className="mb-4 gap-2">
         <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>

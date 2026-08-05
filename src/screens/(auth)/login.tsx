@@ -55,7 +55,6 @@ export default function LoginScreen() {
             style={{ width: '100%', height: 120 }}
             resizeMode="contain"
             muted
-            repeat
             controls={false}
             playInBackground={false}
             ignoreSilentSwitch="obey"

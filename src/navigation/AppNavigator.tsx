@@ -37,6 +37,7 @@ export default function AppNavigator() {
       {/* Team screens */}
       <Stack.Screen name="NewTeam" component={require('../screens/(app)/team/new').default} />
       <Stack.Screen name="TeamDetail" component={require('../screens/(app)/team/[id]').default} />
+      <Stack.Screen name="TeamPlayer" component={require('../screens/(app)/team/[id]/player/[playerId]').default} />
 
       {/* Misc screens */}
       <Stack.Screen name="Upgrade" component={require('../screens/(app)/upgrade').default} />

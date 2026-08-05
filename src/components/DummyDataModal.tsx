@@ -41,6 +41,9 @@ interface AssessmentProps {
   variant: 'assessment';
   visible: boolean;
   loading?: boolean;
+  /** How many of the requested players have been generated so far — only the
+   * AI-scored path is slow enough to need this; omit it for the instant path. */
+  progress?: { done: number; total: number };
   /** Blocks the scoring options and explains why — no rubrics defined yet. */
   hasRubrics: boolean;
   onAddRubrics: () => void;
@@ -52,6 +55,7 @@ interface TeamProps {
   variant: 'team';
   visible: boolean;
   loading?: boolean;
+  progress?: { done: number; total: number };
   onClose: () => void;
   onSubmit: (options: DummyTeamOptions) => void;
 }
@@ -111,7 +115,32 @@ export function DummyDataModal(props: DummyDataModalProps) {
       title={isTeam ? 'Dummy Teams' : 'Dummy Data'}
       onClose={props.onClose}
       footer={
-        <View className="mt-4">
+        <View className="mt-4 gap-2">
+          {props.loading && props.progress && props.progress.total > 0 ? (
+            <View style={{ gap: 4 }}>
+              <View
+                style={{
+                  width: '100%',
+                  height: 8,
+                  borderRadius: 999,
+                  overflow: 'hidden',
+                  backgroundColor: colors.tile,
+                }}
+              >
+                <View
+                  style={{
+                    width: `${Math.min(100, Math.max(4, Math.round((props.progress.done / props.progress.total) * 100)))}%`,
+                    height: '100%',
+                    borderRadius: 999,
+                    backgroundColor: colors.primary,
+                  }}
+                />
+              </View>
+              <Text className="text-xs text-center" style={{ color: colors.inkMuted }}>
+                Generated {props.progress.done} of {props.progress.total} players...
+              </Text>
+            </View>
+          ) : null}
           <Button label={submitLabel} loading={props.loading} onPress={submit} />
         </View>
       }

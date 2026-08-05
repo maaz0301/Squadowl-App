@@ -13,7 +13,7 @@ import {
   Badge,
 } from '@/components/ui';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { useGuardianRostersQuery, useSetAvailabilityMutation } from '@/features/queries';
+import { useGuardianRostersQuery, useGuardianRealtimeSync, useSetAvailabilityMutation } from '@/features/queries';
 import type { SeasonEvent } from '@/data/types';
 
 function ExpandableText({ text, style, className }: { text: string, style?: any, className?: string }) {
@@ -136,6 +136,9 @@ export default function GuardianPortalScreen() {
   const [tab, setTab] = useState('overview');
 
   const guardianQuery = useGuardianRostersQuery();
+  // Keeps this screen in sync with a coach's event edits without needing to
+  // navigate away and back for the cache to refresh.
+  useGuardianRealtimeSync();
 
   if (guardianQuery.isLoading) {
     return <LoadingState message="Loading portal..." />;

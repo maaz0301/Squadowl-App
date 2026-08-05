@@ -60,6 +60,18 @@ export default function SeasonHubScreen() {
         <Pressable onPress={() => navigation.navigate('SeasonSchedule', { id: id })}>
           <Badge label={`${season.events.length} events`} />
         </Pressable>
+        <Pressable onPress={() => navigation.navigate('SeasonAttendance', { id: id })}>
+          <Badge label="Attendance" variant="info" />
+        </Pressable>
+      </View>
+
+      <View className="flex-row gap-2 mb-4">
+        <Button
+          label="Adjust Attendance"
+          variant="secondary"
+          size="sm"
+          onPress={() => navigation.navigate('SeasonAvailability', { id: id })}
+        />
       </View>
 
       <Text className="text-md font-display font-bold mb-3" style={{ color: colors.ink }}>

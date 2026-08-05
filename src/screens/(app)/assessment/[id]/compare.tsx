@@ -28,7 +28,7 @@ export default function CompareScreen() {
   if (tryoutQuery.isLoading) return <LoadingState />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
     return (
-      <Screen scroll>
+      <Screen scroll insideTabBar>
         <Header title="Compare Players" showBack />
         <ErrorState message="Could not load compare data." onRetry={() => tryoutQuery.refetch()} />
       </Screen>

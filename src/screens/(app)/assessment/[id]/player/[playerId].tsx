@@ -109,7 +109,7 @@ export default function PlayerHubScreen() {
     .sort((a, b) => b.createdAt - a.createdAt);
 
   return (
-    <Screen scroll>
+    <Screen scroll insideTabBar>
       <Header
         title={playerDisplayName(player)}
         showBack

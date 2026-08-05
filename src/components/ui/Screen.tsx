@@ -14,6 +14,14 @@ interface ScreenProps extends ViewProps {
   keyboardAvoiding?: boolean;
   /** Custom vertical offset for KeyboardAvoidingView */
   keyboardOffset?: number;
+  /**
+   * Only true for screens actually rendered inside AssessmentTabNavigator's
+   * native bottom tab bar. Setting this on a plain stack screen makes
+   * KeyboardAwareScrollView subtract a phantom 49-83pt tab-bar height from
+   * its keyboard-clearance calculation, leaving the bottom of the form
+   * covered by the keyboard.
+   */
+  insideTabBar?: boolean;
   children: React.ReactNode;
 }
 
@@ -24,6 +32,7 @@ export function Screen({
   edges = ['top', 'left', 'right'],
   keyboardAvoiding = true,
   keyboardOffset = Platform.OS === 'ios' ? 88 : 0,
+  insideTabBar = false,
   children,
   ...props
 }: ScreenProps) {
@@ -43,7 +52,7 @@ export function Screen({
       showsVerticalScrollIndicator={false}
       enableOnAndroid={true}
       extraScrollHeight={Platform.OS === 'ios' ? 20 : 0}
-      viewIsInsideTabBar={true}
+      viewIsInsideTabBar={insideTabBar}
     >
       {innerContent}
     </KeyboardAwareScrollView>

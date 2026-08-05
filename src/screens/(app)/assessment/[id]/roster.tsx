@@ -13,6 +13,7 @@ import {
   EmptyState,
   ErrorState,
   Header,
+  Input,
   LoadingState,
   Modal,
   Screen,
@@ -38,7 +39,8 @@ export default function RosterScreen() {
   const tryoutQuery = useTryoutQuery(id);
   const addPlayer = useAddPlayerMutation(id!);
   const uploadPhoto = useUploadPlayerPhotoMutation(id!);
-  const genTest = useGenerateTestDataMutation(id!);
+  const [dummyProgress, setDummyProgress] = useState<{ done: number; total: number } | null>(null);
+  const genTest = useGenerateTestDataMutation(id!, (done, total) => setDummyProgress({ done, total }));
   const clearTest = useClearTestDataMutation(id!);
   const rosterFilter = useSessionStore((s) => s.rosterFilter);
   const setRosterFilter = useSessionStore((s) => s.setRosterFilter);
@@ -50,6 +52,7 @@ export default function RosterScreen() {
   const [showTools, setShowTools] = useState(false);
   const [showTestGen, setShowTestGen] = useState(false);
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
+  const [playerSearch, setPlayerSearch] = useState('');
 
   const isAssociation = canUseFeature(user?.planTier ?? 'free', 'enterprise');
 
@@ -68,19 +71,29 @@ export default function RosterScreen() {
     if (!tryoutQuery.data) return [];
     const { roster, evals } = tryoutQuery.data;
     const scoredIds = new Set(evals.map((e) => e.playerId));
+    let result;
     switch (rosterFilter) {
       case 'scored':
-        return roster.filter((p) => scoredIds.has(p.id));
+        result = roster.filter((p) => scoredIds.has(p.id));
+        break;
       case 'unscored':
-        return roster.filter((p) => !scoredIds.has(p.id));
+        result = roster.filter((p) => !scoredIds.has(p.id));
+        break;
       case 'goalies':
-        return roster.filter((p) => p.pos?.toUpperCase() === 'GTL');
+        result = roster.filter((p) => p.pos?.toUpperCase() === 'GTL');
+        break;
       case 'skaters':
-        return roster.filter((p) => p.pos?.toUpperCase() !== 'GTL');
+        result = roster.filter((p) => p.pos?.toUpperCase() !== 'GTL');
+        break;
       default:
-        return roster;
+        result = roster;
     }
-  }, [tryoutQuery.data, rosterFilter]);
+    const search = playerSearch.trim().toLowerCase();
+    if (search) {
+      result = result.filter((p) => `${p.first} ${p.last}`.toLowerCase().includes(search));
+    }
+    return result;
+  }, [tryoutQuery.data, rosterFilter, playerSearch]);
 
   if (tryoutQuery.isLoading) return <LoadingState message="Loading roster..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
@@ -148,6 +161,13 @@ export default function RosterScreen() {
             </View>
           ) : null}
 
+          <Input
+            value={playerSearch}
+            onChangeText={setPlayerSearch}
+            placeholder="Search players by name"
+            autoCapitalize="none"
+          />
+
           <View>
             <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>
               Show
@@ -177,10 +197,17 @@ export default function RosterScreen() {
         ListEmptyComponent={
           hasPlayers ? (
             <EmptyState
-              title="No players match this filter"
-              message={`No ${rosterFilter} players. Try a different filter.`}
-              actionLabel="Show all"
-              onAction={() => setRosterFilter('all')}
+              title="No players match"
+              message={
+                playerSearch.trim()
+                  ? `No players match "${playerSearch.trim()}".`
+                  : `No ${rosterFilter} players. Try a different filter.`
+              }
+              actionLabel={playerSearch.trim() ? 'Clear search' : 'Show all'}
+              onAction={() => {
+                setPlayerSearch('');
+                setRosterFilter('all');
+              }}
             />
           ) : (
             <View className="flex-1 items-center justify-center px-6">
@@ -336,6 +363,7 @@ export default function RosterScreen() {
         variant="assessment"
         visible={showTestGen}
         loading={genTest.isPending}
+        progress={dummyProgress ?? undefined}
         hasRubrics={(tryout.settings?.customRubrics?.length ?? 0) > 0}
         onAddRubrics={() => {
           setShowTestGen(false);
@@ -343,6 +371,7 @@ export default function RosterScreen() {
         }}
         onClose={() => setShowTestGen(false)}
         onSubmit={async (options) => {
+          setDummyProgress(null);
           try {
             const res = await genTest.mutateAsync(options);
             setShowTestGen(false);
@@ -359,6 +388,8 @@ export default function RosterScreen() {
               : e?.message || 'Failed to generate dummy data.';
             if (Platform.OS === 'web') alert(msg);
             else Alert.alert('Error', msg);
+          } finally {
+            setDummyProgress(null);
           }
         }}
       />

@@ -5,16 +5,19 @@ import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
-import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useGenerateTestDataMutation, useClearTestDataMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useRemoveTeamRosterPlayerMutation, useSeasonsQuery, useSeasonQuery, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation } from '@/features/queries';
+import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useGenerateTestDataMutation, useClearTestDataMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useRemoveTeamRosterPlayerMutation, useSeasonsQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation } from '@/features/queries';
 import { useUser } from '@/state/authStore';
 import { canUseFeature } from '@/data/plans';
 import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
 import { BottomNav } from '@/components/BottomNav';
 import { DummyDataModal } from '@/components/DummyDataModal';
 import type { DummyDataOptions } from '@/data/testDataGenerator';
+import { getDataSource } from '@/data';
+import { queryKeys } from '@/lib/queryClient';
 
 type Rsvp = 'yes' | 'maybe' | 'no' | 'pending';
 
@@ -32,19 +35,6 @@ const RSVP_VARIANT: Record<Rsvp, 'success' | 'warning' | 'danger' | 'default'> =
   pending: 'default',
 };
 
-function StatTile({ label, value, colors }: { label: string; value: number; colors: any }) {
-  return (
-    <View className="flex-1 rounded-xl p-3" style={{ backgroundColor: colors.tile }}>
-      <Text className="text-xl font-display font-bold" style={{ color: colors.ink }}>
-        {value}
-      </Text>
-      <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
-        {label}
-      </Text>
-    </View>
-  );
-}
-
 export default function TeamDetailScreen() {
   const route = useRoute<any>();
   const { id } = route.params || {};
@@ -52,6 +42,7 @@ export default function TeamDetailScreen() {
   const navigation = useNavigation<any>();
   const teamsQuery = useTeamsQuery();
   const tryoutsQuery = useTryoutsQuery(false);
+  const qc = useQueryClient();
   const updateTeam = useUpdateTeamMutation();
   const deleteTeam = useDeleteTeamMutation();
   const updateTryout = useUpdateTryoutMutation();
@@ -65,9 +56,19 @@ export default function TeamDetailScreen() {
   const [showDummy, setShowDummy] = useState(false);
   const [showAddPlayers, setShowAddPlayers] = useState(false);
   const [pickedAthletes, setPickedAthletes] = useState<Set<string>>(new Set());
+  const [candidateSearch, setCandidateSearch] = useState('');
+  const [candidateTryoutFilter, setCandidateTryoutFilter] = useState<string | null>(null);
+  const [enrollingAssessments, setEnrollingAssessments] = useState(false);
   const [showAddEvent, setShowAddEvent] = useState(false);
   const [tab, setTab] = useState('schedule');
   const [openRsvpEventId, setOpenRsvpEventId] = useState<string | null>(null);
+  const [availabilityTarget, setAvailabilityTarget] = useState<{
+    eventId: string;
+    playerId: string;
+    playerName: string;
+    current: Rsvp;
+  } | null>(null);
+  const [playerSearch, setPlayerSearch] = useState('');
 
   const rosterQuery = useTeamRosterQuery(id);
   const addRosterPlayers = useAddTeamRosterPlayersMutation(id);
@@ -79,6 +80,9 @@ export default function TeamDetailScreen() {
   const seasonsQuery = useSeasonsQuery();
   const teamSeasonId = (seasonsQuery.data ?? []).find((s) => s.teamId === id)?.id;
   const seasonQuery = useSeasonQuery(teamSeasonId);
+  // Keeps RSVPs/event edits in sync with a guardian's portal without the coach
+  // having to navigate away and back for the cache to refresh.
+  useSeasonRealtimeSync(teamSeasonId);
   const addEvent = useAddTeamEventMutation(
     id,
     teamsQuery.data?.find((t) => t.id === id)?.name ?? 'Team',
@@ -86,6 +90,7 @@ export default function TeamDetailScreen() {
   );
   const updateEvent = useUpdateSeasonEventMutation(teamSeasonId ?? '');
   const deleteEvent = useDeleteSeasonEventMutation(teamSeasonId ?? '');
+  const setAvailability = useSetAvailabilityMutation(teamSeasonId ?? '');
 
   const eventForm = useForm<CreateEventForm>({
     resolver: zodResolver(CreateEventFormSchema),
@@ -99,7 +104,8 @@ export default function TeamDetailScreen() {
   // returns below so these hooks stay unconditional.
   const linkedForHooks = (tryoutsQuery.data ?? []).filter((t) => t.teamId === id);
   const dummyTarget = linkedForHooks[0];
-  const genTest = useGenerateTestDataMutation(dummyTarget?.id ?? '');
+  const [dummyProgress, setDummyProgress] = useState<{ done: number; total: number } | null>(null);
+  const genTest = useGenerateTestDataMutation(dummyTarget?.id ?? '', (done, total) => setDummyProgress({ done, total }));
   const clearTest = useClearTestDataMutation(dummyTarget?.id ?? '');
 
   if (teamsQuery.isLoading || tryoutsQuery.isLoading) return <LoadingState message="Loading team..." />;
@@ -134,59 +140,116 @@ export default function TeamDetailScreen() {
 
   const teamPlayers = rosterQuery.data ?? [];
   const onRoster = new Set(teamPlayers.map((p) => p.athleteId));
+  const filteredTeamPlayers = playerSearch.trim()
+    ? teamPlayers.filter((p) =>
+        `${p.first} ${p.last}`.toLowerCase().includes(playerSearch.trim().toLowerCase()),
+      )
+    : teamPlayers;
 
   // Candidates for the picker: every athlete on any assessment's roster, from
   // ALL assessments (not just this team's), deduped. Athletes already on the
   // team are kept in the list and flagged rather than hidden, so it's obvious
   // they're accounted for instead of looking like they went missing.
-  const candidates: {
-    athleteId: string;
-    first: string;
-    last: string;
-    jersey?: string;
-    pos?: string;
-    tryoutId: string;
-    tryoutName: string;
-    alreadyOnTeam: boolean;
-  }[] = [];
-  const seenCandidates = new Set<string>();
+  // Every tryout an athlete actually appears on is tracked (not just the first
+  // one seen) so filtering by assessment and "enroll everywhere" below are both
+  // accurate for athletes shared across multiple assessments.
+  const candidatesByAthlete = new Map<
+    string,
+    {
+      athleteId: string;
+      first: string;
+      last: string;
+      jersey?: string;
+      pos?: string;
+      yearOfBirth?: string;
+      tryoutId: string;
+      tryoutName: string;
+      tryoutIds: Set<string>;
+      tryoutNames: Set<string>;
+      alreadyOnTeam: boolean;
+    }
+  >();
   for (const t of tryoutsQuery.data ?? []) {
     for (const p of t.roster ?? []) {
       const athleteId = p.athleteId;
-      if (!athleteId || seenCandidates.has(athleteId)) continue;
-      seenCandidates.add(athleteId);
-      candidates.push({
+      if (!athleteId) continue;
+      const existing = candidatesByAthlete.get(athleteId);
+      if (existing) {
+        existing.tryoutIds.add(t.id);
+        existing.tryoutNames.add(t.name);
+        continue;
+      }
+      candidatesByAthlete.set(athleteId, {
         athleteId,
         first: p.first,
         last: p.last,
         jersey: p.jersey,
         pos: p.pos,
+        yearOfBirth: p.yearOfBirth,
         tryoutId: t.id,
         tryoutName: t.name,
+        tryoutIds: new Set([t.id]),
+        tryoutNames: new Set([t.name]),
         alreadyOnTeam: onRoster.has(athleteId),
       });
     }
   }
+  const candidates = [...candidatesByAthlete.values()];
   // Already-on-team entries sink to the bottom so the actionable ones lead.
   candidates.sort((a, b) => Number(a.alreadyOnTeam) - Number(b.alreadyOnTeam));
   const availableCount = candidates.filter((c) => !c.alreadyOnTeam).length;
+  const filteredCandidates = candidates
+    .filter((c) => !candidateTryoutFilter || c.tryoutIds.has(candidateTryoutFilter))
+    .filter((c) =>
+      candidateSearch.trim()
+        ? `${c.first} ${c.last}`.toLowerCase().includes(candidateSearch.trim().toLowerCase())
+        : true,
+    );
 
   const addPickedPlayers = async () => {
-    const entries = candidates
-      .filter((c) => pickedAthletes.has(c.athleteId))
-      .map((c) => ({
-        athleteId: c.athleteId,
-        jersey: c.jersey,
-        pos: c.pos,
-        sourceTryoutId: c.tryoutId,
-      }));
-    if (entries.length === 0) return;
+    const picked = candidates.filter((c) => pickedAthletes.has(c.athleteId));
+    if (picked.length === 0) return;
+    const entries = picked.map((c) => ({
+      athleteId: c.athleteId,
+      jersey: c.jersey,
+      pos: c.pos,
+      sourceTryoutId: c.tryoutId,
+    }));
     try {
       await addRosterPlayers.mutateAsync(entries);
+
+      // Keep every assessment already linked to this team in sync: enroll each
+      // picked athlete there too if they aren't already a participant on it.
+      if (linkedTryouts.length > 0) {
+        setEnrollingAssessments(true);
+        const enrollments = picked.flatMap((c) =>
+          linkedTryouts
+            .filter((t) => !c.tryoutIds.has(t.id))
+            .map((t) =>
+              getDataSource().addPlayer(t.id, {
+                athleteId: c.athleteId,
+                first: c.first,
+                last: c.last,
+                jersey: c.jersey || '',
+                pos: c.pos || '',
+                yearOfBirth: c.yearOfBirth || '',
+              }),
+            ),
+        );
+        if (enrollments.length > 0) {
+          await Promise.all(enrollments);
+          for (const t of linkedTryouts) qc.invalidateQueries({ queryKey: queryKeys.tryout(t.id) });
+          qc.invalidateQueries({ queryKey: queryKeys.tryouts(false) });
+        }
+      }
+
       setPickedAthletes(new Set());
+      setCandidateTryoutFilter(null);
       setShowAddPlayers(false);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Could not add players to the team.');
+    } finally {
+      setEnrollingAssessments(false);
     }
   };
 
@@ -312,6 +375,7 @@ export default function TeamDetailScreen() {
   };
 
   const runDummy = async (options: DummyDataOptions) => {
+    setDummyProgress(null);
     try {
       const res = await genTest.mutateAsync(options);
       setShowDummy(false);
@@ -323,6 +387,8 @@ export default function TeamDetailScreen() {
       Alert.alert('Error', e?.message === 'NO_RUBRICS'
         ? 'Add at least one rubric to that assessment before generating scored players.'
         : e?.message || 'Failed to generate dummy data.');
+    } finally {
+      setDummyProgress(null);
     }
   };
 
@@ -415,12 +481,6 @@ export default function TeamDetailScreen() {
           </View>
         ) : null}
 
-        <View className="flex-row gap-2 mt-2 mb-4">
-          <StatTile label="Players" value={teamPlayers.length} colors={colors} />
-          <StatTile label="Upcoming" value={upcomingEvents.length} colors={colors} />
-          <StatTile label="Assessments" value={linkedTryouts.length} colors={colors} />
-        </View>
-
         <Tabs
           tabs={[
             { key: 'schedule', label: 'Schedule', badge: upcomingEvents.length },
@@ -430,7 +490,7 @@ export default function TeamDetailScreen() {
           ]}
           activeKey={tab}
           onChange={setTab}
-          className="mb-4"
+          className="mt-2 mb-4"
         />
 
         {tab === 'schedule' ? (
@@ -494,8 +554,16 @@ export default function TeamDetailScreen() {
                           </Text>
                         ) : (
                           rsvp.rows.map((r, i) => (
-                            <View
+                            <Pressable
                               key={r.playerId}
+                              onPress={() =>
+                                setAvailabilityTarget({
+                                  eventId: ev.id,
+                                  playerId: r.playerId,
+                                  playerName: r.name,
+                                  current: r.response,
+                                })
+                              }
                               className="flex-row items-center justify-between px-3 py-2"
                               style={{
                                 borderTopWidth: i === 0 ? 0 : 1,
@@ -506,7 +574,7 @@ export default function TeamDetailScreen() {
                                 {r.name}
                               </Text>
                               <Badge label={RSVP_LABEL[r.response]} variant={RSVP_VARIANT[r.response]} />
-                            </View>
+                            </Pressable>
                           ))
                         )}
                       </View>
@@ -534,9 +602,20 @@ export default function TeamDetailScreen() {
               className="mb-3 self-start"
               onPress={() => {
                 setPickedAthletes(new Set());
+                setCandidateSearch('');
+                setCandidateTryoutFilter(null);
                 setShowAddPlayers(true);
               }}
             />
+            {teamPlayers.length > 0 ? (
+              <Input
+                value={playerSearch}
+                onChangeText={setPlayerSearch}
+                placeholder="Search players by name"
+                autoCapitalize="none"
+                containerClassName="mb-3"
+              />
+            ) : null}
             {rosterQuery.isLoading ? (
               <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading roster...</Text>
             ) : teamPlayers.length === 0 ? (
@@ -546,25 +625,37 @@ export default function TeamDetailScreen() {
                   Pull players in from any assessment roster to build this team.
                 </Text>
               </Card>
+            ) : filteredTeamPlayers.length === 0 ? (
+              <Card className="items-center py-6 gap-1">
+                <Text className="font-bold" style={{ color: colors.ink }}>No matches</Text>
+                <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
+                  No players match "{playerSearch}".
+                </Text>
+              </Card>
             ) : (
-              teamPlayers.map((p) => (
-                <Card key={p.id} className="mb-2 flex-row items-center gap-3">
-                  <Avatar first={p.first} last={p.last} size={36} pos={p.pos} />
-                  <View className="flex-1">
-                    <Text className="font-bold" style={{ color: colors.ink }}>
-                      {p.first} {p.last}
-                    </Text>
-                    <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
-                      {[p.jersey ? `#${p.jersey}` : null, p.pos, p.sourceTryoutName].filter(Boolean).join(' · ')}
-                    </Text>
-                  </View>
-                  <Button
-                    label="Remove"
-                    size="sm"
-                    variant="ghost"
-                    onPress={() => confirmRemovePlayer(p.athleteId, `${p.first} ${p.last}`)}
-                  />
-                </Card>
+              filteredTeamPlayers.map((p) => (
+                <Pressable
+                  key={p.id}
+                  onPress={() => navigation.navigate('TeamPlayer', { id: team.id, playerId: p.athleteId })}
+                >
+                  <Card className="mb-2 flex-row items-center gap-3">
+                    <Avatar first={p.first} last={p.last} size={36} pos={p.pos} />
+                    <View className="flex-1">
+                      <Text className="font-bold" style={{ color: colors.ink }}>
+                        {p.first} {p.last}
+                      </Text>
+                      <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
+                        {[p.jersey ? `#${p.jersey}` : null, p.pos, p.sourceTryoutName].filter(Boolean).join(' · ')}
+                      </Text>
+                    </View>
+                    <Button
+                      label="Remove"
+                      size="sm"
+                      variant="ghost"
+                      onPress={() => confirmRemovePlayer(p.athleteId, `${p.first} ${p.last}`)}
+                    />
+                  </Card>
+                </Pressable>
               ))
             )}
           </View>
@@ -731,7 +822,7 @@ export default function TeamDetailScreen() {
             <Button
               label={pickedAthletes.size === 0 ? 'Select players to add' : `Add ${pickedAthletes.size} to ${team.name}`}
               disabled={pickedAthletes.size === 0}
-              loading={addRosterPlayers.isPending}
+              loading={addRosterPlayers.isPending || enrollingAssessments}
               onPress={addPickedPlayers}
             />
           </View>
@@ -743,6 +834,30 @@ export default function TeamDetailScreen() {
           </Text>
         ) : (
           <View>
+            <Input
+              value={candidateSearch}
+              onChangeText={setCandidateSearch}
+              placeholder="Search players by name"
+              autoCapitalize="none"
+              containerClassName="mb-3"
+            />
+            {linkedTryouts.length > 0 ? (
+              <View className="flex-row flex-wrap gap-2 mb-3">
+                <Chip
+                  label="All"
+                  active={candidateTryoutFilter === null}
+                  onPress={() => setCandidateTryoutFilter(null)}
+                />
+                {linkedTryouts.map((t) => (
+                  <Chip
+                    key={t.id}
+                    label={t.name}
+                    active={candidateTryoutFilter === t.id}
+                    onPress={() => setCandidateTryoutFilter(candidateTryoutFilter === t.id ? null : t.id)}
+                  />
+                ))}
+              </View>
+            ) : null}
             <View className="flex-row items-center justify-between mb-2">
               <Text className="text-xs flex-1 pr-2" style={{ color: colors.inkMuted }}>
                 Athletes from all of your assessments. Tap to select.
@@ -765,7 +880,12 @@ export default function TeamDetailScreen() {
               ) : null}
             </View>
 
-            {candidates.map((c) => {
+            {filteredCandidates.length === 0 ? (
+              <Text className="text-sm text-center py-4" style={{ color: colors.inkMuted }}>
+                No players match "{candidateSearch}".
+              </Text>
+            ) : (
+            filteredCandidates.map((c) => {
               const picked = pickedAthletes.has(c.athleteId);
               return (
                 <Pressable
@@ -792,7 +912,9 @@ export default function TeamDetailScreen() {
                       {c.first} {c.last}
                     </Text>
                     <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
-                      {[c.jersey ? `#${c.jersey}` : null, c.pos, c.tryoutName].filter(Boolean).join(' · ')}
+                      {[c.jersey ? `#${c.jersey}` : null, c.pos, [...c.tryoutNames].join(', ')]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </Text>
                   </View>
                   {c.alreadyOnTeam ? (
@@ -802,7 +924,8 @@ export default function TeamDetailScreen() {
                   ) : null}
                 </Pressable>
               );
-            })}
+            })
+            )}
           </View>
         )}
       </Modal>
@@ -862,10 +985,44 @@ export default function TeamDetailScreen() {
         </View>
       </Modal>
 
+      <Modal
+        visible={!!availabilityTarget}
+        title={availabilityTarget?.playerName ?? 'Availability'}
+        onClose={() => setAvailabilityTarget(null)}
+      >
+        <View className="gap-2">
+          <Text className="text-sm mb-2" style={{ color: colors.inkMuted }}>
+            Set this player's availability for the event. This overrides whatever they (or their guardian) submitted.
+          </Text>
+          {(['yes', 'maybe', 'no'] as const).map((option) => (
+            <Button
+              key={option}
+              label={RSVP_LABEL[option]}
+              variant={availabilityTarget?.current === option ? 'primary' : 'secondary'}
+              loading={setAvailability.isPending}
+              onPress={async () => {
+                if (!availabilityTarget) return;
+                try {
+                  await setAvailability.mutateAsync({
+                    eventId: availabilityTarget.eventId,
+                    playerId: availabilityTarget.playerId,
+                    response: option,
+                  });
+                  setAvailabilityTarget(null);
+                } catch (e: any) {
+                  Alert.alert('Error', e?.message || 'Could not update availability.');
+                }
+              }}
+            />
+          ))}
+        </View>
+      </Modal>
+
       <DummyDataModal
         variant="assessment"
         visible={showDummy}
         loading={genTest.isPending}
+        progress={dummyProgress ?? undefined}
         hasRubrics={(dummyTarget?.settings.customRubrics?.length ?? 0) > 0}
         onAddRubrics={() => {
           setShowDummy(false);

@@ -20,6 +20,26 @@ const FIRST_NAMES = [
   'Emma', 'Olivia', 'Ava', 'Sophia', 'Isabella', 'Mia', 'Charlotte', 'Amelia',
   'Harper', 'Evelyn', 'Abigail', 'Ella', 'Scarlett', 'Grace', 'Chloe', 'Zoe',
   'Xavier', 'Diego', 'Mateo', 'Kai', 'Jayden', 'Cole', 'Finn', 'Hudson',
+  'Benjamin', 'James', 'William', 'Henry', 'Alexander', 'Michael', 'Daniel', 'Matthew',
+  'Joseph', 'David', 'Samuel', 'Andrew', 'Joshua', 'Christopher', 'Anthony', 'Dylan',
+  'Isaac', 'Gabriel', 'Julian', 'Adrian', 'Caleb', 'Connor', 'Jack', 'Luke',
+  'Landon', 'Grayson', 'Levi', 'Christian', 'Jaxon', 'Ian', 'Colton', 'Brayden',
+  'Bentley', 'Adam', 'Charles', 'Thomas', 'Sebastian', 'Jeremiah', 'Eli', 'Miles',
+  'Theodore', 'Asher', 'Silas', 'Waylon', 'Weston', 'Beau', 'Axel', 'Rhett',
+  'Emmett', 'Bryce', 'Tristan', 'Gavin', 'Riley', 'Cooper', 'Easton', 'Jace',
+  'Maddox', 'Kingston', 'Bennett', 'Emily', 'Madison', 'Elizabeth', 'Avery', 'Sofia',
+  'Camila', 'Aria', 'Victoria', 'Luna', 'Penelope', 'Layla', 'Nora', 'Lily',
+  'Hazel', 'Violet', 'Aurora', 'Savannah', 'Brooklyn', 'Bella', 'Claire', 'Skylar',
+  'Lucy', 'Paisley', 'Everly', 'Anna', 'Caroline', 'Genesis', 'Aaliyah', 'Kennedy',
+  'Sadie', 'Piper', 'Maya', 'Sarah', 'Alice', 'Ivy', 'Nova', 'Naomi',
+  'Eleanor', 'Josephine', 'Ruby', 'Willow', 'Kinsley', 'Cora', 'Adeline', 'Emilia',
+  'Athena', 'Iris', 'Mackenzie', 'Delilah', 'Autumn', 'Serenity', 'Lydia', 'Alexa',
+  'Melanie', 'Julia', 'Vivian', 'Reagan', 'Katherine', 'Santiago', 'Alejandro', 'Rafael',
+  'Emiliano', 'Leonardo', 'Angel', 'Fernando', 'Andres', 'Carlos', 'Ricardo', 'Eduardo',
+  'Miguel', 'Pablo', 'Bruno', 'Valentina', 'Ximena', 'Renata', 'Daniela', 'Fernanda',
+  'Regina', 'Mariana', 'Paula', 'Alejandra', 'Gabriela', 'Adriana', 'Natalia', 'Valeria',
+  'Ren', 'Haruto', 'Sora', 'Yuto', 'Riku', 'Daiki', 'Hiroshi', 'Kenji',
+  'Takumi', 'Jun', 'Wei', 'Arjun', 'Rohan', 'Vikram', 'Aditya', 'Priya',
 ];
 
 const LAST_NAMES = [
@@ -28,6 +48,26 @@ const LAST_NAMES = [
   'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee', 'Perez', 'Thompson',
   'White', 'Harris', 'Sanchez', 'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker',
   'Young', 'Allen', 'King', 'Wright', 'Scott', 'Torres', 'Nguyen', 'Hill', 'Green',
+  'Adams', 'Baker', 'Nelson', 'Mitchell', 'Roberts', 'Turner', 'Phillips', 'Campbell',
+  'Parker', 'Evans', 'Edwards', 'Collins', 'Stewart', 'Morris', 'Rogers', 'Reed',
+  'Cook', 'Morgan', 'Bell', 'Murphy', 'Bailey', 'Rivera', 'Cooper', 'Richardson',
+  'Cox', 'Howard', 'Ward', 'Peterson', 'Gray', 'James', 'Watson', 'Brooks',
+  'Kelly', 'Sanders', 'Price', 'Bennett', 'Wood', 'Barnes', 'Ross', 'Henderson',
+  'Coleman', 'Jenkins', 'Perry', 'Powell', 'Long', 'Patterson', 'Hughes', 'Flores',
+  'Washington', 'Butler', 'Simmons', 'Foster', 'Gonzales', 'Bryant', 'Alexander', 'Russell',
+  'Griffin', 'Diaz', 'Hayes', 'Myers', 'Ford', 'Hamilton', 'Graham', 'Sullivan',
+  'Wallace', 'Woods', 'Cole', 'West', 'Jordan', 'Owens', 'Reynolds', 'Fisher',
+  'Ellis', 'Harrison', 'Gibson', 'McDonald', 'Cruz', 'Marshall', 'Ortiz', 'Gomez',
+  'Murray', 'Freeman', 'Wells', 'Webb', 'Simpson', 'Stevens', 'Tucker', 'Porter',
+  'Hunter', 'Hicks', 'Crawford', 'Henry', 'Boyd', 'Mason', 'Morales', 'Kennedy',
+  'Warren', 'Dixon', 'Ramos', 'Reyes', 'Burns', 'Gordon', 'Shaw', 'Holmes',
+  'Rice', 'Robertson', 'Hunt', 'Black', 'Daniels', 'Palmer', 'Mills', 'Nichols',
+  'Grant', 'Knight', 'Ferguson', 'Rose', 'Stone', 'Hawkins', 'Dunn', 'Perkins',
+  'Hudson', 'Spencer', 'Gardner', 'Stephens', 'Payne', 'Pierce', 'Berry', 'Matthews',
+  'Arnold', 'Wagner', 'Willis', 'Ray', 'Watkins', 'Olson', 'Carroll', 'Duncan',
+  'Snyder', 'Hart', 'Cunningham', 'Bradley', 'Lane', 'Andrews', 'Ruiz', 'Harper',
+  'Fox', 'Riley', 'Armstrong', 'Carpenter', 'Weaver', 'Greene', 'Lawrence', 'Elliott',
+  'Chavez', 'Sims', 'Wheeler', 'Chapman', 'Austin', 'Hoffman', 'Douglas', 'Wolfe',
 ];
 
 const LEVELS = ['AAA', 'AA', 'A', 'BB', 'House'];
@@ -104,9 +144,9 @@ export interface DummyTeamResult extends DummyDataResult {
 
 export const DUMMY_LIMITS = {
   /** Bounds mirror the DataSource's own clamps, so the UI can't ask for more. */
-  count: { min: 1, max: 250 },
+  count: { min: 1, max: 1000 },
   teams: { min: 1, max: 10 },
-  playersPerTeam: { min: 1, max: 100 },
+  playersPerTeam: { min: 1, max: 1000 },
   sessionsPerPlayer: { min: 1, max: 5 },
 } as const;
 
@@ -127,13 +167,23 @@ export function generateDummyPlayers(
 ): GeneratedPlayer[] {
   const positions = POSITIONS_BY_SPORT[sport] ?? POSITIONS_BY_SPORT.Other;
   const out: GeneratedPlayer[] = [];
+  // Reroll on a full-name collision within this batch (bounded — with 200x200
+  // combinations this only matters as `count` nears that ceiling).
+  const usedNames = new Set<string>();
   for (let i = 0; i < count; i++) {
     const age = randInt(8, 18);
+    let first = pick(FIRST_NAMES);
+    let last = pick(LAST_NAMES);
+    for (let attempt = 0; attempt < 50 && usedNames.has(`${first} ${last}`); attempt++) {
+      first = pick(FIRST_NAMES);
+      last = pick(LAST_NAMES);
+    }
+    usedNames.add(`${first} ${last}`);
     out.push({
       ability: Math.random(),
       form: {
-        first: pick(FIRST_NAMES),
-        last: pick(LAST_NAMES),
+        first,
+        last,
         jersey: String(randInt(1, 99)),
         pos: pick(positions),
         yearOfBirth: String(currentYear - age),

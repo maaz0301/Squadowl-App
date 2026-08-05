@@ -6,6 +6,7 @@ import type { FeedbackSubmission } from '../extras';
 import { generateCloudCode, generateId, getDefaultWeights, getPlayerSubskills } from '../rubrics';
 import type { TeamBuilderConfig, TeamBuilderState } from '../teamBuilder';
 import { buildTeams, formatExportCsv } from '../teamBuilder';
+import { computePlayerResults } from '../scoring';
 import {
   POSITIONS_BY_SPORT,
   TEST_DATA_TAG,
@@ -274,22 +275,48 @@ export class SupabaseDataSource implements DataSource {
   }
 
   /** Assemble full Tryout objects for a set of tryout rows (batched relational fetch). */
+  /**
+   * PostgREST caps any single response at the project's default row limit
+   * (commonly 1000), silently truncating rather than erroring — so a query
+   * spanning tryouts whose combined rows exceed that cap would otherwise
+   * return an incomplete (or, for later tryouts in the batch, empty) result.
+   * Pages through with `.range()` until the server's own exact count is
+   * satisfied, advancing by however many rows actually came back each page
+   * (not the requested page size), since the server can cap below that too.
+   */
+  private async fetchAllByIn(table: string, select: string, column: string, ids: string[]): Promise<Row[]> {
+    if (ids.length === 0) return [];
+    const supabase = getSupabase();
+    const pageSize = 1000;
+    const out: Row[] = [];
+    let offset = 0;
+    let total: number | null = null;
+    while (total === null || offset < total) {
+      const { data, error, count } = await supabase
+        .from(table)
+        .select(select, { count: 'exact' })
+        .in(column, ids)
+        .range(offset, offset + pageSize - 1);
+      if (error) throw new Error(error.message);
+      const rows = (data ?? []) as Row[];
+      out.push(...rows);
+      if (total === null) total = count ?? rows.length;
+      if (rows.length === 0) break;
+      offset += rows.length;
+    }
+    return out;
+  }
+
   private async assembleTryouts(tryoutRows: Row[]): Promise<Tryout[]> {
     if (tryoutRows.length === 0) return [];
-    const supabase = getSupabase();
     const ids = tryoutRows.map((t) => t.id);
 
-    const [participants, assessors, evals, registrations] = await Promise.all([
-      supabase.from('tryout_participants').select('*, athletes(*)').in('tryout_id', ids),
-      supabase.from('tryout_assessors').select('*').in('tryout_id', ids),
-      supabase.from('evaluations').select('*, evaluation_scores(rubric_key, value)').in('tryout_id', ids),
-      supabase.from('registrations').select('*').in('tryout_id', ids),
+    const [pRows, aRows, eRows, rRows] = await Promise.all([
+      this.fetchAllByIn('tryout_participants', '*, athletes(*)', 'tryout_id', ids),
+      this.fetchAllByIn('tryout_assessors', '*', 'tryout_id', ids),
+      this.fetchAllByIn('evaluations', '*, evaluation_scores(rubric_key, value)', 'tryout_id', ids),
+      this.fetchAllByIn('registrations', '*', 'tryout_id', ids),
     ]);
-
-    const pRows = unwrap(participants) as Row[];
-    const aRows = unwrap(assessors) as Row[];
-    const eRows = unwrap(evals) as Row[];
-    const rRows = unwrap(registrations) as Row[];
 
     const assessorNameById: Record<string, string> = {};
     for (const a of aRows) assessorNameById[a.id] = a.name;
@@ -1364,10 +1391,10 @@ export class SupabaseDataSource implements DataSource {
       const part = unwrap(
         await supabase.from('tryout_participants').select('athlete_id').eq('id', playerId).single(),
       ) as Row;
-      await supabase.from('athletes').update(athletePatch).eq('id', part.athlete_id);
+      unwrap(await supabase.from('athletes').update(athletePatch).eq('id', part.athlete_id).select());
     }
     if (Object.keys(participantPatch).length) {
-      await supabase.from('tryout_participants').update(participantPatch).eq('id', playerId);
+      unwrap(await supabase.from('tryout_participants').update(participantPatch).eq('id', playerId).select());
     }
     return this.fetchPlayer(playerId);
   }
@@ -1620,7 +1647,11 @@ export class SupabaseDataSource implements DataSource {
   }
 
   // ─── Testing utilities (association/enterprise) ───────────────────────────────
-  async generateTestData(tryoutId: string, options: DummyDataOptions): Promise<DummyDataResult> {
+  async generateTestData(
+    tryoutId: string,
+    options: DummyDataOptions,
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<DummyDataResult> {
     const { supabase, accountId, userId } = await this.ctx();
     const tryout = await this.getTryout(tryoutId);
     if (!tryout) throw new Error('Assessment not found');
@@ -1637,13 +1668,13 @@ export class SupabaseDataSource implements DataSource {
       throw new Error('NO_RUBRICS');
     }
 
-    const n = clampInt(options?.count, 1, 250, 50);
+    const n = clampInt(options?.count, 1, 1000, 50);
     const currentYear = new Date().getFullYear();
 
     // Only pay for the AI round trip when the batch actually needs scores;
     // an unscored batch just needs names, so generate those locally.
     const generated: ScorableDummyPlayer[] = withScores
-      ? await this.generateAITestPlayers(supabase, tryout, rubrics, n, currentYear)
+      ? await this.generateAITestPlayers(supabase, tryout, rubrics, n, currentYear, onProgress)
       : generateDummyPlayers(n, tryout.sport, currentYear);
 
     let registrations = 0;
@@ -1733,46 +1764,58 @@ export class SupabaseDataSource implements DataSource {
     if (generated.length === 0) return { players: 0, evaluations: 0, athleteIds: [] };
 
     // 1. Bulk-insert canonical athletes (no guardian contact → no side effects).
-    const athletes = unwrap(
-      await supabase
-        .from('athletes')
-        .insert(
-          generated.map((g) => ({
-            account_id: accountId,
-            first_name: g.form.first,
-            last_name: g.form.last,
-            year_of_birth: g.form.yearOfBirth ? Number(g.form.yearOfBirth) : null,
-          })),
-        )
-        .select('id'),
-    ) as Row[];
+    // Chunked so a large batch (up to 1000) doesn't ride in a single insert payload.
+    const athletes: Row[] = [];
+    for (let i = 0; i < generated.length; i += 500) {
+      const chunk = generated.slice(i, i + 500);
+      athletes.push(
+        ...(unwrap(
+          await supabase
+            .from('athletes')
+            .insert(
+              chunk.map((g) => ({
+                account_id: accountId,
+                first_name: g.form.first,
+                last_name: g.form.last,
+                year_of_birth: g.form.yearOfBirth ? Number(g.form.yearOfBirth) : null,
+              })),
+            )
+            .select('id'),
+        ) as Row[]),
+      );
+    }
 
     // 2. Bulk-insert participants, tagged via current_team so they can be cleared.
-    const participants = unwrap(
-      await supabase
-        .from('tryout_participants')
-        .insert(
-          generated.map((g, i) => ({
-            tryout_id: tryout.id,
-            athlete_id: athletes[i].id,
-            jersey: g.form.jersey || null,
-            position: g.form.pos || null,
-            current_team: TEST_DATA_TAG,
-            current_level: g.form.currentLevel || null,
-            registration_source: 'import',
-          })),
-        )
-        .select('id'),
-    ) as Row[];
+    const participants: Row[] = [];
+    for (let i = 0; i < generated.length; i += 500) {
+      const chunk = generated.slice(i, i + 500);
+      participants.push(
+        ...(unwrap(
+          await supabase
+            .from('tryout_participants')
+            .insert(
+              chunk.map((g, j) => ({
+                tryout_id: tryout.id,
+                athlete_id: athletes[i + j].id,
+                jersey: g.form.jersey || null,
+                position: g.form.pos || null,
+                current_team: TEST_DATA_TAG,
+                current_level: g.form.currentLevel || null,
+                registration_source: 'import',
+              })),
+            )
+            .select('id'),
+        ) as Row[]),
+      );
+    }
 
     const athleteIds = athletes.map((a) => a.id as string);
     if (!opts.withScores) return { players: participants.length, evaluations: 0, athleteIds };
 
     const rubrics = tryout.settings.customRubrics ?? [];
 
-    // 3. Build evaluations: ~10% are left unscored to exercise the unscored
-    //    filter; the rest get exactly `sessionsPerPlayer` sessions, spread
-    //    across the assessment's assessors.
+    // 3. Build evaluations: every player gets exactly `sessionsPerPlayer`
+    //    sessions, spread across the assessment's assessors.
     const profile = await this.loadUserProfile(userId);
     const assessorNames = tryout.assessors.length
       ? tryout.assessors.map((a) => a.name)
@@ -1781,7 +1824,6 @@ export class SupabaseDataSource implements DataSource {
     const evalRows: Row[] = [];
     const evalPlayerIndex: number[] = [];
     generated.forEach((g, i) => {
-      if (Math.random() < 0.1) return; // leave unscored
       for (let sIdx = 0; sIdx < opts.sessionsPerPlayer; sIdx++) {
         const evaluatorName = assessorNames[(i + sIdx) % assessorNames.length];
         const isOwner = evaluatorName === profile.displayName;
@@ -1836,12 +1878,15 @@ export class SupabaseDataSource implements DataSource {
    * assessment is flagged `settings.isTestData` so `clearDummyTeams` can undo
    * the entire bundle later.
    */
-  async generateDummyTeams(options: DummyTeamOptions): Promise<DummyTeamResult> {
+  async generateDummyTeams(
+    options: DummyTeamOptions,
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<DummyTeamResult> {
     const { supabase, accountId, userId } = await this.ctx();
     const profile = await this.loadUserProfile(userId);
 
     const teamCount = clampInt(options?.teams, 1, 10, 1);
-    const playersPerTeam = clampInt(options?.playersPerTeam, 1, 100, 20);
+    const playersPerTeam = clampInt(options?.playersPerTeam, 1, 1000, 20);
     const sessionsPerPlayer = clampInt(options?.sessionsPerPlayer, 1, 5, 1);
     const withScores = options?.withScores !== false;
     const currentYear = new Date().getFullYear();
@@ -1856,7 +1901,9 @@ export class SupabaseDataSource implements DataSource {
       evaluations: 0,
     };
 
-    for (const name of names) {
+    const totalPlayers = teamCount * playersPerTeam;
+    for (let teamIdx = 0; teamIdx < names.length; teamIdx++) {
+      const name = names[teamIdx];
       const team = unwrap(
         await supabase
           .from('teams')
@@ -1901,9 +1948,18 @@ export class SupabaseDataSource implements DataSource {
       });
 
       const [tryout] = await this.assembleTryouts([tryoutRow]);
+      const teamOffset = teamIdx * playersPerTeam;
       const generated = withScores
-        ? await this.generateAITestPlayers(supabase, tryout, rubrics, playersPerTeam, currentYear)
+        ? await this.generateAITestPlayers(
+            supabase,
+            tryout,
+            rubrics,
+            playersPerTeam,
+            currentYear,
+            (done) => onProgress?.(teamOffset + done, totalPlayers),
+          )
         : generateDummyPlayers(playersPerTeam, tryout.sport, currentYear);
+      onProgress?.(teamOffset + generated.length, totalPlayers);
 
       const res = await this.insertDummyRoster(supabase, accountId, userId, tryout, generated, {
         withScores,
@@ -1981,6 +2037,7 @@ export class SupabaseDataSource implements DataSource {
     rubrics: any[],
     count: number,
     currentYear: number,
+    onProgress?: (done: number, total: number) => void,
   ): Promise<Array<{ form: AITestPlayer['form']; ability: number; scores?: Record<string, number> }>> {
     const sport = tryout.sport;
     const positions = POSITIONS_BY_SPORT[sport as keyof typeof POSITIONS_BY_SPORT] ?? POSITIONS_BY_SPORT.Other;
@@ -2021,6 +2078,7 @@ export class SupabaseDataSource implements DataSource {
         }),
       );
       for (const r of results) collected.push(...r);
+      onProgress?.(Math.min(collected.length, count), count);
     }
 
     // Top up any shortfall (partial or total AI failure) with local generation.
@@ -2186,6 +2244,15 @@ export class SupabaseDataSource implements DataSource {
       const idMap = new Map<string, string>(); // shortId -> realId
       const realToShort = new Map<string, string>(); // realId -> shortId
       
+      // Pool every evaluation down to one weighted overall + per-category average
+      // per player (matches the ranking shown in Roster/Export). Sending this instead
+      // of raw eval records (strengths/improve text, dates, evaluator names, one row
+      // per session) keeps the payload flat as roster size and eval count grow —
+      // otherwise a large roster with multiple sessions per player blows past the
+      // model's input token limit.
+      const results = computePlayerResults(tryout);
+      const resultByPlayerId = new Map(results.map(r => [r.player.id, r]));
+
       const shortTryout = {
         ...tryout,
         roster: tryout.roster.map((p, i) => {
@@ -2194,11 +2261,17 @@ export class SupabaseDataSource implements DataSource {
           realToShort.set(p.id, shortId);
           return { ...p, id: shortId };
         }),
-        evals: tryout.evals.map(e => ({
-          ...e,
-          playerId: realToShort.get(e.playerId) || e.playerId
-        }))
+        rankings: tryout.roster.map(p => {
+          const r = resultByPlayerId.get(p.id);
+          return {
+            id: realToShort.get(p.id) || p.id,
+            overall: r?.overall ?? 0,
+            categoryScores: r?.categoryScores ?? {},
+            recommendation: r?.latestRecommendation || undefined,
+          };
+        }),
       };
+      delete (shortTryout as any).evals;
 
       // Call Claude via edge function
       const { supabase } = await this.ctx();
@@ -2385,28 +2458,26 @@ export class SupabaseDataSource implements DataSource {
 
   private async assembleSeasons(seasonRows: Row[], withDetail: boolean): Promise<Season[]> {
     if (seasonRows.length === 0) return [];
-    const supabase = getSupabase();
     const ids = seasonRows.map((s) => s.id);
 
-    const [eventsRes, rosterRes] = await Promise.all([
-      supabase.from('season_events').select('*').in('season_id', ids).order('event_date'),
-      supabase.from('season_roster').select('*, athletes(*)').in('season_id', ids),
+    // `.order()` isn't supported by the paginated helper, but tryout ordering here
+    // is cosmetic (chronological display) — sort client-side after fetching all rows.
+    const [eventRowsUnsorted, rosterRows] = await Promise.all([
+      this.fetchAllByIn('season_events', '*', 'season_id', ids),
+      this.fetchAllByIn('season_roster', '*, athletes(*)', 'season_id', ids),
     ]);
-    const eventRows = unwrap(eventsRes) as Row[];
-    const rosterRows = unwrap(rosterRes) as Row[];
+    const eventRows = [...eventRowsUnsorted].sort((a, b) =>
+      String(a.event_date ?? '').localeCompare(String(b.event_date ?? '')),
+    );
 
     let availabilityRows: Row[] = [];
     let inviteRows: Row[] = [];
     if (withDetail) {
       const eventIds = eventRows.map((e) => e.id);
-      const [availRes, invRes] = await Promise.all([
-        eventIds.length
-          ? supabase.from('event_availability').select('*').in('season_event_id', eventIds)
-          : Promise.resolve({ data: [], error: null }),
-        supabase.from('portal_invites').select('*').in('season_id', ids),
+      [availabilityRows, inviteRows] = await Promise.all([
+        this.fetchAllByIn('event_availability', '*', 'season_event_id', eventIds),
+        this.fetchAllByIn('portal_invites', '*', 'season_id', ids),
       ]);
-      availabilityRows = (availRes.data ?? []) as Row[];
-      inviteRows = (invRes.data ?? []) as Row[];
     }
 
     const eventsBySeason: Record<string, Row[]> = {};

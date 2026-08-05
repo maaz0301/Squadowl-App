@@ -38,7 +38,8 @@ export default function RegistrationsScreen() {
   const addToRoster = useAddRegistrationToRosterMutation(id!);
   const dismissReg = useDismissRegistrationMutation(id!);
   const submitReg = useSubmitRegistrationMutation(id!);
-  const genTest = useGenerateTestDataMutation(id!);
+  const [dummyProgress, setDummyProgress] = useState<{ done: number; total: number } | null>(null);
+  const genTest = useGenerateTestDataMutation(id!, (done, total) => setDummyProgress({ done, total }));
   const clearTest = useClearTestDataMutation(id!);
   const user = useUser();
   const [showQr, setShowQr] = useState(false);
@@ -146,6 +147,7 @@ export default function RegistrationsScreen() {
   const hasRubrics = (tryout.settings.customRubrics?.length ?? 0) > 0;
 
   const runGenerate = async (options: DummyDataOptions) => {
+    setDummyProgress(null);
     try {
       const res = await genTest.mutateAsync(options);
       setShowTestGen(false);
@@ -159,6 +161,8 @@ export default function RegistrationsScreen() {
       showAlert('Error', e?.message === 'NO_RUBRICS'
         ? 'Add at least one rubric before generating scored players.'
         : e?.message || 'Failed to generate dummy data.');
+    } finally {
+      setDummyProgress(null);
     }
   };
 
@@ -324,6 +328,7 @@ export default function RegistrationsScreen() {
         variant="assessment"
         visible={showTestGen}
         loading={genTest.isPending}
+        progress={dummyProgress ?? undefined}
         hasRubrics={hasRubrics}
         onAddRubrics={() => {
           setShowTestGen(false);

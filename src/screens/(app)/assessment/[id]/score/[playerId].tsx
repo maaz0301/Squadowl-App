@@ -289,7 +289,7 @@ export default function ScoreScreen() {
   if (tryoutQuery.isLoading) return <LoadingState message="Loading..." />;
   if (tryoutQuery.isError) {
     return (
-      <Screen scroll>
+      <Screen scroll insideTabBar>
         <Header title="Score" showBack onBack={() => navigation.navigate('AssessmentRoster')} />
         <ErrorState message="Could not load required data." onRetry={() => tryoutQuery.refetch()} />
       </Screen>
@@ -363,7 +363,7 @@ export default function ScoreScreen() {
   const firstUnscoredIdx = SESSIONS.findIndex(s => !scoredSessions.has(s));
 
   return (
-    <Screen scroll>
+    <Screen scroll insideTabBar>
       <Header
         title={`Score: ${playerDisplayName(player)}`}
         subtitle={`Overall: ${overall > 0 ? overall.toFixed(1) : '—'}`}

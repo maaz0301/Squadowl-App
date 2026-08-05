@@ -158,10 +158,12 @@ export interface DataSource {
   generateTestData(
     tryoutId: string,
     options: import('./testDataGenerator').DummyDataOptions,
+    onProgress?: (done: number, total: number) => void,
   ): Promise<import('./testDataGenerator').DummyDataResult>;
   clearTestData(tryoutId: string): Promise<{ removed: number }>;
   generateDummyTeams(
     options: import('./testDataGenerator').DummyTeamOptions,
+    onProgress?: (done: number, total: number) => void,
   ): Promise<import('./testDataGenerator').DummyTeamResult>;
   clearDummyTeams(): Promise<{ teams: number; assessments: number }>;
 }

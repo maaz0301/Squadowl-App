@@ -60,7 +60,7 @@ export default function ExportScreen() {
   };
 
   return (
-    <Screen scroll>
+    <Screen scroll insideTabBar>
       <Header title="Export & Share" showBack />
 
       <Card className="mb-4 gap-2">

@@ -36,7 +36,8 @@ export default function NewTeamScreen() {
   const createTeam = useCreateTeamMutation();
   const createSeason = useCreateSeasonMutation();
   const teamsQuery = useTeamsQuery();
-  const genDummy = useGenerateDummyTeamsMutation();
+  const [dummyProgress, setDummyProgress] = useState<{ done: number; total: number } | null>(null);
+  const genDummy = useGenerateDummyTeamsMutation((done, total) => setDummyProgress({ done, total }));
   const clearDummy = useClearDummyTeamsMutation();
   const user = useUser();
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
@@ -120,6 +121,7 @@ export default function NewTeamScreen() {
       setLimitMsg('You have reached the maximum number of teams for your current plan.');
       return;
     }
+    setDummyProgress(null);
     try {
       const res = await genDummy.mutateAsync(options);
       setShowDummy(false);
@@ -132,6 +134,8 @@ export default function NewTeamScreen() {
       navigation.goBack();
     } catch (e: any) {
       showAlert('Error', e?.message || 'Failed to generate dummy teams.');
+    } finally {
+      setDummyProgress(null);
     }
   };
 
@@ -221,6 +225,7 @@ export default function NewTeamScreen() {
         variant="team"
         visible={showDummy}
         loading={genDummy.isPending}
+        progress={dummyProgress ?? undefined}
         onClose={() => setShowDummy(false)}
         onSubmit={runDummy}
       />

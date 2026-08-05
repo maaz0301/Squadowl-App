@@ -158,6 +158,77 @@ export function useTryoutRealtimeSync(id: string | undefined) {
   }, [id, qc]);
 }
 
+// ---- Seasons realtime (keeps a coach's Team/Season screens and a guardian's
+// portal in sync — RSVPs and event edits made on one device show up on the
+// other without navigating away and back) ----
+export function useSeasonRealtimeSync(id: string | undefined) {
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (!id) return;
+
+    let timeoutId: NodeJS.Timeout | null = null;
+    const triggerInvalidate = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        qc.invalidateQueries({ queryKey: queryKeys.season(id) });
+        // A guardian viewing the same season (e.g. via a shared device) sees it too.
+        qc.invalidateQueries({ queryKey: queryKeys.guardianRosters() });
+      }, 1000);
+    };
+
+    const uniqueId = Math.random().toString(36).slice(2, 9);
+    const channel = getSupabase()
+      .channel(`realtime:season_${id}_${uniqueId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'season_events', filter: `season_id=eq.${id}` },
+        () => triggerInvalidate()
+      )
+      .on(
+        // event_availability has no season_id column of its own (it keys off
+        // season_event_id + roster_id), so this can't be filtered server-side.
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_availability' },
+        () => triggerInvalidate()
+      )
+      .subscribe();
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      getSupabase().removeChannel(channel);
+    };
+  }, [id, qc]);
+}
+
+// A guardian's portal spans every season/tryout their linked athletes are on,
+// not a single season id, so this subscribes broadly rather than per-season.
+export function useGuardianRealtimeSync() {
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null;
+    const triggerInvalidate = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        qc.invalidateQueries({ queryKey: queryKeys.guardianRosters() });
+      }, 1000);
+    };
+
+    const uniqueId = Math.random().toString(36).slice(2, 9);
+    const channel = getSupabase()
+      .channel(`realtime:guardian_${uniqueId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'season_events' }, () => triggerInvalidate())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_availability' }, () => triggerInvalidate())
+      .subscribe();
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      getSupabase().removeChannel(channel);
+    };
+  }, [qc]);
+}
+
 export function useCreateTryoutMutation() {
   const qc = useQueryClient();
   return useMutation({
@@ -334,10 +405,10 @@ export function useDismissRegistrationMutation(tryoutId: string) {
   });
 }
 
-export function useGenerateTestDataMutation(tryoutId: string) {
+export function useGenerateTestDataMutation(tryoutId: string, onProgress?: (done: number, total: number) => void) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (options: DummyDataOptions) => getDataSource().generateTestData(tryoutId, options),
+    mutationFn: (options: DummyDataOptions) => getDataSource().generateTestData(tryoutId, options, onProgress),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.results(tryoutId) });
@@ -359,10 +430,10 @@ export function useClearTestDataMutation(tryoutId: string) {
   });
 }
 
-export function useGenerateDummyTeamsMutation() {
+export function useGenerateDummyTeamsMutation(onProgress?: (done: number, total: number) => void) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (options: DummyTeamOptions) => getDataSource().generateDummyTeams(options),
+    mutationFn: (options: DummyTeamOptions) => getDataSource().generateDummyTeams(options, onProgress),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.teams });
       // Prefix match — invalidates every archived/unarchived tryout list.

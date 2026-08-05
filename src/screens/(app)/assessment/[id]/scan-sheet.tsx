@@ -31,7 +31,7 @@ export default function ScanSheetScreen() {
   if (tryoutQuery.isLoading) return <LoadingState message="Loading scan sheet..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
     return (
-      <Screen scroll>
+      <Screen scroll insideTabBar>
         <Header title="Scan Sheet" showBack onBack={() => navigation.navigate('AssessmentRoster')} />
         <ErrorState message="Could not load scan sheet." onRetry={() => tryoutQuery.refetch()} />
       </Screen>
