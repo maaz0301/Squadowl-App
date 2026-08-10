@@ -3,7 +3,8 @@ import { Alert, Text, View, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { usePermissions } from '@/state/authStore';
+import { usePermissions, useUser } from '@/state/authStore';
+import { canUseFeature } from '@/data/plans';
 import {
   Avatar,
   Badge,
@@ -80,6 +81,8 @@ export default function PlayerHubScreen() {
   const historyQuery = useAthleteHistoryQuery(player?.athleteId);
 
   const { canManageTeam } = usePermissions();
+  const user = useUser();
+  const canLinkGuardian = canUseFeature(user?.planTier ?? 'free', 'guardianPortal');
 
   const categories = useMemo(() => {
     if (!tryoutQuery.data || !player) return [];
@@ -107,6 +110,18 @@ export default function PlayerHubScreen() {
   const evals = tryoutQuery.data.evals
     .filter((e) => e.playerId === playerId)
     .sort((a, b) => b.createdAt - a.createdAt);
+
+  const historyHasSeasons = (historyQuery.data?.pastSeasons.length ?? 0) > 0;
+  const historyTrend = (historyQuery.data?.pastEvaluations ?? [])
+    .map((e) => {
+      const values = Object.values(e.scores ?? {});
+      const avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+      return { id: e.id, date: e.date, avg };
+    })
+    .filter((p) => p.avg > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const historyDelta =
+    historyTrend.length > 1 ? historyTrend[historyTrend.length - 1].avg - historyTrend[0].avg : 0;
 
   return (
     <Screen scroll insideTabBar>
@@ -140,7 +155,15 @@ export default function PlayerHubScreen() {
           {player.linkedGuardianId ? (
             <View className="flex-row items-center gap-2">
               <Badge label="Linked" variant="success" />
-              {canManageTeam && player.guardianEmail && (
+              {canManageTeam && player.guardianEmail && !canLinkGuardian && (
+                <Button
+                  label="Upgrade to Resend"
+                  variant="secondary"
+                  size="sm"
+                  onPress={() => navigation.navigate('Upgrade')}
+                />
+              )}
+              {canManageTeam && player.guardianEmail && canLinkGuardian && (
                 <Button
                   label="Resend Invite"
                   variant="secondary"
@@ -214,12 +237,19 @@ export default function PlayerHubScreen() {
                 />
               )}
             </View>
-          ) : canManageTeam ? (
+          ) : canManageTeam && canLinkGuardian ? (
             <Button
               label="Link Account"
               variant="secondary"
               size="sm"
               onPress={() => setShowGuardianLink(true)}
+            />
+          ) : canManageTeam ? (
+            <Button
+              label="Upgrade to Link"
+              variant="secondary"
+              size="sm"
+              onPress={() => navigation.navigate('Upgrade')}
             />
           ) : (
             <Text style={{ color: colors.inkMuted }}>Not linked</Text>
@@ -251,7 +281,7 @@ export default function PlayerHubScreen() {
           Role fit: {mockAiPlayerSummary(tryoutQuery.data, playerId!).role_fit}
         </Text>
 
-        <PlanGate feature="aiSummaries" title="Deep AI Insights (Club+)">
+        <PlanGate feature="aiSummaries" title="Deep AI Insights">
           {tryoutQuery.data.aiAssessments?.[playerId!] ? (
             <View className="mt-2 border-t pt-2" style={{ borderColor: colors.border }}>
               <View className="flex-row items-center justify-between mb-2">
@@ -361,6 +391,57 @@ export default function PlayerHubScreen() {
           )}
         </PlanGate>
 
+      </Card>
+
+      <Card className="mb-4 gap-2">
+        <Text className="font-display font-bold" style={{ color: colors.ink }}>
+          Player History
+        </Text>
+        {historyQuery.isLoading ? (
+          <ActivityIndicator color={colors.primary} />
+        ) : (historyHasSeasons || historyTrend.length > 0) ? (
+          <>
+            {historyHasSeasons ? (
+              <View className="gap-1">
+                <Text className="text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>
+                  Past Seasons
+                </Text>
+                {historyQuery.data!.pastSeasons.map((s) => (
+                  <View key={s.seasonId} className="flex-row justify-between">
+                    <Text style={{ color: colors.ink }}>{s.seasonName}</Text>
+                    <Text style={{ color: colors.inkMuted }}>{s.teamName}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            {historyTrend.length > 0 ? (
+              <View className="gap-1 mt-2">
+                <Text className="text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>
+                  Score Trend
+                </Text>
+                {historyTrend.map((p) => (
+                  <View key={p.id} className="flex-row justify-between">
+                    <Text style={{ color: colors.inkMuted }}>{p.date}</Text>
+                    <Text style={{ color: colors.ink }}>{p.avg.toFixed(1)}</Text>
+                  </View>
+                ))}
+                {historyTrend.length > 1 ? (
+                  <Text
+                    className="text-sm mt-1"
+                    style={{ color: historyDelta >= 0 ? colors.success : colors.warning }}
+                  >
+                    {historyDelta >= 0 ? '▲' : '▼'} {Math.abs(historyDelta).toFixed(1)} since first
+                    evaluation
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+          </>
+        ) : (
+          <Text style={{ color: colors.inkMuted }}>
+            No history yet — this player's profile builds up across seasons and assessments.
+          </Text>
+        )}
       </Card>
 
       <Text className="text-md font-display font-bold mb-3" style={{ color: colors.ink }}>

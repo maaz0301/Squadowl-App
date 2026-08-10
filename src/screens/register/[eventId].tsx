@@ -1,15 +1,20 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Alert, Platform } from 'react-native';
+import { View, Text, ScrollView, Alert, Platform, Linking } from 'react-native';
 import { useRoute } from '@react-navigation/native';
+import { EXPO_PUBLIC_WEB_URL } from '@env';
 
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Screen, Header, Button, Input } from '@/components/ui';
 import { SupabaseDataSource } from '@/data/supabase/SupabaseDataSource';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { RegistrationSubmitSchema, type RegistrationSubmit } from '@/data/types';
+import { RegistrationSubmitSchema, type RegistrationSubmit, type Registration } from '@/data/types';
 
 const ds = new SupabaseDataSource();
+
+function money(cents: number): string {
+  return `$${(cents / 100).toFixed(2)} CAD`;
+}
 
 export default function PublicRegistration() {
   const route = useRoute<any>();
@@ -17,6 +22,11 @@ export default function PublicRegistration() {
   const colors = useThemeColors();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [pendingPayment, setPendingPayment] = useState<Registration | null>(null);
+  const [isPaying, setIsPaying] = useState(false);
+
+  const alreadyPaid = Platform.OS === 'web' && typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('paid') === '1';
 
   const { control, handleSubmit, formState: { errors } } = useForm<RegistrationSubmit>({
     resolver: zodResolver(RegistrationSubmitSchema),
@@ -45,8 +55,8 @@ export default function PublicRegistration() {
 
     setIsSubmitting(true);
     try {
-      await ds.submitPublicRegistration(eventId.toUpperCase(), data);
-      
+      const registration = await ds.submitPublicRegistration(eventId.toUpperCase(), data);
+
       if (data.guardianEmail) {
         try {
           await ds.sendEmail('registration_confirmation', data.guardianEmail, {
@@ -57,8 +67,13 @@ export default function PublicRegistration() {
           // Don't fail the registration if email fails
         }
       }
-      
-      setIsSuccess(true);
+
+      const feeCents = registration.registrationFeeCents ?? 0;
+      if (feeCents > 0 && registration.connectChargesEnabled) {
+        setPendingPayment(registration);
+      } else {
+        setIsSuccess(true);
+      }
     } catch (err) {
       console.error(err);
       if (Platform.OS === 'web') {
@@ -70,6 +85,67 @@ export default function PublicRegistration() {
       setIsSubmitting(false);
     }
   };
+
+  const payNow = async () => {
+    if (!pendingPayment) return;
+    setIsPaying(true);
+    try {
+      const base = `${EXPO_PUBLIC_WEB_URL || 'https://aas-tryout.app'}/register/${eventId}`;
+      const res = await ds.createRegistrationPayment(pendingPayment.id, `${base}?paid=1`, `${base}?paid=0`);
+      if (res?.url) {
+        if (Platform.OS === 'web') {
+          window.location.href = res.url;
+        } else {
+          await Linking.openURL(res.url);
+        }
+      }
+    } catch (err: any) {
+      console.error(err);
+      const message = err.message || 'Failed to start payment. Please try again.';
+      if (Platform.OS === 'web') {
+        window.alert(message);
+      } else {
+        Alert.alert('Payment Error', message);
+      }
+    } finally {
+      setIsPaying(false);
+    }
+  };
+
+  if (alreadyPaid) {
+    return (
+      <Screen>
+        <Header title="Payment Received" />
+        <View className="flex-1 items-center justify-center p-4">
+          <Text className="text-2xl font-bold mb-4" style={{ color: colors.ink }}>
+            Payment complete!
+          </Text>
+          <Text className="text-center text-base" style={{ color: colors.inkMuted }}>
+            Your registration fee has been received. You can now close this page.
+          </Text>
+        </View>
+      </Screen>
+    );
+  }
+
+  if (pendingPayment) {
+    const feeCents = pendingPayment.registrationFeeCents ?? 0;
+    return (
+      <Screen>
+        <Header title="Registration Fee" />
+        <View className="flex-1 items-center justify-center p-4 gap-4">
+          <Text className="text-2xl font-bold text-center" style={{ color: colors.ink }}>
+            One step left
+          </Text>
+          <Text className="text-center text-base" style={{ color: colors.inkMuted }}>
+            {pendingPayment.firstName} {pendingPayment.lastName} is registered. Complete payment
+            of {money(feeCents)} to confirm the spot.
+          </Text>
+          <Button label={isPaying ? 'Redirecting...' : `Pay ${money(feeCents)}`} onPress={payNow} disabled={isPaying} />
+        </View>
+      </Screen>
+    );
+  }
 
   if (isSuccess) {
     return (

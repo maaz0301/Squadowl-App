@@ -33,7 +33,7 @@ export type Sport = (typeof SPORTS)[number];
 export const EVENT_TYPES = ['Tryout', 'Assessment', 'Sort Out', 'Combine'] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
-export const PLAN_TIERS = ['free', 'coach', 'club', 'pro', 'association'] as const;
+export const PLAN_TIERS = ['free', 'coach', 'coach_plus', 'club'] as const;
 export type PlanTier = (typeof PLAN_TIERS)[number];
 
 export const RECOMMENDATIONS = ['Make', 'Keep', 'Bubble', 'Release', ''] as const;
@@ -187,6 +187,9 @@ export const RegistrationSchema = z.object({
   status: z.enum(['pending', 'added', 'dismissed']).default('pending'),
   paymentStatus: z.enum(['paid', 'partial', 'unpaid']).optional(),
   createdAt: z.number(),
+  /** Only populated by submitPublicRegistration — tells the public form whether to route to a pay step. */
+  registrationFeeCents: z.number().optional(),
+  connectChargesEnabled: z.boolean().optional(),
 });
 
 export type Registration = z.infer<typeof RegistrationSchema>;
@@ -216,6 +219,8 @@ export const TryoutSchema = z.object({
   settings: TryoutSettingsSchema,
   cloud: CloudSessionSchema.optional(),
   archived: z.boolean().default(false),
+  /** Cents charged per registration through Stripe Connect. Unset/0 = free to register. */
+  registrationFeeCents: z.number().optional(),
   teamBuilder: z.any().optional(),
   friendPackages: z.array(z.object({
     id: z.string(),
@@ -265,6 +270,9 @@ export const UserProfileSchema = z.object({
   avatarUrl: z.string().optional(),
   planTier: z.enum(PLAN_TIERS).default('coach'),
   subscriptionStatus: z.string().optional(),
+  /** Whether the account's Stripe Connect account can accept registration-fee charges/payouts. */
+  connectChargesEnabled: z.boolean().default(false),
+  connectPayoutsEnabled: z.boolean().default(false),
   createdAt: z.number(),
   onboardingCompleted: z.boolean().default(false),
   onboardingSteps: z
@@ -454,6 +462,7 @@ export const SeasonEventSchema = z.object({
   type: z.enum(EVENT_KINDS),
   title: z.string(),
   date: z.string(),
+  endDate: z.string().optional(),
   startTime: z.string().optional(),
   endTime: z.string().optional(),
   location: z.string().optional(),
@@ -501,11 +510,19 @@ export const CreateEventFormSchema = z.object({
   type: z.enum(EVENT_KINDS),
   title: z.string().min(1, 'Title is required'),
   date: z.string().min(1, 'Date is required').regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'),
+  endDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'End date must be in YYYY-MM-DD format')
+    .optional()
+    .or(z.literal('')),
   startTime: z.string().optional(),
   endTime: z.string().optional(),
   location: z.string().optional(),
   notes: z.string().optional(),
   playerIds: z.array(z.string()).optional(),
+}).refine((data) => !data.endDate || data.endDate >= data.date, {
+  message: 'End date must be on or after the start date',
+  path: ['endDate'],
 });
 
 export type CreateEventForm = z.infer<typeof CreateEventFormSchema>;
@@ -525,7 +542,7 @@ export const OrgSchema = z.object({
   memberCount: z.number().default(0),
   assessmentCount: z.number().default(0),
   playerCount: z.number().default(0),
-  planTier: z.enum(PLAN_TIERS).default('association'),
+  planTier: z.enum(PLAN_TIERS).default('club'),
   createdAt: z.number(),
 });
 

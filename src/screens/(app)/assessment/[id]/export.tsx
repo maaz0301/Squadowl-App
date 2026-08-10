@@ -16,7 +16,7 @@ import {
 import { PlanGate } from '@/components/PlanGate';
 import { useTryoutQuery, useExportTryoutMutation, useShareLinkMutation } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
-import { canUseFeature } from '@/data/plans';
+import { canUseFeature, getPlanDefinition } from '@/data/plans';
 import { useUser } from '@/state/authStore';
 import type { ExportFormat } from '@/data/types';
 
@@ -38,6 +38,7 @@ export default function ExportScreen() {
   const tryout = tryoutQuery.data;
   const tier = user?.planTier ?? 'free';
   const exportsAllowed = canUseFeature(tier, 'exports') || tier !== 'free';
+  const allowedFormats = getPlanDefinition(tier).limits.exports;
 
   const handleExport = async (format: ExportFormat) => {
     setIsExporting(format);
@@ -51,6 +52,18 @@ export default function ExportScreen() {
       setIsExporting(null);
     }
   };
+
+  const lockedFormat = (label: string, format: string, requiredPlan: string) => (
+    <Card key={format} accent className="gap-2">
+      <Text className="font-display font-bold" style={{ color: colors.ink }}>
+        {label}
+      </Text>
+      <Text style={{ color: colors.inkMuted }}>
+        Requires the {requiredPlan} plan or higher. You're on {tier}.
+      </Text>
+      <Button label="View Plans" onPress={() => navigation.navigate('Upgrade')} />
+    </Card>
+  );
 
   const handleShare = async () => {
     const link = await shareMut.mutateAsync(tryout.name);
@@ -78,18 +91,24 @@ export default function ExportScreen() {
             Export Formats
           </Text>
           <Button label="Export CSV" variant="secondary" onPress={() => handleExport('csv')} loading={isExporting === 'csv'} />
-          <PlanGate feature="exports">
+          {allowedFormats.includes('pdf') ? (
             <Button label="Export PDF" variant="secondary" onPress={() => handleExport('pdf')} loading={isExporting === 'pdf'} />
-            <Button label="Export XLSX" variant="secondary" onPress={() => handleExport('xlsx')} className="mt-2" loading={isExporting === 'xlsx'} />
-          </PlanGate>
+          ) : (
+            lockedFormat('PDF Export', 'pdf', 'Coach+')
+          )}
+          {allowedFormats.includes('xlsx') ? (
+            <Button label="Export XLSX" variant="secondary" onPress={() => handleExport('xlsx')} loading={isExporting === 'xlsx'} />
+          ) : (
+            lockedFormat('XLSX Export', 'xlsx', 'Club')
+          )}
         </View>
       ) : (
-        <PlanGate feature="exports" title="Exports require Coach plan+">
+        <PlanGate feature="exports" title="Exports">
           <View />
         </PlanGate>
       )}
 
-      <PlanGate feature="shareLinks" title="Share Links (Club+)">
+      <PlanGate feature="shareLinks" title="Share Links">
         <Card accent className="gap-3">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>
             Shareable Results Link

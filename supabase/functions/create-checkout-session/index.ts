@@ -13,7 +13,8 @@ serve(async (req) => {
   }
 
   try {
-    const { planTier } = await req.json();
+    const { planTier, interval: rawInterval } = await req.json();
+    const interval: 'year' | 'month' = rawInterval === 'month' ? 'month' : 'year';
 
     const authHeader = req.headers.get('Authorization')!;
     if (!authHeader) {
@@ -61,23 +62,24 @@ serve(async (req) => {
         .eq('id', accountId);
     }
 
-    // Price mapping for CAD currency fallback
-    const TIER_PRICES_CAD: Record<string, { name: string; amount: number }> = {
-      coach: { name: 'Coach Plan', amount: 2999 },
-      club: { name: 'Club Plan', amount: 5999 },
-      pro: { name: 'Pro Plan', amount: 9999 },
-      association: { name: 'Association Plan', amount: 24999 },
-      enterprise: { name: 'Enterprise Plan', amount: 24999 },
+    // Price mapping for CAD currency fallback, used when no Stripe Dashboard price ID
+    // is configured for this tier/interval via env var (see below).
+    const TIER_PRICES_CAD: Record<string, { name: string; year: number; month: number }> = {
+      coach: { name: 'Coach Plan', year: 3999, month: 400 },
+      coach_plus: { name: 'Coach+ Plan', year: 6999, month: 700 },
+      club: { name: 'Club Plan', year: 9999, month: 1000 },
     };
 
-    const rawPriceId = Deno.env.get(`STRIPE_PRICE_ID_${planTier.toUpperCase()}`);
+    const tierKey = planTier.toLowerCase();
+    const envKey = `STRIPE_PRICE_ID_${tierKey.toUpperCase()}_${interval === 'year' ? 'YEARLY' : 'MONTHLY'}`;
+    const rawPriceId = Deno.env.get(envKey);
     const priceId = rawPriceId && rawPriceId.trim() !== '' && rawPriceId !== 'undefined' && rawPriceId !== 'null' ? rawPriceId.trim() : null;
 
     let lineItem: any;
     if (priceId) {
       lineItem = { price: priceId, quantity: 1 };
     } else {
-      const tierInfo = TIER_PRICES_CAD[planTier.toLowerCase()];
+      const tierInfo = TIER_PRICES_CAD[tierKey];
       if (!tierInfo) {
         throw new Error(`Invalid plan tier: ${planTier}`);
       }
@@ -87,9 +89,9 @@ serve(async (req) => {
           product_data: {
             name: `TryoutHQ ${tierInfo.name}`,
           },
-          unit_amount: tierInfo.amount,
+          unit_amount: tierInfo[interval],
           recurring: {
-            interval: 'year',
+            interval,
           },
         },
         quantity: 1,
@@ -106,6 +108,7 @@ serve(async (req) => {
       metadata: {
         accountId: accountId,
         planTier: planTier,
+        interval: interval,
       },
     };
 

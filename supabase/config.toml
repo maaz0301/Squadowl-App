@@ -7,6 +7,21 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/stripe-webhook/index.ts"
 
+# Stripe calls this server-to-server too, on a separate Connect-only webhook
+# secret (STRIPE_CONNECT_WEBHOOK_SECRET) so platform and connected-account
+# events can't be replayed against each other.
+[functions.stripe-connect-webhook]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/stripe-connect-webhook/index.ts"
+
+# Guardians pay registration fees from the public registration page before
+# ever creating an account, so this can't require a Supabase JWT.
+[functions.create-registration-payment]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/create-registration-payment/index.ts"
+
 [functions.send-email]
 enabled = true
 verify_jwt = false

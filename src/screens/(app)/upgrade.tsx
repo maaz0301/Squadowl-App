@@ -1,4 +1,4 @@
-import { FlatList, Text, View, Alert } from 'react-native';
+import { Text, View, Alert } from 'react-native';
 import { InAppBrowser } from 'react-native-inappbrowser-reborn';
 import { useState, useCallback } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -6,16 +6,15 @@ import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/queryClient';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Header, Screen } from '@/components/ui';
-import { PLAN_DEFINITIONS } from '@/data/plans';
+import { PLAN_DEFINITIONS, formatPlanPrice } from '@/data/plans';
 import { useUser, useAuthStore } from '@/state/authStore';
 import { getDataSource } from '@/data';
 
 const TIER_RANKS: Record<string, number> = {
   free: 0,
   coach: 1,
-  club: 2,
-  pro: 3,
-  association: 4,
+  coach_plus: 2,
+  club: 3,
 };
 
 export default function UpgradeScreen() {
@@ -26,6 +25,8 @@ export default function UpgradeScreen() {
   const qc = useQueryClient();
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
   const [loadingPortal, setLoadingPortal] = useState(false);
+  // Monthly billing is temporarily hidden — every checkout goes through yearly for now.
+  const billingInterval = 'year' as const;
 
   useFocusEffect(
     useCallback(() => {
@@ -60,7 +61,7 @@ export default function UpgradeScreen() {
   const upgrade = async (tier: typeof PLAN_DEFINITIONS[number]['tier']) => {
     try {
       setLoadingTier(tier);
-      const res = await getDataSource().createCheckoutSession(tier);
+      const res = await getDataSource().createCheckoutSession(tier, billingInterval);
       if (res?.url) {
         if (await InAppBrowser.isAvailable()) {
           const result = await InAppBrowser.openAuth(res.url, 'aastryout://upgrade', {
@@ -121,8 +122,8 @@ export default function UpgradeScreen() {
   };
 
   return (
-    <Screen padded={false}>
-      <View className="px-4">
+    <Screen scroll padded={false}>
+      <View className="px-4 pb-8">
         <Header title="Upgrade Plan" subtitle={`Current: ${user?.planTier ?? 'free'}`} showBack />
         {user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'trialing' ? (
           <View className="mb-2">
@@ -137,42 +138,68 @@ export default function UpgradeScreen() {
             </Text>
           </View>
         ) : null}
-      </View>
-      <FlatList
-        data={PLAN_DEFINITIONS}
-        keyExtractor={(p) => p.tier}
-        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
-        renderItem={({ item }) => {
+
+        {PLAN_DEFINITIONS.map((item) => {
           const isCurrent = user?.planTier === item.tier;
+          // Legacy tiers ('pro'/'association') retired from TIER_RANKS still exist on
+          // un-migrated accounts. Treat any unrecognized current tier as rank -1 so
+          // upgrade buttons still render instead of silently disappearing for everyone.
+          const currentRank = TIER_RANKS[user?.planTier ?? 'free'] ?? -1;
+          const yearly = formatPlanPrice(item, 'year');
           return (
-            <Card accent={item.highlight} className="mb-4 gap-3">
+            <Card key={item.tier} accent={item.highlight} className="mb-4 gap-3">
               <View className="flex-row justify-between items-start">
                 <View>
-                  <Text className="text-xl font-display font-bold" style={{ color: colors.ink, marginBottom: 12 }}>
+                  <Text className="text-xl font-display font-bold" style={{ color: colors.ink }}>
                     {item.name}
+                  </Text>
+                  <Text className="text-xs mb-3" style={{ color: colors.inkMuted }}>
+                    {item.tagline}
                   </Text>
                   <View className="flex-row items-baseline mb-4">
                     <Text className="text-3xl font-bold font-display" style={{ color: colors.primary }}>
-                      {item.price}
+                      {yearly.price}
                     </Text>
                     <Text className="text-sm font-sans ml-1.5" style={{ color: colors.inkMuted }}>
-                      {item.priceNote}
+                      {yearly.priceNote}
                     </Text>
                   </View>
                 </View>
                 {isCurrent ? <Badge label="Current" variant="brand" /> : null}
                 {item.highlight ? <Badge label="Popular" variant="success" /> : null}
               </View>
-              {item.features.map((f) => (
-                <View key={f.label} className="flex-row gap-2">
-                  <Text style={{ color: f.included ? colors.success : colors.inkFaint }}>
-                    {f.included ? '✓' : '○'}
-                  </Text>
-                  <Text style={{ color: f.included ? colors.ink : colors.inkMuted }}>{f.label}</Text>
-                </View>
-              ))}
-              
-              {TIER_RANKS[item.tier] > TIER_RANKS[user?.planTier ?? 'free'] ? (
+              {item.features.map((f) => {
+                const markColor = !f.included
+                  ? colors.inkFaint
+                  : f.allPlans
+                    ? colors.success
+                    : f.fee
+                      ? colors.warning
+                      : colors.ink;
+                return (
+                  <View key={f.label}>
+                    <View className="flex-row gap-2">
+                      <Text style={{ color: markColor }}>{f.included ? '✓' : '○'}</Text>
+                      <Text style={{ color: f.included ? (f.fee ? colors.warning : colors.ink) : colors.inkMuted }}>
+                        {f.label}
+                      </Text>
+                    </View>
+                    {f.subItems?.map((sub) => (
+                      <Text key={sub} className="text-xs ml-6" style={{ color: colors.warning }}>
+                        + {sub}
+                      </Text>
+                    ))}
+                  </View>
+                );
+              })}
+
+              <Text className="text-[10px] mt-1" style={{ color: colors.inkFaint }}>
+                ○ not included · ✓ included ·{' '}
+                <Text style={{ color: colors.success }}>green ✓</Text> included on all plans ·{' '}
+                <Text style={{ color: colors.warning }}>orange</Text> fees applied to this tier
+              </Text>
+
+              {TIER_RANKS[item.tier] > currentRank ? (
                 <Button
                   label={`Switch to ${item.name}`}
                   variant={item.highlight ? 'primary' : 'secondary'}
@@ -182,8 +209,8 @@ export default function UpgradeScreen() {
               ) : null}
             </Card>
           );
-        }}
-      />
+        })}
+      </View>
     </Screen>
   );
 }

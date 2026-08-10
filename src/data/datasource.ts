@@ -120,8 +120,16 @@ export interface DataSource {
   getAdminStats(): Promise<AdminStats>;
   listAdminUsers(): Promise<AdminUserRow[]>;
   overrideUserPlan(userId: string, planTier: UserProfile['planTier']): Promise<void>;
-  createCheckoutSession(planTier: string): Promise<{ url: string }>;
+  createCheckoutSession(planTier: string, interval: 'year' | 'month'): Promise<{ url: string }>;
   createPortalSession(): Promise<{ url: string }>;
+  /** Stripe Connect Standard onboarding for coaches collecting registration fees. */
+  createConnectAccountLink(): Promise<{ url: string }>;
+  /** Checkout for a guardian paying a tryout's registration fee (0.5% platform cut via Connect). */
+  createRegistrationPayment(
+    registrationId: string,
+    successUrl?: string,
+    cancelUrl?: string,
+  ): Promise<{ url: string }>;
 
   // Org Members & Permissions
   listOrgMembers(): Promise<OrgMember[]>;

@@ -186,7 +186,7 @@ export default function RubricsScreen() {
         ) : null}
       </Card>
 
-      <PlanGate feature="customRubrics" title="Custom Rubrics (Coach+)">
+      <PlanGate feature="customRubrics" title="Custom Rubrics">
         <Card accent className="gap-3">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>
             Add Custom Drill / Category

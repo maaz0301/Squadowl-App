@@ -41,6 +41,7 @@ export default function AppNavigator() {
 
       {/* Misc screens */}
       <Stack.Screen name="Upgrade" component={require('../screens/(app)/upgrade').default} />
+      <Stack.Screen name="Payments" component={require('../screens/(app)/payments').default} />
       <Stack.Screen name="ArchivedAssessments" component={require('../screens/(app)/archived-assessments').default} />
       <Stack.Screen name="Feedback" component={require('../screens/(app)/feedback').default} />
       <Stack.Screen name="FriendPackages" component={require('../screens/(app)/friend-packages').default} />

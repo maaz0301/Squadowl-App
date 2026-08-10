@@ -16,12 +16,17 @@ interface ModalProps {
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  // Set to false when children manage their own scrolling (e.g. a FlatList),
+  // so a long list can virtualize instead of mounting every row at once —
+  // nesting a FlatList inside this Modal's own ScrollView would otherwise
+  // disable its virtualization entirely.
+  scroll?: boolean;
 }
 
-export function Modal({ visible, title, onClose, children, footer }: ModalProps) {
+export function Modal({ visible, title, onClose, children, footer, scroll = true }: ModalProps) {
   const colors = useThemeColors();
   return (
-    <RNModal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <RNModal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
@@ -30,8 +35,8 @@ export function Modal({ visible, title, onClose, children, footer }: ModalProps)
       >
         <Pressable className="flex-1" onPress={onClose} />
         <View
-          className="rounded-t-xl border-t px-5 pt-5 pb-8 max-h-[90%]"
-          style={{ backgroundColor: colors.card, borderColor: colors.border }}
+          className={`rounded-t-xl border-t px-5 pt-5 pb-8 ${scroll ? 'max-h-[90%]' : ''}`}
+          style={{ backgroundColor: colors.card, borderColor: colors.border, ...(scroll ? null : { height: '85%' }) }}
         >
           <View className="flex-row items-center justify-between mb-4">
             <Text className="text-xl font-display font-bold flex-1" style={{ color: colors.ink }}>
@@ -43,13 +48,17 @@ export function Modal({ visible, title, onClose, children, footer }: ModalProps)
               </Text>
             </Pressable>
           </View>
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingBottom: 16 }}
-          >
-            {children}
-          </ScrollView>
+          {scroll ? (
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 16 }}
+            >
+              {children}
+            </ScrollView>
+          ) : (
+            <View style={{ flex: 1 }}>{children}</View>
+          )}
           {footer ?? (
             <View className="mt-4">
               <Button label="Close" variant="secondary" onPress={onClose} />

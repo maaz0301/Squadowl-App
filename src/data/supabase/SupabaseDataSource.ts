@@ -271,6 +271,9 @@ export class SupabaseDataSource implements DataSource {
       status: r.status,
       paymentStatus: r.payment_status ?? undefined,
       createdAt: toMs(r.created_at),
+      // Only present when this row came back from submit_public_registration.
+      registrationFeeCents: r.registrationFeeCents ?? undefined,
+      connectChargesEnabled: r.connectChargesEnabled ?? undefined,
     };
   }
 
@@ -383,6 +386,7 @@ export class SupabaseDataSource implements DataSource {
           ? { id: t.registration_code, enabled: t.registration_open }
           : undefined,
         archived: t.archived,
+        registrationFeeCents: t.registration_fee_cents ?? undefined,
         teamBuilder,
         aiAssessments: Object.keys(aiAssessments).length ? aiAssessments : undefined,
       } as Tryout;
@@ -446,6 +450,8 @@ export class SupabaseDataSource implements DataSource {
       avatarUrl: profile.avatar_url ?? undefined,
       planTier: (account?.plan_tier as UserProfile['planTier']) ?? 'free',
       subscriptionStatus: account?.subscription_status,
+      connectChargesEnabled: !!account?.stripe_connect_charges_enabled,
+      connectPayoutsEnabled: !!account?.stripe_connect_payouts_enabled,
       createdAt: toMs(profile.created_at),
       onboardingCompleted: profile.onboarding_completed,
       onboardingSteps: profile.onboarding_steps,
@@ -1098,6 +1104,7 @@ export class SupabaseDataSource implements DataSource {
     if (updates.seasonId !== undefined) patch.season_id = updates.seasonId || null;
     if (updates.settings !== undefined) patch.settings = updates.settings;
     if (updates.archived !== undefined) patch.archived = updates.archived;
+    if (updates.registrationFeeCents !== undefined) patch.registration_fee_cents = updates.registrationFeeCents || null;
 
     if (updates.teamBuilder !== undefined || updates.aiAssessments !== undefined) {
       const current = (await supabase.from('tryouts').select('ai_assessments').eq('id', id).single())
@@ -2430,6 +2437,7 @@ export class SupabaseDataSource implements DataSource {
       type: EVENT_KIND_FROM_DB[ev.kind] ?? 'Game',
       title: ev.title,
       date: ev.event_date,
+      endDate: ev.end_date && ev.end_date !== ev.event_date ? ev.end_date : undefined,
       startTime: ev.start_time ?? undefined,
       endTime: ev.end_time ?? undefined,
       location: ev.location ?? undefined,
@@ -2645,6 +2653,7 @@ export class SupabaseDataSource implements DataSource {
           kind: EVENT_KIND_TO_DB[form.type] ?? 'game',
           title: form.title,
           event_date: form.date,
+          end_date: form.endDate || form.date,
           start_time: form.startTime ?? null,
           end_time: form.endTime ?? null,
           location: form.location ?? null,
@@ -2717,6 +2726,9 @@ export class SupabaseDataSource implements DataSource {
     if (updates.type !== undefined) patch.kind = EVENT_KIND_TO_DB[updates.type];
     if (updates.title !== undefined) patch.title = updates.title;
     if (updates.date !== undefined) patch.event_date = updates.date;
+    if (updates.endDate !== undefined || updates.date !== undefined) {
+      patch.end_date = updates.endDate || updates.date || patch.event_date;
+    }
     if (updates.startTime !== undefined) patch.start_time = updates.startTime || null;
     if (updates.endTime !== undefined) patch.end_time = updates.endTime || null;
     if (updates.location !== undefined) patch.location = updates.location || null;
@@ -3113,12 +3125,16 @@ export class SupabaseDataSource implements DataSource {
   async getEnterprisePayments(): Promise<EnterprisePayment[]> {
     const { supabase, accountId } = await this.ctx();
     const rows = (
-      await supabase.from('payments').select('*').eq('account_id', accountId).order('created_at', { ascending: false })
-    ).data as Row[] | null;
+      await supabase
+        .from('payments')
+        .select('*, athletes(first_name, last_name), tryouts(name)')
+        .eq('account_id', accountId)
+        .order('created_at', { ascending: false })
+    ).data as any[] | null;
     return (rows ?? []).map((p) => ({
       id: p.id,
-      playerName: '',
-      assessmentName: '',
+      playerName: p.athletes ? `${p.athletes.first_name} ${p.athletes.last_name}`.trim() : 'Subscription',
+      assessmentName: p.tryouts?.name ?? '',
       amount: (p.amount_cents ?? 0) / 100,
       status: p.status,
       receivedAt: p.received_at ? toMs(p.received_at) : toMs(p.created_at),
@@ -3136,7 +3152,7 @@ export class SupabaseDataSource implements DataSource {
       activeUsers: 1,
       totalAssessments: tryouts.count ?? 0,
       totalRegistrations: regs.count ?? 0,
-      planDistribution: { free: 0, coach: 0, club: 0, pro: 0, association: 0 },
+      planDistribution: { free: 0, coach: 0, coach_plus: 0, club: 0 },
       revenueMtd: 0,
     };
   }
@@ -3165,10 +3181,10 @@ export class SupabaseDataSource implements DataSource {
     }
   }
 
-  async createCheckoutSession(planTier: string): Promise<{ url: string }> {
+  async createCheckoutSession(planTier: string, interval: 'year' | 'month'): Promise<{ url: string }> {
     const { supabase } = await this.ctx();
     const { data, error } = await supabase.functions.invoke('create-checkout-session', {
-      body: { planTier }
+      body: { planTier, interval }
     });
     if (error) {
       let detail = '';
@@ -3192,6 +3208,44 @@ export class SupabaseDataSource implements DataSource {
         if (body?.error) detail = body.error;
       } catch (_) { }
       throw new Error(detail || error.message || 'Failed to open portal session');
+    }
+    if (data?.error) throw new Error(data.error);
+    return data;
+  }
+
+  async createConnectAccountLink(): Promise<{ url: string }> {
+    const { supabase } = await this.ctx();
+    const { data, error } = await supabase.functions.invoke('create-connect-account');
+    if (error) {
+      let detail = '';
+      try {
+        const body = await error.context?.json();
+        if (body?.error) detail = body.error;
+      } catch (_) { }
+      throw new Error(detail || error.message || 'Failed to start payout onboarding');
+    }
+    if (data?.error) throw new Error(data.error);
+    return data;
+  }
+
+  async createRegistrationPayment(
+    registrationId: string,
+    successUrl?: string,
+    cancelUrl?: string,
+  ): Promise<{ url: string }> {
+    // Guardians call this from the public registration page before they have an
+    // account, so it must not depend on an authenticated ctx().
+    const supabase = getSupabase();
+    const { data, error } = await supabase.functions.invoke('create-registration-payment', {
+      body: { registrationId, successUrl, cancelUrl },
+    });
+    if (error) {
+      let detail = '';
+      try {
+        const body = await error.context?.json();
+        if (body?.error) detail = body.error;
+      } catch (_) { }
+      throw new Error(detail || error.message || 'Failed to start registration payment');
     }
     if (data?.error) throw new Error(data.error);
     return data;

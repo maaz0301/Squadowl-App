@@ -21,6 +21,7 @@ export function PlanGate({ feature, children, title }: Props) {
   if (canUseFeature(tier, feature)) return <>{children}</>;
 
   const required = PLAN_REQUIRED[feature] ?? 'club';
+  const requiredName = required === 'coach_plus' ? 'Coach+' : required.charAt(0).toUpperCase() + required.slice(1);
 
   return (
     <Card accent className="gap-3 my-4">
@@ -28,8 +29,7 @@ export function PlanGate({ feature, children, title }: Props) {
         {title ?? 'Upgrade Required'}
       </Text>
       <Text style={{ color: colors.inkMuted }}>
-        This feature requires the {required.charAt(0).toUpperCase() + required.slice(1)} plan or
-        higher. You're on {tier}.
+        This feature requires the {requiredName} plan or higher. You're on {tier}.
       </Text>
       <Button label="View Plans" onPress={() => navigation.navigate('Upgrade')} />
     </Card>
@@ -37,11 +37,14 @@ export function PlanGate({ feature, children, title }: Props) {
 }
 
 const PLAN_REQUIRED: Partial<Record<keyof ReturnType<typeof getPlanDefinition>['limits'], PlanTier>> = {
-  teamBuilder: 'club',
-  aiSummaries: 'club',
-  shareLinks: 'club',
+  customRubrics: 'coach',
+  exports: 'coach',
+  teamBuilder: 'coach_plus',
+  aiSummaries: 'coach_plus',
+  shareLinks: 'coach_plus',
   seasonHub: 'coach',
   guardianPortal: 'coach',
-  enterprise: 'association',
-  qrRegistration: 'coach',
+  enterprise: 'club',
+  qrRegistration: 'free',
+  payments: 'coach',
 };

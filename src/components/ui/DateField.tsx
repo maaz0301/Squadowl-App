@@ -11,6 +11,8 @@ interface DateFieldProps {
   placeholder?: string;
   error?: string;
   disablePast?: boolean;
+  /** Earliest selectable date, YYYY-MM-DD (e.g. an event's start date, for its end date field). */
+  minDate?: string;
 }
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -38,10 +40,19 @@ function formatDisplay(value?: string): string | null {
   return `${MONTHS_SHORT[p.m]} ${p.d}, ${p.y}`;
 }
 
-export function DateField({ label, value, onChange, placeholder = 'Select a date', error, disablePast }: DateFieldProps) {
+export function DateField({ label, value, onChange, placeholder = 'Select a date', error, disablePast, minDate }: DateFieldProps) {
   const colors = useThemeColors();
   const [open, setOpen] = useState(false);
   const today = new Date();
+  const parsedMin = parse(minDate);
+  const floor = useMemo(() => {
+    const todayFloor = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    if (!parsedMin) return disablePast ? todayFloor : null;
+    const minFloor = new Date(parsedMin.y, parsedMin.m, parsedMin.d);
+    if (disablePast && todayFloor > minFloor) return todayFloor;
+    return minFloor;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minDate, disablePast]);
   const parsed = parse(value);
   const [view, setView] = useState<{ y: number; m: number }>(() =>
     parsed ? { y: parsed.y, m: parsed.m } : { y: today.getFullYear(), m: today.getMonth() },
@@ -82,10 +93,9 @@ export function DateField({ label, value, onChange, placeholder = 'Select a date
   const isSelected = (d: number) =>
     !!parsed && parsed.y === view.y && parsed.m === view.m && parsed.d === d;
   const isPast = (d: number) => {
-    if (!disablePast) return false;
+    if (!floor) return false;
     const date = new Date(view.y, view.m, d);
-    const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    return date < now;
+    return date < floor;
   };
 
   return (
@@ -127,11 +137,12 @@ export function DateField({ label, value, onChange, placeholder = 'Select a date
               }}
             />
             <Button
-              label="Today"
+              label={parsedMin ? 'Earliest' : 'Today'}
               variant="secondary"
               className="flex-1"
               onPress={() => {
-                onChange(toKey(today.getFullYear(), today.getMonth(), today.getDate()));
+                const base = floor ?? today;
+                onChange(toKey(base.getFullYear(), base.getMonth(), base.getDate()));
                 setOpen(false);
               }}
             />

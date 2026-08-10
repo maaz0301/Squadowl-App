@@ -200,7 +200,7 @@ export default function RegistrationsScreen() {
           <View>
             {/* Overview Stats */}
             <View className="pb-2 pt-2 gap-3">
-              <PlanGate feature="qrRegistration" title="QR Registration (Coach+)">
+              <PlanGate feature="qrRegistration" title="QR Registration">
                 <Card accent className="items-center gap-3">
                   <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
                     Registration Code

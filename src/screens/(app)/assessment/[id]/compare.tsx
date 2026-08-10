@@ -67,7 +67,7 @@ export default function CompareScreen() {
               <Text style={{ color: colors.primary }}>{mockAiCompare(tryout, selected).edge}</Text>
               <Badge label={`Best fit: ${mockAiCompare(tryout, selected).best_fit}`} variant="info" />
 
-              <PlanGate feature="aiSummaries" title="AI Compare (Club+)">
+              <PlanGate feature="aiSummaries" title="AI Compare">
                 <View className="mt-2 border-t pt-2" style={{ borderColor: colors.border }}>
                   <Text className="font-bold mb-2" style={{ color: colors.primary }}>Deep AI Insights</Text>
                   <Button

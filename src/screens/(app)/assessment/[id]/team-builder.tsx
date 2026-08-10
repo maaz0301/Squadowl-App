@@ -71,7 +71,7 @@ export default function TeamBuilderScreen() {
     <Screen scroll insideTabBar>
       <Header title="Team Builder" subtitle="Sort Out — balanced teams" showBack onBack={() => navigation.navigate('AssessmentResults')} />
 
-      <PlanGate feature="teamBuilder" title="Team Builder (Club+)">
+      <PlanGate feature="teamBuilder" title="Team Builder">
         <Card accent className="gap-3 mb-4">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>
             Configuration

@@ -38,8 +38,8 @@ This document tracks all the environment variables, secrets, and third-party ser
 #### Stripe (Payments & Subscriptions)
 - `STRIPE_SECRET_KEY`: Used in `stripe-webhook` and `create-checkout-session` for communicating with Stripe's API.
 - `STRIPE_WEBHOOK_SECRET`: Used in `stripe-webhook` to securely verify incoming webhooks from Stripe.
-- `STRIPE_PRICE_ID_PRO`: Used in `create-checkout-session`. The exact Stripe Price ID for the "Pro" plan.
-- `STRIPE_PRICE_ID_ENTERPRISE`: Used in `create-checkout-session`. The exact Stripe Price ID for the "Enterprise" plan.
+- `STRIPE_PRICE_ID_<TIER>_<YEARLY|MONTHLY>`: Used in `create-checkout-session` to look up the exact Stripe Price ID for a given tier + billing interval, e.g. `STRIPE_PRICE_ID_COACH_YEARLY`, `STRIPE_PRICE_ID_COACH_MONTHLY`, `STRIPE_PRICE_ID_COACH_PLUS_YEARLY`, `STRIPE_PRICE_ID_COACH_PLUS_MONTHLY`, `STRIPE_PRICE_ID_CLUB_YEARLY`, `STRIPE_PRICE_ID_CLUB_MONTHLY`. If unset (or empty), the function falls back to creating an ad-hoc Stripe price via `price_data` using the CAD amounts hardcoded in `TIER_PRICES_CAD`, so checkout still works without these being configured — set them once real Stripe Dashboard products/prices exist, to get proper Stripe product analytics/invoicing.
+  - Legacy `STRIPE_PRICE_ID_COACH`, `STRIPE_PRICE_ID_CLUB`, `STRIPE_PRICE_ID_PRO`, `STRIPE_PRICE_ID_ASSOCIATION` (no interval suffix) are no longer read — the "Pro" and "Association" tiers were retired in favor of "Coach+" (see `src/data/plans.ts`).
 
 #### Resend (Emails)
 - `RESEND_API_KEY`: Used in the `send-email` edge function to send transactional emails (organization invites, tryout invites, schedule updates, etc.).

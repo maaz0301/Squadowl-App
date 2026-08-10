@@ -5,6 +5,7 @@ import { Alert, FlatList, Platform, Pressable, Text, View } from 'react-native';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { DummyDataModal } from '@/components/DummyDataModal';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
+import { UsageNudgeBanner } from '@/components/UsageNudgeBanner';
 import {
   Avatar,
   Badge,
@@ -122,6 +123,12 @@ export default function RosterScreen() {
       />
       {hasPlayers ? (
         <View className="px-4 pt-2 pb-3 gap-3">
+          <UsageNudgeBanner
+            tier={user?.planTier ?? 'free'}
+            metric="players"
+            count={tryout.roster.length}
+            label="players in this roster"
+          />
           <View className="flex-row gap-2">
             <Button
               label="Score Players"

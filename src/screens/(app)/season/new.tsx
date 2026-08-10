@@ -53,7 +53,7 @@ export default function NewSeasonScreen() {
   return (
     <Screen scroll>
       <Header title="New Season" subtitle="Team Hub setup" showBack />
-      <PlanGate feature="seasonHub" title="Season Hub (Coach+)">
+      <PlanGate feature="seasonHub" title="Season Hub">
         <View className="gap-4 mt-2">
           <Controller
             control={control}

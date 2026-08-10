@@ -18,6 +18,7 @@ import {
 } from '@/components/ui';
 import { BottomNav } from '@/components/BottomNav';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
+import { UsageNudgeBanner } from '@/components/UsageNudgeBanner';
 import { useAuthStore, useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import {
@@ -409,6 +410,18 @@ export default function DashboardScreen() {
                 </View>
               </View>
             )}
+
+            {!isGuardianOnly ? (
+              <>
+                <UsageNudgeBanner tier={user?.planTier ?? 'free'} metric="teams" count={teamCount} label="teams" />
+                <UsageNudgeBanner
+                  tier={user?.planTier ?? 'free'}
+                  metric="assessments"
+                  count={evalCount}
+                  label="assessments"
+                />
+              </>
+            ) : null}
 
             {/* Assigned Tryouts */}
             {assignedQuery.data && assignedQuery.data.length > 0 ? (

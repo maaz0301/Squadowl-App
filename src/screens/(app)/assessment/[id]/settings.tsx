@@ -17,8 +17,11 @@ import {
   Screen,
   TimeField,
 } from '@/components/ui';
+import { PlanGate } from '@/components/PlanGate';
+import { LimitReachedModal } from '@/components/LimitReachedModal';
 import {
   useTryoutQuery,
+  useTryoutsQuery,
   useUpdateTryoutMutation,
   useArchiveTryoutMutation,
   useDeleteTryoutMutation,
@@ -27,6 +30,8 @@ import {
 import { getDataSource } from '@/data';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { getDefaultRubrics } from '@/data/rubrics';
+import { useUser } from '@/state/authStore';
+import { isAtAssessmentLimit } from '@/data/plans';
 
 export default function SettingsScreen() {
   const id = useAssessmentId();
@@ -34,8 +39,10 @@ export default function SettingsScreen() {
   const { welcome } = route.params || {};
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
+  const user = useUser();
   const welcomedRef = useRef(false);
   const tryoutQuery = useTryoutQuery(id);
+  const tryoutsQuery = useTryoutsQuery(false);
   const updateTryout = useUpdateTryoutMutation();
   const archiveTryout = useArchiveTryoutMutation();
   const deleteTryout = useDeleteTryoutMutation();
@@ -43,12 +50,15 @@ export default function SettingsScreen() {
   const [showRubrics, setShowRubrics] = useState(false);
   const [showAssessor, setShowAssessor] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showFee, setShowFee] = useState(false);
   const [assessorName, setAssessorName] = useState('');
   const [assessorEmail, setAssessorEmail] = useState('');
   const [name, setName] = useState('');
   const [tryoutDate, setTryoutDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [rink, setRink] = useState('');
+  const [feeInput, setFeeInput] = useState('');
+  const [limitMsg, setLimitMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (welcome === '1' && !welcomedRef.current) {
@@ -84,6 +94,18 @@ export default function SettingsScreen() {
       },
     });
     setShowEdit(false);
+  };
+
+  const openFeeEdit = () => {
+    setFeeInput(tryout.registrationFeeCents ? (tryout.registrationFeeCents / 100).toFixed(2) : '');
+    setShowFee(true);
+  };
+
+  const saveFee = async () => {
+    const dollars = parseFloat(feeInput);
+    const cents = !feeInput.trim() || isNaN(dollars) || dollars <= 0 ? 0 : Math.round(dollars * 100);
+    await updateTryout.mutateAsync({ id: tryout.id, updates: { registrationFeeCents: cents } });
+    setShowFee(false);
   };
 
   const shareAssessorInvite = async (assessor: { name: string; email?: string }) => {
@@ -174,6 +196,11 @@ export default function SettingsScreen() {
   };
 
   const handleCopy = async () => {
+    const count = tryoutsQuery.data?.length ?? 0;
+    if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
+      setLimitMsg('You have reached the maximum number of assessments for your current plan.');
+      return;
+    }
     const copy = await copyTryout.mutateAsync(tryout.id);
     navigation.navigate('AssessmentRoster', { id: copy.id });
   };
@@ -268,6 +295,26 @@ export default function SettingsScreen() {
         <Button label="View Reference" variant="ghost" size="sm" onPress={() => setShowRubrics(true)} />
       </Card>
 
+      <PlanGate feature="payments" title="Registration Fee (Coach plan and up)">
+        <Card className="mb-4 gap-2">
+          <Text className="text-md font-display font-bold" style={{ color: colors.ink }}>
+            Registration Fee
+          </Text>
+          <Text className="text-sm" style={{ color: colors.inkMuted }}>
+            {tryout.registrationFeeCents
+              ? `$${(tryout.registrationFeeCents / 100).toFixed(2)} CAD per player`
+              : 'Free to register'}
+          </Text>
+          {!user?.connectChargesEnabled ? (
+            <Text className="text-xs" style={{ color: colors.warning }}>
+              Connect payouts on the Payments screen before setting a fee — guardians can't pay
+              until that's done.
+            </Text>
+          ) : null}
+          <Button label="Edit Fee" variant="secondary" size="sm" onPress={openFeeEdit} />
+        </Card>
+      </PlanGate>
+
       <Card className="mb-4 gap-2">
         <Text className="text-md font-display font-bold" style={{ color: colors.ink }}>
           Duplicate
@@ -288,8 +335,25 @@ export default function SettingsScreen() {
           <Input label="Name" value={name} onChangeText={setName} />
           <DateField label="Date" value={tryoutDate} onChange={setTryoutDate} placeholder="Select a date" />
           <TimeField label="Start Time" value={startTime} onChange={setStartTime} placeholder="Select a time" />
-          <Input label="Location" value={rink} onChangeText={setRink} placeholder="Rink A" />
+          <Input label="Location" value={rink} onChangeText={setRink} placeholder="Field A" />
           <Button label="Save" onPress={saveEdit} loading={updateTryout.isPending} />
+        </View>
+      </Modal>
+
+      <Modal visible={showFee} title="Registration Fee" onClose={() => setShowFee(false)}>
+        <View className="gap-3">
+          <Text className="text-sm" style={{ color: colors.inkMuted }}>
+            Amount charged to a guardian per player registration, in CAD. Leave blank for free
+            registration.
+          </Text>
+          <Input
+            label="Fee (CAD)"
+            value={feeInput}
+            onChangeText={setFeeInput}
+            keyboardType="decimal-pad"
+            placeholder="0.00"
+          />
+          <Button label="Save" onPress={saveFee} loading={updateTryout.isPending} />
         </View>
       </Modal>
 
@@ -338,6 +402,8 @@ export default function SettingsScreen() {
           <Button label="Add" onPress={addAssessor} loading={updateTryout.isPending} />
         </View>
       </Modal>
+
+      <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
     </Screen>
   );
 }

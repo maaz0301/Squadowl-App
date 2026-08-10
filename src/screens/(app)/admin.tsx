@@ -37,7 +37,7 @@ export default function AdminScreen() {
     <Screen padded={false}>
       <View className="px-4">
         <Header title="Admin Portal" subtitle="Super Admin (Demo)" showBack />
-        <PlanGate feature="enterprise" title="Admin Portal (Association)">
+        <PlanGate feature="enterprise" title="Admin Portal">
           <Tabs tabs={[...ADMIN_TABS]} activeKey={tab} onChange={(k) => setTab(k as (typeof ADMIN_TABS)[number]['key'])} className="mb-4" />
         </PlanGate>
       </View>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Text, View, Alert, Pressable, Platform, ScrollView, ActivityIndicator, FlatList } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
@@ -10,9 +10,11 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
 import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useGenerateTestDataMutation, useClearTestDataMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useRemoveTeamRosterPlayerMutation, useSeasonsQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation } from '@/features/queries';
 import { useUser } from '@/state/authStore';
-import { canUseFeature } from '@/data/plans';
+import { canUseFeature, isAtPlayerLimit } from '@/data/plans';
+import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
 import { BottomNav } from '@/components/BottomNav';
+import { PlanGate } from '@/components/PlanGate';
 import { DummyDataModal } from '@/components/DummyDataModal';
 import type { DummyDataOptions } from '@/data/testDataGenerator';
 import { getDataSource } from '@/data';
@@ -54,6 +56,18 @@ export default function TeamDetailScreen() {
   const [showAttachModal, setShowAttachModal] = useState(false);
   const [showDummy, setShowDummy] = useState(false);
   const [showAddPlayers, setShowAddPlayers] = useState(false);
+  const [limitMsg, setLimitMsg] = useState<string | null>(null);
+  // TEMP DIAGNOSTIC: logs tap-to-visible time for the Add Players modal so we
+  // can see whether the delay is JS-side (state/render) or native/animation.
+  // Remove once the modal open speed is confirmed fixed.
+  const addPlayersPressAt = useRef<number | null>(null);
+  useEffect(() => {
+    if (showAddPlayers && addPlayersPressAt.current != null) {
+      const ms = performance.now() - addPlayersPressAt.current;
+      console.log(`[perf] Add Players modal committed visible after ${ms.toFixed(1)}ms`);
+      addPlayersPressAt.current = null;
+    }
+  }, [showAddPlayers]);
   const [pickedAthletes, setPickedAthletes] = useState<Set<string>>(new Set());
   const [candidateSearch, setCandidateSearch] = useState('');
   const [candidateTryoutFilter, setCandidateTryoutFilter] = useState<string | null>(null);
@@ -171,6 +185,25 @@ export default function TeamDetailScreen() {
     return list;
   }, [tryoutsQuery.data, rosterQuery.data]);
 
+  // Same reasoning as `candidates` above: these are recomputed on every render
+  // of the screen (RSVP taps, unrelated form edits, etc.), not just when their
+  // own inputs change, so with hundreds of players that was wasted work on
+  // every keystroke elsewhere on the page.
+  const filteredTeamPlayers = useMemo(() => {
+    const players = rosterQuery.data ?? [];
+    const q = playerSearch.trim().toLowerCase();
+    return q ? players.filter((p) => `${p.first} ${p.last}`.toLowerCase().includes(q)) : players;
+  }, [rosterQuery.data, playerSearch]);
+
+  const availableCount = useMemo(() => candidates.filter((c) => !c.alreadyOnTeam).length, [candidates]);
+
+  const filteredCandidates = useMemo(() => {
+    const q = candidateSearch.trim().toLowerCase();
+    return candidates
+      .filter((c) => !candidateTryoutFilter || c.tryoutIds.has(candidateTryoutFilter))
+      .filter((c) => (q ? `${c.first} ${c.last}`.toLowerCase().includes(q) : true));
+  }, [candidates, candidateTryoutFilter, candidateSearch]);
+
   if (teamsQuery.isLoading || tryoutsQuery.isLoading) return <LoadingState message="Loading team..." />;
   if (teamsQuery.isError || tryoutsQuery.isError) {
     return (
@@ -202,26 +235,16 @@ export default function TeamDetailScreen() {
   const isAssociation = canUseFeature(user?.planTier ?? 'free', 'enterprise');
 
   const teamPlayers = rosterQuery.data ?? [];
-  const filteredTeamPlayers = playerSearch.trim()
-    ? teamPlayers.filter((p) =>
-        `${p.first} ${p.last}`.toLowerCase().includes(playerSearch.trim().toLowerCase()),
-      )
-    : teamPlayers;
-
-  const availableCount = candidates.filter((c) => !c.alreadyOnTeam).length;
-  const filteredCandidates = candidates
-    .filter((c) => !candidateTryoutFilter || c.tryoutIds.has(candidateTryoutFilter))
-    .filter((c) =>
-      candidateSearch.trim()
-        ? `${c.first} ${c.last}`.toLowerCase().includes(candidateSearch.trim().toLowerCase())
-        : true,
-    );
 
   const isAddingPlayers = addRosterPlayers.isPending || enrollingAssessments;
 
   const addPickedPlayers = async () => {
     const picked = candidates.filter((c) => pickedAthletes.has(c.athleteId));
     if (picked.length === 0) return;
+    if (isAtPlayerLimit(user?.planTier ?? 'free', teamPlayers.length + picked.length - 1)) {
+      setLimitMsg('You have reached the maximum number of players for your current plan.');
+      return;
+    }
     const entries = picked.map((c) => ({
       athleteId: c.athleteId,
       jersey: c.jersey,
@@ -310,6 +333,7 @@ export default function TeamDetailScreen() {
       type: kind,
       title: '',
       date: '',
+      endDate: '',
       startTime: '',
       endTime: '',
       location: '',
@@ -325,6 +349,7 @@ export default function TeamDetailScreen() {
       type: ev.type,
       title: ev.title,
       date: ev.date,
+      endDate: ev.endDate ?? '',
       startTime: ev.startTime ?? '',
       endTime: ev.endTime ?? '',
       location: ev.location ?? '',
@@ -357,6 +382,7 @@ export default function TeamDetailScreen() {
               type: data.type,
               title: data.title,
               date: data.date,
+              endDate: data.endDate || data.date,
               startTime: data.startTime,
               endTime: data.endTime,
               location: data.location,
@@ -520,6 +546,7 @@ export default function TeamDetailScreen() {
               size="sm"
               className="mb-3 self-start"
               onPress={() => {
+                addPlayersPressAt.current = performance.now();
                 setPickedAthletes(new Set());
                 setCandidateSearch('');
                 setCandidateTryoutFilter(null);
@@ -668,7 +695,11 @@ export default function TeamDetailScreen() {
         {headerBlock}
 
         {tab === 'schedule' ? (
+          <PlanGate feature="seasonHub" title="Season Hub">
           <View>
+            <Text className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: colors.inkMuted }}>
+              Season Hub
+            </Text>
             <View className="flex-row flex-wrap gap-2 mb-3">
               <Button label="+ Practice" size="sm" onPress={() => openEventModal('Practice')} />
               <Button label="+ Game" size="sm" variant="secondary" onPress={() => openEventModal('Game')} />
@@ -707,52 +738,71 @@ export default function TeamDetailScreen() {
                       <Badge label={ev.type} variant={ev.type === 'Game' ? 'brand' : 'info'} />
                     </View>
 
-                    <Pressable
-                      onPress={() => setOpenRsvpEventId(expanded ? null : ev.id)}
-                      className="flex-row items-center gap-2 py-1"
-                      hitSlop={6}
-                    >
+                    <View className="flex-row items-center gap-2 py-1 flex-wrap">
                       <Badge label={`${rsvp.counts.yes} yes`} variant="success" />
                       <Badge label={`${rsvp.counts.maybe} maybe`} variant="warning" />
                       <Badge label={`${rsvp.counts.no} no`} variant="danger" />
                       {rsvp.counts.pending > 0 ? (
                         <Badge label={`${rsvp.counts.pending} pending`} />
                       ) : null}
-                      <Text className="text-xs font-bold ml-auto" style={{ color: colors.primary }}>
-                        {expanded ? 'Hide' : 'Who?'}
+                    </View>
+
+                    <Pressable
+                      onPress={() => setOpenRsvpEventId(expanded ? null : ev.id)}
+                      className="flex-row items-center justify-between rounded-md px-3 py-2.5 border"
+                      style={{
+                        backgroundColor: expanded ? colors.tile : 'rgba(255,107,43,0.08)',
+                        borderColor: colors.primary,
+                      }}
+                      hitSlop={6}
+                    >
+                      <Text className="text-sm font-bold" style={{ color: colors.primary }}>
+                        {expanded ? 'Hide RSVPs' : 'Who’s coming? Set RSVPs'}
                       </Text>
+                      <Text style={{ color: colors.primary, fontSize: 14 }}>{expanded ? '▴' : '▾'}</Text>
                     </Pressable>
 
                     {expanded ? (
-                      <View className="rounded-md border" style={{ borderColor: colors.border }}>
+                      <View className="rounded-md border overflow-hidden" style={{ borderColor: colors.border }}>
                         {rsvp.rows.length === 0 ? (
                           <Text className="text-xs p-3" style={{ color: colors.inkMuted }}>
                             Nobody was invited to this event yet.
                           </Text>
                         ) : (
-                          rsvp.rows.map((r, i) => (
-                            <Pressable
-                              key={r.playerId}
-                              onPress={() =>
-                                setAvailabilityTarget({
-                                  eventId: ev.id,
-                                  playerId: r.playerId,
-                                  playerName: r.name,
-                                  current: r.response,
-                                })
-                              }
-                              className="flex-row items-center justify-between px-3 py-2"
-                              style={{
-                                borderTopWidth: i === 0 ? 0 : 1,
-                                borderTopColor: colors.border,
-                              }}
+                          <>
+                            <Text
+                              className="text-xs px-3 py-2"
+                              style={{ color: colors.inkMuted, backgroundColor: colors.tile }}
                             >
-                              <Text className="text-sm flex-1 pr-2" style={{ color: colors.ink }}>
-                                {r.name}
-                              </Text>
-                              <Badge label={RSVP_LABEL[r.response]} variant={RSVP_VARIANT[r.response]} />
-                            </Pressable>
-                          ))
+                              Tap a player to set their RSVP
+                            </Text>
+                            {rsvp.rows.map((r, i) => (
+                              <Pressable
+                                key={r.playerId}
+                                onPress={() =>
+                                  setAvailabilityTarget({
+                                    eventId: ev.id,
+                                    playerId: r.playerId,
+                                    playerName: r.name,
+                                    current: r.response,
+                                  })
+                                }
+                                className="flex-row items-center justify-between px-3 py-3"
+                                style={{
+                                  borderTopWidth: i === 0 ? 0 : 1,
+                                  borderTopColor: colors.border,
+                                }}
+                              >
+                                <Text className="text-base flex-1 pr-2 font-bold" style={{ color: colors.ink }}>
+                                  {r.name}
+                                </Text>
+                                <View className="flex-row items-center gap-1.5">
+                                  <Badge label={RSVP_LABEL[r.response]} variant={RSVP_VARIANT[r.response]} />
+                                  <Text style={{ color: colors.inkFaint, fontSize: 13 }}>›</Text>
+                                </View>
+                              </Pressable>
+                            ))}
+                          </>
                         )}
                       </View>
                     ) : null}
@@ -772,6 +822,7 @@ export default function TeamDetailScreen() {
               })
             )}
           </View>
+          </PlanGate>
         ) : (
           <View>
             <Card className="mb-3 gap-2">
@@ -897,6 +948,7 @@ export default function TeamDetailScreen() {
       <Modal
         visible={showAddPlayers}
         title="Add Players from Assessments"
+        scroll={false}
         onClose={() => {
           if (isAddingPlayers) return;
           setShowAddPlayers(false);
@@ -912,14 +964,14 @@ export default function TeamDetailScreen() {
           </View>
         }
       >
-        {isAddingPlayers ? (
+        {!showAddPlayers ? null : isAddingPlayers ? (
           <LoadingState message="Adding players..." />
         ) : candidates.length === 0 ? (
           <Text className="text-sm py-3" style={{ color: colors.inkMuted }}>
             No assessments have players yet — add players to an assessment roster first.
           </Text>
         ) : (
-          <View>
+          <View className="flex-1">
             <Input
               value={candidateSearch}
               onChangeText={setCandidateSearch}
@@ -966,52 +1018,56 @@ export default function TeamDetailScreen() {
               ) : null}
             </View>
 
-            {filteredCandidates.length === 0 ? (
-              <Text className="text-sm text-center py-4" style={{ color: colors.inkMuted }}>
-                No players match "{candidateSearch}".
-              </Text>
-            ) : (
-            filteredCandidates.map((c) => {
-              const picked = pickedAthletes.has(c.athleteId);
-              return (
-                <Pressable
-                  key={c.athleteId}
-                  disabled={c.alreadyOnTeam}
-                  onPress={() =>
-                    setPickedAthletes((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(c.athleteId)) next.delete(c.athleteId);
-                      else next.add(c.athleteId);
-                      return next;
-                    })
-                  }
-                  className="flex-row items-center gap-3 py-3 px-2 rounded-md border mb-2"
-                  style={{
-                    borderColor: picked ? colors.primary : colors.border,
-                    backgroundColor: picked ? 'rgba(255,107,43,0.12)' : 'transparent',
-                    opacity: c.alreadyOnTeam ? 0.5 : 1,
-                  }}
-                >
-                  <Avatar first={c.first} last={c.last} size={32} pos={c.pos} />
-                  <View className="flex-1">
-                    <Text className="font-bold" style={{ color: colors.ink }}>
-                      {c.first} {c.last}
-                    </Text>
-                    <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
-                      {[c.jersey ? `#${c.jersey}` : null, c.pos, [...c.tryoutNames].join(', ')]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </Text>
-                  </View>
-                  {c.alreadyOnTeam ? (
-                    <Badge label="On Team" variant="success" />
-                  ) : picked ? (
-                    <Badge label="Selected" variant="brand" />
-                  ) : null}
-                </Pressable>
-              );
-            })
-            )}
+            <FlatList
+              className="flex-1"
+              keyboardShouldPersistTaps="handled"
+              data={filteredCandidates}
+              keyExtractor={(c) => c.athleteId}
+              ListEmptyComponent={
+                <Text className="text-sm text-center py-4" style={{ color: colors.inkMuted }}>
+                  No players match "{candidateSearch}".
+                </Text>
+              }
+              renderItem={({ item: c }) => {
+                const picked = pickedAthletes.has(c.athleteId);
+                return (
+                  <Pressable
+                    disabled={c.alreadyOnTeam}
+                    onPress={() =>
+                      setPickedAthletes((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(c.athleteId)) next.delete(c.athleteId);
+                        else next.add(c.athleteId);
+                        return next;
+                      })
+                    }
+                    className="flex-row items-center gap-3 py-3 px-2 rounded-md border mb-2"
+                    style={{
+                      borderColor: picked ? colors.primary : colors.border,
+                      backgroundColor: picked ? 'rgba(255,107,43,0.12)' : 'transparent',
+                      opacity: c.alreadyOnTeam ? 0.5 : 1,
+                    }}
+                  >
+                    <Avatar first={c.first} last={c.last} size={32} pos={c.pos} />
+                    <View className="flex-1">
+                      <Text className="font-bold" style={{ color: colors.ink }}>
+                        {c.first} {c.last}
+                      </Text>
+                      <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
+                        {[c.jersey ? `#${c.jersey}` : null, c.pos, [...c.tryoutNames].join(', ')]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </Text>
+                    </View>
+                    {c.alreadyOnTeam ? (
+                      <Badge label="On Team" variant="success" />
+                    ) : picked ? (
+                      <Badge label="Selected" variant="brand" />
+                    ) : null}
+                  </Pressable>
+                );
+              }}
+            />
           </View>
         )}
       </Modal>
@@ -1041,7 +1097,22 @@ export default function TeamDetailScreen() {
             control={eventForm.control}
             name="date"
             render={({ field: { onChange, value }, fieldState: { error } }) => (
-              <DateField label="Date" value={value} onChange={onChange} placeholder="Select a date" error={error?.message} disablePast />
+              <DateField label="Start Date" value={value} onChange={onChange} placeholder="Select a date" error={error?.message} disablePast />
+            )}
+          />
+          <Controller
+            control={eventForm.control}
+            name="endDate"
+            render={({ field: { onChange, value }, fieldState: { error } }) => (
+              <DateField
+                label="End Date (optional)"
+                value={value}
+                onChange={onChange}
+                placeholder="Same as start date"
+                error={error?.message}
+                disablePast
+                minDate={eventForm.watch('date') || undefined}
+              />
             )}
           />
           <Controller
@@ -1122,6 +1193,8 @@ export default function TeamDetailScreen() {
         onClose={() => setShowDummy(false)}
         onSubmit={runDummy}
       />
+
+      <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
 
       <BottomNav active="teams" />
     </Screen>

@@ -7,7 +7,7 @@ import { useThemeColors, useTheme } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Header, Input, Screen, Avatar } from '@/components/ui';
 import { useThemeStore } from '@/state/themeStore';
 import { useUser, useAuthStore, usePermissions } from '@/state/authStore';
-import { getPlanDefinition, canUseFeature } from '@/data/plans';
+import { getPlanDefinition, canUseFeature, formatLimit } from '@/data/plans';
 import {
   useUpdateProfileMutation,
   useUpdatePasswordMutation,
@@ -239,8 +239,8 @@ export default function ProfileScreen() {
               Plan Limits
             </Text>
             <Text style={{ color: colors.inkMuted }}>
-              Assessments: {plan.limits.assessments} · Players: {plan.limits.players} · Teams:{' '}
-              {plan.limits.teams}
+              Assessments: {formatLimit(plan.limits.assessments)} · Players: {formatLimit(plan.limits.players)} · Teams:{' '}
+              {formatLimit(plan.limits.teams)}
             </Text>
             <View className="flex-row gap-2 mt-2">
               <Button label="Upgrade Plan" variant="secondary" onPress={() => navigation.navigate('Upgrade')} className="flex-1" />
@@ -248,6 +248,14 @@ export default function ProfileScreen() {
                 <Button label="Manage Subscription" variant="secondary" onPress={openPortal} loading={loadingPortal} className="flex-1" />
               ) : null}
             </View>
+            {canUseFeature(user?.planTier ?? 'free', 'payments') ? (
+              <Button
+                label="Payment Dashboard"
+                variant="secondary"
+                className="mt-2"
+                onPress={() => navigation.navigate('Payments')}
+              />
+            ) : null}
           </Card>
 
           <Card className="mb-4 gap-2">

@@ -37,7 +37,7 @@ export default function SeasonPlayerScreen() {
         ) : null}
       </Card>
 
-      <PlanGate feature="guardianPortal" title="Guardian Portal (Coach+)">
+      <PlanGate feature="guardianPortal" title="Guardian Portal">
         <Card accent className="gap-3">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>
             Send Portal Invite
