@@ -1,14 +1,16 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  KeyboardAvoidingView,
+  LayoutAnimation,
   Platform,
   ScrollView,
   Text,
   View,
   Keyboard,
+  type KeyboardEvent,
   type LayoutChangeEvent,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -20,11 +22,13 @@ import { useSessionStore } from '@/state/sessionStore';
 import { useUser } from '@/state/authStore';
 import { isAtAssessmentLimit } from '@/data/plans';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
+import { buildLimitReachedMessage } from '@/lib/usageNudges';
 
 export default function NewAssessmentScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  const insets = useSafeAreaInsets();
   const createTryout = useCreateTryoutMutation();
   const setCurrentTryout = useSessionStore((s) => s.setCurrentTryout);
   const teamsQuery = useTeamsQuery();
@@ -32,9 +36,43 @@ export default function NewAssessmentScreen() {
   const user = useUser();
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
 
-  // KeyboardAvoidingView shrinks the visible area when the keyboard opens, but
-  // it does NOT move the focused input — so tapping a field low in the form
-  // (Location) leaves it below the shortened viewport, i.e. behind the keyboard.
+  // Neither platform's native resize is trustworthy here: iOS has no
+  // window-resize equivalent to Android's adjustResize at all, and on
+  // Android that manifest flag stopped actually shrinking the window once
+  // targetSdk 36 enforced edge-to-edge (and it's flaky through
+  // react-native-screens' native-stack Fragment hosting regardless) — so the
+  // keyboard just overlapped the footer instead of the window resizing.
+  // KeyboardAvoidingView's own "height"/"padding" behaviors rely on a
+  // runtime view measurement call which — like the other runtime
+  // measurement APIs this screen already works around below — is unreliable
+  // under the New Architecture. Tracking the keyboard's own height straight
+  // from the OS event instead, and applying it as padding ourselves on both
+  // platforms, needs no view measurement or native resize at all. The
+  // AndroidManifest's windowSoftInputMode is set to "adjustNothing" so the
+  // OS never attempts its own resize/pan on top of this and double-shrinks.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const applyHeight = (e: KeyboardEvent) => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setKeyboardHeight(e.endCoordinates.height);
+    };
+    const hide = () => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setKeyboardHeight(0);
+    };
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, applyHeight);
+    const hideSub = Keyboard.addListener(hideEvent, hide);
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  // The keyboardHeight padding above shrinks the visible area when the keyboard
+  // opens, but it does NOT move the focused input — so tapping a field low in
+  // the form (Location) leaves it below the shortened viewport, i.e. behind the keyboard.
   // Auto-scrolling the focused field to the top of the shrunken area is what
   // closes that gap. Positions are captured via onLayout instead of runtime
   // measurement APIs, which are unreliable under the New Architecture.
@@ -64,6 +102,7 @@ export default function NewAssessmentScreen() {
       eventType: 'Tryout',
       tryoutDate: '',
       startTime: '',
+      endTime: '',
       rink: '',
       // Pre-linked when created from a team's Events section.
       teamId: route.params?.teamId,
@@ -77,7 +116,7 @@ export default function NewAssessmentScreen() {
   const onSubmit = handleSubmit(async (data) => {
     const count = tryoutsQuery.data?.length ?? 0;
     if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
-      setLimitMsg('You have reached the maximum number of assessments for your current plan.');
+      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'assessments', 'assessments'));
       return;
     }
     const tryout = await createTryout.mutateAsync(data);
@@ -108,21 +147,15 @@ export default function NewAssessmentScreen() {
     // findNodeHandle, TextInput.State.currentlyFocusedField) that are unreliable
     // under the New Architecture (this app has newArchEnabled=true) — the keyboard
     // was covering Start Time/Location with no scroll ever triggering. This screen
-    // manages its own KeyboardAvoidingView + plain ScrollView instead, using only
-    // core RN APIs, so it doesn't depend on that library's internals at all.
+    // manages its own keyboard avoidance + plain ScrollView instead (see
+    // keyboardHeight below), using only the raw Keyboard event API, so it
+    // doesn't depend on any runtime view-measurement APIs at all.
     <Screen scroll={false} keyboardAvoiding={false} padded={false}>
-      {/*
-        iOS has no adjustResize equivalent, so KeyboardAvoidingView has to shrink
-        the view itself ("height"). On Android the manifest already sets
-        windowSoftInputMode="adjustResize", which shrinks the window natively —
-        applying "height" on top of that shrinks it twice and leaves the form a
-        keyboard-height too short, so Android deliberately gets no behavior.
-      */}
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'height' : undefined}>
+      <View style={{ flex: 1, paddingBottom: keyboardHeight }}>
         <ScrollView
           ref={scrollRef}
           className="flex-1 px-4"
-          contentContainerStyle={{ paddingBottom: 260 }}
+          contentContainerStyle={{ paddingBottom: 24 }}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           showsVerticalScrollIndicator={false}
@@ -210,6 +243,13 @@ export default function NewAssessmentScreen() {
                 <TimeField label="Start Time" value={value} onChange={onChange} placeholder="Select a time" />
               )}
             />
+            <Controller
+              control={control}
+              name="endTime"
+              render={({ field: { onChange, value } }) => (
+                <TimeField label="End Time" value={value} onChange={onChange} placeholder="Select a time" />
+              )}
+            />
             <View onLayout={rememberField('rink')}>
               <Controller
                 control={control}
@@ -228,11 +268,19 @@ export default function NewAssessmentScreen() {
                 )}
               />
             </View>
-
-            <Button label="Create Assessment" onPress={onSubmit} loading={createTryout.isPending} className="mt-2" />
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+        <View
+          className="px-4 pt-3 border-t"
+          style={{
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            paddingBottom: Math.max(12, insets.bottom),
+          }}
+        >
+          <Button label="Create Assessment" onPress={onSubmit} loading={createTryout.isPending} />
+        </View>
+      </View>
       <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
     </Screen>
   );

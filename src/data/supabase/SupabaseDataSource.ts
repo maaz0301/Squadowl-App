@@ -3,9 +3,18 @@ import { getSupabase } from '@/lib/supabase';
 import { type Session, type SupabaseClient } from '@supabase/supabase-js';
 import type { DataSource } from '../datasource';
 import type { FeedbackSubmission } from '../extras';
-import { generateCloudCode, generateId, getDefaultWeights, getPlayerSubskills } from '../rubrics';
+import {
+  categoryAveragesAcrossEvals,
+  generateCloudCode,
+  generateId,
+  getDefaultWeights,
+  getPlayerCategories,
+  getPlayerSubskills,
+  isGoaliePosition,
+  weightedOverallAcrossEvals,
+} from '../rubrics';
 import type { TeamBuilderConfig, TeamBuilderState } from '../teamBuilder';
-import { buildTeams, formatExportCsv } from '../teamBuilder';
+import { formatExportCsv } from '../teamBuilder';
 import { computePlayerResults } from '../scoring';
 import {
   POSITIONS_BY_SPORT,
@@ -34,7 +43,13 @@ import type {
   Assessor,
   Athlete,
   AthleteHistory,
+  AthleteShare,
+  CoachDirectoryEntry,
+  PlayerProfile,
+  ShareComment,
+  PlayerProfileAssessment,
   AuthSession,
+  ConnectAccountStatus,
   CreateAssessmentForm,
   CreateEventForm,
   CreateSeasonForm,
@@ -62,13 +77,38 @@ import type {
 // ─── small helpers ──────────────────────────────────────────────────────────
 type Row = Record<string, any>;
 
-function unwrap<T>(res: { data: T; error: { message: string } | null }): T {
-  if (res.error) throw new Error(res.error.message);
+function unwrap<T>(res: { data: T; error: { message: string; code?: string } | null }): T {
+  if (res.error) {
+    const err = new Error(res.error.message) as Error & { code?: string };
+    err.code = res.error.code;
+    throw err;
+  }
   return res.data;
+}
+
+/** Roles the RLS write policies (athletes/teams/tryouts) accept. */
+const WRITABLE_ROLES = ['owner', 'admin', 'coach'];
+
+function isStaleAccountError(err: unknown): boolean {
+  const e = err as { code?: string; message?: string } | undefined;
+  return e?.code === '42501' || /row-level security/i.test(e?.message ?? '');
 }
 
 function toMs(iso: string | null | undefined): number {
   return iso ? new Date(iso).getTime() : 0;
+}
+
+/**
+ * Supabase's GoTrueClient occasionally can't parse a non-2xx auth response (e.g. a
+ * bare 5xx with no JSON body) and falls back to stringifying the raw fetch Response
+ * as the error message — a huge blob of headers/cf-ray/bodyBlob JSON. Collapse
+ * anything that doesn't look like a normal short message into a friendly fallback.
+ */
+function authErrorMessage(error: { message?: string } | null | undefined, fallback: string): string {
+  const msg = error?.message;
+  if (!msg) return fallback;
+  const looksRaw = msg.length > 200 || /^\s*[{[]/.test(msg);
+  return looksRaw ? fallback : msg;
 }
 
 /**
@@ -168,6 +208,52 @@ export class SupabaseDataSource implements DataSource {
       this.accountId = accId;
     }
     return { supabase, userId: uId, accountId: this.accountId };
+  }
+
+  // `ctx()` caches accountId for the process lifetime. If the account backing
+  // that id is deleted/recreated server-side (support reset, membership role
+  // change) while the app is still running, every write fails RLS with a
+  // stale id until the app restarts. Retry once with a forced re-resolve
+  // instead of surfacing that as a dead end.
+  private async withFreshAccount<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      if (isStaleAccountError(err)) {
+        this.accountId = null;
+        return await fn();
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Resolve an account the signed-in user can actually WRITE to.
+   *
+   * ctx() caches accountId for the process lifetime and ranks *every* membership,
+   * read-only ones (guardian/assessor) included. If that cached id is stale — the
+   * account was deleted/recreated server-side — or resolves to a non-staff
+   * membership, each insert fails RLS with "new row violates row-level security
+   * policy". Writes therefore re-resolve, filtered to the roles the policies accept.
+   */
+  private async writableAccountId(): Promise<string> {
+    const { supabase, userId } = await this.ctx();
+    const { data } = await supabase
+      .from('memberships')
+      .select('account_id, role')
+      .eq('user_id', userId)
+      .in('role', WRITABLE_ROLES)
+      .order('created_at', { ascending: true });
+    const rows = (data ?? []) as Array<{ account_id: string; role: string }>;
+    if (!rows.length) {
+      throw new Error(
+        'This account does not have permission to add players or assessments. Ask an owner or admin for coach access.',
+      );
+    }
+    const RANK: Record<string, number> = { admin: 0, coach: 1, owner: 2 };
+    const best = [...rows].sort((a, b) => (RANK[a.role] ?? 99) - (RANK[b.role] ?? 99))[0];
+    this.accountId = best.account_id;
+    return best.account_id;
   }
 
   private async markOnboarding(patch: Record<string, boolean>): Promise<void> {
@@ -314,12 +400,16 @@ export class SupabaseDataSource implements DataSource {
     if (tryoutRows.length === 0) return [];
     const ids = tryoutRows.map((t) => t.id);
 
-    const [pRows, aRows, eRows, rRows] = await Promise.all([
+    const [pRowsAll, aRows, eRows, rRows] = await Promise.all([
       this.fetchAllByIn('tryout_participants', '*, athletes(*)', 'tryout_id', ids),
       this.fetchAllByIn('tryout_assessors', '*', 'tryout_id', ids),
       this.fetchAllByIn('evaluations', '*, evaluation_scores(rubric_key, value)', 'tryout_id', ids),
       this.fetchAllByIn('registrations', '*', 'tryout_id', ids),
     ]);
+    // Soft-removed players (see deletePlayer) stay in the table so their
+    // evaluations still count toward the athlete's permanent profile history,
+    // but they should no longer appear on this tryout's active roster.
+    const pRows = pRowsAll.filter((p) => !p.removed_at);
 
     const assessorNameById: Record<string, string> = {};
     for (const a of aRows) assessorNameById[a.id] = a.name;
@@ -371,6 +461,7 @@ export class SupabaseDataSource implements DataSource {
         eventType: EVENT_TYPE_FROM_DB[t.event_type] ?? 'Tryout',
         tryoutDate: t.tryout_date ?? undefined,
         startTime: t.start_time ?? undefined,
+        endTime: t.end_time ?? undefined,
         rink: t.location ?? undefined,
         sport: t.sport,
         sportOther: t.sport_other ?? undefined,
@@ -422,15 +513,20 @@ export class SupabaseDataSource implements DataSource {
     const profile = unwrap(
       await supabase.from('profiles').select('*').eq('id', userId).single(),
     ) as Row;
-    const membership = (
+    const memberships = (
       await supabase
         .from('memberships')
         .select('role, accounts(*)')
         .eq('user_id', userId)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle()
-    ).data as Row | null;
+    ).data as Row[] | null;
+    // Same priority as ctx(): a staff role (admin/coach/owner) always wins over
+    // assessor/guardian, so the plan/limits shown here match the account that
+    // team/tryout writes actually go through — not just whichever membership
+    // happens to be oldest.
+    const MEMBERSHIP_RANK: Record<string, number> = { admin: 0, coach: 1, owner: 2, assessor: 3, guardian: 4 };
+    const membership = (memberships ?? [])
+      .slice()
+      .sort((a: any, b: any) => (MEMBERSHIP_RANK[a.role] ?? 99) - (MEMBERSHIP_RANK[b.role] ?? 99))[0] as Row | undefined;
     const account = Array.isArray(membership?.accounts)
       ? membership.accounts[0]
       : (membership?.accounts as Row | undefined);
@@ -469,7 +565,7 @@ export class SupabaseDataSource implements DataSource {
   async login(email: string, password: string): Promise<AuthSession> {
     const supabase = getSupabase();
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error || !data.session) throw new Error(error?.message ?? 'Login failed');
+    if (error || !data.session) throw new Error(authErrorMessage(error, 'Login failed. Please try again.'));
     this.accountId = null;
     this.userId = data.session.user.id;
     const user = await this.loadUserProfile(data.session.user.id);
@@ -483,7 +579,7 @@ export class SupabaseDataSource implements DataSource {
       password,
       options: { data: { display_name: displayName, account_type: accountType } },
     });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(authErrorMessage(error, 'Signup failed. Please try again.'));
     let session = data.session;
     if (!session) {
       const { data: signIn, error: e2 } = await supabase.auth.signInWithPassword({ email, password });
@@ -528,6 +624,11 @@ export class SupabaseDataSource implements DataSource {
       this.userId = data.session.user.id;
       if (forceRefresh) {
         delete this.profileCache[data.session.user.id];
+        // ctx() caches accountId for the process lifetime (it's the account every
+        // team/tryout query and mutation runs against) — a forced refresh needs to
+        // drop it too, or a plan/account change (e.g. a support-side account reset)
+        // stays invisible to every non-profile query until the app is restarted.
+        this.accountId = null;
       }
       const user = await this.loadUserProfile(data.session.user.id);
       return this.toAuthSession(data.session, user);
@@ -577,7 +678,7 @@ export class SupabaseDataSource implements DataSource {
   async updatePassword(password: string): Promise<void> {
     const { supabase } = await this.ctx();
     const { error } = await supabase.auth.updateUser({ password });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(authErrorMessage(error, 'Could not update your password. Please try again.'));
   }
 
   async resendVerificationEmail(email: string): Promise<void> {
@@ -586,7 +687,7 @@ export class SupabaseDataSource implements DataSource {
       type: 'signup',
       email,
     });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(authErrorMessage(error, 'Could not resend the verification email. Please try again.'));
   }
 
   async requestPasswordReset(email: string): Promise<void> {
@@ -602,13 +703,13 @@ export class SupabaseDataSource implements DataSource {
     // though the actual URL depends on the project setup. For Expo, an app scheme like 'aas://reset-password' is often used.
     // If none is provided, it falls back to the site url configured in Supabase.
     const { error } = await supabase.auth.resetPasswordForEmail(email);
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(authErrorMessage(error, 'Could not send a reset code right now. Please try again shortly.'));
   }
 
   async verifyPasswordResetOtp(email: string, token: string): Promise<void> {
     const supabase = getSupabase();
     const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'recovery' });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(authErrorMessage(error, 'That code is invalid or has expired.'));
     if (data.session) {
       this.accountId = null;
       this.userId = null;
@@ -618,10 +719,10 @@ export class SupabaseDataSource implements DataSource {
   async resetPasswordWithOtp(email: string, token: string, newPassword: string): Promise<void> {
     const supabase = getSupabase();
     const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'recovery' });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(authErrorMessage(error, 'That code is invalid or has expired.'));
     if (!data.session) throw new Error('Failed to start session after OTP verification');
     const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
-    if (updateError) throw new Error(updateError.message);
+    if (updateError) throw new Error(authErrorMessage(updateError, 'Could not update your password. Please try again.'));
     this.accountId = null;
     this.userId = null;
   }
@@ -757,6 +858,8 @@ export class SupabaseDataSource implements DataSource {
       name: t.name,
       logoUrl,
       season,
+      collectsFees: t.collects_fees ?? undefined,
+      registrationFeeCents: t.registration_fee_cents ?? undefined,
       createdAt: toMs(t.created_at),
       updatedAt: t.updated_at ? toMs(t.updated_at) : undefined,
       archived: t.archived || undefined,
@@ -777,16 +880,19 @@ export class SupabaseDataSource implements DataSource {
   }
 
   async createTeam(name: string, season?: string): Promise<Team> {
-    const { supabase, accountId } = await this.ctx();
-    const row = unwrap(
-      await supabase
-        .from('teams')
-        .insert({ account_id: accountId, name, season_label: season ?? null })
-        .select()
-        .single(),
-    ) as Row;
-    await this.markOnboarding({ createTeam: true });
-    return this.rowToTeam(row);
+    return this.withFreshAccount(async () => {
+      const { supabase } = await this.ctx();
+      const accountId = await this.writableAccountId();
+      const row = unwrap(
+        await supabase
+          .from('teams')
+          .insert({ account_id: accountId, name, season_label: season ?? null })
+          .select()
+          .single(),
+      ) as Row;
+      await this.markOnboarding({ createTeam: true });
+      return this.rowToTeam(row);
+    });
   }
 
 
@@ -856,10 +962,39 @@ export class SupabaseDataSource implements DataSource {
         .eq('team_id', teamId)
         .order('created_at', { ascending: true }),
     ) as Row[];
-    return rows.map((r) => this.rowToTeamRosterPlayer(r));
+
+    // Fee status lives on season_roster, not team_roster (a team's fee is
+    // charged per season enrollment — see 20260811183700_season_team_fee_payments.sql),
+    // so it has to be looked up separately and merged in by athlete. Two plain
+    // queries (seasons, then season_roster by season_id) instead of a nested
+    // embedded-filter — that pattern isn't used anywhere else in this file.
+    let feeStatusByAthlete = new Map<string, TeamRosterPlayer['feeStatus']>();
+    const { data: team } = await supabase.from('teams').select('collects_fees').eq('id', teamId).maybeSingle();
+    const athleteIds = rows.map((r) => r.athlete_id).filter(Boolean);
+    if (team?.collects_fees && athleteIds.length > 0) {
+      const { data: teamSeasons } = await supabase.from('seasons').select('id').eq('team_id', teamId);
+      const seasonIds = (teamSeasons ?? []).map((s) => s.id);
+      if (seasonIds.length > 0) {
+        const { data: srRows } = await supabase
+          .from('season_roster')
+          .select('athlete_id, fee_status, created_at')
+          .in('season_id', seasonIds)
+          .in('athlete_id', athleteIds)
+          .order('created_at', { ascending: false });
+        for (const sr of srRows ?? []) {
+          // Most recent season enrollment wins when an athlete has been on this
+          // team across more than one season.
+          if (!feeStatusByAthlete.has(sr.athlete_id)) {
+            feeStatusByAthlete.set(sr.athlete_id, sr.fee_status as TeamRosterPlayer['feeStatus']);
+          }
+        }
+      }
+    }
+
+    return rows.map((r) => this.rowToTeamRosterPlayer(r, feeStatusByAthlete.get(r.athlete_id)));
   }
 
-  private rowToTeamRosterPlayer(r: Row): TeamRosterPlayer {
+  private rowToTeamRosterPlayer(r: Row, feeStatus?: TeamRosterPlayer['feeStatus']): TeamRosterPlayer {
     const rawAthlete = r.athletes;
     const a = (Array.isArray(rawAthlete) ? rawAthlete[0] : rawAthlete) ?? {};
     const rawSource = r.tryouts;
@@ -874,6 +1009,7 @@ export class SupabaseDataSource implements DataSource {
       yearOfBirth: a.year_of_birth ?? undefined,
       sourceTryoutId: r.source_tryout_id ?? undefined,
       sourceTryoutName: src.name ?? undefined,
+      feeStatus,
     };
   }
 
@@ -908,6 +1044,33 @@ export class SupabaseDataSource implements DataSource {
         )
         .select('id'),
     );
+
+    // A season's roster is normally seeded from tryout_participants when the
+    // season is *created* (createSeason) — a player added to the team roster
+    // afterwards never gets that backfill, so their fee status silently never
+    // shows up. Upsert them into the team's current season roster here too,
+    // whenever this team actually collects a fee, so "Add Players" alone is
+    // enough to start tracking it.
+    const { data: team } = await supabase.from('teams').select('collects_fees').eq('id', teamId).maybeSingle();
+    if (team?.collects_fees) {
+      const { data: currentSeason } = await supabase
+        .from('seasons')
+        .select('id')
+        .eq('team_id', teamId)
+        .eq('archived', false)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (currentSeason) {
+        await supabase
+          .from('season_roster')
+          .upsert(
+            [...byAthlete.values()].map((e) => ({ season_id: currentSeason.id, athlete_id: e.athleteId })),
+            { onConflict: 'season_id,athlete_id', ignoreDuplicates: true },
+          );
+      }
+    }
+
     return this.listTeamRoster(teamId);
   }
 
@@ -948,6 +1111,10 @@ export class SupabaseDataSource implements DataSource {
 
     if (updates.logoUrl !== undefined) patch.logo_url = updates.logoUrl;
     if (updates.season !== undefined) patch.season_label = updates.season;
+    if (updates.collectsFees !== undefined) patch.collects_fees = updates.collectsFees;
+    if (updates.registrationFeeCents !== undefined) {
+      patch.registration_fee_cents = updates.registrationFeeCents || null;
+    }
 
     // Try standard update first
     const { data, error } = await supabase.from('teams').update(patch).eq('id', id).select().single();
@@ -977,6 +1144,7 @@ export class SupabaseDataSource implements DataSource {
       .from('tryouts')
       .select('*')
       .eq('account_id', accountId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
     if (!includeArchived) q = q.eq('archived', false);
     const rows = unwrap(await q) as Row[];
@@ -985,7 +1153,9 @@ export class SupabaseDataSource implements DataSource {
 
   async getTryout(id: string): Promise<Tryout | null> {
     const { supabase } = await this.ctx();
-    const row = (await supabase.from('tryouts').select('*').eq('id', id).maybeSingle()).data as Row | null;
+    const row = (
+      await supabase.from('tryouts').select('*').eq('id', id).is('deleted_at', null).maybeSingle()
+    ).data as Row | null;
     if (!row) return null;
     const [assembled] = await this.assembleTryouts([row]);
     return assembled ?? null;
@@ -994,30 +1164,37 @@ export class SupabaseDataSource implements DataSource {
   async listAssignedTryouts(): Promise<Tryout[]> {
     const { supabase, userId, accountId } = await this.ctx();
     const links = unwrap(
-      await supabase.from('tryout_assessors').select('tryout_id').eq('user_id', userId),
+      await supabase.from('tryout_assessors').select('tryout_id').eq('user_id', userId).neq('status', 'declined'),
     ) as Row[];
     const ids = [...new Set(links.map((l) => l.tryout_id))];
     if (!ids.length) return [];
     const rows = unwrap(
-      await supabase.from('tryouts').select('*').in('id', ids).eq('archived', false),
+      await supabase.from('tryouts').select('*').in('id', ids).eq('archived', false).is('deleted_at', null),
     ) as Row[];
     // Exclude tryouts the user already owns (those show in listTryouts).
     const assigned = rows.filter((t) => t.account_id !== accountId);
     return this.assembleTryouts(assigned);
   }
 
+  async acceptAssignedTryout(tryoutId: string): Promise<void> {
+    const { supabase } = await this.ctx();
+    const { error } = await supabase.rpc('set_assessor_status', { p_tryout_id: tryoutId, p_status: 'accepted' });
+    if (error) throw new Error(error.message);
+  }
+
   async rejectAssignedTryout(tryoutId: string): Promise<void> {
-    const { supabase, userId } = await this.ctx();
-    const { error } = await supabase
-      .from('tryout_assessors')
-      .delete()
-      .eq('tryout_id', tryoutId)
-      .eq('user_id', userId);
+    const { supabase } = await this.ctx();
+    const { error } = await supabase.rpc('set_assessor_status', { p_tryout_id: tryoutId, p_status: 'declined' });
     if (error) throw new Error(error.message);
   }
 
   async createTryout(form: CreateAssessmentForm): Promise<Tryout> {
-    const { supabase, userId, accountId } = await this.ctx();
+    return this.withFreshAccount(() => this._createTryout(form));
+  }
+
+  private async _createTryout(form: CreateAssessmentForm): Promise<Tryout> {
+    const { supabase, userId } = await this.ctx();
+    const accountId = await this.writableAccountId();
     const profile = await this.loadUserProfile(userId);
     const weights = getDefaultWeights(form.sport);
     const settings = {
@@ -1037,6 +1214,7 @@ export class SupabaseDataSource implements DataSource {
           sport_other: form.sportOther ?? null,
           tryout_date: form.tryoutDate || null,
           start_time: form.startTime ?? null,
+          end_time: form.endTime ?? null,
           location: form.rink ?? null,
           head_coach: form.headCoach ?? profile.displayName,
           head_assessor: form.headAssessor ?? profile.displayName,
@@ -1053,6 +1231,7 @@ export class SupabaseDataSource implements DataSource {
       name: profile.displayName,
       email: profile.email,
       role: 'lead',
+      status: 'accepted',
       joined_at: new Date().toISOString(),
     });
 
@@ -1096,6 +1275,7 @@ export class SupabaseDataSource implements DataSource {
     if (updates.eventType !== undefined) patch.event_type = EVENT_TYPE_TO_DB[updates.eventType];
     if (updates.tryoutDate !== undefined) patch.tryout_date = updates.tryoutDate || null;
     if (updates.startTime !== undefined) patch.start_time = updates.startTime || null;
+    if (updates.endTime !== undefined) patch.end_time = updates.endTime || null;
     if (updates.rink !== undefined) patch.location = updates.rink || null;
     if (updates.defaultPosition !== undefined) patch.default_position = updates.defaultPosition || null;
     if (updates.headAssessor !== undefined) patch.head_assessor = updates.headAssessor || null;
@@ -1170,7 +1350,18 @@ export class SupabaseDataSource implements DataSource {
 
   async deleteTryout(id: string): Promise<void> {
     const { supabase } = await this.ctx();
-    unwrap(await supabase.from('tryouts').delete().eq('id', id).select().maybeSingle());
+    // Soft delete — the row (and the evaluations/scores it cascades to) stays
+    // in the database so it still counts toward a player's permanent history,
+    // it just disappears from every coach-facing view (see the deleted_at
+    // filters on listTryouts/listAssignedTryouts/getTryout).
+    unwrap(
+      await supabase
+        .from('tryouts')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', id)
+        .select()
+        .maybeSingle(),
+    );
   }
 
   async sendEmail(type: 'org_invite' | 'tryout_invite' | 'schedule_update' | 'reminder' | 'registration_confirmation', to: string, payload: any): Promise<void> {
@@ -1204,6 +1395,7 @@ export class SupabaseDataSource implements DataSource {
           sport_other: src.sport_other,
           tryout_date: src.tryout_date,
           start_time: src.start_time,
+          end_time: src.end_time,
           location: src.location,
           default_position: src.default_position,
           head_coach: src.head_coach,
@@ -1221,12 +1413,14 @@ export class SupabaseDataSource implements DataSource {
       name: profile.displayName,
       email: profile.email,
       role: 'lead',
+      status: 'accepted',
       joined_at: new Date().toISOString(),
     });
 
-    // Copy roster (participants reuse the canonical athletes).
+    // Copy roster (participants reuse the canonical athletes). Players
+    // soft-removed from the source tryout shouldn't reappear in the copy.
     const participants = unwrap(
-      await supabase.from('tryout_participants').select('*').eq('tryout_id', id),
+      await supabase.from('tryout_participants').select('*').eq('tryout_id', id).is('removed_at', null),
     ) as Row[];
     if (participants.length) {
       await supabase.from('tryout_participants').insert(
@@ -1288,14 +1482,25 @@ export class SupabaseDataSource implements DataSource {
       }
     }
 
-    const row = unwrap(
-      await supabase.from('athletes').insert({ account_id: accountId, ...fields }).select('id').single(),
-    ) as Row;
-    return row.id;
+    // Insert via create_athlete_for_caller() rather than a direct table insert:
+    // it treats account_id as a hint and resolves the real owning account from
+    // auth.uid() server-side, so a stale cached accountId can no longer produce
+    // an RLS rejection that survives until the app process restarts. The same
+    // owner/admin/coach roles are still required.
+    const { data, error } = await supabase.rpc('create_athlete_for_caller', {
+      payload: { account_id: accountId, ...fields },
+    });
+    if (error) throw new Error(error.message);
+    return data as string;
   }
 
   async addPlayer(tryoutId: string, form: AddPlayerForm): Promise<Player> {
-    const { supabase, accountId } = await this.ctx();
+    return this.withFreshAccount(() => this._addPlayer(tryoutId, form));
+  }
+
+  private async _addPlayer(tryoutId: string, form: AddPlayerForm): Promise<Player> {
+    const { supabase } = await this.ctx();
+    const accountId = await this.writableAccountId();
     if (typeof tryoutId === 'object' && tryoutId !== null) {
       tryoutId = String((tryoutId as any).id || tryoutId);
     }
@@ -1408,8 +1613,25 @@ export class SupabaseDataSource implements DataSource {
 
   async deletePlayer(_tryoutId: string, playerId: string): Promise<void> {
     const { supabase } = await this.ctx();
+    // Best-effort: if this player was created by accepting a guardian's shared
+    // athlete, flip that share to 'released' so the guardian is told the coach
+    // let them go. Never let this block the actual removal below.
+    try {
+      await supabase.rpc('release_athlete_share_for_participant', { p_participant_id: playerId });
+    } catch {
+      // non-blocking
+    }
+    // Soft delete — the participant row (and its evaluations/scores) stays in
+    // the database so it still counts toward the player's permanent profile
+    // history, it just disappears from this tryout's active roster (see the
+    // removed_at filter in assembleTryouts).
     unwrap(
-      await supabase.from('tryout_participants').delete().eq('id', playerId).select().maybeSingle(),
+      await supabase
+        .from('tryout_participants')
+        .update({ removed_at: new Date().toISOString() })
+        .eq('id', playerId)
+        .select()
+        .maybeSingle(),
     );
   }
 
@@ -1716,8 +1938,8 @@ export class SupabaseDataSource implements DataSource {
   }
 
   /**
-   * Insert a batch of pending registrations for `tryout`, inventing the guardian
-   * contact block that the roster path deliberately omits. Addresses use a
+   * Insert a batch of pending registrations for `tryout`, with the same
+   * invented guardian contact block used for roster players. Addresses use a
    * reserved domain, so nothing here can mail a real person.
    */
   private async insertDummyRegistrations(
@@ -1770,7 +1992,9 @@ export class SupabaseDataSource implements DataSource {
   ): Promise<{ players: number; evaluations: number; athleteIds: string[] }> {
     if (generated.length === 0) return { players: 0, evaluations: 0, athleteIds: [] };
 
-    // 1. Bulk-insert canonical athletes (no guardian contact → no side effects).
+    // 1. Bulk-insert canonical athletes, including their invented guardian
+    // contact (reserved yopmail.com domain — see dummyGuardian) so roster
+    // players are reachable the same way registration players are.
     // Chunked so a large batch (up to 1000) doesn't ride in a single insert payload.
     const athletes: Row[] = [];
     for (let i = 0; i < generated.length; i += 500) {
@@ -1785,6 +2009,8 @@ export class SupabaseDataSource implements DataSource {
                 first_name: g.form.first,
                 last_name: g.form.last,
                 year_of_birth: g.form.yearOfBirth ? Number(g.form.yearOfBirth) : null,
+                guardian_name: g.form.guardianName || null,
+                guardian_email: g.form.guardianEmail || null,
               })),
             )
             .select('id'),
@@ -1951,6 +2177,7 @@ export class SupabaseDataSource implements DataSource {
         name: profile.displayName,
         email: profile.email,
         role: 'lead',
+        status: 'accepted',
         joined_at: new Date().toISOString(),
       });
 
@@ -2251,81 +2478,77 @@ export class SupabaseDataSource implements DataSource {
     const tryout = await this.getTryout(tryoutId);
     if (!tryout) throw new Error('Tryout not found');
 
-    let result: TeamBuilderState;
-    if (config.prompt) {
-      // Map UUIDs to short IDs to drastically reduce token usage and prevent truncation
-      const idMap = new Map<string, string>(); // shortId -> realId
-      const realToShort = new Map<string, string>(); // realId -> shortId
-      
-      // Pool every evaluation down to one weighted overall + per-category average
-      // per player (matches the ranking shown in Roster/Export). Sending this instead
-      // of raw eval records (strengths/improve text, dates, evaluator names, one row
-      // per session) keeps the payload flat as roster size and eval count grow —
-      // otherwise a large roster with multiple sessions per player blows past the
-      // model's input token limit.
-      const results = computePlayerResults(tryout);
-      const resultByPlayerId = new Map(results.map(r => [r.player.id, r]));
+    // Map UUIDs to short IDs to drastically reduce token usage and prevent truncation
+    const idMap = new Map<string, string>(); // shortId -> realId
+    const realToShort = new Map<string, string>(); // realId -> shortId
 
-      const shortTryout = {
-        ...tryout,
-        roster: tryout.roster.map((p, i) => {
-          const shortId = `p${i}`;
-          idMap.set(shortId, p.id);
-          realToShort.set(p.id, shortId);
-          return { ...p, id: shortId };
-        }),
-        rankings: tryout.roster.map(p => {
-          const r = resultByPlayerId.get(p.id);
-          return {
-            id: realToShort.get(p.id) || p.id,
-            overall: r?.overall ?? 0,
-            categoryScores: r?.categoryScores ?? {},
-            recommendation: r?.latestRecommendation || undefined,
-          };
-        }),
-      };
-      delete (shortTryout as any).evals;
+    // Pool every evaluation down to one weighted overall + per-category average
+    // per player (matches the ranking shown in Roster/Export). Sending this instead
+    // of raw eval records (strengths/improve text, dates, evaluator names, one row
+    // per session) keeps the payload flat as roster size and eval count grow —
+    // otherwise a large roster with multiple sessions per player blows past the
+    // model's input token limit.
+    const results = computePlayerResults(tryout);
+    const resultByPlayerId = new Map(results.map(r => [r.player.id, r]));
 
-      // Call Claude via edge function
-      const { supabase } = await this.ctx();
-      const { data, error } = await supabase.functions.invoke('generate-ai-insights', {
-        body: { action: 'team_builder', tryout: shortTryout, prompt: config.prompt }
-      });
-      if (error) {
-        throw new Error(error.message);
-      }
-      if (data?.error) {
-        throw new Error(data.message || data.error);
-      }
+    const shortTryout = {
+      ...tryout,
+      roster: tryout.roster.map((p, i) => {
+        const shortId = `p${i}`;
+        idMap.set(shortId, p.id);
+        realToShort.set(p.id, shortId);
+        return { ...p, id: shortId };
+      }),
+      rankings: tryout.roster.map(p => {
+        const r = resultByPlayerId.get(p.id);
+        return {
+          id: realToShort.get(p.id) || p.id,
+          overall: r?.overall ?? 0,
+          categoryScores: r?.categoryScores ?? {},
+          recommendation: r?.latestRecommendation || undefined,
+        };
+      }),
+    };
+    delete (shortTryout as any).evals;
 
-      // Restore real UUIDs
-      const restoreIds = (arr: string[] = []) => arr.map(short => idMap.get(short) || short);
-
-      // Merge Claude's response with local state structure
-      result = {
-        generatedAt: Date.now(),
-        sortMethod: config.sortMethod ?? 'balanced',
-        config: {
-          teamCount: data.teams?.length || config.teamCount,
-          teamNames: data.teams?.map((t: any) => t.name) || [],
-          keepFriendPackages: config.keepFriendPackages ?? true,
-          splitGoalies: config.splitGoalies ?? true,
-        },
-        ranks: [], // We can omit full rankings or compute them locally if needed
-        warnings: data.warnings || [],
-        explanation: data.explanation,
-        teams: (data.teams || []).map((t: any, i: number) => ({
-          index: i,
-          id: `ai-team-${i}`,
-          name: t.name || `Team ${i + 1}`,
-          players: restoreIds(t.players),
-          skaters: restoreIds(t.skaters),
-          goalies: restoreIds(t.goalies)
-        }))
-      };
-    } else {
-      result = buildTeams(tryout, config);
+    // Call Claude via edge function
+    const { supabase } = await this.ctx();
+    const { data, error } = await supabase.functions.invoke('generate-ai-insights', {
+      body: { action: 'team_builder', tryout: shortTryout, prompt: config.prompt }
+    });
+    if (error) {
+      throw new Error(error.message);
     }
+    if (data?.error) {
+      throw new Error(data.message || data.error);
+    }
+
+    // Restore real UUIDs
+    const restoreIds = (arr: string[] = []) => arr.map(short => idMap.get(short) || short);
+
+    // Merge Claude's response with local state structure
+    const result: TeamBuilderState = {
+      generatedAt: Date.now(),
+      sortMethod: config.sortMethod ?? 'balanced',
+      config: {
+        teamCount: data.teams?.length || config.teamCount,
+        teamNames: data.teams?.map((t: any) => t.name) || [],
+        keepFriendPackages: config.keepFriendPackages ?? true,
+        splitGoalies: config.splitGoalies ?? true,
+      },
+      ranks: [], // We can omit full rankings or compute them locally if needed
+      warnings: data.warnings || [],
+      explanation: data.explanation,
+      teams: (data.teams || []).map((t: any, i: number) => ({
+        index: i,
+        id: `ai-team-${i}`,
+        name: t.name || `Team ${i + 1}`,
+        players: restoreIds(t.players),
+        skaters: restoreIds(t.skaters),
+        goalies: restoreIds(t.goalies)
+      })),
+      unassigned: restoreIds(data.unassigned),
+    };
 
     await this.updateTryout(tryoutId, { teamBuilder: result });
     return result;
@@ -2588,7 +2811,8 @@ export class SupabaseDataSource implements DataSource {
         const { data: participants } = await supabase
           .from('tryout_participants')
           .select('athlete_id, jersey')
-          .in('tryout_id', tryoutIds);
+          .in('tryout_id', tryoutIds)
+          .is('removed_at', null);
 
         if (participants && participants.length > 0) {
           // De-duplicate by athlete_id
@@ -2844,7 +3068,8 @@ export class SupabaseDataSource implements DataSource {
     const { data: participants } = await supabase
       .from('tryout_participants')
       .select('athlete_id, jersey')
-      .in('tryout_id', tryoutIds);
+      .in('tryout_id', tryoutIds)
+      .is('removed_at', null);
 
     if (!participants || participants.length === 0) {
       return [];
@@ -2981,11 +3206,21 @@ export class SupabaseDataSource implements DataSource {
 
   async listAthletes(): Promise<Athlete[]> {
     const { supabase, accountId } = await this.ctx();
-    const { data: athletes } = await supabase
+
+    const { data: grantRows } = await supabase
+      .from('athlete_account_access')
+      .select('athlete_id')
+      .eq('account_id', accountId);
+    const grantedIds = (grantRows ?? []).map((g: any) => g.athlete_id);
+
+    let athleteQuery = supabase
       .from('athletes')
-      .select('*, tryout_participants(current_team, current_level, jersey, created_at)')
-      .eq('account_id', accountId)
-      .order('first_name', { ascending: true });
+      .select('*, tryout_participants(current_team, current_level, jersey, created_at)');
+    athleteQuery = grantedIds.length
+      ? athleteQuery.or(`account_id.eq.${accountId},id.in.(${grantedIds.join(',')})`)
+      : athleteQuery.eq('account_id', accountId);
+
+    const { data: athletes } = await athleteQuery.order('first_name', { ascending: true });
 
     if (!athletes) return [];
 
@@ -3043,18 +3278,29 @@ export class SupabaseDataSource implements DataSource {
     // 2. Fetch past evaluations across tryouts
     const { data: tryoutRosterRows } = await supabase
       .from('tryout_participants')
-      .select('id')
+      .select('id, tryout_id')
       .eq('athlete_id', athleteId);
 
     let pastEvaluations: Evaluation[] = [];
     if (tryoutRosterRows && tryoutRosterRows.length > 0) {
-      const rosterIds = tryoutRosterRows.map(r => r.id);
-      const { data: evals } = await supabase
-        .from('evaluations')
-        .select('*, evaluation_scores(rubric_key, value)')
-        .in('participant_id', rosterIds);
-      if (evals) {
-        pastEvaluations = evals.map(e => this.rowToEval(e));
+      const tryoutIds = [...new Set(tryoutRosterRows.map((r: any) => r.tryout_id))];
+      const { data: activeTryouts } = await supabase
+        .from('tryouts')
+        .select('id')
+        .in('id', tryoutIds)
+        .is('deleted_at', null);
+      const activeTryoutIds = new Set((activeTryouts ?? []).map((t: any) => t.id));
+      const rosterIds = tryoutRosterRows
+        .filter((r: any) => activeTryoutIds.has(r.tryout_id))
+        .map((r: any) => r.id);
+      if (rosterIds.length > 0) {
+        const { data: evals } = await supabase
+          .from('evaluations')
+          .select('*, evaluation_scores(rubric_key, value)')
+          .in('participant_id', rosterIds);
+        if (evals) {
+          pastEvaluations = evals.map(e => this.rowToEval(e));
+        }
       }
     }
 
@@ -3062,6 +3308,221 @@ export class SupabaseDataSource implements DataSource {
       athleteId,
       pastSeasons,
       pastEvaluations,
+    };
+  }
+
+  /**
+   * Everything getPlayerProfile needs to describe an athlete's assessment
+   * history — pulled out on its own so a share snapshot (shareAthleteWithCoach)
+   * can reuse the exact same aggregation instead of duplicating it.
+   */
+  private async fetchAthleteAssessmentContext(
+    supabase: SupabaseClient,
+    athleteId: string,
+  ): Promise<{
+    participants: Row[];
+    tryoutById: Map<string, Row>;
+    teams: { teamId: string; teamName: string }[];
+    assessments: PlayerProfileAssessment[];
+  }> {
+    const { data: participantRows } = await supabase
+      .from('tryout_participants')
+      .select('id, tryout_id, jersey, position, current_team, current_level, created_at')
+      .eq('athlete_id', athleteId);
+    const participants = participantRows ?? [];
+
+    const tryoutIds = [...new Set(participants.map((p: any) => p.tryout_id))];
+    const { data: tryoutRows } = tryoutIds.length
+      ? await supabase
+          .from('tryouts')
+          .select('id, name, sport, settings, tryout_date, created_at, event_type, season_id, team_id, teams(name)')
+          .in('id', tryoutIds)
+          .is('deleted_at', null)
+      : { data: [] as any[] };
+    const tryoutById = new Map((tryoutRows ?? []).map((t: any) => [t.id, t]));
+
+    // A tryout's `season_id` column is only ever set when it's created from inside a Season
+    // Hub screen — a flow that doesn't currently exist in the app. What every team-linked
+    // assessment DOES have is the Season Hub entry auto-created alongside its team (see
+    // createTeam/team/new.tsx), which is what actually carries season identity here.
+    const tryoutTeamIds = [...new Set((tryoutRows ?? []).map((t: any) => t.team_id).filter(Boolean))];
+    const tryoutSeasonIds = [...new Set((tryoutRows ?? []).map((t: any) => t.season_id).filter(Boolean))];
+
+    let allSeasons: any[] = [];
+    if (tryoutTeamIds.length > 0) {
+      const { data } = await supabase
+        .from('seasons')
+        .select('id, name, team_id, created_at')
+        .in('team_id', tryoutTeamIds)
+        .order('created_at', { ascending: false });
+      if (data) allSeasons.push(...data);
+    }
+
+    if (tryoutSeasonIds.length > 0) {
+      const alreadyFetchedIds = new Set(allSeasons.map(s => s.id));
+      const remainingSeasonIds = tryoutSeasonIds.filter(id => !alreadyFetchedIds.has(id));
+
+      if (remainingSeasonIds.length > 0) {
+        const { data } = await supabase
+          .from('seasons')
+          .select('id, name, team_id, created_at')
+          .in('id', remainingSeasonIds);
+        if (data) allSeasons.push(...data);
+      }
+    }
+
+    allSeasons.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    const seasonsByTeamId = new Map<string, any[]>();
+    const seasonById = new Map<string, { id: string; name: string }>();
+    for (const s of allSeasons) {
+      if (s.team_id) {
+        const arr = seasonsByTeamId.get(s.team_id) || [];
+        arr.push(s);
+        seasonsByTeamId.set(s.team_id, arr);
+      }
+      if (!seasonById.has(s.id)) seasonById.set(s.id, { id: s.id, name: s.name });
+    }
+
+    // Actual team membership (Teams feature) — the source of truth for "current team",
+    // since tryout_participants.current_team is a free-text field that's usually left blank.
+    const { data: teamRosterRows } = await supabase
+      .from('team_roster')
+      .select('team_id, created_at, teams(name)')
+      .eq('athlete_id', athleteId)
+      .order('created_at', { ascending: false });
+    const teamRoster = teamRosterRows ?? [];
+    const teams = [...new Map(teamRoster.map((r: any) => [r.team_id, {
+      teamId: r.team_id,
+      teamName: r.teams?.name ?? 'Unknown Team',
+    }])).values()];
+
+    const participantIds = participants.map((p: any) => p.id);
+    const evalRows = await this.fetchAllByIn(
+      'evaluations',
+      '*, evaluation_scores(rubric_key, value)',
+      'participant_id',
+      participantIds,
+    );
+    const evalsByParticipant = new Map<string, Evaluation[]>();
+    for (const row of evalRows) {
+      const ev = this.rowToEval(row);
+      const arr = evalsByParticipant.get(ev.playerId) ?? [];
+      arr.push(ev);
+      evalsByParticipant.set(ev.playerId, arr);
+    }
+
+    const assessments: PlayerProfileAssessment[] = participants
+      .map((p: any): PlayerProfileAssessment | null => {
+        const tryout = tryoutById.get(p.tryout_id);
+        if (!tryout) return null;
+        const evals = evalsByParticipant.get(p.id) ?? [];
+        const categories = getPlayerCategories(tryout.sport, p.position, tryout.settings?.customRubrics ?? []);
+        const weights = isGoaliePosition(p.position)
+          ? tryout.settings?.goalieWeights ?? {}
+          : tryout.settings?.skaterWeights ?? {};
+        const overall = evals.length ? weightedOverallAcrossEvals(evals, categories, weights) : 0;
+        const categoryScores = categoryAveragesAcrossEvals(evals, categories);
+        const latest = [...evals].sort((a, b) => b.createdAt - a.createdAt)[0];
+        const explicitSeason = tryout.season_id ? seasonById.get(tryout.season_id) : undefined;
+        let teamSeason: { id: string; name: string } | undefined;
+        if (!explicitSeason && tryout.team_id) {
+          const teamSeasons = seasonsByTeamId.get(tryout.team_id);
+          if (teamSeasons && teamSeasons.length > 0) {
+            const tryoutTime = new Date(tryout.tryout_date ?? tryout.created_at ?? Date.now()).getTime();
+            let closestSeason = teamSeasons[0];
+            let minDiff = Math.abs(new Date(closestSeason.created_at).getTime() - tryoutTime);
+            for (const s of teamSeasons) {
+              const diff = Math.abs(new Date(s.created_at).getTime() - tryoutTime);
+              if (diff < minDiff) {
+                minDiff = diff;
+                closestSeason = s;
+              }
+            }
+            teamSeason = { id: closestSeason.id, name: closestSeason.name };
+          }
+        }
+        const resolvedSeason = explicitSeason ?? teamSeason;
+        return {
+          tryoutId: tryout.id,
+          tryoutName: tryout.name,
+          seasonId: resolvedSeason?.id ?? tryout.season_id ?? undefined,
+          seasonName: resolvedSeason?.name ?? undefined,
+          eventType: tryout.event_type,
+          sport: tryout.sport,
+          date: tryout.tryout_date ?? undefined,
+          position: p.position ?? undefined,
+          teamName: tryout.teams?.name ?? undefined,
+          overall,
+          categoryScores,
+          evalCount: evals.length,
+          latestRecommendation: (latest?.recommendation ?? '') as Recommendation,
+          participantId: p.id,
+          evaluations: evals.map(ev => ({
+            ...ev,
+            overall: weightedOverallAcrossEvals([ev], categories, weights),
+          })),
+        };
+      })
+      .filter((a): a is PlayerProfileAssessment => a !== null)
+      .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
+
+    return { participants, tryoutById, teams, assessments };
+  }
+
+  async getPlayerProfile(athleteId: string): Promise<PlayerProfile> {
+    const { supabase } = await this.ctx();
+
+    const { data: athleteRow } = await supabase
+      .from('athletes')
+      .select('id, first_name, last_name, avatar_url, guardian_name, guardian_email, guardian_phone, default_position, year_of_birth, about, medical_info')
+      .eq('id', athleteId)
+      .maybeSingle();
+    if (!athleteRow) throw new Error('Athlete not found');
+
+    const { participants, tryoutById, teams, assessments } = await this.fetchAthleteAssessmentContext(
+      supabase,
+      athleteId,
+    );
+
+    const { data: rosterRows } = await supabase
+      .from('season_roster')
+      .select('season_id, seasons(name, team_name)')
+      .eq('athlete_id', athleteId);
+    const pastSeasons = (rosterRows || []).map((r: any) => ({
+      seasonId: r.season_id,
+      seasonName: r.seasons?.name || 'Unknown Season',
+      teamName: r.seasons?.team_name || 'Unknown Team',
+    }));
+
+    const mostRecent = [...participants].sort(
+      (a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    ).pop() as any;
+    const mostRecentTryout = mostRecent ? tryoutById.get(mostRecent.tryout_id) : undefined;
+
+    // "Current team" priority: actual Teams roster membership (most authoritative) >
+    // the free-text field on their latest assessment > the team that assessment was run for.
+    const currentTeam =
+      teams[0]?.teamName ?? mostRecent?.current_team ?? mostRecentTryout?.teams?.name ?? undefined;
+
+    return {
+      athleteId,
+      first: athleteRow.first_name ?? '',
+      last: athleteRow.last_name ?? '',
+      avatarUrl: athleteRow.avatar_url ?? undefined,
+      currentPosition: mostRecent?.position ?? athleteRow.default_position ?? undefined,
+      currentTeam,
+      currentLevel: mostRecent?.current_level ?? undefined,
+      jersey: mostRecent?.jersey ?? undefined,
+      yearOfBirth: athleteRow.year_of_birth != null ? String(athleteRow.year_of_birth) : undefined,
+      aboutChild: athleteRow.about ?? undefined,
+      medicalInfo: athleteRow.medical_info ?? undefined,
+      guardianName: athleteRow.guardian_name ?? undefined,
+      guardianEmail: athleteRow.guardian_email ?? undefined,
+      guardianPhone: athleteRow.guardian_phone ?? undefined,
+      pastSeasons,
+      teams,
+      assessments,
     };
   }
 
@@ -3124,21 +3585,38 @@ export class SupabaseDataSource implements DataSource {
 
   async getEnterprisePayments(): Promise<EnterprisePayment[]> {
     const { supabase, accountId } = await this.ctx();
+    // Only fees collected through the connected Stripe account carry a
+    // registration_id (tryout fees) or season_roster_id (team/season fees) —
+    // TryoutHQ's own subscription invoices (billed on the platform's Stripe
+    // account) never do, so this filter is what excludes them from the
+    // coach's payout ledger.
     const rows = (
       await supabase
         .from('payments')
-        .select('*, athletes(first_name, last_name), tryouts(name)')
+        .select(
+          '*, registrations(first_name, last_name), tryouts(name, teams(name)), ' +
+            'season_roster(athletes(first_name, last_name), seasons(name, team_name))',
+        )
         .eq('account_id', accountId)
+        .or('registration_id.not.is.null,season_roster_id.not.is.null')
         .order('created_at', { ascending: false })
     ).data as any[] | null;
-    return (rows ?? []).map((p) => ({
-      id: p.id,
-      playerName: p.athletes ? `${p.athletes.first_name} ${p.athletes.last_name}`.trim() : 'Subscription',
-      assessmentName: p.tryouts?.name ?? '',
-      amount: (p.amount_cents ?? 0) / 100,
-      status: p.status,
-      receivedAt: p.received_at ? toMs(p.received_at) : toMs(p.created_at),
-    }));
+    return (rows ?? []).map((p) => {
+      const athlete = p.season_roster?.athletes;
+      return {
+        id: p.id,
+        playerName: p.registrations
+          ? `${p.registrations.first_name} ${p.registrations.last_name}`.trim()
+          : athlete
+            ? `${athlete.first_name} ${athlete.last_name}`.trim()
+            : 'Unknown Player',
+        teamName: p.tryouts?.teams?.name ?? p.season_roster?.seasons?.team_name ?? '',
+        assessmentName: p.tryouts?.name ?? (p.season_roster ? 'Team Fee' : ''),
+        amount: (p.amount_cents ?? 0) / 100,
+        status: p.status,
+        receivedAt: p.received_at ? toMs(p.received_at) : toMs(p.created_at),
+      };
+    });
   }
 
   async getAdminStats(): Promise<AdminStats> {
@@ -3228,6 +3706,21 @@ export class SupabaseDataSource implements DataSource {
     return data;
   }
 
+  async getConnectAccountStatus(): Promise<ConnectAccountStatus> {
+    const { supabase } = await this.ctx();
+    const { data, error } = await supabase.functions.invoke('connect-account-status');
+    if (error) {
+      let detail = '';
+      try {
+        const body = await error.context?.json();
+        if (body?.error) detail = body.error;
+      } catch (_) { }
+      throw new Error(detail || error.message || 'Failed to load connected account status');
+    }
+    if (data?.error) throw new Error(data.error);
+    return data as ConnectAccountStatus;
+  }
+
   async createRegistrationPayment(
     registrationId: string,
     successUrl?: string,
@@ -3246,6 +3739,27 @@ export class SupabaseDataSource implements DataSource {
         if (body?.error) detail = body.error;
       } catch (_) { }
       throw new Error(detail || error.message || 'Failed to start registration payment');
+    }
+    if (data?.error) throw new Error(data.error);
+    return data;
+  }
+
+  async createTeamFeePayment(
+    seasonRosterId: string,
+    successUrl?: string,
+    cancelUrl?: string,
+  ): Promise<{ url: string }> {
+    const { supabase } = await this.ctx();
+    const { data, error } = await supabase.functions.invoke('create-team-fee-payment', {
+      body: { seasonRosterId, successUrl, cancelUrl },
+    });
+    if (error) {
+      let detail = '';
+      try {
+        const body = await error.context?.json();
+        if (body?.error) detail = body.error;
+      } catch (_) { }
+      throw new Error(detail || error.message || 'Failed to start team fee payment');
     }
     if (data?.error) throw new Error(data.error);
     return data;
@@ -3688,6 +4202,7 @@ export class SupabaseDataSource implements DataSource {
         season_roster(
           id,
           jersey,
+          fee_status,
           event_availability(
             season_event_id,
             response
@@ -3697,6 +4212,8 @@ export class SupabaseDataSource implements DataSource {
             name,
             team_name,
             sport,
+            team_id,
+            teams(collects_fees, registration_fee_cents),
             season_events(
               id,
               kind,
@@ -3807,6 +4324,8 @@ export class SupabaseDataSource implements DataSource {
               };
             });
 
+          const team = Array.isArray(sr.seasons.teams) ? sr.seasons.teams[0] : sr.seasons.teams;
+
           return {
             id: sr.seasons.id,
             name: sr.seasons.name,
@@ -3814,6 +4333,10 @@ export class SupabaseDataSource implements DataSource {
             sport: sr.seasons.sport,
             jersey: sr.jersey ?? undefined,
             events: formattedEvents, // Mapped practices/games now exposed to frontend!
+            seasonRosterId: sr.id,
+            collectsFees: !!team?.collects_fees,
+            registrationFeeCents: team?.registration_fee_cents ?? undefined,
+            feeStatus: (sr.fee_status ?? 'unpaid') as 'unpaid' | 'paid' | 'waived',
           };
         })
         .filter(Boolean);
@@ -3827,6 +4350,229 @@ export class SupabaseDataSource implements DataSource {
         seasons: seasonsList,
       };
     });
+  }
+
+  // ─── Guardian -> Coach athlete profile sharing ──────────────────────────
+
+  private mapAthleteShareRow(row: Row): AthleteShare {
+    return {
+      id: row.id,
+      athleteId: row.athlete_id,
+      status: row.status,
+      athlete: {
+        firstName: row.athlete_first_name,
+        lastName: row.athlete_last_name,
+        avatarUrl: row.athlete_avatar_url ?? undefined,
+        yearOfBirth: row.athlete_year_of_birth ?? undefined,
+        position: row.athlete_position ?? undefined,
+        guardianName: row.athlete_guardian_name ?? undefined,
+        guardianEmail: row.athlete_guardian_email ?? undefined,
+        guardianPhone: row.athlete_guardian_phone ?? undefined,
+        medicalInfo: row.athlete_medical_info ?? undefined,
+        about: row.athlete_about ?? undefined,
+      },
+      assessments: Array.isArray(row.athlete_assessments) ? (row.athlete_assessments as PlayerProfileAssessment[]) : [],
+      coach: {
+        userId: row.coach_user_id,
+        displayName: row.coach_display_name,
+        avatarUrl: row.coach_avatar_url ?? undefined,
+        accountId: row.coach_account_id,
+        accountName: row.coach_account_name,
+        sport: row.coach_sport ?? undefined,
+      },
+      guardianUserId: row.guardian_user_id,
+      assignedTryoutId: row.assigned_tryout_id ?? undefined,
+      assignedAthleteId: row.assigned_athlete_id ?? undefined,
+      assignedParticipantId: row.assigned_participant_id ?? undefined,
+      createdAt: toMs(row.created_at),
+      updatedAt: toMs(row.updated_at),
+    };
+  }
+
+  async getCoachDirectory(): Promise<CoachDirectoryEntry[]> {
+    const { supabase } = await this.ctx();
+    const { data, error } = await supabase.rpc('list_coach_directory');
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((row: any) => ({
+      userId: row.user_id,
+      displayName: row.display_name,
+      avatarUrl: row.avatar_url ?? undefined,
+      accountId: row.account_id,
+      accountName: row.account_name,
+      sport: row.sport ?? undefined,
+    }));
+  }
+
+  async shareAthleteWithCoach(athleteId: string, coachUserId: string, coachAccountId: string): Promise<AthleteShare> {
+    const { supabase, userId } = await this.ctx();
+
+    const { data: athleteRow, error: athleteError } = await supabase
+      .from('athletes')
+      .select(
+        'id, first_name, last_name, avatar_url, year_of_birth, default_position, guardian_name, guardian_email, guardian_phone, medical_info, about',
+      )
+      .eq('id', athleteId)
+      .maybeSingle();
+    if (athleteError) throw new Error(athleteError.message);
+    if (!athleteRow) throw new Error('Athlete not found');
+
+    // Full assessment history, frozen at share time — see the athlete_assessments
+    // column comment in the migration for why this is a snapshot, not a live join.
+    const { assessments } = await this.fetchAthleteAssessmentContext(supabase, athleteId);
+
+    const { data: directory, error: directoryError } = await supabase.rpc('list_coach_directory');
+    if (directoryError) throw new Error(directoryError.message);
+    const coachRow = (directory ?? []).find(
+      (c: any) => c.user_id === coachUserId && c.account_id === coachAccountId,
+    );
+    if (!coachRow) throw new Error('Coach not found');
+
+    const { data, error } = await supabase
+      .from('athlete_shares')
+      .insert({
+        athlete_id: athleteId,
+        guardian_user_id: userId,
+        coach_user_id: coachUserId,
+        coach_account_id: coachAccountId,
+        athlete_first_name: athleteRow.first_name,
+        athlete_last_name: athleteRow.last_name,
+        athlete_avatar_url: athleteRow.avatar_url,
+        athlete_year_of_birth: athleteRow.year_of_birth,
+        athlete_position: athleteRow.default_position,
+        athlete_guardian_name: athleteRow.guardian_name,
+        athlete_guardian_email: athleteRow.guardian_email,
+        athlete_guardian_phone: athleteRow.guardian_phone,
+        athlete_medical_info: athleteRow.medical_info,
+        athlete_about: athleteRow.about,
+        athlete_assessments: assessments,
+        coach_display_name: coachRow.display_name,
+        coach_avatar_url: coachRow.avatar_url,
+        coach_account_name: coachRow.account_name,
+        coach_sport: coachRow.sport,
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      if ((error as any).code === '23505') throw new Error('Already shared with this coach.');
+      throw new Error(error.message);
+    }
+    return this.mapAthleteShareRow(data as Row);
+  }
+
+  async getMyAthleteShares(athleteId: string): Promise<AthleteShare[]> {
+    const { supabase } = await this.ctx();
+    const { data, error } = await supabase
+      .from('athlete_shares')
+      .select('*')
+      .eq('athlete_id', athleteId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((row: any) => this.mapAthleteShareRow(row));
+  }
+
+  async getSharedAthletesForCoach(): Promise<AthleteShare[]> {
+    const { supabase, accountId } = await this.ctx();
+    const { data, error } = await supabase
+      .from('athlete_shares')
+      .select('*')
+      .eq('coach_account_id', accountId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((row: any) => this.mapAthleteShareRow(row));
+  }
+
+  async getAthleteShare(shareId: string): Promise<AthleteShare> {
+    const { supabase } = await this.ctx();
+    const { data, error } = await supabase
+      .from('athlete_shares')
+      .select('*')
+      .eq('id', shareId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) throw new Error('Share not found');
+    return this.mapAthleteShareRow(data as Row);
+  }
+
+  async acceptAthleteShare(shareId: string, tryoutId: string): Promise<AthleteShare> {
+    const { supabase } = await this.ctx();
+    const { data, error } = await supabase.rpc('accept_athlete_share', {
+      p_share_id: shareId,
+      p_tryout_id: tryoutId,
+    });
+    if (error) throw new Error(error.message);
+    const row = Array.isArray(data) ? data[0] : data;
+    return this.mapAthleteShareRow(row as Row);
+  }
+
+  async rejectAthleteShare(shareId: string): Promise<AthleteShare> {
+    const { supabase } = await this.ctx();
+    const { data, error } = await supabase.rpc('reject_athlete_share', { p_share_id: shareId });
+    if (error) throw new Error(error.message);
+    const row = Array.isArray(data) ? data[0] : data;
+    return this.mapAthleteShareRow(row as Row);
+  }
+
+  async listShareComments(shareId: string): Promise<ShareComment[]> {
+    const { supabase } = await this.ctx();
+    const { data, error } = await supabase
+      .from('athlete_share_comments')
+      .select('*')
+      .eq('share_id', shareId)
+      .order('created_at', { ascending: true });
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((row: any) => ({
+      id: row.id,
+      shareId: row.share_id,
+      authorUserId: row.author_user_id,
+      authorName: row.author_name,
+      authorRole: row.author_role,
+      body: row.body,
+      createdAt: toMs(row.created_at),
+    }));
+  }
+
+  async addShareComment(shareId: string, body: string): Promise<ShareComment> {
+    const { supabase, userId } = await this.ctx();
+
+    const { data: shareRow, error: shareError } = await supabase
+      .from('athlete_shares')
+      .select('guardian_user_id')
+      .eq('id', shareId)
+      .maybeSingle();
+    if (shareError) throw new Error(shareError.message);
+    if (!shareRow) throw new Error('Share not found');
+
+    const { data: profileRow } = await supabase
+      .from('profiles')
+      .select('display_name')
+      .eq('id', userId)
+      .maybeSingle();
+
+    const authorRole: 'guardian' | 'coach' = shareRow.guardian_user_id === userId ? 'guardian' : 'coach';
+
+    const { data, error } = await supabase
+      .from('athlete_share_comments')
+      .insert({
+        share_id: shareId,
+        author_user_id: userId,
+        author_name: profileRow?.display_name || 'Unknown',
+        author_role: authorRole,
+        body,
+      })
+      .select('*')
+      .single();
+    if (error) throw new Error(error.message);
+
+    return {
+      id: data.id,
+      shareId: data.share_id,
+      authorUserId: data.author_user_id,
+      authorName: data.author_name,
+      authorRole: data.author_role,
+      body: data.body,
+      createdAt: toMs(data.created_at),
+    };
   }
 }
 

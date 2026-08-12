@@ -1,4 +1,4 @@
-import { FlatList, Text, View } from 'react-native';
+import { FlatList, Pressable, Text, View } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -17,12 +17,14 @@ import {
 import { useResultsQuery } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { getScoreHeatLevel, playerDisplayName } from '@/data/rubrics';
+import { useSessionStore } from '@/state/sessionStore';
 
 export default function ResultsScreen() {
   const id = useAssessmentId();
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  const setCurrentPlayer = useSessionStore((s) => s.setCurrentPlayer);
   const { data: tryout, results, isLoading, isError, refetch } = useResultsQuery(id);
 
   const parentState = navigation.getParent()?.getState();
@@ -82,37 +84,44 @@ export default function ResultsScreen() {
           const heat = getScoreHeatLevel(item.overall);
           const heatColor = themeTokens.scoreColors[heat];
           return (
-            <Card className="mb-2 flex-row items-center gap-3">
-              <Text className="text-xl font-display font-bold w-8" style={{ color: colors.inkMuted }}>
-                {index + 1}
-              </Text>
-              <Avatar first={item.player.first} last={item.player.last} pos={item.player.pos} size={40} uri={item.player.avatarUrl} />
-              <View className="flex-1">
-                <Text className="font-bold" style={{ color: colors.ink }}>
-                  {playerDisplayName(item.player)}
+            <Pressable
+              onPress={() => {
+                setCurrentPlayer(item.player.id);
+                navigation.navigate('AssessmentFlow', { screen: 'AssessmentPlayer', params: { id: id, playerId: item.player.id, from: 'results' } });
+              }}
+            >
+              <Card className="mb-2 flex-row items-center gap-3">
+                <Text className="text-xl font-display font-bold w-8" style={{ color: colors.inkMuted }}>
+                  {index + 1}
                 </Text>
-                <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                  #{item.player.jersey ?? '—'} · {item.player.pos ?? '—'}
-                </Text>
-              </View>
-              <View className="items-end gap-1">
-                <Text className="text-xl font-display font-bold" style={{ color: heatColor }}>
-                  {item.overall > 0 ? item.overall.toFixed(1) : '—'}
-                </Text>
-                {item.latestRecommendation ? (
-                  <Badge
-                    label={item.latestRecommendation}
-                    variant={
-                      item.latestRecommendation === 'Make'
-                        ? 'success'
-                        : item.latestRecommendation === 'Release'
-                          ? 'danger'
-                          : 'default'
-                    }
-                  />
-                ) : null}
-              </View>
-            </Card>
+                <Avatar first={item.player.first} last={item.player.last} pos={item.player.pos} size={40} uri={item.player.avatarUrl} />
+                <View className="flex-1">
+                  <Text className="font-bold" style={{ color: colors.ink }}>
+                    {playerDisplayName(item.player)}
+                  </Text>
+                  <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                    #{item.player.jersey ?? '—'} · {item.player.pos ?? '—'}
+                  </Text>
+                </View>
+                <View className="items-end gap-1">
+                  <Text className="text-xl font-display font-bold" style={{ color: heatColor }}>
+                    {item.overall > 0 ? item.overall.toFixed(1) : '—'}
+                  </Text>
+                  {item.latestRecommendation ? (
+                    <Badge
+                      label={item.latestRecommendation}
+                      variant={
+                        item.latestRecommendation === 'Make'
+                          ? 'success'
+                          : item.latestRecommendation === 'Release'
+                            ? 'danger'
+                            : 'default'
+                      }
+                    />
+                  ) : null}
+                </View>
+              </Card>
+            </Pressable>
           );
         }}
       />

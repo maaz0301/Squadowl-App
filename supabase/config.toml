@@ -1,4 +1,60 @@
 
+# Full [auth] block kept explicit (not just the smtp sub-table) because
+# `supabase config push` fills in any field this file doesn't set with the
+# CLI's blank-project defaults and overwrites the live project with them —
+# it doesn't merge on top of what's already deployed. These values mirror
+# what was already live before the SMTP change (site_url, confirmations,
+# MFA, OTP length, rate limit) so pushing this file again can't reset them.
+[auth]
+enabled = true
+site_url = "aastryout://"
+external_url = "http://127.0.0.1:54321/auth/v1"
+additional_redirect_urls = []
+jwt_expiry = 3600
+jwt_issuer = "http://127.0.0.1:54321/auth/v1"
+enable_refresh_token_rotation = true
+
+[auth.rate_limit]
+token_refresh = 150
+sign_in_sign_ups = 30
+token_verifications = 30
+email_sent = 30
+sms_sent = 30
+web3 = 30
+
+[auth.mfa]
+max_enrolled_factors = 10
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+[auth.mfa.phone]
+enroll_enabled = false
+verify_enabled = false
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+secure_password_change = false
+max_frequency = "1s"
+otp_length = 8
+otp_expiry = 3600
+
+# Routes Supabase Auth's own emails (signup confirmation, password-reset OTP)
+# through the same Gmail SMTP used by the send-email function, instead of
+# Supabase's default rate-limited mailer.
+[auth.email.smtp]
+enabled = true
+host = "env(SMTP_HOST)"
+port = 587
+user = "env(SMTP_FROM_EMAIL)"
+pass = "env(SMTP_PASS)"
+admin_email = "env(SMTP_FROM_EMAIL)"
+sender_name = "Athlete Assessment"
+
+[auth.sms]
+enable_signup = false
+
 # Stripe calls this server-to-server with only a Stripe-Signature header (no Supabase JWT).
 # It verifies the Stripe signature itself, so JWT verification must be disabled or the
 # gateway rejects Stripe's webhook with 401 and the account plan never updates.
@@ -14,6 +70,13 @@ entrypoint = "./functions/stripe-webhook/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/stripe-connect-webhook/index.ts"
+
+# Stripe's Account Link return_url/refresh_url — hit by the coach's browser
+# after onboarding, with no Supabase JWT at all.
+[functions.connect-return]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/connect-return/index.ts"
 
 # Guardians pay registration fees from the public registration page before
 # ever creating an account, so this can't require a Supabase JWT.

@@ -3,6 +3,7 @@ import { Text, View, Alert, Pressable, Platform, Switch } from 'react-native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Button, Card, Chip, ErrorState, Header, Input, LoadingState, Screen, Badge } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
+import { UsageNudgeBanner } from '@/components/UsageNudgeBanner';
 import { useTryoutQuery, useUpdateTryoutMutation } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { useUser } from '@/state/authStore';
@@ -132,6 +133,13 @@ export default function RubricsScreen() {
           All rubrics are fully custom. Define drill categories, metric units, and min/max score benchmarks.
         </Text>
       </Card>
+
+      <UsageNudgeBanner
+        tier={user?.planTier ?? 'free'}
+        metric="customRubrics"
+        count={custom.length}
+        label="custom rubrics"
+      />
 
       <Card className="mb-4 gap-3">
         <View className="flex-row items-center justify-between">

@@ -4,6 +4,7 @@ import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { PlanGate } from '@/components/PlanGate';
 import { Badge, Button, Card, EmptyState, ErrorState, Header, LoadingState, Modal, Screen, Tabs } from '@/components/ui';
 import { canUseFeature, isAtPlayerLimit } from '@/data/plans';
+import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import type { DummyDataOptions } from '@/data/testDataGenerator';
 import {
   useAddRegistrationToRosterMutation,
@@ -108,7 +109,7 @@ export default function RegistrationsScreen() {
   const BULK_ADD_BATCH_SIZE = 10;
   const bulkAdd = async () => {
     if (isAtPlayerLimit(user?.planTier ?? 'free', (tryoutQuery.data?.roster.length ?? 0) + selected.size - 1)) {
-      setLimitMsg('You have reached the maximum number of players for your current plan.');
+      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'players', 'players'));
       return;
     }
     const ids = [...selected];
@@ -314,7 +315,7 @@ export default function RegistrationsScreen() {
                   loading={addToRoster.isPending}
                   onPress={() => {
                     if (isAtPlayerLimit(user?.planTier ?? 'free', tryout.roster.length)) {
-                      setLimitMsg('You have reached the maximum number of players for your current plan.');
+                      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'players', 'players'));
                       return;
                     }
                     addToRoster.mutate(item.id);

@@ -61,7 +61,7 @@ export default function LoginScreen() {
           />
         ) : (
           <Image
-            source={require('../../../assets/images/tryouthq_logo.png')}
+            source={require('../../../assets/TryoutHQ-logo.png')}
             style={{ width: '100%', height: 120, resizeMode: 'contain' }}
           />
         )}

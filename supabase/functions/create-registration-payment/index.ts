@@ -24,7 +24,7 @@ serve(async (req: Request) => {
 
     const { data: registration, error: regError } = await supabaseAdmin
       .from('registrations')
-      .select('id, stripe_checkout_session_id, tryouts(id, registration_fee_cents, accounts(id, stripe_connect_account_id, stripe_connect_charges_enabled))')
+      .select('id, guardian_email, stripe_checkout_session_id, tryouts(id, registration_fee_cents, accounts(id, plan_tier, stripe_connect_account_id, stripe_connect_charges_enabled))')
       .eq('id', registrationId)
       .single();
 
@@ -39,9 +39,16 @@ serve(async (req: Request) => {
     const feeCents: number | null = tryout?.registration_fee_cents ?? null;
     const connectAccountId: string | null = account?.stripe_connect_account_id ?? null;
     const chargesEnabled: boolean = account?.stripe_connect_charges_enabled ?? false;
+    const planTier: string = account?.plan_tier ?? 'free';
 
     if (!feeCents || feeCents <= 0) {
       throw new Error('This event does not have a registration fee.');
+    }
+    // Fee collection is a paid-plan feature (see limits.payments in src/data/plans.ts).
+    // A team can be left with collectsFees/registrationFeeCents set from before a
+    // downgrade, so this has to be re-checked here rather than trusted from the client.
+    if (planTier === 'free') {
+      throw new Error('Collecting registration fees requires a Coach plan or higher.');
     }
     if (!connectAccountId || !chargesEnabled) {
       throw new Error('This coach has not finished setting up payments yet.');
@@ -84,6 +91,9 @@ serve(async (req: Request) => {
         payment_intent_data: {
           application_fee_amount: applicationFeeAmount,
         },
+        // Pre-fills Stripe's checkout page with the guardian's email from
+        // the registration form so they don't have to retype it.
+        customer_email: registration.guardian_email ?? undefined,
         success_url: successUrl || 'aastryout://register?paid=true',
         cancel_url: cancelUrl || 'aastryout://register?paid=false',
         metadata: {

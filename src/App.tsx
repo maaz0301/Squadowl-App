@@ -20,6 +20,13 @@ function onAppStateChange(status: AppStateStatus) {
   if (Platform.OS !== 'web') {
     focusManager.setFocused(status === 'active');
   }
+  if (status === 'active') {
+    // session.user (plan tier, subscription status, etc.) is persisted on-device and
+    // otherwise only refreshed by a handful of screens (Upgrade, Payments) — without
+    // this, a plan change made outside the app (Stripe webhook, admin override, a
+    // support fix) stays invisible until the user happens to visit one of those.
+    void useAuthStore.getState().restoreSession(true);
+  }
 }
 
 export default function App() {
@@ -29,6 +36,12 @@ export default function App() {
   useEffect(() => {
     // Hide the native splash screen once the JS app has booted
     SplashScreen.hide();
+  }, []);
+
+  useEffect(() => {
+    // Cold start: rehydrate from the persisted session immediately, then refresh
+    // it against the DB in case the plan/subscription changed since last launch.
+    void useAuthStore.getState().restoreSession(true);
   }, []);
 
   useEffect(() => {

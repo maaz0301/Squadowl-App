@@ -39,6 +39,9 @@ export default function AppNavigator() {
       <Stack.Screen name="TeamDetail" component={require('../screens/(app)/team/[id]').default} />
       <Stack.Screen name="TeamPlayer" component={require('../screens/(app)/team/[id]/player/[playerId]').default} />
 
+      {/* Player profile (standalone, athlete-identity-keyed) */}
+      <Stack.Screen name="PlayerProfile" component={require('../screens/(app)/player/[athleteId]').default} />
+
       {/* Misc screens */}
       <Stack.Screen name="Upgrade" component={require('../screens/(app)/upgrade').default} />
       <Stack.Screen name="Payments" component={require('../screens/(app)/payments').default} />
@@ -51,6 +54,11 @@ export default function AppNavigator() {
       <Stack.Screen name="Combine" component={require('../screens/(app)/combine').default} />
       <Stack.Screen name="GuardianPortal" component={require('../screens/(app)/guardian/[playerId]').default} />
       <Stack.Screen name="GuardianAssessmentDetails" component={require('../screens/(app)/guardian/assessment').default} />
+
+      {/* Guardian -> Coach athlete profile sharing */}
+      <Stack.Screen name="ShareDirectory" component={require('../screens/(app)/guardian/share-directory').default} />
+      <Stack.Screen name="ShareDetail" component={require('../screens/(app)/share/[shareId]').default} />
+      <Stack.Screen name="SharedAthletes" component={require('../screens/(app)/shared-athletes/index').default} />
     </Stack.Navigator>
   );
 }

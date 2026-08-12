@@ -15,7 +15,6 @@ import { PlanGate } from '@/components/PlanGate';
 import { useTryoutQuery, useAiCompareMutation } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { playerDisplayName } from '@/data/rubrics';
-import { mockAiCompare } from '@/data/teamBuilder';
 
 export default function CompareScreen() {
   const id = useAssessmentId();
@@ -60,15 +59,8 @@ export default function CompareScreen() {
         ListHeaderComponent={
           selected.length >= 2 ? (
             <Card accent className="mb-4 gap-2">
-              <Text className="font-display font-bold" style={{ color: colors.ink }}>
-                Standard Comparison
-              </Text>
-              <Text style={{ color: colors.inkMuted }}>{mockAiCompare(tryout, selected).summary}</Text>
-              <Text style={{ color: colors.primary }}>{mockAiCompare(tryout, selected).edge}</Text>
-              <Badge label={`Best fit: ${mockAiCompare(tryout, selected).best_fit}`} variant="info" />
-
               <PlanGate feature="aiSummaries" title="AI Compare">
-                <View className="mt-2 border-t pt-2" style={{ borderColor: colors.border }}>
+                <View>
                   <Text className="font-bold mb-2" style={{ color: colors.primary }}>Deep AI Insights</Text>
                   <Button
                     label={`Run Deep AI Compare`}

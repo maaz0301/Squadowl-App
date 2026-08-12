@@ -10,6 +10,7 @@ import { buildRosterLibrary } from '@/data/extras';
 import { isAtPlayerLimit } from '@/data/plans';
 import { useUser } from '@/state/authStore';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
+import { buildLimitReachedMessage } from '@/lib/usageNudges';
 
 export default function RosterLibraryScreen() {
   const id = useAssessmentId();
@@ -53,7 +54,7 @@ export default function RosterLibraryScreen() {
     if (!entries.length) return;
 
     if (isAtPlayerLimit(user?.planTier ?? 'free', (currentTryoutQuery.data?.roster.length ?? 0) + entries.length - 1)) {
-      setLimitMsg('You have reached the maximum number of players for your current plan.');
+      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'players', 'players'));
       return;
     }
 

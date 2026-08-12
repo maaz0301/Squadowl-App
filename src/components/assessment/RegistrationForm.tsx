@@ -15,6 +15,7 @@ export function RegistrationForm({ loading, onSubmit }: Props) {
     defaultValues: {
       firstName: '',
       lastName: '',
+      yearOfBirth: '',
       guardianName: '',
       guardianEmail: '',
     },
@@ -34,6 +35,13 @@ export function RegistrationForm({ loading, onSubmit }: Props) {
         name="lastName"
         render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
           <Input label="Last Name" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
+        )}
+      />
+      <Controller
+        control={control}
+        name="yearOfBirth"
+        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
+          <Input label="Year of Birth" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} keyboardType="number-pad" placeholder="YYYY" />
         )}
       />
       <Controller

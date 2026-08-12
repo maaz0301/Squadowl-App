@@ -1,21 +1,56 @@
 import { useMemo, useState } from 'react';
-import { Alert, Platform, ScrollView, Share, Text, View } from 'react-native';
+import { Alert, ScrollView, Text, View } from 'react-native';
 import { InAppBrowser } from 'react-native-inappbrowser-reborn';
-import RNFS from 'react-native-fs';
-import RNShare from 'react-native-share';
 import { useQueryClient } from '@tanstack/react-query';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, Header, Screen } from '@/components/ui';
+import { Badge, Button, Card, Header, Modal, Screen } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
-import { useEnterprisePaymentsQuery } from '@/features/queries';
+import { useEnterprisePaymentsQuery, useConnectAccountStatusQuery } from '@/features/queries';
 import { queryKeys } from '@/lib/queryClient';
 import { getDataSource } from '@/data';
+import { exportCsvFile } from '@/lib/exportCsv';
 import { useUser, useAuthStore } from '@/state/authStore';
 import { isTierAtLeast } from '@/data/plans';
 
 function money(n: number): string {
   return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
+
+// Stripe's Canada (CAD) fee schedule, separate from TryoutHQ's own 0.5%
+// platform fee. Verified June 2026 — re-check against Stripe's published
+// rates before updating any of these numbers.
+const FEE_SCHEDULE: { type: string; fee: string; note: string }[] = [
+  {
+    type: 'Domestic card (CAD)',
+    fee: '2.9% + CAD$0.30',
+    note: 'Standard Canadian card — most common transaction.',
+  },
+  {
+    type: 'International card',
+    fee: '2.9% + CAD$0.30 + 0.8%',
+    note: 'Card issued outside Canada — total ~3.7% + CAD$0.30.',
+  },
+  {
+    type: 'Currency conversion',
+    fee: '+ 2.0% additional',
+    note: 'When payment currency differs from payout currency.',
+  },
+  {
+    type: 'Stripe Billing (subscriptions)',
+    fee: '+ 0.7% additional',
+    note: "Applied when using Stripe's subscription billing system.",
+  },
+  {
+    type: 'Chargeback / dispute',
+    fee: 'CAD$15 flat fee',
+    note: 'Charged whether you win or lose the dispute.',
+  },
+  {
+    type: 'Stripe Connect (platform fee)',
+    fee: '0.25% + CAD$0.25',
+    note: "Required for collecting the 0.5% TryoutHQ platform fee.",
+  },
+];
 
 function Stat({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: string }) {
   const colors = useThemeColors();
@@ -41,8 +76,10 @@ export default function PaymentsScreen() {
   const user = useUser();
   const tier = user?.planTier ?? 'free';
   const paymentsQuery = useEnterprisePaymentsQuery();
+  const connectStatusQuery = useConnectAccountStatusQuery(!!user?.connectChargesEnabled);
   const [exporting, setExporting] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [showFeeDetails, setShowFeeDetails] = useState(false);
   const qc = useQueryClient();
   const restoreSession = useAuthStore((s) => s.restoreSession);
 
@@ -60,7 +97,7 @@ export default function PaymentsScreen() {
     for (const p of rows) {
       if (p.status !== 'paid') continue;
       byPlayer.set(p.playerName, (byPlayer.get(p.playerName) ?? 0) + p.amount);
-      const assessmentKey = p.assessmentName || 'Subscription';
+      const assessmentKey = p.assessmentName || 'Unknown Event';
       byAssessment.set(assessmentKey, (byAssessment.get(assessmentKey) ?? 0) + p.amount);
     }
 
@@ -82,36 +119,11 @@ export default function PaymentsScreen() {
     setExporting(true);
     try {
       const csvRows = rows.map(
-        (p) => `${p.playerName},${p.assessmentName || 'Subscription'},${p.amount.toFixed(2)},${p.status}`,
+        (p) =>
+          `${p.playerName},${p.teamName},${p.assessmentName || 'Unknown Event'},${p.amount.toFixed(2)},${p.status}`,
       );
-      const csv = `player,assessment,amount,status\n${csvRows.join('\n')}`;
-      const filename = 'payments.csv';
-
-      if (Platform.OS === 'web') {
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', filename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } else {
-        const path = `${RNFS.CachesDirectoryPath}/${filename}`;
-        await RNFS.writeFile(path, csv, 'utf8');
-        try {
-          await RNShare.open({
-            url: `file://${path}`,
-            type: 'text/csv',
-            filename,
-            title: `Export ${filename}`,
-          });
-        } catch (e: any) {
-          if (e.message !== 'User did not share') {
-            await Share.share({ message: csv, title: filename });
-          }
-        }
-      }
+      const csv = `player,team,assessment,amount,status\n${csvRows.join('\n')}`;
+      await exportCsvFile('payments.csv', csv);
     } finally {
       setExporting(false);
     }
@@ -169,9 +181,38 @@ export default function PaymentsScreen() {
                 automatically — the rest is paid out straight to you.
               </Text>
               <Button label="Connect with Stripe" loading={connecting} onPress={connectPayouts} />
+              <Button label="View Fee Details" variant="ghost" size="sm" onPress={() => setShowFeeDetails(true)} />
             </Card>
           ) : (
-            <Badge label="Payouts connected" variant="success" className="mb-4 self-start" />
+            <Card className="mb-4 gap-2">
+              <View className="flex-row items-center gap-2">
+                <Badge label="Payouts connected" variant="success" />
+                <Button label="Fee Details" variant="ghost" size="sm" onPress={() => setShowFeeDetails(true)} />
+              </View>
+              {connectStatusQuery.isLoading ? (
+                <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                  Loading connected account…
+                </Text>
+              ) : connectStatusQuery.data?.connected ? (
+                <>
+                  <Text className="text-sm font-bold" style={{ color: colors.ink }}>
+                    {connectStatusQuery.data.businessName ||
+                      connectStatusQuery.data.email ||
+                      connectStatusQuery.data.accountId}
+                  </Text>
+                  <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                    Stripe account {connectStatusQuery.data.accountId}
+                    {connectStatusQuery.data.country ? ` · ${connectStatusQuery.data.country}` : ''} ·{' '}
+                    {(connectStatusQuery.data.platformFeeRate * 100).toFixed(1)}% TryoutHQ fee + Stripe's
+                    processing fee per transaction
+                  </Text>
+                </>
+              ) : (
+                <Text className="text-xs" style={{ color: colors.warning }}>
+                  Couldn't load connected account details.
+                </Text>
+              )}
+            </Card>
           )}
 
           <View className="flex-row flex-wrap gap-2 mb-4">
@@ -253,7 +294,7 @@ export default function PaymentsScreen() {
                     {item.playerName}
                   </Text>
                   <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                    {item.assessmentName || 'Subscription'}
+                    {[item.teamName, item.assessmentName].filter(Boolean).join(' · ')}
                   </Text>
                 </View>
                 <View className="items-end gap-1">
@@ -270,6 +311,65 @@ export default function PaymentsScreen() {
           )}
         </ScrollView>
       </PlanGate>
+
+      <Modal visible={showFeeDetails} title="Stripe & Platform Fees" onClose={() => setShowFeeDetails(false)}>
+        <ScrollView>
+          <Text className="text-sm mb-4" style={{ color: colors.inkMuted }}>
+            These are Stripe's own processing fees (CAD), deducted automatically per transaction
+            before funds reach your account — separate from TryoutHQ's 0.5% platform fee. Verified
+            June 2026.
+          </Text>
+
+          {FEE_SCHEDULE.map((row) => (
+            <View key={row.type} className="mb-3 pb-3 border-b" style={{ borderColor: colors.border }}>
+              <View className="flex-row justify-between items-start gap-2">
+                <Text className="text-sm font-bold flex-1" style={{ color: colors.ink }}>
+                  {row.type}
+                </Text>
+                <Text className="text-sm font-bold" style={{ color: colors.primary }}>
+                  {row.fee}
+                </Text>
+              </View>
+              <Text className="text-xs mt-1" style={{ color: colors.inkMuted }}>
+                {row.note}
+              </Text>
+            </View>
+          ))}
+
+          <Text className="text-sm font-bold mt-2 mb-2" style={{ color: colors.ink }}>
+            Real example — CAD$100 registration fee
+          </Text>
+          <View className="gap-1 mb-2">
+            <View className="flex-row justify-between">
+              <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                Stripe fee (2.9% + $0.30)
+              </Text>
+              <Text className="text-sm" style={{ color: colors.ink }}>
+                −$3.20
+              </Text>
+            </View>
+            <View className="flex-row justify-between">
+              <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                TryoutHQ platform fee (0.5%)
+              </Text>
+              <Text className="text-sm" style={{ color: colors.ink }}>
+                −$0.50
+              </Text>
+            </View>
+            <View className="flex-row justify-between mt-1">
+              <Text className="text-sm font-bold" style={{ color: colors.ink }}>
+                Coach receives
+              </Text>
+              <Text className="text-sm font-bold" style={{ color: colors.success }}>
+                $96.30
+              </Text>
+            </View>
+          </View>
+          <Text className="text-xs" style={{ color: colors.inkMuted }}>
+            Stripe fees are paid by the coach (subscriber), not by TryoutHQ.
+          </Text>
+        </ScrollView>
+      </Modal>
     </Screen>
   );
 }

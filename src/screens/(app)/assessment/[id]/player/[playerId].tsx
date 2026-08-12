@@ -28,7 +28,6 @@ import {
   useResendInviteMutation,
   useCreateAndInviteMemberMutation,
   useOrgMembersQuery,
-  useAthleteHistoryQuery,
   useSeasonsQuery,
   useAddSeasonPlayerMutation,
   useUploadPlayerPhotoMutation,
@@ -37,12 +36,12 @@ import { useAssessmentId } from '@/features/useAssessmentId';
 import { playerDisplayName, weightedOverall, getPlayerCategories, isGoaliePosition } from '@/data/rubrics';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { PlanGate } from '@/components/PlanGate';
-import { mockAiPlayerSummary } from '@/data/teamBuilder';
 
 export default function PlayerHubScreen() {
   const assessmentId = useAssessmentId();
   const route = useRoute<any>();
-  const { playerId } = route.params || {};
+  const { playerId, from } = route.params || {};
+  const backScreen = from === 'results' ? 'AssessmentResults' : 'AssessmentRoster';
   const id = assessmentId;
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
@@ -78,7 +77,6 @@ export default function PlayerHubScreen() {
   }, [aiSummary.isPending]);
 
   const player = tryoutQuery.data?.roster.find((p) => p.athleteId === playerId || p.id === playerId);
-  const historyQuery = useAthleteHistoryQuery(player?.athleteId);
 
   const { canManageTeam } = usePermissions();
   const user = useUser();
@@ -111,24 +109,12 @@ export default function PlayerHubScreen() {
     .filter((e) => e.playerId === playerId)
     .sort((a, b) => b.createdAt - a.createdAt);
 
-  const historyHasSeasons = (historyQuery.data?.pastSeasons.length ?? 0) > 0;
-  const historyTrend = (historyQuery.data?.pastEvaluations ?? [])
-    .map((e) => {
-      const values = Object.values(e.scores ?? {});
-      const avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
-      return { id: e.id, date: e.date, avg };
-    })
-    .filter((p) => p.avg > 0)
-    .sort((a, b) => a.date.localeCompare(b.date));
-  const historyDelta =
-    historyTrend.length > 1 ? historyTrend[historyTrend.length - 1].avg - historyTrend[0].avg : 0;
-
   return (
     <Screen scroll insideTabBar>
       <Header
         title={playerDisplayName(player)}
         showBack
-        onBack={() => navigation.navigate('AssessmentRoster')}
+        onBack={() => navigation.navigate(backScreen)}
       />
       <View className="items-center py-4 gap-2">
         <Avatar first={player.first} last={player.last} pos={player.pos} size={72} uri={player.avatarUrl} />
@@ -189,18 +175,18 @@ export default function PlayerHubScreen() {
                           'This login account no longer exists. Would you like to unlink it and send a new invite?',
                           [
                             { text: 'Cancel', style: 'cancel' },
-                            { 
-                              text: 'Re-invite', 
+                            {
+                              text: 'Re-invite',
                               onPress: async () => {
                                 try {
-                                  // 1. Unlink the deleted ID first
-                                  await linkGuardianMut.mutateAsync({
-                                    guardianId: null as any,
-                                    tryoutId: id!,
-                                    playerId: player.athleteId!,
-                                  });
-                                  
-                                  // 2. Re-create and invite
+                                  // Re-create the account first and only re-point the athlete's
+                                  // link once that succeeds — linkGuardianMut overwrites whatever
+                                  // guardian_user_id was there before in a single UPDATE, so there's
+                                  // no need to null it out first. Unlinking up front used to mean a
+                                  // transient failure in the create step (this call has genuinely
+                                  // raced with GoTrue's own duplicate-email check before) left the
+                                  // athlete with no guardian link at all instead of just keeping the
+                                  // old (still-broken) one until a retry succeeds.
                                   const defaultPassword = Math.random().toString(36).slice(-6) + 'Aa1!';
                                   const name = player.guardianName || 'Guardian';
                                   
@@ -273,12 +259,6 @@ export default function PlayerHubScreen() {
       <Card accent className="mb-4 gap-2">
         <Text className="font-display font-bold" style={{ color: colors.ink }}>
           Development Summary
-        </Text>
-        <Text style={{ color: colors.inkMuted }}>
-          {mockAiPlayerSummary(tryoutQuery.data, playerId!).summary}
-        </Text>
-        <Text className="text-sm" style={{ color: colors.primary }}>
-          Role fit: {mockAiPlayerSummary(tryoutQuery.data, playerId!).role_fit}
         </Text>
 
         <PlanGate feature="aiSummaries" title="Deep AI Insights">
@@ -395,53 +375,17 @@ export default function PlayerHubScreen() {
 
       <Card className="mb-4 gap-2">
         <Text className="font-display font-bold" style={{ color: colors.ink }}>
-          Player History
+          Player Profile
         </Text>
-        {historyQuery.isLoading ? (
-          <ActivityIndicator color={colors.primary} />
-        ) : (historyHasSeasons || historyTrend.length > 0) ? (
-          <>
-            {historyHasSeasons ? (
-              <View className="gap-1">
-                <Text className="text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>
-                  Past Seasons
-                </Text>
-                {historyQuery.data!.pastSeasons.map((s) => (
-                  <View key={s.seasonId} className="flex-row justify-between">
-                    <Text style={{ color: colors.ink }}>{s.seasonName}</Text>
-                    <Text style={{ color: colors.inkMuted }}>{s.teamName}</Text>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-            {historyTrend.length > 0 ? (
-              <View className="gap-1 mt-2">
-                <Text className="text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>
-                  Score Trend
-                </Text>
-                {historyTrend.map((p) => (
-                  <View key={p.id} className="flex-row justify-between">
-                    <Text style={{ color: colors.inkMuted }}>{p.date}</Text>
-                    <Text style={{ color: colors.ink }}>{p.avg.toFixed(1)}</Text>
-                  </View>
-                ))}
-                {historyTrend.length > 1 ? (
-                  <Text
-                    className="text-sm mt-1"
-                    style={{ color: historyDelta >= 0 ? colors.success : colors.warning }}
-                  >
-                    {historyDelta >= 0 ? '▲' : '▼'} {Math.abs(historyDelta).toFixed(1)} since first
-                    evaluation
-                  </Text>
-                ) : null}
-              </View>
-            ) : null}
-          </>
-        ) : (
-          <Text style={{ color: colors.inkMuted }}>
-            No history yet — this player's profile builds up across seasons and assessments.
-          </Text>
-        )}
+        <Text style={{ color: colors.inkMuted }}>
+          View full assessment history, score trends, and season-over-season comparison.
+        </Text>
+        <Button
+          label="View Full Profile"
+          variant="secondary"
+          disabled={!player.athleteId}
+          onPress={() => navigation.navigate('PlayerProfile', { athleteId: player.athleteId })}
+        />
       </Card>
 
       <Text className="text-md font-display font-bold mb-3" style={{ color: colors.ink }}>

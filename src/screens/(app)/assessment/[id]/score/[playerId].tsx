@@ -112,7 +112,7 @@ export default function ScoreScreen() {
 
   const initialScores = mapLegacyScores(existingEval?.scores ?? {}, categories);
 
-  const { control, handleSubmit, watch, setValue, getValues, reset, formState: { errors } } = useForm<ScoreForm>({
+  const { control, handleSubmit, watch, setValue, getValues, reset } = useForm<ScoreForm>({
     resolver: zodResolver(ScoreFormSchema),
     defaultValues: {
       session: currentSession,
@@ -188,7 +188,7 @@ export default function ScoreScreen() {
 
         const hasScores = currentFormVal.scores && Object.values(currentFormVal.scores).some(val => val !== undefined && val !== null && val > 0);
 
-        if (hasScores && currentFormVal.recommendation) {
+        if (hasScores) {
           saveEval.mutate({
             playerId: prevPlayerId,
             form: { ...currentFormVal, session: prevSession || currentFormVal.session },
@@ -224,7 +224,7 @@ export default function ScoreScreen() {
         const hasUnsaved = previousFormRef.current && previousFormRef.current !== currentFormStr;
         if (hasUnsaved) {
           const hasScores = form.scores && Object.values(form.scores).some(val => val !== undefined && val !== null && val > 0);
-          if (hasScores && form.recommendation) {
+          if (hasScores) {
             saveEval.mutate({
               playerId: pId,
               form: { ...form, session: sName },
@@ -246,7 +246,7 @@ export default function ScoreScreen() {
     }
 
     const hasScores = formData.scores && Object.values(formData.scores).some(val => val !== undefined && val !== null && val > 0);
-    if (!hasScores || !formData.recommendation) {
+    if (!hasScores) {
       return;
     }
 
@@ -477,13 +477,8 @@ export default function ScoreScreen() {
 
       <View className="flex-row items-center justify-between mb-2">
         <Text className="text-sm font-bold uppercase" style={{ color: colors.inkMuted }}>
-          Recommendation *
+          Recommendation
         </Text>
-        {errors.recommendation && (
-          <Text className="text-sm font-medium" style={{ color: colors.danger }}>
-            {errors.recommendation.message}
-          </Text>
-        )}
       </View>
       <Controller
         control={control}

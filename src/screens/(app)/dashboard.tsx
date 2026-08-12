@@ -25,6 +25,7 @@ import {
   useTeamsQuery,
   useTryoutsQuery,
   useAssignedTryoutsQuery,
+  useAcceptAssignmentMutation,
   useRejectAssignmentMutation,
   useGuardianRostersQuery,
   useProfileQuery,
@@ -33,7 +34,8 @@ import {
   useArchiveTryoutMutation,
 } from '@/features/queries';
 import { APP_CONFIG } from '@/config/app';
-import { canUseFeature, isAtAssessmentLimit } from '@/data/plans';
+import { canUseFeature, isAtAssessmentLimit, isAtTeamLimit } from '@/data/plans';
+import { buildLimitReachedMessage } from '@/lib/usageNudges';
 
 export default function DashboardScreen() {
   const colors = useThemeColors();
@@ -90,6 +92,10 @@ export default function DashboardScreen() {
   const deleteTeam = useDeleteTeamMutation();
   const deleteTryout = useDeleteTryoutMutation();
   const archiveTryout = useArchiveTryoutMutation();
+  const acceptAssignment = useAcceptAssignmentMutation();
+  const rejectAssignment = useRejectAssignmentMutation();
+  const [decliningId, setDecliningId] = useState<string | null>(null);
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
 
   const handleDeleteTeam = (id: string, name: string) => {
     Alert.alert(
@@ -117,6 +123,36 @@ export default function DashboardScreen() {
     setCurrentTryout(id);
     setActiveAssessor(user?.displayName ? { name: user.displayName, email: user.email, role: 'assessor', status: 'accepted' } : null);
     navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: id, isAssessorOnly: true } });
+  };
+
+  const acceptAssigned = (id: string) => {
+    setAcceptingId(id);
+    acceptAssignment.mutate(id, {
+      onSettled: () => setAcceptingId(null),
+      onSuccess: () => openAssigned(id),
+      onError: (error: any) => Alert.alert('Accept Failed', error?.message || 'Could not accept this assessment.'),
+    });
+  };
+
+  const declineAssigned = (id: string, name: string) => {
+    Alert.alert(
+      'Decline Assessment',
+      `Are you sure you want to decline "${name}"? You will lose access to score this assessment unless invited again.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Decline',
+          style: 'destructive',
+          onPress: () => {
+            setDecliningId(id);
+            rejectAssignment.mutate(id, {
+              onSettled: () => setDecliningId(null),
+              onError: (error: any) => Alert.alert('Decline Failed', error?.message || 'Could not decline this assessment.'),
+            });
+          },
+        },
+      ]
+    );
   };
 
   if (isGuardianOnly) {
@@ -166,11 +202,17 @@ export default function DashboardScreen() {
   };
 
   const fabAction = () => {
-    if (tab === 'teams') navigation.navigate('NewTeam');
-    else {
+    if (tab === 'teams') {
+      const count = teamsQuery.data?.length ?? 0;
+      if (isAtTeamLimit(user?.planTier ?? 'free', count)) {
+        setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'teams', 'teams'));
+        return;
+      }
+      navigation.navigate('NewTeam');
+    } else {
       const count = tryoutsQuery.data?.length ?? 0;
       if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
-        setLimitMsg('You have reached the maximum number of assessments for your current plan.');
+        setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'assessments', 'assessments'));
         return;
       }
       navigation.navigate('NewAssessment');
@@ -447,23 +489,46 @@ export default function DashboardScreen() {
                     />
                   </Svg>
                 </Pressable>
-                {assignedExpanded && assignedQuery.data.map((t) => (
-                  <Pressable key={t.id} onPress={() => openAssigned(t.id)}>
-                    <Card className="mb-2 flex-row justify-between items-center">
-                      <View className="flex-1">
-                        <Text className="text-base font-display font-bold" style={{ color: colors.ink }}>
-                          {t.name}
-                        </Text>
-                        <Text className="text-sm mt-1" style={{ color: colors.inkMuted }}>
-                          {t.sport} · {t.roster?.length ?? 0} players
-                        </Text>
-                      </View>
-                      <View className="flex-row items-center gap-2">
+                {assignedExpanded && assignedQuery.data.map((t) => {
+                  const mine = t.assessors.find(
+                    (a) => (user?.id && a.userId === user.id) || a.email?.toLowerCase() === user?.email?.toLowerCase()
+                  );
+                  const isPending = (mine?.status ?? 'pending') === 'pending';
+                  return (
+                    <Card key={t.id} className="mb-2 gap-3">
+                      <Pressable onPress={() => openAssigned(t.id)} className="flex-row justify-between items-center">
+                        <View className="flex-1">
+                          <Text className="text-base font-display font-bold" style={{ color: colors.ink }}>
+                            {t.name}
+                          </Text>
+                          <Text className="text-sm mt-1" style={{ color: colors.inkMuted }}>
+                            {t.sport} · {t.roster?.length ?? 0} players
+                          </Text>
+                        </View>
                         <Badge label="Score" variant="brand" />
-                      </View>
+                      </Pressable>
+                      {isPending ? (
+                        <View className="flex-row gap-2">
+                          <Button
+                            label="Accept"
+                            size="sm"
+                            className="flex-1"
+                            loading={acceptingId === t.id}
+                            onPress={() => acceptAssigned(t.id)}
+                          />
+                          <Button
+                            label="Decline"
+                            size="sm"
+                            variant="ghost"
+                            className="flex-1"
+                            loading={decliningId === t.id}
+                            onPress={() => declineAssigned(t.id, t.name)}
+                          />
+                        </View>
+                      ) : null}
                     </Card>
-                  </Pressable>
-                ))}
+                  );
+                })}
               </View>
             ) : null}
 

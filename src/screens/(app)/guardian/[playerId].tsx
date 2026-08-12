@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { FlatList, View, Text, Pressable, Alert } from 'react-native';
 import { useRoute } from '@react-navigation/native';
+import { InAppBrowser } from 'react-native-inappbrowser-reborn';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Screen,
   Header,
@@ -11,10 +13,22 @@ import {
   LoadingState,
   ErrorState,
   Badge,
+  Button,
 } from '@/components/ui';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { useGuardianRostersQuery, useGuardianRealtimeSync, useSetAvailabilityMutation } from '@/features/queries';
+import {
+  useGuardianRostersQuery,
+  useGuardianRealtimeSync,
+  useSetAvailabilityMutation,
+  useCreateTeamFeePaymentMutation,
+} from '@/features/queries';
+import { queryKeys } from '@/lib/queryClient';
+import { useAuthStore } from '@/state/authStore';
 import type { SeasonEvent } from '@/data/types';
+
+function money(cents: number): string {
+  return `$${(cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
 function ExpandableText({ text, style, className }: { text: string, style?: any, className?: string }) {
   const [expanded, setExpanded] = useState(false);
@@ -101,9 +115,48 @@ import { useNavigation } from '@react-navigation/native';
 
 function TryoutSeasonCard({ item, colors, playerId }: { item: any; colors: any; playerId: string }) {
   const navigation = useNavigation<any>();
+  const qc = useQueryClient();
+  const userId = useAuthStore((s) => s.session?.user?.id);
+  const payFeeMutation = useCreateTeamFeePaymentMutation();
+  const [paying, setPaying] = useState(false);
+
+  const payFee = async () => {
+    try {
+      setPaying(true);
+      const res = await payFeeMutation.mutateAsync({ seasonRosterId: item.seasonRosterId });
+      if (!res?.url) return;
+
+      if (await InAppBrowser.isAvailable()) {
+        await InAppBrowser.openAuth(res.url, 'aastryout://guardian', {
+          dismissButtonStyle: 'cancel',
+          preferredBarTintColor: colors.bg,
+          preferredControlTintColor: colors.primary,
+          modalPresentationStyle: 'fullScreen',
+        });
+      } else {
+        const { Linking } = require('react-native');
+        await Linking.openURL(res.url);
+      }
+
+      // Stripe's checkout.session.completed webhook lands a moment after the
+      // guardian pays, so poll a few times instead of assuming it's instant.
+      for (let i = 0; i < 5; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await qc.refetchQueries({ queryKey: queryKeys.guardianRosters(userId) });
+        const refreshed = qc.getQueryData<any[]>(queryKeys.guardianRosters(userId));
+        const athlete = refreshed?.find((a) => a.id === playerId);
+        const season = athlete?.seasons?.find((s: any) => s.seasonRosterId === item.seasonRosterId);
+        if (season?.feeStatus === 'paid') break;
+      }
+    } catch (err: any) {
+      Alert.alert('Payment Error', err.message || 'Something went wrong.');
+    } finally {
+      setPaying(false);
+    }
+  };
 
   return (
-    <Pressable onPress={() => { 
+    <Pressable onPress={() => {
       if (item._type === 'tryout') {
         navigation.navigate('GuardianAssessmentDetails', { playerId, tryoutId: item.id });
       }
@@ -114,16 +167,29 @@ function TryoutSeasonCard({ item, colors, playerId }: { item: any; colors: any; 
             <ExpandableText text={item.name} className="text-lg font-display font-bold mb-1" style={{ color: colors.ink }} />
             {item._type === 'season' ? (
               <Text className="text-sm mb-2" style={{ color: colors.inkMuted }}>
-                {item.teamName} · {item.sport}
+                Team: {item.teamName} · {item.sport}
               </Text>
             ) : (
               <Text className="text-sm mb-2" style={{ color: colors.inkMuted }}>
-                Tryout · {item.sport}
+                Assessment · {item.sport}
               </Text>
             )}
           </View>
-          <Badge label={item._type === 'season' ? 'Season' : 'Tryout'} variant={item._type === 'season' ? 'info' : 'brand'} />
+          <Badge label={item._type === 'season' ? 'Team' : 'Assessment'} variant={item._type === 'season' ? 'info' : 'brand'} />
         </View>
+
+        {item._type === 'season' && item.collectsFees ? (
+          <View className="mt-3 pt-3 border-t flex-row items-center justify-between" style={{ borderTopColor: colors.border }}>
+            <Text className="text-sm font-bold" style={{ color: colors.ink }}>
+              Team fee: {money(item.registrationFeeCents ?? 0)}
+            </Text>
+            {item.feeStatus === 'unpaid' ? (
+              <Button label="Pay Now" size="sm" loading={paying} onPress={payFee} />
+            ) : (
+              <Badge label={item.feeStatus === 'waived' ? 'Waived' : 'Paid'} variant="success" />
+            )}
+          </View>
+        ) : null}
       </Card>
     </Pressable>
   );
@@ -131,6 +197,7 @@ function TryoutSeasonCard({ item, colors, playerId }: { item: any; colors: any; 
 
 export default function GuardianPortalScreen() {
   const route = useRoute<any>();
+  const navigation = useNavigation<any>();
   const playerId = route.params?.playerId;
   const colors = useThemeColors();
   const [tab, setTab] = useState('overview');
@@ -186,8 +253,27 @@ export default function GuardianPortalScreen() {
   return (
     <Screen padded={false}>
       <View className="px-4 pb-2">
-        <Header title="Guardian Portal" showBack />
-        
+        <Header
+          title="Guardian Portal"
+          showBack
+          right={
+            <View className="flex-row gap-2">
+              <Button
+                label="History"
+                size="sm"
+                variant="secondary"
+                onPress={() => navigation.navigate('PlayerProfile', { athleteId: playerId })}
+              />
+              <Button
+                label="Share"
+                size="sm"
+                variant="secondary"
+                onPress={() => navigation.navigate('ShareDirectory', { athleteId: playerId })}
+              />
+            </View>
+          }
+        />
+
         <View className="flex-row items-center gap-4 mb-4 mt-2">
           <Avatar first={athlete.firstName} last={athlete.lastName} size={64} uri={athlete.avatarUrl} />
           <View>

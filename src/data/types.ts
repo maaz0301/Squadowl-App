@@ -16,6 +16,13 @@ const isValidGuardianPhone = (val?: string) => {
   return digits.length >= 10 && digits.length <= 15;
 };
 
+/** Validate a 4-digit year of birth between 1950 and the current year. */
+const isValidYearOfBirth = (val: string) => {
+  if (!/^\d{4}$/.test(val)) return false;
+  const year = Number(val);
+  return year >= 1950 && year <= new Date().getFullYear();
+};
+
 export const SPORTS = [
   'Hockey',
   'Soccer',
@@ -205,6 +212,7 @@ export const TryoutSchema = z.object({
   eventType: z.enum(EVENT_TYPES).default('Tryout'),
   tryoutDate: z.string().optional(),
   startTime: z.string().optional(),
+  endTime: z.string().optional(),
   rink: z.string().optional(),
   sport: z.enum(SPORTS).default('Hockey'),
   sportOther: z.string().optional(),
@@ -238,6 +246,10 @@ export const TeamSchema = z.object({
   name: z.string(),
   logoUrl: z.string().optional(),
   season: z.string().optional(),
+  /** Whether this team collects a registration fee from guardians via Stripe. */
+  collectsFees: z.boolean().optional(),
+  /** Fee per player, in cents, charged only when collectsFees is true. */
+  registrationFeeCents: z.number().optional(),
   createdAt: z.number(),
   updatedAt: z.number().optional(),
   tombstone: z.boolean().optional(),
@@ -258,6 +270,8 @@ export const TeamRosterPlayerSchema = z.object({
   /** Assessment the athlete was added from, when known. */
   sourceTryoutId: z.string().optional(),
   sourceTryoutName: z.string().optional(),
+  /** Undefined when the team doesn't collect fees, or the athlete isn't on any of this team's season rosters yet. */
+  feeStatus: z.enum(['unpaid', 'paid', 'waived']).optional(),
 });
 
 export type TeamRosterPlayer = z.infer<typeof TeamRosterPlayerSchema>;
@@ -339,6 +353,7 @@ export const CreateAssessmentFormSchema = z.object({
   eventType: z.enum(EVENT_TYPES),
   tryoutDate: z.string().optional(),
   startTime: z.string().optional(),
+  endTime: z.string().optional(),
   rink: z.string().optional(),
   teamId: z.string().optional(),
   headAssessor: z.string().optional(),
@@ -352,13 +367,16 @@ export const AddPlayerFormSchema = z.object({
   athleteId: z.string().optional(),
   first: z.string({ message: 'First name required' }).min(1, 'First name required'),
   last: z.string({ message: 'Last name required' }).min(1, 'Last name required'),
-  jersey: z.string({ message: 'Jersey number required' }).min(1, 'Jersey number required'),
-  pos: z.string({ message: 'Position required' }).min(1, 'Position required'),
+  jersey: z.string().optional(),
+  pos: z.string().optional(),
   shoots: z.string().optional(),
-  yearOfBirth: z.string({ message: 'Please select a year of birth.' }).min(1, 'Please select a year of birth.'),
+  yearOfBirth: z.string().optional(),
   positionTryingOutFor: z.string().optional(),
   guardianName: z.string().optional(),
-  guardianEmail: z.string().optional().refine(val => !val || z.string().email().safeParse(val).success, { message: 'Please enter a valid email address' }),
+  guardianEmail: z
+    .string({ message: 'Guardian email is required' })
+    .min(1, 'Guardian email is required')
+    .email('Please enter a valid email address'),
   guardianPhone: z.string().optional().refine(isValidGuardianPhone, { message: 'Phone number must be between 10 and 15 digits' }),
   currentTeam: z.string().optional(),
   currentLevel: z.string().optional(),
@@ -375,7 +393,7 @@ export type AddPlayerForm = z.infer<typeof AddPlayerFormSchema>;
 export const RegistrationSubmitSchema = z.object({
   firstName: z.string().min(1, 'First name is required'),
   lastName: z.string().min(1, 'Last name is required'),
-  yearOfBirth: z.string().optional(),
+  yearOfBirth: z.string().min(1, 'Year of birth is required').refine(isValidYearOfBirth, { message: 'Enter a valid year of birth' }),
   positionTryingOutFor: z.string().optional(),
   guardianName: z.string().min(1, 'Guardian name is required'),
   guardianEmail: z.string().email(),
@@ -395,7 +413,7 @@ export const ScoreFormSchema = z.object({
   session: z.string(),
   strengths: z.string().optional(),
   improve: z.string().optional(),
-  recommendation: z.enum(RECOMMENDATIONS).refine(val => val.length > 0, 'Recommendation is required'),
+  recommendation: z.enum(RECOMMENDATIONS).optional(),
   scores: z.record(z.string(), z.number()),
 });
 
@@ -533,6 +551,53 @@ export interface AthleteHistory {
   pastEvaluations: Evaluation[];
 }
 
+/** One tryout/assessment's worth of computed, weighted results for a single athlete. */
+export interface PlayerProfileAssessment {
+  tryoutId: string;
+  tryoutName: string;
+  seasonId?: string;
+  /** Name of the season this assessment belongs to (via its team's Season Hub entry), if any. */
+  seasonName?: string;
+  eventType: string;
+  sport: Sport;
+  date?: string;
+  position?: string;
+  /** Name of the team this assessment/tryout was run for, if any. */
+  teamName?: string;
+  /** Weighted overall score for this assessment (0 if no evaluations recorded yet). */
+  overall: number;
+  categoryScores: Record<string, number>;
+  evalCount: number;
+  latestRecommendation: Recommendation;
+  /** tryout_participants.id — needed to deep-link back into that assessment's player screen. */
+  participantId: string;
+  /** The individual evaluations (sessions) that make up this assessment. */
+  evaluations?: (Evaluation & { overall: number })[];
+}
+
+/** Standalone, athlete-identity-keyed profile aggregating history across every tryout/season. */
+export interface PlayerProfile {
+  athleteId: string;
+  first: string;
+  last: string;
+  avatarUrl?: string;
+  currentPosition?: string;
+  currentTeam?: string;
+  currentLevel?: string;
+  jersey?: string;
+  yearOfBirth?: string;
+  aboutChild?: string;
+  medicalInfo?: string;
+  guardianName?: string;
+  guardianEmail?: string;
+  guardianPhone?: string;
+  pastSeasons: { seasonId: string; seasonName: string; teamName: string }[];
+  /** Every team this athlete is currently rostered on (from Teams, not just self-reported text). */
+  teams: { teamId: string; teamName: string }[];
+  /** Newest first. */
+  assessments: PlayerProfileAssessment[];
+}
+
 // ---- Phase 4: Enterprise & Admin ----
 export const OrgSchema = z.object({
   id: z.string(),
@@ -586,10 +651,24 @@ export interface AdminUserRow {
 export interface EnterprisePayment {
   id: string;
   playerName: string;
+  teamName: string;
   assessmentName: string;
   amount: number;
   status: 'paid' | 'pending' | 'refunded';
   receivedAt: number;
+}
+
+export interface ConnectAccountStatus {
+  connected: boolean;
+  accountId?: string;
+  email?: string | null;
+  businessName?: string | null;
+  country?: string | null;
+  defaultCurrency?: string | null;
+  chargesEnabled?: boolean;
+  payoutsEnabled?: boolean;
+  /** e.g. 0.005 for 0.5% — TryoutHQ's cut of every registration fee collected via Connect. */
+  platformFeeRate: number;
 }
 
 export const DatabaseSchema = z.object({
@@ -628,5 +707,83 @@ export interface GuardianRosterAthlete {
     sport: string;
     jersey?: string;
     events?: SeasonEvent[];
+    /** season_roster row id — what payment/fee actions key off, not the season id. */
+    seasonRosterId: string;
+    collectsFees: boolean;
+    registrationFeeCents?: number;
+    feeStatus: 'unpaid' | 'paid' | 'waived';
   }[];
+}
+
+// ---- Guardian -> Coach athlete profile sharing ----
+
+/** A coach/admin/owner listed in the platform-wide directory a guardian can share with. */
+export interface CoachDirectoryEntry {
+  userId: string;
+  displayName: string;
+  avatarUrl?: string;
+  accountId: string;
+  accountName: string;
+  sport?: string;
+}
+
+/**
+ * shared    = pending coach response
+ * assigned  = this coach accepted + placed the athlete into one of their assessments
+ * declined  = this coach explicitly rejected
+ * withdrawn = auto-closed because another coach accepted the same athlete first
+ * released  = the coach later removed the athlete from their roster
+ */
+export type AthleteShareStatus = 'shared' | 'assigned' | 'declined' | 'withdrawn' | 'released';
+
+export interface AthleteShare {
+  id: string;
+  athleteId: string;
+  status: AthleteShareStatus;
+  /** Snapshot of the athlete's profile at share time. */
+  athlete: {
+    firstName: string;
+    lastName: string;
+    avatarUrl?: string;
+    yearOfBirth?: number;
+    position?: string;
+    guardianName?: string;
+    guardianEmail?: string;
+    guardianPhone?: string;
+    medicalInfo?: string;
+    about?: string;
+  };
+  /**
+   * Frozen assessment history at share time — the receiving coach has no RLS
+   * access to the guardian's original club's tryouts/evaluations (by design,
+   * so a share can't leak that account's whole roster), so this is a snapshot
+   * rather than a live query. Same shape PlayerProfile.assessments uses, so
+   * it renders with the same <AssessmentHistory> component.
+   */
+  assessments: PlayerProfileAssessment[];
+  /** Snapshot of the coach at share time. */
+  coach: {
+    userId: string;
+    displayName: string;
+    avatarUrl?: string;
+    accountId: string;
+    accountName: string;
+    sport?: string;
+  };
+  guardianUserId: string;
+  assignedTryoutId?: string;
+  assignedAthleteId?: string;
+  assignedParticipantId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ShareComment {
+  id: string;
+  shareId: string;
+  authorUserId: string;
+  authorName: string;
+  authorRole: 'guardian' | 'coach';
+  body: string;
+  createdAt: number;
 }

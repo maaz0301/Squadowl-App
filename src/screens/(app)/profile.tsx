@@ -49,7 +49,7 @@ export default function ProfileScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loadingPortal, setLoadingPortal] = useState(false);
 
-  const plan = getPlanDefinition(user?.planTier ?? 'coach');
+  const plan = getPlanDefinition(user?.planTier ?? 'free');
 
   const saveProfile = async () => {
     await updateProfile.mutateAsync({
@@ -264,6 +264,7 @@ export default function ProfileScreen() {
             </Text>
             <Button label="Search" variant="ghost" onPress={() => navigation.navigate('Search')} />
             <Button label="Manage Organization Members" variant="ghost" onPress={() => navigation.navigate('OrganizationMembers')} />
+            <Button label="Shared Athletes" variant="ghost" onPress={() => navigation.navigate('SharedAthletes')} />
             <Button label="Archived Assessments" variant="ghost" onPress={() => navigation.navigate('ArchivedAssessments')} />
             <Button label="Send Feedback" variant="ghost" onPress={() => navigation.navigate('Feedback')} />
             <Button label="Gift a Coach" variant="ghost" onPress={() => navigation.navigate('FriendPackages')} />

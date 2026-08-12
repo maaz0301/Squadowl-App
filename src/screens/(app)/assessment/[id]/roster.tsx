@@ -20,6 +20,7 @@ import {
   Screen,
 } from '@/components/ui';
 import { canUseFeature, isAtPlayerLimit } from '@/data/plans';
+import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { playerDisplayName } from '@/data/rubrics';
 import {
   useAddPlayerMutation,
@@ -105,7 +106,7 @@ export default function RosterScreen() {
 
   const openAdd = () => {
     if (isAtPlayerLimit(user?.planTier ?? 'free', tryout.roster.length)) {
-      setLimitMsg('You have reached the maximum number of players for your current plan.');
+      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'players', 'players'));
       return;
     }
     setShowAdd(true);

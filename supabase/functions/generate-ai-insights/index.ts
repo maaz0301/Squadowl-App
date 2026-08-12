@@ -39,8 +39,12 @@ function detectTeamConstraints(text: string): { teamCount?: number; teamSize?: n
   const lower = (text || '').toLowerCase();
   const countMatch = lower.match(/(\d+)\s*teams?\b/);
   const sizeMatch =
-    lower.match(/(\d+)\s*(?:players?|athletes?|kids?|skaters?|people)\s*(?:per|each|\/)\s*team/) ||
-    lower.match(/teams?\s*of\s*(\d+)/);
+    lower.match(/(\d+)\s*(?:players?|athletes?|kids?|skaters?|people)\b(?:\s+\w+){0,2}?\s*team/) ||
+    lower.match(/teams?\s*of\s*(\d+)/) ||
+    // Fallback for phrasing like "5 players each"/"5 athletes per" where "team"
+    // isn't repeated near the size (it was already said earlier, e.g. "2 teams
+    // ... 5 players each for the hockey").
+    lower.match(/(\d+)\s*(?:players?|athletes?|kids?|skaters?|people)\s*(?:each|per|apiece)\b/);
   return {
     teamCount: countMatch ? parseInt(countMatch[1], 10) : undefined,
     teamSize: sizeMatch ? parseInt(sizeMatch[1], 10) : undefined,
@@ -59,6 +63,7 @@ function validateTeamBuilderResult(
 ): string[] {
   const issues: string[] = [];
   const teams = Array.isArray(result?.teams) ? result.teams : [];
+  const unassigned: string[] = Array.isArray(result?.unassigned) ? result.unassigned : [];
   if (constraints.teamCount && teams.length !== constraints.teamCount) {
     issues.push(`you returned ${teams.length} teams but the user asked for exactly ${constraints.teamCount}`);
   }
@@ -70,21 +75,45 @@ function validateTeamBuilderResult(
   for (const t of teams) {
     for (const id of t?.players || []) allTeamIds.push(id);
   }
-  for (const id of allTeamIds) {
+  const allIds = [...allTeamIds, ...unassigned];
+  for (const id of allIds) {
     if (seen.has(id)) duplicates.add(id);
     seen.add(id);
   }
   if (duplicates.size > 0) {
-    issues.push(`${duplicates.size} player ID(s) appear on more than one team`);
+    issues.push(`${duplicates.size} player ID(s) appear more than once across teams/unassigned`);
   }
   const missing = [...rosterIds].filter((id) => !seen.has(id as string));
   if (missing.length > 0) {
-    issues.push(`${missing.length} roster player(s) were left off every team`);
+    issues.push(`${missing.length} roster player(s) were left off every team and the unassigned list`);
   }
-  const extra = allTeamIds.filter((id) => !rosterIds.has(id));
+  const extra = allIds.filter((id) => !rosterIds.has(id));
   if (extra.length > 0) {
     issues.push(`${extra.length} player ID(s) in the response don't match any roster player`);
   }
+
+  // When both a team count and a fixed team size were requested, the roster
+  // may not divide evenly. Rather than letting the model silently pad one
+  // team with the remainder, any players beyond capacity must show up in
+  // "unassigned" and every team must be exactly teamSize.
+  if (constraints.teamCount && constraints.teamSize) {
+    const capacity = constraints.teamCount * constraints.teamSize;
+    if (players.length > capacity) {
+      const expectedUnassigned = players.length - capacity;
+      if (unassigned.length !== expectedUnassigned) {
+        issues.push(`"unassigned" must contain exactly ${expectedUnassigned} player ID(s) (${players.length} players - ${capacity} capacity), but it has ${unassigned.length}`);
+      }
+      for (const t of teams) {
+        const n = (t?.players || []).length;
+        if (n !== constraints.teamSize) {
+          issues.push(`team "${t?.name}" has ${n} players but every team must have exactly ${constraints.teamSize}`);
+        }
+      }
+    } else if (unassigned.length > 0) {
+      issues.push(`"unassigned" must be empty — there are only ${players.length} players for ${capacity} slots, so everyone should be assigned to a team`);
+    }
+  }
+
   return issues;
 }
 
@@ -184,6 +213,7 @@ serve(async (req: Request) => {
     let prompt = '';
     let maxTokens = 1024;
     let teamBuilderPlayers: any[] = [];
+    let teamBuilderConstraints: { teamCount?: number; teamSize?: number } = {};
     let systemPrompt = `You are a professional sports scout AI. Your ONLY job is to analyze the numeric evaluation data provided to you from an athlete assessment app database.
 RULES:
 - Analyze ONLY the evaluation scores and fields in the JSON data provided. Do not make assumptions based on athlete names.
@@ -271,7 +301,14 @@ Based ONLY on the numeric scores above, return this exact JSON:
       // Capped at 64000 — claude-haiku-4-5's max output token ceiling.
       maxTokens = Math.min(64000, 1024 + players.length * 60);
 
-      const teamConstraints = detectTeamConstraints(userPrompt || '');
+      const rawConstraints = detectTeamConstraints(userPrompt || '');
+      teamBuilderConstraints = {
+        teamCount: rawConstraints.teamCount ?? (rawConstraints.teamSize ? Math.max(1, Math.floor(players.length / rawConstraints.teamSize)) : undefined),
+        teamSize: rawConstraints.teamSize,
+      };
+      const capacity = teamBuilderConstraints.teamCount && teamBuilderConstraints.teamSize
+        ? teamBuilderConstraints.teamCount * teamBuilderConstraints.teamSize
+        : undefined;
 
       systemPrompt = `You are a professional sports coach and team builder AI.
 RULES:
@@ -281,6 +318,13 @@ RULES:
 - Do NOT refuse or add disclaimers. If data exists, use it.
 - NEVER include player IDs or sensitive personal data in the 'explanation' text.
 - Respond with pure JSON only — no markdown, no code fences, no extra text.`;
+
+      const assignmentInstruction = capacity !== undefined
+        ? `HARD CONSTRAINT: Create EXACTLY ${teamBuilderConstraints.teamCount} teams with EXACTLY ${teamBuilderConstraints.teamSize} players on every single team — ${capacity} players total across all teams.
+${players.length > capacity
+  ? `The roster has ${players.length} players, which is more than the ${capacity} available slots. Choose the best ${capacity} players (balanced across teams by ranking) and put the remaining ${players.length - capacity} player ID(s) that don't fit into the top-level "unassigned" array. Do NOT stretch any team beyond ${teamBuilderConstraints.teamSize} players to avoid leaving someone unassigned — leftover players belong in "unassigned", never on a team.`
+  : `The roster has exactly ${players.length} players, which fits within the ${capacity} slots, so assign every player to a team and leave "unassigned" as an empty array.`}`
+        : `HARD CONSTRAINT: The roster has exactly ${players.length} players. Every single one of these ${players.length} player IDs must appear in exactly one team's "players" array — no duplicates, none missing. Leave "unassigned" as an empty array.`;
 
       prompt = `Act as a professional sports coach and team builder. I have a roster of athletes and their evaluation rankings.
 I need you to divide them into balanced teams based on my instructions.
@@ -294,12 +338,13 @@ ${players.map((p: any) => `- ID: ${p.id} | Name: ${p.first} ${p.last} | Pos: ${p
 Rankings (weighted overall score 1-5 and per-category averages per athlete; overall of 0 means not yet evaluated):
 ${JSON.stringify(rankings, null, 2)}
 
-Based on the instructions and the data, assign ALL athletes to a team. DO NOT leave anyone out. DO NOT hallucinate IDs.
-${teamConstraints.teamCount ? `HARD CONSTRAINT: The "teams" array below MUST contain EXACTLY ${teamConstraints.teamCount} team objects — not ${teamConstraints.teamCount - 1}, not ${teamConstraints.teamCount + 1}. Exactly ${teamConstraints.teamCount}.\n` : ''}${teamConstraints.teamSize ? `HARD CONSTRAINT: Aim for teams as close to ${teamConstraints.teamSize} players each as mathematically possible given ${players.length} total players.\n` : ''}HARD CONSTRAINT: The roster has exactly ${players.length} players. Every single one of these ${players.length} player IDs must appear in exactly one team's "players" array — no duplicates, none missing.
+${assignmentInstruction}
+DO NOT hallucinate IDs — every player ID used anywhere in the response (in a team or in "unassigned") must come from the Roster list above.
 Return exactly this JSON format:
 {
   "explanation": "A 2-3 sentence explanation of how you split the teams and satisfied the instructions. NEVER include player IDs here.",
   "warnings": ["Any warnings, e.g. goalies are unbalanced. If none, empty array."],
+  "unassigned": ["player_id_left_over"],
   "teams": [
     {
       "name": "Team A",
@@ -309,7 +354,7 @@ Return exactly this JSON format:
     }
   ]
 }
-Ensure every player ID in the roster appears exactly once in the "players" arrays across all teams.`;
+Every player ID in the roster must appear exactly once total — either in exactly one team's "players" array, or in the top-level "unassigned" array, never in both and never omitted.`;
     } else {
       throw new Error('Invalid action. Must be "summary", "compare", or "team_builder"');
     }
@@ -321,12 +366,11 @@ Ensure every player ID in the roster appears exactly once in the "players" array
       // roster/rankings payload gets long. Rather than silently handing the client
       // a response with the wrong team count, validate it and give the model one
       // corrective retry with the exact issues spelled out.
-      const teamConstraints = detectTeamConstraints(userPrompt || '');
-      let issues = validateTeamBuilderResult(parsedResult, teamBuilderPlayers, teamConstraints);
+      let issues = validateTeamBuilderResult(parsedResult, teamBuilderPlayers, teamBuilderConstraints);
       if (issues.length > 0) {
         const correctivePrompt = `${prompt}\n\nYour previous attempt was rejected for these reasons:\n${issues.map((i: string) => `- ${i}`).join('\n')}\nFix these issues exactly and return corrected JSON in the same format.`;
         parsedResult = await callClaudeForJson(systemPrompt, correctivePrompt, maxTokens);
-        issues = validateTeamBuilderResult(parsedResult, teamBuilderPlayers, teamConstraints);
+        issues = validateTeamBuilderResult(parsedResult, teamBuilderPlayers, teamBuilderConstraints);
         if (issues.length > 0) {
           throw new Error(`The AI couldn't satisfy your instructions (${issues.join('; ')}). Please try again or simplify your instructions.`);
         }

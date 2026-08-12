@@ -157,8 +157,9 @@ export function clampOption(value: string, { min, max }: { min: number; max: num
 
 /**
  * Build `count` dummy players for the given sport with varied ages, positions,
- * and levels. Guardian contact fields are intentionally omitted so no guardian
- * accounts/emails are created as a side effect.
+ * and levels. Guardian email is required on every player, so each gets an
+ * invented reserved-domain contact (see dummyGuardian) — it can never route
+ * to a real inbox, so a test batch can't trigger outbound mail to a real person.
  */
 export function generateDummyPlayers(
   count: number,
@@ -179,6 +180,7 @@ export function generateDummyPlayers(
       last = pick(LAST_NAMES);
     }
     usedNames.add(`${first} ${last}`);
+    const guardian = dummyGuardian(last, i + 1);
     out.push({
       ability: Math.random(),
       form: {
@@ -189,6 +191,8 @@ export function generateDummyPlayers(
         yearOfBirth: String(currentYear - age),
         currentTeam: TEST_DATA_TAG,
         currentLevel: pick(LEVELS),
+        guardianName: guardian.name,
+        guardianEmail: guardian.email,
       },
     });
   }
@@ -196,10 +200,29 @@ export function generateDummyPlayers(
 }
 
 /**
- * Reserved domain (RFC 2606) — dummy guardian addresses can never route to a
- * real inbox, so a test batch can't trigger outbound mail to a real person.
+ * Disposable-inbox testing domain — lets a tester actually open a dummy
+ * guardian's "inbox" at yopmail.com to check invite/notification emails
+ * during testing, unlike a non-routable reserved domain. Note this is a real,
+ * unauthenticated public mail domain: anyone who knows/guesses an address can
+ * view what's sent there, so don't put real PII in dummy-batch guardian names.
  */
-const DUMMY_EMAIL_DOMAIN = 'example.com';
+const DUMMY_EMAIL_DOMAIN = 'yopmail.com';
+
+/**
+ * Deterministic reserved-domain guardian contact for dummy/test players —
+ * guardianEmail is required on every player now, so every dummy-data path
+ * needs to invent one of these instead of leaving it blank. `unique` just
+ * needs to avoid citext collisions on guardian_email within a batch (a loop
+ * index or short random token both work).
+ */
+function dummyGuardian(last: string, unique: string | number): { name: string; email: string } {
+  const guardianFirst = pick(FIRST_NAMES);
+  const slug = `${guardianFirst}.${last}`.toLowerCase().replace(/[^a-z.]/g, '');
+  return {
+    name: `${guardianFirst} ${last}`,
+    email: `${slug}.${unique}@${DUMMY_EMAIL_DOMAIN}`,
+  };
+}
 
 const ABOUT_SNIPPETS = [
   'Plays year-round and is looking to move up a level this season.',
@@ -228,15 +251,14 @@ export function generateDummyRegistration(
   positions: string[],
 ): RegistrationSubmit {
   const { first, last } = player.form;
-  const guardianFirst = pick(FIRST_NAMES);
-  const slug = `${guardianFirst}.${last}`.toLowerCase().replace(/[^a-z.]/g, '');
+  const guardian = dummyGuardian(last, index + 1);
   return {
     firstName: first,
     lastName: last,
-    yearOfBirth: player.form.yearOfBirth,
+    yearOfBirth: player.form.yearOfBirth!, // generateDummyPlayers always sets this
     positionTryingOutFor: player.form.pos || pick(positions),
-    guardianName: `${guardianFirst} ${last}`,
-    guardianEmail: `${slug}.${index + 1}@${DUMMY_EMAIL_DOMAIN}`,
+    guardianName: guardian.name,
+    guardianEmail: guardian.email,
     guardianPhone: `555${String(randInt(1000000, 9999999))}`,
     currentTeam: TEST_DATA_TAG,
     currentLevel: player.form.currentLevel,
@@ -394,6 +416,8 @@ export function mapAIPlayer(
     }
   }
 
+  const guardian = dummyGuardian(last, Math.random().toString(36).slice(2, 8));
+
   return {
     ability,
     scores,
@@ -407,6 +431,8 @@ export function mapAIPlayer(
       currentTeam: TEST_DATA_TAG,
       currentLevel: level,
       aboutChild: typeof raw.bio === 'string' ? raw.bio.slice(0, 200) : undefined,
+      guardianName: guardian.name,
+      guardianEmail: guardian.email,
     },
   };
 }

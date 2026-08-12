@@ -57,12 +57,40 @@ serve(async (req) => {
         .from('accounts')
         .update({ stripe_connect_account_id: connectAccountId })
         .eq('id', accountId);
+    } else {
+      // The account.updated webhook is what normally keeps these flags in
+      // sync, but it depends on a Connect-specific webhook endpoint + signing
+      // secret being configured correctly in Stripe — easy to get wrong, and
+      // silent when it is (Stripe just drops the event on signature
+      // mismatch). Re-checking the account directly here means the coach's
+      // status self-heals the next time they open this screen even if that
+      // webhook is misconfigured or hasn't fired yet.
+      const liveAccount = await stripe.accounts.retrieve(connectAccountId);
+      await supabaseAdmin
+        .from('accounts')
+        .update({
+          stripe_connect_charges_enabled: !!liveAccount.charges_enabled,
+          stripe_connect_payouts_enabled: !!liveAccount.payouts_enabled,
+        })
+        .eq('id', accountId);
     }
+
+    // Account Links reject anything but a real http(s) URL for return_url/
+    // refresh_url — custom schemes like aastryout:// come back as "not a
+    // valid URL", in test mode too, so that's not usable here. aas-tryout.app
+    // also isn't hosted anywhere. connect-return is a tiny function on this
+    // same Supabase project (always resolvable, always https) that renders a
+    // page and immediately deep-links into aastryout://payments, which is
+    // what InAppBrowser.openAuth's redirect match in connectPayouts()
+    // (payments.tsx) is watching for.
+    const functionsBase = `${(Deno.env.get('SUPABASE_URL') ?? '').replace(/\/$/, '')}/functions/v1`;
+    const refreshUrl = `${functionsBase}/connect-return?connect_refresh=true`;
+    const returnUrl = `${functionsBase}/connect-return?connect_return=true`;
 
     const accountLink = await stripe.accountLinks.create({
       account: connectAccountId,
-      refresh_url: `aastryout://payments?connect_refresh=true`,
-      return_url: `aastryout://payments?connect_return=true`,
+      refresh_url: refreshUrl,
+      return_url: returnUrl,
       type: 'account_onboarding',
     });
 

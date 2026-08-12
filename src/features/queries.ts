@@ -84,16 +84,28 @@ export function useRemoveTeamRosterPlayerMutation(teamId: string) {
   });
 }
 
+export function useAcceptAssignmentMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (tryoutId: string) => {
+      const ds = getDataSource();
+      return ds.acceptAssignedTryout(tryoutId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.assignedTryouts });
+    },
+  });
+}
+
 export function useRejectAssignmentMutation() {
   const queryClient = useQueryClient();
-  const user = useAuthStore((s) => s.session?.user);
   return useMutation({
     mutationFn: async (tryoutId: string) => {
       const ds = getDataSource();
       return ds.rejectAssignedTryout(tryoutId);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['assignedTryouts', user?.id, user?.email] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.assignedTryouts });
     },
   });
 }
@@ -307,7 +319,12 @@ export function useDeletePlayerMutation(tryoutId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (playerId: string) => getDataSource().deletePlayer(tryoutId, playerId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
+      // The deleted player may have come from an accepted athlete share, which
+      // deletePlayer flips to 'released' as a side effect — refresh that list too.
+      qc.invalidateQueries({ queryKey: queryKeys.sharedAthletes });
+    },
   });
 }
 
@@ -863,6 +880,14 @@ export function useAthleteHistoryQuery(athleteId?: string) {
   });
 }
 
+export function usePlayerProfileQuery(athleteId?: string) {
+  return useQuery({
+    queryKey: queryKeys.playerProfile(athleteId ?? ''),
+    queryFn: () => getDataSource().getPlayerProfile(athleteId!),
+    enabled: !!athleteId,
+  });
+}
+
 export function useAthletesQuery() {
   return useQuery({
     queryKey: ['athletes'],
@@ -952,10 +977,116 @@ export function useGuardianRostersQuery() {
   });
 }
 
+export function useCreateTeamFeePaymentMutation() {
+  return useMutation({
+    mutationFn: ({ seasonRosterId, successUrl, cancelUrl }: { seasonRosterId: string; successUrl?: string; cancelUrl?: string }) =>
+      getDataSource().createTeamFeePayment(seasonRosterId, successUrl, cancelUrl),
+  });
+}
+
+// ---- Guardian -> Coach athlete profile sharing ----
+
+export function useCoachDirectoryQuery() {
+  return useQuery({
+    queryKey: queryKeys.coachDirectory,
+    queryFn: () => getDataSource().getCoachDirectory(),
+  });
+}
+
+export function useAthleteSharesQuery(athleteId?: string) {
+  return useQuery({
+    queryKey: queryKeys.athleteShares(athleteId ?? ''),
+    queryFn: () => getDataSource().getMyAthleteShares(athleteId!),
+    enabled: !!athleteId,
+  });
+}
+
+export function useSharedAthletesForCoachQuery() {
+  return useQuery({
+    queryKey: queryKeys.sharedAthletes,
+    queryFn: () => getDataSource().getSharedAthletesForCoach(),
+  });
+}
+
+export function useAthleteShareQuery(shareId?: string) {
+  return useQuery({
+    queryKey: queryKeys.athleteShare(shareId ?? ''),
+    queryFn: () => getDataSource().getAthleteShare(shareId!),
+    enabled: !!shareId,
+  });
+}
+
+export function useShareAthleteMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ athleteId, coachUserId, coachAccountId }: { athleteId: string; coachUserId: string; coachAccountId: string }) =>
+      getDataSource().shareAthleteWithCoach(athleteId, coachUserId, coachAccountId),
+    onSuccess: (_, { athleteId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.athleteShares(athleteId) });
+    },
+  });
+}
+
+export function useAcceptAthleteShareMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ shareId, tryoutId }: { shareId: string; tryoutId: string }) =>
+      getDataSource().acceptAthleteShare(shareId, tryoutId),
+    onSuccess: (share) => {
+      qc.invalidateQueries({ queryKey: queryKeys.athleteShare(share.id) });
+      qc.invalidateQueries({ queryKey: queryKeys.sharedAthletes });
+      qc.invalidateQueries({ queryKey: queryKeys.athleteShares(share.athleteId) });
+      qc.invalidateQueries({ queryKey: queryKeys.tryouts(false) });
+      qc.invalidateQueries({ queryKey: queryKeys.tryouts(true) });
+      if (share.assignedTryoutId) {
+        qc.invalidateQueries({ queryKey: queryKeys.tryout(share.assignedTryoutId) });
+      }
+    },
+  });
+}
+
+export function useRejectAthleteShareMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (shareId: string) => getDataSource().rejectAthleteShare(shareId),
+    onSuccess: (share) => {
+      qc.invalidateQueries({ queryKey: queryKeys.athleteShare(share.id) });
+      qc.invalidateQueries({ queryKey: queryKeys.sharedAthletes });
+    },
+  });
+}
+
+export function useShareCommentsQuery(shareId?: string) {
+  return useQuery({
+    queryKey: queryKeys.shareComments(shareId ?? ''),
+    queryFn: () => getDataSource().listShareComments(shareId!),
+    enabled: !!shareId,
+  });
+}
+
+export function useAddShareCommentMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ shareId, body }: { shareId: string; body: string }) =>
+      getDataSource().addShareComment(shareId, body),
+    onSuccess: (_, { shareId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.shareComments(shareId) });
+    },
+  });
+}
+
 export function useEnterprisePaymentsQuery() {
   return useQuery({
     queryKey: queryKeys.enterprisePayments,
     queryFn: () => getDataSource().getEnterprisePayments(),
+  });
+}
+
+export function useConnectAccountStatusQuery(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.connectAccountStatus,
+    queryFn: () => getDataSource().getConnectAccountStatus(),
+    enabled,
   });
 }
 
@@ -1065,8 +1196,26 @@ export function useEmailScheduleMutation() {
 export function useUpdateTeamMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, updates }: { id: string; updates: Partial<Team> }) =>
-      getDataSource().updateTeam(id, updates),
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<Team> }) => {
+      const team = await getDataSource().updateTeam(id, updates);
+      // A team's fee is tracked per season_roster row, not on team_roster
+      // directly (20260811183700_season_team_fee_payments.sql), and a season
+      // is normally provisioned lazily the first time the coach adds an event
+      // (see useAddTeamEventMutation). Turning fees on here needs that same
+      // provisioning + sync — otherwise players already on the roster never
+      // get a season_roster row and their guardians never see the fee.
+      if (updates.collectsFees) {
+        const ds = getDataSource();
+        let season = (await ds.listSeasons()).find((s) => s.teamId === id);
+        if (!season) {
+          season = await ds.createSeason({ name: `${team.name} Season`, teamName: team.name, sport: 'Hockey', teamId: id });
+        }
+        await syncSeasonRosterFromTeam(id, season.id);
+        qc.invalidateQueries({ queryKey: queryKeys.seasons });
+        qc.invalidateQueries({ queryKey: queryKeys.season(season.id) });
+      }
+      return team;
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teams }),
   });
 }

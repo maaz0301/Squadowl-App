@@ -53,8 +53,9 @@ export function Header({ title, subtitle, showBack, showLogo, onBack, right }: H
         
         {showLogo || title?.toLowerCase() === 'tryouthq' ? (
           <Image
-            source={require('../../../assets/images/tryouthq_t_logo.png')}
-            style={{ width: 32, height: 32, borderRadius: 6 }}
+            source={require('../../../assets/TryoutHQ-logo.png')}
+            style={{ width: 32, height: 32 }}
+            resizeMode="contain"
           />
         ) : null}
 

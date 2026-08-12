@@ -12,6 +12,7 @@ import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMut
 import { useUser } from '@/state/authStore';
 import { canUseFeature, isAtPlayerLimit } from '@/data/plans';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
+import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
 import { BottomNav } from '@/components/BottomNav';
 import { PlanGate } from '@/components/PlanGate';
@@ -19,6 +20,11 @@ import { DummyDataModal } from '@/components/DummyDataModal';
 import type { DummyDataOptions } from '@/data/testDataGenerator';
 import { getDataSource } from '@/data';
 import { queryKeys } from '@/lib/queryClient';
+
+function feeCentsFromInput(feeInput: string): number {
+  const dollars = parseFloat(feeInput);
+  return !feeInput.trim() || isNaN(dollars) || dollars <= 0 ? 0 : Math.round(dollars * 100);
+}
 
 type Rsvp = 'yes' | 'maybe' | 'no' | 'pending';
 
@@ -53,6 +59,9 @@ export default function TeamDetailScreen() {
   const [name, setName] = useState('');
   const [season, setSeason] = useState('');
   const [logo, setLogo] = useState<{ uri: string; type: string } | null>(null);
+  const [collectsFees, setCollectsFees] = useState(false);
+  const [feeInput, setFeeInput] = useState('');
+  const canCollectFees = canUseFeature(user?.planTier ?? 'free', 'payments');
   const [showAttachModal, setShowAttachModal] = useState(false);
   const [showDummy, setShowDummy] = useState(false);
   const [showAddPlayers, setShowAddPlayers] = useState(false);
@@ -147,6 +156,7 @@ export default function TeamDetailScreen() {
         jersey?: string;
         pos?: string;
         yearOfBirth?: string;
+        guardianEmail?: string;
         tryoutId: string;
         tryoutName: string;
         tryoutIds: Set<string>;
@@ -171,6 +181,7 @@ export default function TeamDetailScreen() {
           jersey: p.jersey,
           pos: p.pos,
           yearOfBirth: p.yearOfBirth,
+          guardianEmail: p.guardianEmail,
           tryoutId: t.id,
           tryoutName: t.name,
           tryoutIds: new Set([t.id]),
@@ -242,7 +253,7 @@ export default function TeamDetailScreen() {
     const picked = candidates.filter((c) => pickedAthletes.has(c.athleteId));
     if (picked.length === 0) return;
     if (isAtPlayerLimit(user?.planTier ?? 'free', teamPlayers.length + picked.length - 1)) {
-      setLimitMsg('You have reached the maximum number of players for your current plan.');
+      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'players', 'players'));
       return;
     }
     const entries = picked.map((c) => ({
@@ -269,6 +280,9 @@ export default function TeamDetailScreen() {
                 jersey: c.jersey || '',
                 pos: c.pos || '',
                 yearOfBirth: c.yearOfBirth || '',
+                // addPlayer ignores guardian fields once athleteId is set (existing
+                // athlete) — passed through only to satisfy the now-required type.
+                guardianEmail: c.guardianEmail || '',
               }),
             ),
         );
@@ -444,6 +458,8 @@ export default function TeamDetailScreen() {
     setName(team.name);
     setSeason(team.season ?? '');
     setLogo(null);
+    setCollectsFees(team.collectsFees ?? false);
+    setFeeInput(team.registrationFeeCents ? (team.registrationFeeCents / 100).toFixed(2) : '');
     setEditing(true);
   };
 
@@ -479,7 +495,19 @@ export default function TeamDetailScreen() {
         return;
       }
     }
-    await updateTeam.mutateAsync({ id: team.id, updates: { name: name.trim(), season: season.trim() || undefined, logoUrl } });
+    // Only touch fee fields when the coach's plan can actually collect fees —
+    // a free-tier coach never sees the toggle below, so leave whatever's
+    // already stored (e.g. from before a downgrade) untouched here.
+    const feeUpdates = canCollectFees
+      ? collectsFees
+        ? { collectsFees: true, registrationFeeCents: feeCentsFromInput(feeInput) }
+        : { collectsFees: false, registrationFeeCents: 0 }
+      : {};
+
+    await updateTeam.mutateAsync({
+      id: team.id,
+      updates: { name: name.trim(), season: season.trim() || undefined, logoUrl, ...feeUpdates },
+    });
     setEditing(false);
   };
 
@@ -609,6 +637,12 @@ export default function TeamDetailScreen() {
                       {[p.jersey ? `#${p.jersey}` : null, p.pos, p.sourceTryoutName].filter(Boolean).join(' · ')}
                     </Text>
                   </View>
+                  {p.feeStatus ? (
+                    <Badge
+                      label={p.feeStatus === 'paid' ? 'Paid' : p.feeStatus === 'waived' ? 'Waived' : 'Unpaid'}
+                      variant={p.feeStatus === 'unpaid' ? 'warning' : 'success'}
+                    />
+                  ) : null}
                   {navigatingId === p.athleteId ? (
                     <ActivityIndicator size="small" color={colors.primary} />
                   ) : (
@@ -731,7 +765,7 @@ export default function TeamDetailScreen() {
                         </Text>
                         <Text className="text-sm mt-0.5" style={{ color: colors.inkMuted }}>
                           {ev.date}
-                          {ev.startTime ? ` · ${ev.startTime}` : ''}
+                          {ev.startTime ? ` · ${ev.startTime}${ev.endTime ? `–${ev.endTime}` : ''}` : ''}
                           {ev.location ? ` · ${ev.location}` : ''}
                         </Text>
                       </View>
@@ -894,6 +928,38 @@ export default function TeamDetailScreen() {
           </Pressable>
           <Input label="Team name" value={name} onChangeText={setName} />
           <Input label="Season" value={season} onChangeText={setSeason} />
+
+          {canCollectFees ? (
+            <>
+              <View className="gap-2">
+                <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                  Are you collecting fees?
+                </Text>
+                <View className="flex-row gap-2">
+                  <Chip label="No" active={!collectsFees} onPress={() => setCollectsFees(false)} />
+                  <Chip label="Yes" active={collectsFees} onPress={() => setCollectsFees(true)} />
+                </View>
+              </View>
+
+              {collectsFees ? (
+                <Card className="gap-2">
+                  <Input
+                    label="Fee per player (CAD)"
+                    value={feeInput}
+                    onChangeText={setFeeInput}
+                    keyboardType="decimal-pad"
+                    placeholder="0.00"
+                  />
+                  <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                    Saving this creates (or reuses) this team's season and adds everyone currently on
+                    the roster to it — each player's guardian will then be asked to pay this fee, plus
+                    TryoutHQ's 0.5% platform fee, from their portal.
+                  </Text>
+                </Card>
+              ) : null}
+            </>
+          ) : null}
+
           <Button label="Save Changes" onPress={save} loading={updateTeam.isPending || uploadLogo.isPending} />
         </View>
       </Modal>
@@ -1120,6 +1186,13 @@ export default function TeamDetailScreen() {
             name="startTime"
             render={({ field: { onChange, value }, fieldState: { error } }) => (
               <TimeField label="Start Time" value={value} onChange={onChange} placeholder="Select a time" error={error?.message} disablePast dateValue={eventForm.watch('date')} />
+            )}
+          />
+          <Controller
+            control={eventForm.control}
+            name="endTime"
+            render={({ field: { onChange, value }, fieldState: { error } }) => (
+              <TimeField label="End Time" value={value} onChange={onChange} placeholder="Select a time" error={error?.message} />
             )}
           />
           <Controller

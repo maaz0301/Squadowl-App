@@ -199,7 +199,13 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
 ];
 
 export function getPlanDefinition(tier: PlanTier): PlanDefinition {
-  return PLAN_DEFINITIONS.find((p) => p.tier === tier) ?? PLAN_DEFINITIONS[1];
+  // Falls back to Free, not some arbitrary array index — the DB's plan_tier
+  // enum still allows legacy values ('pro', 'association') that predate this
+  // 4-tier model and have no PLAN_DEFINITIONS entry. Defaulting an
+  // unrecognized tier to Coach would silently grant Coach-level features
+  // (canUseFeature reads off this same lookup) to whatever that value turns
+  // out to mean instead of just failing safe.
+  return PLAN_DEFINITIONS.find((p) => p.tier === tier) ?? PLAN_DEFINITIONS[0];
 }
 
 export function canUseFeature(tier: PlanTier, feature: keyof PlanDefinition['limits']): boolean {
@@ -251,6 +257,26 @@ export function getNextTier(tier: PlanTier): PlanDefinition | null {
 export function usageFraction(limit: number | 'unlimited', count: number): number {
   if (limit === 'unlimited' || limit <= 0) return 0;
   return count / limit;
+}
+
+export type UsageLimitMetric = 'assessments' | 'players' | 'teams' | 'customRubrics';
+
+/** The next tier up whose limit for `metric` actually improves on `tier`'s — skips tiers
+ * where the limit is unchanged (e.g. Free and Coach both cap teams at 1, so a Free user
+ * hitting the team limit should be pointed at Coach+, not Coach). Null if no higher tier
+ * raises this particular limit. */
+export function getNextUsefulTier(tier: PlanTier, metric: UsageLimitMetric): PlanDefinition | null {
+  const startIdx = TIER_ORDER.indexOf(tier);
+  if (startIdx === -1) return null;
+  const currentLimit = getPlanDefinition(tier).limits[metric];
+  for (let idx = startIdx + 1; idx < PLAN_DEFINITIONS.length; idx++) {
+    const candidateLimit = PLAN_DEFINITIONS[idx].limits[metric];
+    if (candidateLimit === 'unlimited' && currentLimit !== 'unlimited') return PLAN_DEFINITIONS[idx];
+    if (typeof candidateLimit === 'number' && typeof currentLimit === 'number' && candidateLimit > currentLimit) {
+      return PLAN_DEFINITIONS[idx];
+    }
+  }
+  return null;
 }
 
 /** Formats a plan's price for a given billing interval, e.g. "CAD$39.99" / "/yr". */

@@ -50,10 +50,11 @@ serve(async (req: Request) => {
         if (session.mode !== 'payment') break; // ignore the platform's own subscription checkouts
 
         const registrationId = session.metadata?.registrationId;
+        const seasonRosterId = session.metadata?.seasonRosterId;
         const tryoutId = session.metadata?.tryoutId;
         const accountId = session.metadata?.accountId;
-        if (!registrationId || !accountId) {
-          console.warn('checkout.session.completed missing registration metadata, skipping');
+        if ((!registrationId && !seasonRosterId) || !accountId) {
+          console.warn('checkout.session.completed missing registration/season_roster metadata, skipping');
           break;
         }
 
@@ -63,7 +64,8 @@ serve(async (req: Request) => {
         const { error: paymentError } = await supabaseAdmin.from('payments').insert({
           account_id: accountId,
           tryout_id: tryoutId ?? null,
-          registration_id: registrationId,
+          registration_id: registrationId ?? null,
+          season_roster_id: seasonRosterId ?? null,
           amount_cents: amountCents,
           currency: (session.currency ?? 'cad').toLowerCase(),
           status: 'paid',
@@ -72,15 +74,25 @@ serve(async (req: Request) => {
           received_at: new Date().toISOString(),
         });
         if (paymentError) {
-          console.error('Error inserting registration payment:', paymentError);
+          console.error('Error inserting payment:', paymentError);
         }
 
-        const { error: regError } = await supabaseAdmin
-          .from('registrations')
-          .update({ payment_status: 'paid' })
-          .eq('id', registrationId);
-        if (regError) {
-          console.error('Error updating registration payment status:', regError);
+        if (registrationId) {
+          const { error: regError } = await supabaseAdmin
+            .from('registrations')
+            .update({ payment_status: 'paid' })
+            .eq('id', registrationId);
+          if (regError) {
+            console.error('Error updating registration payment status:', regError);
+          }
+        } else if (seasonRosterId) {
+          const { error: rosterError } = await supabaseAdmin
+            .from('season_roster')
+            .update({ fee_status: 'paid' })
+            .eq('id', seasonRosterId);
+          if (rosterError) {
+            console.error('Error updating season_roster fee status:', rosterError);
+          }
         }
         break;
       }

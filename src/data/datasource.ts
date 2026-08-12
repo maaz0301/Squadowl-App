@@ -7,6 +7,7 @@ import type {
   AiPlayerSummary,
   AuthSession,
   CreateAssessmentForm,
+  ConnectAccountStatus,
   CreateEventForm,
   CreateSeasonForm,
   Database,
@@ -25,6 +26,10 @@ import type {
   SeasonEvent,
   Athlete,
   AthleteHistory,
+  AthleteShare,
+  CoachDirectoryEntry,
+  PlayerProfile,
+  ShareComment,
   Team,
   Tryout,
   UserProfile,
@@ -62,6 +67,7 @@ export interface DataSource {
   listTryouts(includeArchived?: boolean): Promise<Tryout[]>;
   /** Tryouts the current user is invited to as an assessor (not owned by their account). */
   listAssignedTryouts(): Promise<Tryout[]>;
+  acceptAssignedTryout(tryoutId: string): Promise<void>;
   rejectAssignedTryout(tryoutId: string): Promise<void>;
   getTryout(id: string): Promise<Tryout | null>;
   createTryout(form: CreateAssessmentForm): Promise<Tryout>;
@@ -112,6 +118,7 @@ export interface DataSource {
   sendTeamAnnouncement(seasonId: string, title: string, message: string): Promise<void>;
   setEventAvailability(seasonId: string, eventId: string, playerId: string, response: 'yes' | 'maybe' | 'no'): Promise<void>;
   getAthleteHistory(athleteId: string): Promise<AthleteHistory>;
+  getPlayerProfile(athleteId: string): Promise<PlayerProfile>;
   listAthletes(): Promise<Athlete[]>;
 
   // Phase 4: Enterprise & Admin
@@ -124,9 +131,17 @@ export interface DataSource {
   createPortalSession(): Promise<{ url: string }>;
   /** Stripe Connect Standard onboarding for coaches collecting registration fees. */
   createConnectAccountLink(): Promise<{ url: string }>;
+  /** Live details on the coach's connected Stripe account, straight from Stripe (not cached DB flags). */
+  getConnectAccountStatus(): Promise<ConnectAccountStatus>;
   /** Checkout for a guardian paying a tryout's registration fee (0.5% platform cut via Connect). */
   createRegistrationPayment(
     registrationId: string,
+    successUrl?: string,
+    cancelUrl?: string,
+  ): Promise<{ url: string }>;
+  /** Checkout for a guardian paying their athlete's team/season fee (0.5% platform cut via Connect). */
+  createTeamFeePayment(
+    seasonRosterId: string,
     successUrl?: string,
     cancelUrl?: string,
   ): Promise<{ url: string }>;
@@ -137,6 +152,17 @@ export interface DataSource {
   updateOrgMemberRole(memberId: string, role: OrgRole): Promise<OrgMember>;
   removeOrgMember(memberId: string): Promise<void>;
   linkGuardianToAthlete(guardianId: string, tryoutId: string, playerId: string): Promise<Player>;
+
+  // Guardian -> Coach athlete profile sharing
+  getCoachDirectory(): Promise<CoachDirectoryEntry[]>;
+  shareAthleteWithCoach(athleteId: string, coachUserId: string, coachAccountId: string): Promise<AthleteShare>;
+  getMyAthleteShares(athleteId: string): Promise<AthleteShare[]>;
+  getSharedAthletesForCoach(): Promise<AthleteShare[]>;
+  getAthleteShare(shareId: string): Promise<AthleteShare>;
+  acceptAthleteShare(shareId: string, tryoutId: string): Promise<AthleteShare>;
+  rejectAthleteShare(shareId: string): Promise<AthleteShare>;
+  listShareComments(shareId: string): Promise<ShareComment[]>;
+  addShareComment(shareId: string, body: string): Promise<ShareComment>;
 
   // Extended UI operations
   sendEmail(type: 'org_invite' | 'tryout_invite' | 'schedule_update' | 'reminder' | 'registration_confirmation', to: string, payload: any): Promise<void>;
