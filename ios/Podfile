@@ -29,7 +29,10 @@ target 'AASTryout' do
       installer,
       config[:reactNativePath],
       :mac_catalyst_enabled => false,
-      # :ccache_enabled => true
+      # Caches Obj-C/Swift/C++ compilation (pods + native modules) across builds
+      # and branch switches. Needs `ccache` installed (brew install ccache) —
+      # without it, this setting is a no-op, not a build failure.
+      :ccache_enabled => true
     )
   end
 end
