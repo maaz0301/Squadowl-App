@@ -16,6 +16,7 @@ interface ScorePadProps {
   value?: number;
   rankingDirection?: import('@/data/types').RankingDirection;
   onChange: (value: number) => void;
+  onFocus?: () => void;
 }
 
 export function ScorePad({
@@ -28,6 +29,7 @@ export function ScorePad({
   value,
   rankingDirection,
   onChange,
+  onFocus,
 }: ScorePadProps) {
   const colors = useThemeColors();
   const [textVal, setTextVal] = useState(value != null ? String(value) : '');
@@ -73,6 +75,7 @@ export function ScorePad({
                 onChange(p);
               }
             }}
+            onFocus={onFocus}
             keyboardType="decimal-pad"
             placeholder={`Enter numeric ${scoringType}...`}
             placeholderTextColor={colors.inkFaint}

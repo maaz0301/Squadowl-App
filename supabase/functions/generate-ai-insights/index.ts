@@ -201,7 +201,7 @@ serve(async (req: Request) => {
       throw new Error('ANTHROPIC_API_KEY is not set');
     }
 
-    const { action, tryout, playerIds, prompt: userPrompt } = await req.json();
+    const { action, tryout, playerIds, prompt: userPrompt, comparisonProfiles } = await req.json();
 
     if (!action || !tryout) {
       throw new Error('Missing required fields: action or tryout');
@@ -252,7 +252,11 @@ Based ONLY on the numeric scores above, return this exact JSON:
 }
 The "trend" field must be one of: "improving", "steady", "declining", or "insufficient_data".`;
 
-    } else if (action === 'compare') {
+    } else if (action === 'compare' && !comparisonProfiles) {
+      // Legacy path: some callers (e.g. the web app) still send the raw
+      // { tryout, playerIds } shape without pre-computed comparisonProfiles.
+      // Keep the original raw-eval prompt for them so this stays working
+      // without every caller having to compute weighted stats client-side.
       const players = tryout.roster.filter((p: any) => playerIds.includes(p.id));
       const evals = tryout.evals.filter((e: any) => playerIds.includes(e.playerId));
 
@@ -279,6 +283,48 @@ Based ONLY on the numeric scores above, return this exact JSON:
   "watch_list": ["First Last"],
   "recommendation": "Concrete recommendation for coaching staff based on the scores."
 }`;
+    } else if (action === 'compare') {
+      const profiles: any[] = comparisonProfiles || [];
+      const evaluated = profiles.filter((p) => p.evalCount > 0);
+      const unevaluated = profiles.filter((p) => p.evalCount === 0);
+
+      if (evaluated.length === 0) {
+        return new Response(JSON.stringify({ error: 'no_evals', message: 'None of the selected players have evaluation data yet. Score the players first before comparing.' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        });
+      }
+
+      // Compact, pre-computed per-player stats (pooled weighted overall,
+      // per-category averages, per-session trend) rather than raw eval
+      // records — grounds the model in the same numbers the app itself
+      // computes and keeps the payload flat as session count grows.
+      maxTokens = 1536;
+      prompt = `Compare these athletes based purely on the pre-computed evaluation stats below (weighted overall 1-5, per-category averages 1-5, and per-session trend).
+
+Athletes with evaluation data:
+${evaluated.map((p) => `- ${p.name} (Pos: ${p.pos}, ${p.evalCount} session(s) scored)
+  Overall: ${p.overall}
+  Latest recommendation: ${p.latestRecommendation || 'None'}
+  Category averages: ${p.categories.length ? p.categories.map((c: any) => `${c.label}=${c.score}`).join(', ') : 'None scored'}
+  Session trend: ${p.sessionTrend.length ? p.sessionTrend.map((s: any) => `${s.session}=${s.overall}`).join(' -> ') : 'N/A'}`).join('\n')}
+${unevaluated.length ? `\nAthletes selected but with NO evaluation data yet (mention once in the summary that they have no data; do NOT include them in category_edges, watch_list, best_fit, or player_notes; NEVER invent scores for them):\n${unevaluated.map((p: any) => `- ${p.name}`).join('\n')}` : ''}
+
+Based ONLY on the stats above, return this exact JSON:
+{
+  "summary": "2-3 sentence comparison grounded in the actual overall/category numbers above.",
+  "edge": "Which athlete scores higher overall and in which specific categories, citing the numbers.",
+  "best_fit": "First and last name of the highest-scoring evaluated athlete overall.",
+  "watch_list": ["First Last of any evaluated athlete trending upward across sessions, or standing out in one category"],
+  "recommendation": "Concrete recommendation for coaching staff based on the scores.",
+  "category_edges": [
+    {"category": "Category label", "leader": "First Last", "note": "One short sentence citing the actual scores that decided this category."}
+  ],
+  "player_notes": [
+    {"name": "First Last", "strength": "Their strongest category and score.", "growth": "Their weakest category and score."}
+  ]
+}
+Include one "category_edges" entry per category that appears in the stats above (skip categories where scores tie exactly). Include one "player_notes" entry per evaluated athlete.`;
     } else if (action === 'team_builder') {
       const players = tryout.roster || [];
       teamBuilderPlayers = players;

@@ -449,6 +449,8 @@ export interface AiCompareSummary {
   best_fit: string;
   watch_list: string[];
   recommendation: string;
+  category_edges?: { category: string; leader: string; note: string }[];
+  player_notes?: { name: string; strength: string; growth: string }[];
 }
 
 export type ExportFormat = 'csv' | 'pdf' | 'xlsx';

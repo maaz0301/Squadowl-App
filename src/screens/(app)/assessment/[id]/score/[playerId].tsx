@@ -1,6 +1,16 @@
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, ScrollView, Text, View } from 'react-native';
+import {
+  Alert,
+  Keyboard,
+  LayoutAnimation,
+  Platform,
+  ScrollView,
+  Text,
+  View,
+  type KeyboardEvent,
+  type LayoutChangeEvent,
+} from 'react-native';
 
 import {
   Button,
@@ -46,6 +56,51 @@ export default function ScoreScreen() {
   const markSessionCompleted = useSessionStore((s) => s.markSessionCompleted);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const activeMutationRef = useRef<Promise<any> | null>(null);
+
+  // Same pattern as assessment/new.tsx and feedback.tsx: KeyboardAwareScrollView's
+  // auto-scroll-above-keyboard logic relies on legacy measurement APIs that are
+  // unreliable under the New Architecture, and this screen's category list is
+  // dynamically sized, so a numeric ScorePad input anywhere in the middle of the
+  // list can end up hidden behind the keyboard with no scroll ever triggering.
+  // Tracking the keyboard's own height from the OS event and scrolling the
+  // focused field into view ourselves needs no view measurement or native resize.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const applyHeight = (e: KeyboardEvent) => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setKeyboardHeight(e.endCoordinates.height);
+    };
+    const hide = () => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setKeyboardHeight(0);
+    };
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, applyHeight);
+    const hideSub = Keyboard.addListener(hideEvent, hide);
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const scrollRef = useRef<ScrollView>(null);
+  const formTopRef = useRef(0);
+  const fieldYRef = useRef<Record<string, number>>({});
+
+  const rememberField = (key: string) => (e: LayoutChangeEvent) => {
+    fieldYRef.current[key] = e.nativeEvent.layout.y;
+  };
+
+  const revealField = (key: string) => () => {
+    const y = fieldYRef.current[key];
+    if (y == null) return;
+    // Wait out the keyboard-open animation so we scroll against the final,
+    // already-shortened viewport rather than the full-height one.
+    setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: Math.max(formTopRef.current + y - 12, 0), animated: true });
+    }, 120);
+  };
 
   const player = tryoutQuery.data?.roster.find((p) => p.id === playerId);
   const historyQuery = useAthleteHistoryQuery(player?.athleteId);
@@ -363,7 +418,16 @@ export default function ScoreScreen() {
   const firstUnscoredIdx = SESSIONS.findIndex(s => !scoredSessions.has(s));
 
   return (
-    <Screen scroll insideTabBar>
+    <Screen scroll={false} keyboardAvoiding={false} padded={false}>
+      <View style={{ flex: 1, paddingBottom: keyboardHeight }}>
+        <ScrollView
+          ref={scrollRef}
+          className="flex-1 px-4"
+          contentContainerStyle={{ paddingBottom: 32 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          showsVerticalScrollIndicator={false}
+        >
       <Header
         title={`Score: ${playerDisplayName(player)}`}
         subtitle={`Overall: ${overall > 0 ? overall.toFixed(1) : '—'}`}
@@ -371,6 +435,11 @@ export default function ScoreScreen() {
         onBack={() => navigation.navigate('AssessmentRoster')}
       />
 
+      <View
+        onLayout={(e) => {
+          formTopRef.current = e.nativeEvent.layout.y;
+        }}
+      >
 
 
       {tryoutQuery.data.assessors.length > 0 ? (
@@ -453,23 +522,25 @@ export default function ScoreScreen() {
               </Text>
             </View>
             {cat.subskills.map((s) => (
-              <ScorePad
-                key={s.key}
-                rubricKey={s.key}
-                label={s.label}
-                scale={s.scale}
-                scoringType={s.scoringType}
-                rankingDirection={s.rankingDirection}
-                unit={s.unit}
-                minVal={s.minVal}
-                maxVal={s.maxVal}
-                value={scores?.[s.key]}
-                onChange={(v) => {
-                  const newScores = { ...workingScores, [s.key]: v };
-                  setWorkingScores(newScores);
-                  setValue('scores', newScores, { shouldDirty: true });
-                }}
-              />
+              <View key={s.key} onLayout={rememberField(s.key)}>
+                <ScorePad
+                  rubricKey={s.key}
+                  label={s.label}
+                  scale={s.scale}
+                  scoringType={s.scoringType}
+                  rankingDirection={s.rankingDirection}
+                  unit={s.unit}
+                  minVal={s.minVal}
+                  maxVal={s.maxVal}
+                  value={scores?.[s.key]}
+                  onFocus={revealField(s.key)}
+                  onChange={(v) => {
+                    const newScores = { ...workingScores, [s.key]: v };
+                    setWorkingScores(newScores);
+                    setValue('scores', newScores, { shouldDirty: true });
+                  }}
+                />
+              </View>
             ))}
           </View>
         );
@@ -497,26 +568,49 @@ export default function ScoreScreen() {
         )}
       />
 
-      <Controller
-        control={control}
-        name="strengths"
-        render={({ field: { onChange, onBlur, value } }) => (
-          <Input label="Strengths" onBlur={onBlur} onChangeText={onChange} value={value} multiline numberOfLines={3} />
-        )}
-      />
-      <Controller
-        control={control}
-        name="improve"
-        render={({ field: { onChange, onBlur, value } }) => (
-          <Input label="Areas to Improve" onBlur={onBlur} onChangeText={onChange} value={value} multiline numberOfLines={3} />
-        )}
-      />
+      <View onLayout={rememberField('strengths')}>
+        <Controller
+          control={control}
+          name="strengths"
+          render={({ field: { onChange, onBlur, value } }) => (
+            <Input
+              label="Strengths"
+              onBlur={onBlur}
+              onChangeText={onChange}
+              value={value}
+              onFocus={revealField('strengths')}
+              multiline
+              numberOfLines={3}
+            />
+          )}
+        />
+      </View>
+      <View onLayout={rememberField('improve')}>
+        <Controller
+          control={control}
+          name="improve"
+          render={({ field: { onChange, onBlur, value } }) => (
+            <Input
+              label="Areas to Improve"
+              onBlur={onBlur}
+              onChangeText={onChange}
+              value={value}
+              onFocus={revealField('improve')}
+              multiline
+              numberOfLines={3}
+            />
+          )}
+        />
+      </View>
 
       <View className="py-4 gap-2">
         <Text className="text-center text-2xl font-display font-bold" style={{ color: colors.primary }}>
           Overall: {overall > 0 ? overall.toFixed(1) : '—'}
         </Text>
         <Button label="Done" onPress={onSubmit} loading={saving} />
+      </View>
+      </View>
+        </ScrollView>
       </View>
     </Screen>
   );

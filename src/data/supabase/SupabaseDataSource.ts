@@ -11,6 +11,8 @@ import {
   getPlayerCategories,
   getPlayerSubskills,
   isGoaliePosition,
+  playerDisplayName,
+  weightedOverall,
   weightedOverallAcrossEvals,
 } from '../rubrics';
 import type { TeamBuilderConfig, TeamBuilderState } from '../teamBuilder';
@@ -2675,9 +2677,49 @@ export class SupabaseDataSource implements DataSource {
   async getAiCompare(tryoutId: string, playerIds: string[]): Promise<AiCompareSummary> {
     const tryout = await this.getTryout(tryoutId);
     if (!tryout) throw new Error('Tryout not found');
+
+    const players = tryout.roster.filter((p) => playerIds.includes(p.id));
+    const results = computePlayerResults(tryout);
+    const resultByPlayerId = new Map(results.map((r) => [r.player.id, r]));
+
+    // Compact, structured per-player profile — pooled overall, per-category
+    // averages with human-readable labels, and a per-session trend — instead
+    // of a raw eval dump (free-text strengths/improve, one row per session).
+    // This keeps the comparison grounded in the same numbers the app itself
+    // computes, and keeps the payload flat regardless of session count.
+    const comparisonProfiles = players.map((p) => {
+      const categories = getPlayerCategories(tryout.sport, p.pos, tryout.settings.customRubrics);
+      const categoryLabels = new Map(categories.map((c) => [c.key, c.label]));
+      const weights = isGoaliePosition(p.pos) ? tryout.settings.goalieWeights : tryout.settings.skaterWeights;
+      const playerEvals = tryout.evals
+        .filter((e) => e.playerId === p.id)
+        .sort((a, b) => a.createdAt - b.createdAt);
+      const r = resultByPlayerId.get(p.id);
+
+      return {
+        name: playerDisplayName(p),
+        pos: p.pos || 'N/A',
+        overall: r?.overall ?? 0,
+        evalCount: playerEvals.length,
+        latestRecommendation: r?.latestRecommendation || undefined,
+        categories: Object.entries(r?.categoryScores ?? {}).map(([key, score]) => ({
+          label: categoryLabels.get(key) || key,
+          score,
+        })),
+        sessionTrend: playerEvals.map((e) => ({
+          session: e.session || 'Session',
+          overall: weightedOverall(e.scores ?? {}, categories, weights),
+        })),
+      };
+    });
+
+    if (comparisonProfiles.every((p) => p.evalCount === 0)) {
+      throw new Error('None of the selected players have evaluation data yet. Score the players first before comparing.');
+    }
+
     const { supabase } = await this.ctx();
     const { data, error } = await supabase.functions.invoke('generate-ai-insights', {
-      body: { action: 'compare', tryout, playerIds }
+      body: { action: 'compare', tryout, playerIds, comparisonProfiles }
     });
     if (error) {
       let message = error.message;

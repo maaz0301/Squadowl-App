@@ -199,7 +199,7 @@ export default function EnterpriseScreen() {
   return (
     <Screen padded={false}>
       <View className="px-4">
-        <Header title="Enterprise" showBack />
+        <Header title="Dashboard" showBack />
         <PlanGate feature="enterprise" title="Enterprise Dashboard">
           <Tabs tabs={[...ENT_TABS]} activeKey={tab} onChange={(k) => setTab(k as EntTab)} className="mb-4" />
         </PlanGate>
