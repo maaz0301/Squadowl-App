@@ -177,6 +177,17 @@ export default function EnterpriseScreen() {
     };
   }, [paymentsQuery.data]);
 
+  /**
+   * The members directory deliberately folds in one entry per athlete guardian
+   * (see listOrgMembers), so its length tracks roster size — a 130-player roster
+   * reads as "130 members" even with nobody invited. The headline badge counts
+   * only people holding a seat in the org: staff and assessors.
+   */
+  const staffCount = useMemo(
+    () => membersQuery.data?.filter((m) => m.role !== 'guardian').length,
+    [membersQuery.data],
+  );
+
   if (orgQuery.isLoading) return <LoadingState message="Loading org..." />;
 
   const org = orgQuery.data;
@@ -201,16 +212,20 @@ export default function EnterpriseScreen() {
               <Text className="text-xl font-display font-bold" style={{ color: colors.ink }}>
                 {org.orgName}
               </Text>
-              <Text style={{ color: colors.inkMuted }}>/{org.orgSlug}</Text>
+              {org.orgSlug ? (
+                <Text style={{ color: colors.inkMuted }}>/{org.orgSlug}</Text>
+              ) : null}
               <View className="flex-row flex-wrap gap-2 mt-2">
-                <Badge label={`${membersQuery.data?.length ?? org.memberCount} members`} />
+                <Badge label={`${staffCount ?? org.memberCount} staff`} />
                 <Badge label={`${tryouts.length} assessments`} variant="brand" />
                 <Badge label={`${metrics.players} players`} variant="info" />
               </View>
             </Card>
-          ) : (
-            <ErrorState message="No organization found." onRetry={() => orgQuery.refetch()} />
-          )}
+          ) : orgQuery.isError ? (
+            // Only a real fetch failure is an error — an account with nothing in
+            // it yet still renders its (zeroed) metrics below.
+            <ErrorState message="Could not load your organization." onRetry={() => orgQuery.refetch()} />
+          ) : null}
 
           {tryoutsQuery.isLoading ? (
             <Text className="text-sm" style={{ color: colors.inkMuted }}>

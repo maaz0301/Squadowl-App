@@ -1,4 +1,6 @@
+import { AddToRosterModal, type RosterDestination } from '@/components/assessment/AddToRosterModal';
 import { RegistrationForm } from '@/components/assessment/RegistrationForm';
+import { RegistrationProfileModal } from '@/components/assessment/RegistrationProfileModal';
 import { DummyDataModal } from '@/components/DummyDataModal';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { PlanGate } from '@/components/PlanGate';
@@ -8,6 +10,7 @@ import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import type { DummyDataOptions } from '@/data/testDataGenerator';
 import {
   useAddRegistrationToRosterMutation,
+  useAddRegistrationToTeamMutation,
   useClearTestDataMutation,
   useDismissRegistrationMutation,
   useEnsureCloudSessionMutation,
@@ -15,6 +18,7 @@ import {
   useRegistrationsQuery,
   useSubmitRegistrationMutation,
   useTryoutQuery,
+  useTryoutsQuery,
 } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { useUser } from '@/state/authStore';
@@ -22,7 +26,7 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { EXPO_PUBLIC_WEB_URL } from '@env';
 import { useNavigation } from '@react-navigation/native';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, Platform, Share, Text, View } from 'react-native';
+import { Alert, FlatList, Platform, Pressable, Share, Text, View } from 'react-native';
 import RNFS from 'react-native-fs';
 import QRCode from 'react-native-qrcode-svg';
 import RNShare from 'react-native-share';
@@ -37,6 +41,8 @@ export default function RegistrationsScreen() {
   const regsQuery = useRegistrationsQuery(id!);
   const ensureCloud = useEnsureCloudSessionMutation();
   const addToRoster = useAddRegistrationToRosterMutation(id!);
+  const addToTeam = useAddRegistrationToTeamMutation(id!);
+  const allTryouts = useTryoutsQuery();
   const dismissReg = useDismissRegistrationMutation(id!);
   const submitReg = useSubmitRegistrationMutation(id!);
   const [dummyProgress, setDummyProgress] = useState<{ done: number; total: number } | null>(null);
@@ -49,6 +55,10 @@ export default function RegistrationsScreen() {
   const [tab, setTab] = useState<RegTab>('pending');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
+  // Registration ids waiting on a destination choice. Non-null == picker open.
+  const [placing, setPlacing] = useState<string[] | null>(null);
+  // Registration whose submitted profile is open. Non-null == profile open.
+  const [viewingId, setViewingId] = useState<string | null>(null);
 
   const isAssociation = canUseFeature(user?.planTier ?? 'free', 'enterprise');
 
@@ -62,6 +72,13 @@ export default function RegistrationsScreen() {
       ensureCloud.mutate(id);
     }
   }, [id, tryoutQuery.data]);
+
+  // Resolved from the live list rather than held as a snapshot, so the status
+  // and payment badges in the profile stay current while it's open.
+  const viewing = useMemo(
+    () => (regsQuery.data ?? []).find((r) => r.id === viewingId) ?? null,
+    [regsQuery.data, viewingId],
+  );
 
   const filtered = useMemo(() => {
     const all = regsQuery.data ?? [];
@@ -107,17 +124,47 @@ export default function RegistrationsScreen() {
   // sequentially made bulk-add visibly crawl. Batched (not all-at-once) so a
   // huge selection doesn't fire hundreds of simultaneous requests at the backend.
   const BULK_ADD_BATCH_SIZE = 10;
-  const bulkAdd = async () => {
-    if (isAtPlayerLimit(user?.planTier ?? 'free', (tryoutQuery.data?.roster.length ?? 0) + selected.size - 1)) {
-      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'players', 'players'));
-      return;
+
+  const runPlacement = async (destination: RosterDestination) => {
+    const ids = placing ?? [];
+    if (ids.length === 0) return;
+
+    // The player limit is per-assessment, so it has to be measured against the
+    // roster actually receiving these players — not this screen's assessment,
+    // which may not be the destination. A team roster isn't capped this way.
+    if (destination.kind === 'assessment') {
+      const target = (allTryouts.data ?? []).find((t) => t.id === destination.id);
+      const existing = target?.roster.length ?? 0;
+      if (isAtPlayerLimit(user?.planTier ?? 'free', existing + ids.length - 1)) {
+        setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'players', 'players'));
+        return;
+      }
     }
-    const ids = [...selected];
-    for (let i = 0; i < ids.length; i += BULK_ADD_BATCH_SIZE) {
-      const batch = ids.slice(i, i + BULK_ADD_BATCH_SIZE);
-      await Promise.all(batch.map((regId) => addToRoster.mutateAsync(regId)));
+
+    try {
+      // Fires in small concurrent batches instead of one request at a time — with
+      // "Select All" this can be hundreds of registrations, and awaiting them
+      // sequentially made bulk-add visibly crawl. Batched (not all-at-once) so a
+      // huge selection doesn't fire hundreds of simultaneous requests at the backend.
+      for (let i = 0; i < ids.length; i += BULK_ADD_BATCH_SIZE) {
+        const batch = ids.slice(i, i + BULK_ADD_BATCH_SIZE);
+        await Promise.all(
+          batch.map((registrationId) =>
+            destination.kind === 'team'
+              ? addToTeam.mutateAsync({ teamId: destination.id, registrationId })
+              : addToRoster.mutateAsync({ registrationId, targetTryoutId: destination.id }),
+          ),
+        );
+      }
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const regId of ids) next.delete(regId);
+        return next;
+      });
+      setPlacing(null);
+    } catch (e: any) {
+      showAlert('Error', e?.message || 'Failed to add players.');
     }
-    setSelected(new Set());
   };
 
   const exportCsv = async () => {
@@ -237,7 +284,11 @@ export default function RegistrationsScreen() {
                       onPress={toggleSelectAll}
                     />
                     {selected.size > 0 ? (
-                      <Button label={`Add ${selected.size} to Roster`} size="sm" onPress={bulkAdd} loading={addToRoster.isPending} />
+                      <Button
+                        label={`Add ${selected.size} to Roster`}
+                        size="sm"
+                        onPress={() => setPlacing([...selected])}
+                      />
                     ) : null}
                   </>
                 ) : null}
@@ -281,26 +332,33 @@ export default function RegistrationsScreen() {
         }
         renderItem={({ item }) => (
           <Card className="mb-3 gap-2">
-            <View className="flex-row justify-between">
-              <Text className="text-lg font-bold" style={{ color: colors.ink }}>
-                {item.firstName} {item.lastName}
-              </Text>
-              <View className="items-end gap-1">
-                <Badge
-                  label={item.status}
-                  variant={item.status === 'pending' ? 'warning' : item.status === 'added' ? 'success' : 'info'}
-                />
-                {item.paymentStatus ? (
+            {/* Only the identity block opens the profile — the action buttons
+                below stay independently tappable. */}
+            <Pressable className="gap-2" onPress={() => setViewingId(item.id)}>
+              <View className="flex-row justify-between">
+                <Text className="text-lg font-bold" style={{ color: colors.ink }}>
+                  {item.firstName} {item.lastName}
+                </Text>
+                <View className="items-end gap-1">
                   <Badge
-                    label={item.paymentStatus}
-                    variant={item.paymentStatus === 'paid' ? 'success' : 'warning'}
+                    label={item.status}
+                    variant={item.status === 'pending' ? 'warning' : item.status === 'added' ? 'success' : 'info'}
                   />
-                ) : null}
+                  {item.paymentStatus ? (
+                    <Badge
+                      label={item.paymentStatus}
+                      variant={item.paymentStatus === 'paid' ? 'success' : 'warning'}
+                    />
+                  ) : null}
+                </View>
               </View>
-            </View>
-            <Text className="text-sm" style={{ color: colors.inkMuted }}>
-              {item.guardianName} · {item.guardianEmail}
-            </Text>
+              <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                {item.guardianName} · {item.guardianEmail}
+              </Text>
+              <Text className="text-xs" style={{ color: colors.inkFaint }}>
+                Tap to view profile
+              </Text>
+            </Pressable>
             {item.status === 'pending' ? (
               <View className="flex-row flex-wrap gap-2 mt-2">
                 <Button
@@ -312,14 +370,7 @@ export default function RegistrationsScreen() {
                 <Button
                   label="Add to Roster"
                   size="sm"
-                  loading={addToRoster.isPending}
-                  onPress={() => {
-                    if (isAtPlayerLimit(user?.planTier ?? 'free', tryout.roster.length)) {
-                      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'players', 'players'));
-                      return;
-                    }
-                    addToRoster.mutate(item.id);
-                  }}
+                  onPress={() => setPlacing([item.id])}
                 />
                 <Button
                   label="Dismiss"
@@ -365,6 +416,30 @@ export default function RegistrationsScreen() {
         }}
         onClose={() => setShowTestGen(false)}
         onSubmit={runGenerate}
+      />
+
+      <RegistrationProfileModal
+        registration={viewing}
+        onClose={() => setViewingId(null)}
+        onAddToRoster={() => {
+          if (!viewing) return;
+          setViewingId(null);
+          setPlacing([viewing.id]);
+        }}
+        onDismiss={() => {
+          if (!viewing) return;
+          dismissReg.mutate(viewing.id);
+          setViewingId(null);
+        }}
+      />
+
+      <AddToRosterModal
+        visible={placing !== null}
+        count={placing?.length ?? 0}
+        currentTryoutId={id}
+        loading={addToRoster.isPending || addToTeam.isPending}
+        onClose={() => setPlacing(null)}
+        onConfirm={runPlacement}
       />
 
       <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />

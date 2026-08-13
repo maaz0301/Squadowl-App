@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { stripe } from '../_shared/stripe.ts';
 import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
+import { resolvePrimaryMembership } from '../_shared/membership.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -29,21 +30,13 @@ serve(async (req) => {
       throw new Error('User not found');
     }
 
-    const { data: membership, error: membershipError } = await supabaseAdmin
-      .from('memberships')
-      .select('accounts(stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_payouts_enabled)')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .single();
-
-    if (membershipError || !membership) {
-      throw new Error('No account membership found for user');
-    }
-
-    // @ts-ignore
-    const account = Array.isArray(membership.accounts) ? membership.accounts[0] : membership.accounts;
-    const connectAccountId: string | null = account?.stripe_connect_account_id ?? null;
+    // Must match the membership the app reads the enabled flag off — see
+    // resolvePrimaryMembership.
+    const membership = await resolvePrimaryMembership(
+      user.id,
+      'id, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_payouts_enabled',
+    );
+    const connectAccountId: string | null = membership.account?.stripe_connect_account_id ?? null;
 
     if (!connectAccountId) {
       return new Response(JSON.stringify({ connected: false, platformFeeRate: PLATFORM_FEE_RATE }), {
@@ -53,6 +46,28 @@ serve(async (req) => {
     }
 
     const liveAccount = await stripe.accounts.retrieve(connectAccountId);
+
+    // Write the live values back, so the cached flag on the account row heals
+    // itself every time this screen opens. Without this the column only ever
+    // moves when the account.updated webhook fires — and that webhook needs a
+    // Connect-specific endpoint and signing secret that Stripe fails *silently*
+    // when misconfigured, stranding a fully-onboarded coach on "Connect with
+    // Stripe" indefinitely.
+    if (
+      !!membership.account?.stripe_connect_charges_enabled !== !!liveAccount.charges_enabled ||
+      !!membership.account?.stripe_connect_payouts_enabled !== !!liveAccount.payouts_enabled
+    ) {
+      const { error: syncError } = await supabaseAdmin
+        .from('accounts')
+        .update({
+          stripe_connect_charges_enabled: !!liveAccount.charges_enabled,
+          stripe_connect_payouts_enabled: !!liveAccount.payouts_enabled,
+        })
+        .eq('id', membership.accountId);
+      if (syncError) {
+        console.error('Failed to sync connect flags from live account:', syncError.message);
+      }
+    }
 
     return new Response(
       JSON.stringify({

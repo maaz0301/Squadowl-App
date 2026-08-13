@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Linking, ScrollView, Share, Text, View } from 'react-native';
+import { Alert, Linking, Share, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 
@@ -315,8 +315,10 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
+      {/* No ScrollView here — Modal already scrolls its children. An unbounded
+          one nested inside that collapses and clips the tail of the content. */}
       <Modal visible={showRubrics} title="Rubric Reference" onClose={() => setShowRubrics(false)}>
-        <ScrollView>
+        <>
           <Text className="text-sm font-bold mb-2" style={{ color: colors.primary }}>
             Skater Categories
           </Text>
@@ -347,7 +349,7 @@ export default function SettingsScreen() {
               ))}
             </>
           ) : null}
-        </ScrollView>
+        </>
       </Modal>
 
       <Modal visible={showAssessor} title="Add Assessor" onClose={() => setShowAssessor(false)}>

@@ -324,6 +324,9 @@ export function useDeletePlayerMutation(tryoutId: string) {
       // The deleted player may have come from an accepted athlete share, which
       // deletePlayer flips to 'released' as a side effect — refresh that list too.
       qc.invalidateQueries({ queryKey: queryKeys.sharedAthletes });
+      // Their guardian is dropped with them once they are off every roster, so
+      // the member directory that derives guardians from athletes is now stale.
+      qc.invalidateQueries({ queryKey: queryKeys.orgMembers() });
     },
   });
 }
@@ -400,13 +403,45 @@ export function useSubmitRegistrationMutation(tryoutId: string) {
   });
 }
 
+/**
+ * `tryoutId` is the assessment the registration belongs to. Pass `targetTryoutId`
+ * in the variables to roster the athlete onto a *different* assessment — both
+ * assessments are then invalidated, since one gains a player and the other has a
+ * registration flip to "added".
+ */
 export function useAddRegistrationToRosterMutation(tryoutId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (registrationId: string) =>
-      getDataSource().addRegistrationToRoster(tryoutId, registrationId),
-    onSuccess: () => {
+    mutationFn: ({
+      registrationId,
+      targetTryoutId,
+    }: {
+      registrationId: string;
+      targetTryoutId?: string;
+    }) => getDataSource().addRegistrationToRoster(targetTryoutId ?? tryoutId, registrationId),
+    onSuccess: (_data, { targetTryoutId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
+      if (targetTryoutId && targetTryoutId !== tryoutId) {
+        qc.invalidateQueries({ queryKey: queryKeys.tryout(targetTryoutId) });
+      }
+      qc.invalidateQueries({ queryKey: queryKeys.registrations(tryoutId) });
+      qc.invalidateQueries({ queryKey: queryKeys.profile });
+    },
+  });
+}
+
+/**
+ * "Team" destination for a registration. `tryoutId` is only the assessment the
+ * registration lives on — it's what gets invalidated so the row flips to
+ * "added"; the athlete itself lands on `teamId`'s roster.
+ */
+export function useAddRegistrationToTeamMutation(tryoutId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ teamId, registrationId }: { teamId: string; registrationId: string }) =>
+      getDataSource().addRegistrationToTeam(teamId, registrationId),
+    onSuccess: (_data, { teamId }) => {
+      qc.invalidateQueries({ queryKey: teamRosterKey(teamId) });
       qc.invalidateQueries({ queryKey: queryKeys.registrations(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.profile });
     },
@@ -1087,6 +1122,10 @@ export function useConnectAccountStatusQuery(enabled = true) {
     queryKey: queryKeys.connectAccountStatus,
     queryFn: () => getDataSource().getConnectAccountStatus(),
     enabled,
+    // Each run is a live Stripe accounts.retrieve, and onboarding state barely
+    // ever changes — well past the global 30s default. The post-onboarding poll
+    // calls refetch() directly, which ignores this.
+    staleTime: 5 * 60_000,
   });
 }
 

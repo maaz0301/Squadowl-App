@@ -22,6 +22,7 @@ import {
   useGenerateDummyTeamsMutation,
   useTeamsQuery,
 } from '@/features/queries';
+import { useConnectStatus } from '@/features/useConnectStatus';
 import { useUser, useAuthStore } from '@/state/authStore';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -53,6 +54,7 @@ export default function NewTeamScreen() {
   const [connecting, setConnecting] = useState(false);
   const qc = useQueryClient();
   const restoreSession = useAuthStore((s) => s.restoreSession);
+  const connect = useConnectStatus();
 
   const updateTeam = useUpdateTeamMutation();
   const uploadLogo = useUploadTeamLogoMutation();
@@ -79,13 +81,16 @@ export default function NewTeamScreen() {
       }
 
       // Stripe's account.updated webhook lands a moment after onboarding
-      // finishes, so poll a few times instead of assuming it's instant.
+      // finishes, so poll a few times instead of assuming it's instant. Waits on
+      // the live connect-status refetch rather than the profile flag — see the
+      // matching loop in payments.tsx.
       for (let i = 0; i < 5; i++) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
+        const { data: live } = await connect.refetch();
         await restoreSession(true);
         await qc.invalidateQueries({ queryKey: queryKeys.profile });
         const current = useAuthStore.getState().session?.user;
-        if (current?.connectChargesEnabled) break;
+        if (live?.chargesEnabled || current?.connectChargesEnabled) break;
       }
     } catch (err: any) {
       showAlert('Connect Error', err.message || 'Something went wrong.');
@@ -280,16 +285,17 @@ export default function NewTeamScreen() {
                   it — each player's guardian will then be asked to pay this fee, plus TryoutHQ's 0.5%
                   platform fee, from their portal. QR/link assessment registration always stays free.
                 </Text>
-                {user?.connectChargesEnabled ? (
+                {connect.chargesEnabled ? (
                   <Badge label="Stripe connected" variant="success" />
                 ) : (
                   <>
                     <Text className="text-xs" style={{ color: colors.warning }}>
-                      Connect a Stripe account before guardians can pay — you can still create the
-                      team now and connect after.
+                      {connect.onboardingIncomplete
+                        ? "Your Stripe account isn't finished — Stripe needs more information before it will accept charges. You can still create the team now and finish after."
+                        : 'Connect a Stripe account before guardians can pay — you can still create the team now and connect after.'}
                     </Text>
                     <Button
-                      label="Connect with Stripe"
+                      label={connect.onboardingIncomplete ? 'Continue Stripe Setup' : 'Connect with Stripe'}
                       variant="secondary"
                       size="sm"
                       loading={connecting}

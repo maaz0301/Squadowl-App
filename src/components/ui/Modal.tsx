@@ -53,6 +53,11 @@ export function Modal({ visible, title, onClose, children, footer, scroll = true
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={{ paddingBottom: 16 }}
+              // flexShrink is 0 by default, so tall content would push past the
+              // sheet's max height and get clipped by the screen edge instead of
+              // scrolling within it. Shrinking lets the sheet cap its own height
+              // and hand the overflow to this scroll view.
+              style={{ flexShrink: 1 }}
             >
               {children}
             </ScrollView>

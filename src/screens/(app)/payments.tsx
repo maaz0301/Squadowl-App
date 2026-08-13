@@ -5,7 +5,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Header, Modal, Screen } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
-import { useEnterprisePaymentsQuery, useConnectAccountStatusQuery } from '@/features/queries';
+import { useEnterprisePaymentsQuery } from '@/features/queries';
+import { useConnectStatus } from '@/features/useConnectStatus';
 import { queryKeys } from '@/lib/queryClient';
 import { getDataSource } from '@/data';
 import { exportCsvFile } from '@/lib/exportCsv';
@@ -76,7 +77,7 @@ export default function PaymentsScreen() {
   const user = useUser();
   const tier = user?.planTier ?? 'free';
   const paymentsQuery = useEnterprisePaymentsQuery();
-  const connectStatusQuery = useConnectAccountStatusQuery(!!user?.connectChargesEnabled);
+  const connect = useConnectStatus();
   const [exporting, setExporting] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [showFeeDetails, setShowFeeDetails] = useState(false);
@@ -148,13 +149,18 @@ export default function PaymentsScreen() {
       }
 
       // Stripe's account.updated webhook lands a moment after onboarding
-      // finishes, so poll a few times instead of assuming it's instant.
+      // finishes, so poll a few times instead of assuming it's instant. The
+      // connect-status refetch is what actually settles this — it reads Stripe
+      // directly and heals the cached column — so the loop waits on that rather
+      // than on the profile flag, which never moves at all when the Connect
+      // webhook is misconfigured.
       for (let i = 0; i < 5; i++) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
+        const { data: live } = await connect.refetch();
         await restoreSession(true);
         await qc.invalidateQueries({ queryKey: queryKeys.profile });
         const current = useAuthStore.getState().session?.user;
-        if (current?.connectChargesEnabled) break;
+        if (live?.chargesEnabled || current?.connectChargesEnabled) break;
       }
     } catch (err: any) {
       Alert.alert('Connect Error', err.message || 'Something went wrong.');
@@ -170,7 +176,7 @@ export default function PaymentsScreen() {
       </View>
       <PlanGate feature="payments" title="Payment Dashboard">
         <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}>
-          {!user?.connectChargesEnabled ? (
+          {!connect.chargesEnabled ? (
             <Card accent className="mb-4 gap-2">
               <Text className="font-display font-bold" style={{ color: colors.ink }}>
                 Connect Payouts
@@ -180,7 +186,20 @@ export default function PaymentsScreen() {
                 processing fee (2.9% + $0.30 CAD) and TryoutHQ's 0.5% platform fee are deducted
                 automatically — the rest is paid out straight to you.
               </Text>
-              <Button label="Connect with Stripe" loading={connecting} onPress={connectPayouts} />
+              {/* An account that exists but can't take charges is mid-onboarding
+                  (or blocked on info Stripe still wants) — say so, rather than
+                  implying nothing was ever connected. */}
+              {connect.onboardingIncomplete ? (
+                <Text className="text-xs" style={{ color: colors.warning }}>
+                  Your Stripe account isn't finished — Stripe still needs more information before it
+                  will accept charges. Continue where you left off below.
+                </Text>
+              ) : null}
+              <Button
+                label={connect.onboardingIncomplete ? 'Continue Stripe Setup' : 'Connect with Stripe'}
+                loading={connecting}
+                onPress={connectPayouts}
+              />
               <Button label="View Fee Details" variant="ghost" size="sm" onPress={() => setShowFeeDetails(true)} />
             </Card>
           ) : (
@@ -189,21 +208,21 @@ export default function PaymentsScreen() {
                 <Badge label="Payouts connected" variant="success" />
                 <Button label="Fee Details" variant="ghost" size="sm" onPress={() => setShowFeeDetails(true)} />
               </View>
-              {connectStatusQuery.isLoading ? (
+              {connect.isLoading ? (
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
                   Loading connected account…
                 </Text>
-              ) : connectStatusQuery.data?.connected ? (
+              ) : connect.status?.connected ? (
                 <>
                   <Text className="text-sm font-bold" style={{ color: colors.ink }}>
-                    {connectStatusQuery.data.businessName ||
-                      connectStatusQuery.data.email ||
-                      connectStatusQuery.data.accountId}
+                    {connect.status.businessName ||
+                      connect.status.email ||
+                      connect.status.accountId}
                   </Text>
                   <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                    Stripe account {connectStatusQuery.data.accountId}
-                    {connectStatusQuery.data.country ? ` · ${connectStatusQuery.data.country}` : ''} ·{' '}
-                    {(connectStatusQuery.data.platformFeeRate * 100).toFixed(1)}% TryoutHQ fee + Stripe's
+                    Stripe account {connect.status.accountId}
+                    {connect.status.country ? ` · ${connect.status.country}` : ''} ·{' '}
+                    {(connect.status.platformFeeRate * 100).toFixed(1)}% TryoutHQ fee + Stripe's
                     processing fee per transaction
                   </Text>
                 </>
@@ -312,63 +331,66 @@ export default function PaymentsScreen() {
         </ScrollView>
       </PlanGate>
 
+      {/* No ScrollView here — Modal already scrolls its children. An unbounded
+          one nested inside that collapses and clips the tail of the content. */}
       <Modal visible={showFeeDetails} title="Stripe & Platform Fees" onClose={() => setShowFeeDetails(false)}>
-        <ScrollView>
-          <Text className="text-sm mb-4" style={{ color: colors.inkMuted }}>
+        <>
+          <Text className="text-base mb-4" style={{ color: colors.inkMuted }}>
             These are Stripe's own processing fees (CAD), deducted automatically per transaction
             before funds reach your account — separate from TryoutHQ's 0.5% platform fee. Verified
             June 2026.
           </Text>
 
           {FEE_SCHEDULE.map((row) => (
-            <View key={row.type} className="mb-3 pb-3 border-b" style={{ borderColor: colors.border }}>
-              <View className="flex-row justify-between items-start gap-2">
-                <Text className="text-sm font-bold flex-1" style={{ color: colors.ink }}>
-                  {row.type}
-                </Text>
-                <Text className="text-sm font-bold" style={{ color: colors.primary }}>
-                  {row.fee}
-                </Text>
-              </View>
-              <Text className="text-xs mt-1" style={{ color: colors.inkMuted }}>
+            <View key={row.type} className="mb-4 pb-4 border-b" style={{ borderColor: colors.border }}>
+              {/* Fee sits under its label rather than beside it: at this text size
+                  the longest amount ("2.9% + CAD$0.30 + 0.8%") no longer fits in a
+                  side-by-side column on a narrow phone without wrapping mid-figure. */}
+              <Text className="text-md font-bold" style={{ color: colors.ink }}>
+                {row.type}
+              </Text>
+              <Text className="text-md font-bold mt-0.5" style={{ color: colors.primary }}>
+                {row.fee}
+              </Text>
+              <Text className="text-base mt-1" style={{ color: colors.inkMuted }}>
                 {row.note}
               </Text>
             </View>
           ))}
 
-          <Text className="text-sm font-bold mt-2 mb-2" style={{ color: colors.ink }}>
+          <Text className="text-md font-bold mt-2 mb-3" style={{ color: colors.ink }}>
             Real example — CAD$100 registration fee
           </Text>
-          <View className="gap-1 mb-2">
-            <View className="flex-row justify-between">
-              <Text className="text-sm" style={{ color: colors.inkMuted }}>
+          <View className="gap-2 mb-3">
+            <View className="flex-row justify-between gap-2">
+              <Text className="text-base flex-1" style={{ color: colors.inkMuted }}>
                 Stripe fee (2.9% + $0.30)
               </Text>
-              <Text className="text-sm" style={{ color: colors.ink }}>
+              <Text className="text-base" style={{ color: colors.ink }}>
                 −$3.20
               </Text>
             </View>
-            <View className="flex-row justify-between">
-              <Text className="text-sm" style={{ color: colors.inkMuted }}>
+            <View className="flex-row justify-between gap-2">
+              <Text className="text-base flex-1" style={{ color: colors.inkMuted }}>
                 TryoutHQ platform fee (0.5%)
               </Text>
-              <Text className="text-sm" style={{ color: colors.ink }}>
+              <Text className="text-base" style={{ color: colors.ink }}>
                 −$0.50
               </Text>
             </View>
-            <View className="flex-row justify-between mt-1">
-              <Text className="text-sm font-bold" style={{ color: colors.ink }}>
+            <View className="flex-row justify-between gap-2 mt-1">
+              <Text className="text-md font-bold flex-1" style={{ color: colors.ink }}>
                 Coach receives
               </Text>
-              <Text className="text-sm font-bold" style={{ color: colors.success }}>
+              <Text className="text-md font-bold" style={{ color: colors.success }}>
                 $96.30
               </Text>
             </View>
           </View>
-          <Text className="text-xs" style={{ color: colors.inkMuted }}>
+          <Text className="text-base" style={{ color: colors.inkMuted }}>
             Stripe fees are paid by the coach (subscriber), not by TryoutHQ.
           </Text>
-        </ScrollView>
+        </>
       </Modal>
     </Screen>
   );

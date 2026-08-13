@@ -1625,14 +1625,52 @@ export class SupabaseDataSource implements DataSource {
     // the database so it still counts toward the player's permanent profile
     // history, it just disappears from this tryout's active roster (see the
     // removed_at filter in assembleTryouts).
-    unwrap(
+    const removed = unwrap(
       await supabase
         .from('tryout_participants')
         .update({ removed_at: new Date().toISOString() })
         .eq('id', playerId)
-        .select()
+        .select('athlete_id')
         .maybeSingle(),
-    );
+    ) as Row | null;
+    if (removed?.athlete_id) await this.clearGuardianIfUnrostered(removed.athlete_id as string);
+  }
+
+  /**
+   * Drop the guardian contact from an athlete once that athlete is off every
+   * roster. Guardians have no rows of their own — they are contact columns on
+   * `athletes`, and everything that lists them (listOrgMembers, the org member
+   * directory) derives them from those columns. Removing a player therefore has
+   * to clear them here, or the parent lingers as a "member" of the org with no
+   * player attached.
+   *
+   * Guarded on the athlete holding no remaining spot in any assessment, team, or
+   * season: one athlete row is shared across all three, so a player cut from one
+   * assessment but still rostered elsewhere keeps their guardian.
+   */
+  private async clearGuardianIfUnrostered(athleteId: string): Promise<void> {
+    const { supabase } = await this.ctx();
+    const [participants, teamRoster, seasonRoster] = await Promise.all([
+      supabase
+        .from('tryout_participants')
+        .select('id', { count: 'exact', head: true })
+        .eq('athlete_id', athleteId)
+        .is('removed_at', null),
+      supabase.from('team_roster').select('id', { count: 'exact', head: true }).eq('athlete_id', athleteId),
+      supabase.from('season_roster').select('id', { count: 'exact', head: true }).eq('athlete_id', athleteId),
+    ]);
+    const stillRostered =
+      (participants.count ?? 0) + (teamRoster.count ?? 0) + (seasonRoster.count ?? 0) > 0;
+    if (stillRostered) return;
+    await supabase
+      .from('athletes')
+      .update({
+        guardian_name: null,
+        guardian_email: null,
+        guardian_phone: null,
+        guardian_user_id: null,
+      })
+      .eq('id', athleteId);
   }
 
   async uploadPlayerPhoto(athleteId: string, fileUri: string, fileType: string): Promise<string> {
@@ -1881,7 +1919,11 @@ export class SupabaseDataSource implements DataSource {
     options: DummyDataOptions,
     onProgress?: (done: number, total: number) => void,
   ): Promise<DummyDataResult> {
-    const { supabase, accountId, userId } = await this.ctx();
+    const { supabase, userId } = await this.ctx();
+    // Not wrapped in withFreshAccount(): a retry here would re-run inserts that
+    // already succeeded and duplicate players. writableAccountId() re-resolves
+    // from memberships on every call, so there's no cached id to go stale.
+    const accountId = await this.writableAccountId();
     const tryout = await this.getTryout(tryoutId);
     if (!tryout) throw new Error('Assessment not found');
 
@@ -1996,26 +2038,28 @@ export class SupabaseDataSource implements DataSource {
     // contact (reserved yopmail.com domain — see dummyGuardian) so roster
     // players are reachable the same way registration players are.
     // Chunked so a large batch (up to 1000) doesn't ride in a single insert payload.
-    const athletes: Row[] = [];
+    //
+    // Routed through create_athletes_for_caller() rather than a direct table
+    // insert, for the same reason createAthlete() uses the single-row RPC: it
+    // takes account_id as a hint and resolves the real owning account from
+    // auth.uid() server-side, so a stale or read-only cached accountId can't
+    // fail the athletes_insert policy with "new row violates row-level security
+    // policy". The RPC returns ids in input order.
+    const athleteIds: string[] = [];
     for (let i = 0; i < generated.length; i += 500) {
       const chunk = generated.slice(i, i + 500);
-      athletes.push(
-        ...(unwrap(
-          await supabase
-            .from('athletes')
-            .insert(
-              chunk.map((g) => ({
-                account_id: accountId,
-                first_name: g.form.first,
-                last_name: g.form.last,
-                year_of_birth: g.form.yearOfBirth ? Number(g.form.yearOfBirth) : null,
-                guardian_name: g.form.guardianName || null,
-                guardian_email: g.form.guardianEmail || null,
-              })),
-            )
-            .select('id'),
-        ) as Row[]),
-      );
+      const { data, error } = await supabase.rpc('create_athletes_for_caller', {
+        account_hint: accountId,
+        players: chunk.map((g) => ({
+          first_name: g.form.first,
+          last_name: g.form.last,
+          year_of_birth: g.form.yearOfBirth ? Number(g.form.yearOfBirth) : null,
+          guardian_name: g.form.guardianName || null,
+          guardian_email: g.form.guardianEmail || null,
+        })),
+      });
+      if (error) throw new Error(error.message);
+      athleteIds.push(...((data ?? []) as string[]));
     }
 
     // 2. Bulk-insert participants, tagged via current_team so they can be cleared.
@@ -2029,7 +2073,7 @@ export class SupabaseDataSource implements DataSource {
             .insert(
               chunk.map((g, j) => ({
                 tryout_id: tryout.id,
-                athlete_id: athletes[i + j].id,
+                athlete_id: athleteIds[i + j],
                 jersey: g.form.jersey || null,
                 position: g.form.pos || null,
                 current_team: TEST_DATA_TAG,
@@ -2042,7 +2086,6 @@ export class SupabaseDataSource implements DataSource {
       );
     }
 
-    const athleteIds = athletes.map((a) => a.id as string);
     if (!opts.withScores) return { players: participants.length, evaluations: 0, athleteIds };
 
     const rubrics = tryout.settings.customRubrics ?? [];
@@ -2115,7 +2158,11 @@ export class SupabaseDataSource implements DataSource {
     options: DummyTeamOptions,
     onProgress?: (done: number, total: number) => void,
   ): Promise<DummyTeamResult> {
-    const { supabase, accountId, userId } = await this.ctx();
+    const { supabase, userId } = await this.ctx();
+    // teams/tryouts insert with this id directly, so it must be an account the
+    // caller can actually write to — not whatever ctx() cached first. Same
+    // reasoning as generateTestData for not retrying via withFreshAccount().
+    const accountId = await this.writableAccountId();
     const profile = await this.loadUserProfile(userId);
 
     const teamCount = clampInt(options?.teams, 1, 10, 1);
@@ -2466,6 +2513,38 @@ export class SupabaseDataSource implements DataSource {
       .eq('id', registrationId);
     await this.markOnboarding({ addPlayers: true });
     return this.fetchPlayer(participant.id);
+  }
+
+  /**
+   * Team destination for a registration: create the canonical athlete from the
+   * registration exactly as addRegistrationToRoster does, then put them on the
+   * team's roster instead of an assessment's. No tryout_participant row is
+   * created — the athlete isn't being evaluated, just rostered.
+   */
+  async addRegistrationToTeam(teamId: string, registrationId: string): Promise<TeamRosterPlayer[]> {
+    const { supabase, accountId } = await this.ctx();
+    const reg = unwrap(
+      await supabase.from('registrations').select('*').eq('id', registrationId).single(),
+    ) as Row;
+    const athleteId = await this.createAthlete(accountId, {
+      first_name: reg.first_name,
+      last_name: reg.last_name,
+      year_of_birth: reg.year_of_birth ?? null,
+      guardian_name: reg.guardian_name || null,
+      guardian_email: reg.guardian_email || null,
+      guardian_phone: reg.guardian_phone || null,
+      medical_info: reg.medical_info || null,
+      about: reg.about_player || null,
+    });
+    const rows = await this.addTeamRosterPlayers(teamId, [
+      { athleteId, pos: reg.position_trying_out_for || undefined },
+    ]);
+    await supabase
+      .from('registrations')
+      .update({ status: 'added', athlete_id: athleteId })
+      .eq('id', registrationId);
+    await this.markOnboarding({ addPlayers: true });
+    return rows;
   }
 
   async dismissRegistration(_tryoutId: string, registrationId: string): Promise<void> {
@@ -3563,7 +3642,12 @@ export class SupabaseDataSource implements DataSource {
     const account = unwrap(
       await supabase.from('accounts').select('*').eq('id', accountId).single(),
     ) as Row;
-    if (account.type !== 'organization') return null;
+    // Deliberately not gated on `type === 'organization'`: accounts default to
+    // 'individual' and are only flipped when someone fills in an organization
+    // name (see updateUserProfile), so gating here errored the whole dashboard
+    // out with "No organization found" for plan-eligible accounts that never set
+    // one. Access is governed by plan tier, and every metric on the screen is
+    // derived from this same account either way.
 
     const [members, tryouts, athletes] = await Promise.all([
       supabase.from('memberships').select('id', { count: 'exact', head: true }).eq('account_id', accountId),
@@ -3572,7 +3656,10 @@ export class SupabaseDataSource implements DataSource {
     ]);
     return {
       id: account.id,
-      orgSlug: account.slug ?? account.id,
+      // `slug` is nullable and only set for orgs that claimed a handle — leave it
+      // undefined rather than falling back to the account UUID, which reads as a
+      // meaningless code in the UI.
+      orgSlug: account.slug ?? undefined,
       orgName: account.name,
       sport: account.sport ?? undefined,
       memberCount: members.count ?? 0,

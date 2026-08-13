@@ -601,7 +601,7 @@ export interface PlayerProfile {
 // ---- Phase 4: Enterprise & Admin ----
 export const OrgSchema = z.object({
   id: z.string(),
-  orgSlug: z.string(),
+  orgSlug: z.string().optional(),
   orgName: z.string(),
   sport: z.string().optional(),
   memberCount: z.number().default(0),

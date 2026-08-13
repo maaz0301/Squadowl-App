@@ -393,7 +393,7 @@ export default function DashboardScreen() {
                   </Svg>
                   <View className="flex-1">
                     <Text className="font-bold text-base" style={{ color: colors.ink }}>
-                      Enterprise Dashboard
+                      Dashboard
                     </Text>
                     <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
                       Organization-wide reporting & members

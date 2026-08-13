@@ -96,6 +96,14 @@ export interface DataSource {
   listRegistrations(tryoutId: string): Promise<Registration[]>;
   submitRegistration(tryoutId: string, form: RegistrationSubmit): Promise<Registration>;
   addRegistrationToRoster(tryoutId: string, registrationId: string): Promise<Player>;
+  /**
+   * Place a registration straight onto a team's own roster, with no assessment
+   * involved. Mirrors addRegistrationToRoster for the "Team" destination.
+   */
+  addRegistrationToTeam(
+    teamId: string,
+    registrationId: string,
+  ): Promise<import('./types').TeamRosterPlayer[]>;
   dismissRegistration(tryoutId: string, registrationId: string): Promise<void>;
 
   // Phase 2: Team Builder, AI, Export

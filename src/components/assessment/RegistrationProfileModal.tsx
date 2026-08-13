@@ -1,0 +1,132 @@
+import { Text, View } from 'react-native';
+
+import { Badge, Button, Modal } from '@/components/ui';
+import type { Registration } from '@/data/types';
+import { useThemeColors } from '@/theme/ThemeProvider';
+
+function Row({ label, value, colors }: { label: string; value?: string; colors: any }) {
+  return (
+    <View className="flex-row justify-between gap-3">
+      <Text className="text-sm" style={{ color: colors.inkMuted }}>
+        {label}
+      </Text>
+      <Text
+        className="text-sm font-medium flex-1 text-right"
+        style={{ color: value ? colors.ink : colors.inkFaint }}
+      >
+        {value || '—'}
+      </Text>
+    </View>
+  );
+}
+
+function Section({ title, children, colors }: { title: string; children: React.ReactNode; colors: any }) {
+  return (
+    <View className="gap-2">
+      <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+        {title}
+      </Text>
+      <View className="gap-2">{children}</View>
+    </View>
+  );
+}
+
+interface RegistrationProfileModalProps {
+  registration: Registration | null;
+  onClose: () => void;
+  /** Omitted for non-pending registrations, which have nowhere left to go. */
+  onAddToRoster?: () => void;
+  onDismiss?: () => void;
+}
+
+/**
+ * Read-only view of everything a guardian submitted through the QR form. A
+ * pending registration has no athlete record yet, so there is no player profile
+ * to link to — this renders straight off the registration row instead.
+ */
+export function RegistrationProfileModal({
+  registration,
+  onClose,
+  onAddToRoster,
+  onDismiss,
+}: RegistrationProfileModalProps) {
+  const colors = useThemeColors();
+  const r = registration;
+
+  return (
+    <Modal
+      visible={!!r}
+      title={r ? `${r.firstName} ${r.lastName}` : 'Registration'}
+      onClose={onClose}
+      footer={
+        <View className="mt-4 gap-2">
+          {r?.status === 'pending' && onAddToRoster ? (
+            <Button label="Add to Roster" onPress={onAddToRoster} />
+          ) : null}
+          {r?.status === 'pending' && onDismiss ? (
+            <Button label="Dismiss" variant="ghost" onPress={onDismiss} />
+          ) : null}
+          <Button label="Close" variant="secondary" onPress={onClose} />
+        </View>
+      }
+    >
+      {r ? (
+        <View className="gap-5">
+          <View className="flex-row flex-wrap gap-2">
+            <Badge
+              label={r.status}
+              variant={r.status === 'pending' ? 'warning' : r.status === 'added' ? 'success' : 'info'}
+            />
+            {r.paymentStatus ? (
+              <Badge
+                label={r.paymentStatus}
+                variant={r.paymentStatus === 'paid' ? 'success' : 'warning'}
+              />
+            ) : null}
+          </View>
+
+          <Section title="Player" colors={colors}>
+            <Row label="Name" value={`${r.firstName} ${r.lastName}`} colors={colors} />
+            <Row label="Year of Birth" value={r.yearOfBirth} colors={colors} />
+            <Row label="Position" value={r.positionTryingOutFor} colors={colors} />
+            <Row label="Current Team" value={r.currentTeam} colors={colors} />
+            <Row label="Current Level" value={r.currentLevel} colors={colors} />
+          </Section>
+
+          <Section title="Guardian" colors={colors}>
+            <Row label="Name" value={r.guardianName} colors={colors} />
+            <Row label="Email" value={r.guardianEmail} colors={colors} />
+            <Row label="Phone" value={r.guardianPhone} colors={colors} />
+          </Section>
+
+          {r.friend1Name || r.friend2Name ? (
+            <Section title="Friend Requests" colors={colors}>
+              <Row label="Friend 1" value={r.friend1Name} colors={colors} />
+              <Row label="Friend 2" value={r.friend2Name} colors={colors} />
+            </Section>
+          ) : null}
+
+          {r.aboutPlayer ? (
+            <Section title="About" colors={colors}>
+              <Text className="text-sm" style={{ color: colors.ink }}>
+                {r.aboutPlayer}
+              </Text>
+            </Section>
+          ) : null}
+
+          {r.medicalInfo ? (
+            <Section title="Medical Info" colors={colors}>
+              <Text className="text-sm" style={{ color: colors.ink }}>
+                {r.medicalInfo}
+              </Text>
+            </Section>
+          ) : null}
+
+          <Section title="Submitted" colors={colors}>
+            <Row label="Date" value={new Date(r.createdAt).toLocaleString()} colors={colors} />
+          </Section>
+        </View>
+      ) : null}
+    </Modal>
+  );
+}
