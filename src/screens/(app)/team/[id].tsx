@@ -35,11 +35,11 @@ const RSVP_LABEL: Record<Rsvp, string> = {
   pending: 'No reply',
 };
 
-const RSVP_VARIANT: Record<Rsvp, 'success' | 'warning' | 'danger' | 'default'> = {
+const RSVP_VARIANT: Record<Rsvp, 'success' | 'warning' | 'danger' | 'info'> = {
   yes: 'success',
   maybe: 'warning',
   no: 'danger',
-  pending: 'default',
+  pending: 'info',
 };
 
 export default function TeamDetailScreen() {
@@ -773,11 +773,11 @@ export default function TeamDetailScreen() {
                     </View>
 
                     <View className="flex-row items-center gap-2 py-1 flex-wrap">
-                      <Badge label={`${rsvp.counts.yes} yes`} variant="success" />
-                      <Badge label={`${rsvp.counts.maybe} maybe`} variant="warning" />
-                      <Badge label={`${rsvp.counts.no} no`} variant="danger" />
+                      <Badge label={`${rsvp.counts.yes} yes`} variant="success" size="lg" />
+                      <Badge label={`${rsvp.counts.maybe} maybe`} variant="warning" size="lg" />
+                      <Badge label={`${rsvp.counts.no} no`} variant="danger" size="lg" />
                       {rsvp.counts.pending > 0 ? (
-                        <Badge label={`${rsvp.counts.pending} pending`} />
+                        <Badge label={`${rsvp.counts.pending} pending`} variant="info" size="lg" />
                       ) : null}
                     </View>
 
@@ -831,7 +831,7 @@ export default function TeamDetailScreen() {
                                   {r.name}
                                 </Text>
                                 <View className="flex-row items-center gap-1.5">
-                                  <Badge label={RSVP_LABEL[r.response]} variant={RSVP_VARIANT[r.response]} />
+                                  <Badge label={RSVP_LABEL[r.response]} variant={RSVP_VARIANT[r.response]} size="lg" />
                                   <Text style={{ color: colors.inkFaint, fontSize: 13 }}>›</Text>
                                 </View>
                               </Pressable>

@@ -259,12 +259,6 @@ export default function GuardianPortalScreen() {
           right={
             <View className="flex-row gap-2">
               <Button
-                label="History"
-                size="sm"
-                variant="secondary"
-                onPress={() => navigation.navigate('PlayerProfile', { athleteId: playerId })}
-              />
-              <Button
                 label="Share"
                 size="sm"
                 variant="secondary"
@@ -281,7 +275,7 @@ export default function GuardianPortalScreen() {
               {athlete.firstName} {athlete.lastName}
             </Text>
             <Text className="text-base mt-1" style={{ color: colors.inkMuted }}>
-              {athlete.tryouts.length + athlete.seasons.length} Active Assignments
+              {athlete.seasons.length} Active Assignments
             </Text>
           </View>
         </View>
@@ -300,16 +294,13 @@ export default function GuardianPortalScreen() {
 
       {tab === 'overview' ? (
         <FlatList
-          data={[
-            ...athlete.seasons.map((s) => ({ ...s, _type: 'season' as const })),
-            ...athlete.tryouts.map((t) => ({ ...t, _type: 'tryout' as const })),
-          ]}
+          data={athlete.seasons.map((s) => ({ ...s, _type: 'season' as const }))}
           keyExtractor={(item) => `${item._type}-${item.id}`}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40, flexGrow: 1 }}
           ListEmptyComponent={
             <EmptyState
               title="No assignments"
-              message="This athlete isn't assigned to any tryouts or seasons yet."
+              message="This athlete isn't assigned to any seasons yet."
             />
           }
           renderItem={({ item }) => <TryoutSeasonCard item={item} colors={colors} playerId={playerId} />}

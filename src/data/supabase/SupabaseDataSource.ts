@@ -174,7 +174,11 @@ export class SupabaseDataSource implements DataSource {
     throw new Error(`SupabaseDataSource.${method}() not implemented yet.`);
   }
 
-  private async ctx(): Promise<{ supabase: SupabaseClient; userId: string; accountId: string }> {
+  // Resolves just the authenticated user id, without requiring an account/
+  // membership. Guardians are provisioned with a `profiles` row but
+  // intentionally no `accounts`/`memberships` row (see 0011_user_account_types.sql),
+  // so guardian-only reads must use this instead of `ctx()`.
+  private async userCtx(): Promise<{ supabase: SupabaseClient; userId: string }> {
     const supabase = getSupabase();
     let uId = this.userId;
     if (!uId) {
@@ -188,6 +192,11 @@ export class SupabaseDataSource implements DataSource {
       }
       this.userId = uId;
     }
+    return { supabase, userId: uId };
+  }
+
+  private async ctx(): Promise<{ supabase: SupabaseClient; userId: string; accountId: string }> {
+    const { supabase, userId: uId } = await this.userCtx();
     if (!this.accountId) {
       // Fetch all memberships to determine the best account to use
       const m = await supabase
@@ -3886,7 +3895,7 @@ export class SupabaseDataSource implements DataSource {
     successUrl?: string,
     cancelUrl?: string,
   ): Promise<{ url: string }> {
-    const { supabase } = await this.ctx();
+    const { supabase } = await this.userCtx();
     const { data, error } = await supabase.functions.invoke('create-team-fee-payment', {
       body: { seasonRosterId, successUrl, cancelUrl },
     });
@@ -4309,7 +4318,7 @@ export class SupabaseDataSource implements DataSource {
   //   }));
   // }
   async getGuardianRosters(): Promise<import('../types').GuardianRosterAthlete[]> {
-    const { supabase, userId } = await this.ctx();
+    const { supabase, userId } = await this.userCtx();
     if (!userId) return [];
 
     // 1. Fetch the actual logged-in user's email to bypass misaligned UUIDs
@@ -4365,9 +4374,12 @@ export class SupabaseDataSource implements DataSource {
         )
       `);
 
-    // Fall back to matching by lowercased email if the UUIDs are unlinked
+    // Fall back to matching by email if the UUIDs are unlinked. guardian_email is
+    // citext, so eq() is already case-insensitive — using eq (not ilike) lets this
+    // hit the plain btree index on guardian_email instead of forcing a sequential
+    // scan, which is what was timing out (57014) once the athletes table grew.
     if (userEmail) {
-      query = query.or(`guardian_user_id.eq.${userId},guardian_email.ilike.${userEmail}`);
+      query = query.or(`guardian_user_id.eq.${userId},guardian_email.eq.${userEmail}`);
     } else {
       query = query.eq('guardian_user_id', userId);
     }
@@ -4527,7 +4539,7 @@ export class SupabaseDataSource implements DataSource {
   }
 
   async getCoachDirectory(): Promise<CoachDirectoryEntry[]> {
-    const { supabase } = await this.ctx();
+    const { supabase } = await this.userCtx();
     const { data, error } = await supabase.rpc('list_coach_directory');
     if (error) throw new Error(error.message);
     return (data ?? []).map((row: any) => ({
@@ -4541,7 +4553,7 @@ export class SupabaseDataSource implements DataSource {
   }
 
   async shareAthleteWithCoach(athleteId: string, coachUserId: string, coachAccountId: string): Promise<AthleteShare> {
-    const { supabase, userId } = await this.ctx();
+    const { supabase, userId } = await this.userCtx();
 
     const { data: athleteRow, error: athleteError } = await supabase
       .from('athletes')
@@ -4598,7 +4610,7 @@ export class SupabaseDataSource implements DataSource {
   }
 
   async getMyAthleteShares(athleteId: string): Promise<AthleteShare[]> {
-    const { supabase } = await this.ctx();
+    const { supabase } = await this.userCtx();
     const { data, error } = await supabase
       .from('athlete_shares')
       .select('*')
@@ -4620,7 +4632,7 @@ export class SupabaseDataSource implements DataSource {
   }
 
   async getAthleteShare(shareId: string): Promise<AthleteShare> {
-    const { supabase } = await this.ctx();
+    const { supabase } = await this.userCtx();
     const { data, error } = await supabase
       .from('athlete_shares')
       .select('*')
@@ -4632,7 +4644,7 @@ export class SupabaseDataSource implements DataSource {
   }
 
   async acceptAthleteShare(shareId: string, tryoutId: string): Promise<AthleteShare> {
-    const { supabase } = await this.ctx();
+    const { supabase } = await this.userCtx();
     const { data, error } = await supabase.rpc('accept_athlete_share', {
       p_share_id: shareId,
       p_tryout_id: tryoutId,
@@ -4643,7 +4655,7 @@ export class SupabaseDataSource implements DataSource {
   }
 
   async rejectAthleteShare(shareId: string): Promise<AthleteShare> {
-    const { supabase } = await this.ctx();
+    const { supabase } = await this.userCtx();
     const { data, error } = await supabase.rpc('reject_athlete_share', { p_share_id: shareId });
     if (error) throw new Error(error.message);
     const row = Array.isArray(data) ? data[0] : data;
@@ -4651,7 +4663,7 @@ export class SupabaseDataSource implements DataSource {
   }
 
   async listShareComments(shareId: string): Promise<ShareComment[]> {
-    const { supabase } = await this.ctx();
+    const { supabase } = await this.userCtx();
     const { data, error } = await supabase
       .from('athlete_share_comments')
       .select('*')
@@ -4670,7 +4682,7 @@ export class SupabaseDataSource implements DataSource {
   }
 
   async addShareComment(shareId: string, body: string): Promise<ShareComment> {
-    const { supabase, userId } = await this.ctx();
+    const { supabase, userId } = await this.userCtx();
 
     const { data: shareRow, error: shareError } = await supabase
       .from('athlete_shares')

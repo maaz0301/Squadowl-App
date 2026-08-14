@@ -16,6 +16,9 @@ interface AddToRosterModalProps {
   /** The assessment the registrations came from, so it can be marked as current. */
   currentTryoutId?: string;
   loading?: boolean;
+  /** How many of the selected registrations have been placed so far — only
+   * meaningful once `loading` is true and there's more than one to add. */
+  progress?: { done: number; total: number };
   onClose: () => void;
   onConfirm: (destination: RosterDestination) => void;
 }
@@ -32,6 +35,7 @@ export function AddToRosterModal({
   count,
   currentTryoutId,
   loading,
+  progress,
   onClose,
   onConfirm,
 }: AddToRosterModalProps) {
@@ -72,6 +76,31 @@ export function AddToRosterModal({
       onClose={onClose}
       footer={
         <View className="mt-4 gap-2">
+          {loading && progress && progress.total > 0 ? (
+            <View style={{ gap: 4 }}>
+              <View
+                style={{
+                  width: '100%',
+                  height: 8,
+                  borderRadius: 999,
+                  overflow: 'hidden',
+                  backgroundColor: colors.tile,
+                }}
+              >
+                <View
+                  style={{
+                    width: `${Math.min(100, Math.max(4, Math.round((progress.done / progress.total) * 100)))}%`,
+                    height: '100%',
+                    borderRadius: 999,
+                    backgroundColor: colors.primary,
+                  }}
+                />
+              </View>
+              <Text className="text-xs text-center" style={{ color: colors.inkMuted }}>
+                Added {progress.done} of {progress.total} players...
+              </Text>
+            </View>
+          ) : null}
           <Button
             label={selected ? `Add to ${selected.name}` : 'Add'}
             disabled={!selected}

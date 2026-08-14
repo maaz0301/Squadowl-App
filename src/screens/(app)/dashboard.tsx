@@ -583,25 +583,12 @@ export default function DashboardScreen() {
                       
                       <View className="h-[1px] w-full mb-3" style={{ backgroundColor: colors.border }} />
 
-                      {ath.tryouts.length === 0 && ath.seasons.length === 0 ? (
+                      {ath.seasons.length === 0 ? (
                         <Text className="text-sm italic" style={{ color: colors.inkMuted }}>
-                          No active tryouts or seasons assigned yet.
+                          No active seasons assigned yet.
                         </Text>
                       ) : (
                         <View className="gap-3">
-                          {ath.tryouts.length > 0 ? (
-                            <View className="flex-row items-start gap-2">
-                              <Badge label="Tryouts" variant="brand" className="mt-0.5" />
-                              <View className="flex-1 flex-row flex-wrap gap-2 pt-1">
-                                {ath.tryouts.map(t => (
-                                  <Text key={t.participantId} className="text-sm" style={{ color: colors.ink }}>
-                                    • {t.name}
-                                  </Text>
-                                ))}
-                              </View>
-                            </View>
-                          ) : null}
-
                           {ath.seasons.length > 0 ? (
                             <View className="flex-row items-start gap-2">
                               <Badge label="Seasons" variant="info" className="mt-0.5" />

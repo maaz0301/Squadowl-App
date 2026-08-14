@@ -57,6 +57,12 @@ export default function RegistrationsScreen() {
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
   // Registration ids waiting on a destination choice. Non-null == picker open.
   const [placing, setPlacing] = useState<string[] | null>(null);
+  const [placingProgress, setPlacingProgress] = useState<{ done: number; total: number } | null>(null);
+  // Tracked separately from the mutations' own isPending — those flip back to
+  // false for a beat between batches (once a batch settles, before the next
+  // batch's mutateAsync calls start), which made the progress bar flicker
+  // hidden/shown between every batch.
+  const [isPlacing, setIsPlacing] = useState(false);
   // Registration whose submitted profile is open. Non-null == profile open.
   const [viewingId, setViewingId] = useState<string | null>(null);
 
@@ -141,6 +147,8 @@ export default function RegistrationsScreen() {
       }
     }
 
+    setIsPlacing(true);
+    setPlacingProgress({ done: 0, total: ids.length });
     try {
       // Fires in small concurrent batches instead of one request at a time — with
       // "Select All" this can be hundreds of registrations, and awaiting them
@@ -155,6 +163,7 @@ export default function RegistrationsScreen() {
               : addToRoster.mutateAsync({ registrationId, targetTryoutId: destination.id }),
           ),
         );
+        setPlacingProgress({ done: Math.min(i + BULK_ADD_BATCH_SIZE, ids.length), total: ids.length });
       }
       setSelected((prev) => {
         const next = new Set(prev);
@@ -164,6 +173,9 @@ export default function RegistrationsScreen() {
       setPlacing(null);
     } catch (e: any) {
       showAlert('Error', e?.message || 'Failed to add players.');
+    } finally {
+      setIsPlacing(false);
+      setPlacingProgress(null);
     }
   };
 
@@ -437,7 +449,8 @@ export default function RegistrationsScreen() {
         visible={placing !== null}
         count={placing?.length ?? 0}
         currentTryoutId={id}
-        loading={addToRoster.isPending || addToTeam.isPending}
+        loading={isPlacing}
+        progress={placingProgress ?? undefined}
         onClose={() => setPlacing(null)}
         onConfirm={runPlacement}
       />

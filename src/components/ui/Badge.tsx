@@ -3,14 +3,21 @@ import { Text, View } from 'react-native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 type BadgeVariant = 'default' | 'brand' | 'success' | 'warning' | 'danger' | 'info';
+type BadgeSize = 'sm' | 'lg';
 
 interface BadgeProps {
   label: string;
   variant?: BadgeVariant;
+  size?: BadgeSize;
   className?: string;
 }
 
-export function Badge({ label, variant = 'default', className }: BadgeProps) {
+const SIZE_STYLES: Record<BadgeSize, { pad: string; text: string }> = {
+  sm: { pad: 'px-2 py-1', text: 'text-xs' },
+  lg: { pad: 'px-4 py-2.5', text: 'text-base' },
+};
+
+export function Badge({ label, variant = 'default', size = 'sm', className }: BadgeProps) {
   const colors = useThemeColors();
   const styles: Record<BadgeVariant, { bg: string; text: string; border: string }> = {
     default: { bg: colors.tile, text: colors.inkMuted, border: colors.border },
@@ -21,12 +28,13 @@ export function Badge({ label, variant = 'default', className }: BadgeProps) {
     info: { bg: 'rgba(56,189,248,0.12)', text: colors.info, border: 'rgba(56,189,248,0.25)' },
   };
   const s = styles[variant];
+  const sz = SIZE_STYLES[size];
   return (
     <View
-      className={cn('px-2 py-1 rounded-full border self-start', className)}
+      className={cn(sz.pad, 'rounded-full border self-start', className)}
       style={{ backgroundColor: s.bg, borderColor: s.border }}
     >
-      <Text className="text-xs font-bold" style={{ color: s.text }}>
+      <Text className={cn(sz.text, 'font-bold')} style={{ color: s.text }}>
         {label}
       </Text>
     </View>
