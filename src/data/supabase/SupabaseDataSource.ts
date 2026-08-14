@@ -2606,8 +2606,13 @@ export class SupabaseDataSource implements DataSource {
 
     // Restore real UUIDs
     const restoreIds = (arr: string[] = []) => arr.map(short => idMap.get(short) || short);
+    const posById = new Map(tryout.roster.map((p) => [p.id, p.pos]));
 
-    // Merge Claude's response with local state structure
+    // Merge Claude's response with local state structure. The model is only asked
+    // for one "players" array per team (not a redundant "skaters"/"goalies" split —
+    // that used to double output size and risk truncation on large rosters); the
+    // skater/goalie split is derived here from the roster's own position data,
+    // which is also guaranteed to be internally consistent with "players".
     const result: TeamBuilderState = {
       generatedAt: Date.now(),
       sortMethod: config.sortMethod ?? 'balanced',
@@ -2620,14 +2625,17 @@ export class SupabaseDataSource implements DataSource {
       ranks: [], // We can omit full rankings or compute them locally if needed
       warnings: data.warnings || [],
       explanation: data.explanation,
-      teams: (data.teams || []).map((t: any, i: number) => ({
-        index: i,
-        id: `ai-team-${i}`,
-        name: t.name || `Team ${i + 1}`,
-        players: restoreIds(t.players),
-        skaters: restoreIds(t.skaters),
-        goalies: restoreIds(t.goalies)
-      })),
+      teams: (data.teams || []).map((t: any, i: number) => {
+        const players = restoreIds(t.players);
+        return {
+          index: i,
+          id: `ai-team-${i}`,
+          name: t.name || `Team ${i + 1}`,
+          players,
+          skaters: players.filter((id) => !isGoaliePosition(posById.get(id))),
+          goalies: players.filter((id) => isGoaliePosition(posById.get(id))),
+        };
+      }),
       unassigned: restoreIds(data.unassigned),
     };
 

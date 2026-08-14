@@ -559,12 +559,19 @@ export function useUpdatePasswordMutation() {
 export function useGenerateTeamBuilderMutation(tryoutId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (config: import('@/data/teamBuilder').TeamBuilderConfig) =>
-      withTimeout(
+    mutationFn: (config: import('@/data/teamBuilder').TeamBuilderConfig) => {
+      // Claude has to enumerate every roster player in its response, so generation
+      // time scales with roster size — a flat 60s cap only ever worked up to
+      // roughly 100 players. Scale the client-side timeout with roster size instead,
+      // capped at 5 minutes (large rosters can legitimately take that long to stream).
+      const rosterSize = qc.getQueryData<Tryout>(queryKeys.tryout(tryoutId))?.roster.length ?? 0;
+      const timeoutMs = Math.min(300000, Math.max(60000, 20000 + rosterSize * 300));
+      return withTimeout(
         getDataSource().generateTeamBuilder(tryoutId, config),
-        60000,
+        timeoutMs,
         'Team builder generation timed out. Claude AI might be taking longer than usual, please try again.'
-      ),
+      );
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) }),
   });
 }

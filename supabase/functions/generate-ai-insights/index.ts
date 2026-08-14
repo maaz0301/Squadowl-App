@@ -117,6 +117,35 @@ function validateTeamBuilderResult(
   return issues;
 }
 
+// Deterministically repairs the common near-miss mistakes Claude makes on large
+// rosters — a stray duplicated ID, a hallucinated ID, a player dropped entirely —
+// instead of rejecting the whole response and burning a retry (and more latency)
+// on an otherwise-good team split. Every roster ID ends up on exactly one team
+// (first team it was seen on, preserving the model's placement intent) or in
+// "unassigned" if it was never validly placed. Numeric constraints (team count/
+// size) are NOT something this can safely patch, so validateTeamBuilderResult
+// still runs afterward to catch those and trigger a real corrective retry.
+function reconcileTeamBuilderResult(result: any, players: any[]): any {
+  const rosterIds = players.map((p: any) => p.id);
+  const rosterSet = new Set(rosterIds);
+  const teams = Array.isArray(result?.teams) ? result.teams : [];
+  const assigned = new Set<string>();
+
+  const cleanedTeams = teams.map((t: any) => {
+    const seenInTeam = new Set<string>();
+    const cleanedPlayers = (Array.isArray(t?.players) ? t.players : []).filter((id: string) => {
+      if (!rosterSet.has(id) || assigned.has(id) || seenInTeam.has(id)) return false;
+      seenInTeam.add(id);
+      assigned.add(id);
+      return true;
+    });
+    return { ...t, players: cleanedPlayers };
+  });
+
+  const unassigned = rosterIds.filter((id) => !assigned.has(id));
+  return { ...result, teams: cleanedTeams, unassigned };
+}
+
 async function callClaudeForJson(systemPrompt: string, promptText: string, maxTok: number): Promise<any> {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -341,11 +370,14 @@ Include one "category_edges" entry per category that appears in the stats above 
         });
       }
 
-      // The response must enumerate every player ID twice (once in "players", once in
-      // "skaters"/"goalies") across every team, so the token budget must scale with
-      // roster size or large rosters get truncated mid-array and fail JSON.parse.
-      // Capped at 64000 — claude-haiku-4-5's max output token ceiling.
-      maxTokens = Math.min(64000, 1024 + players.length * 60);
+      // The response must enumerate every player ID once (in "players") across every
+      // team, so the token budget must scale with roster size or large rosters get
+      // truncated mid-array and fail JSON.parse. Capped at 64000 — claude-haiku-4-5's
+      // max output token ceiling; skaters/goalies are split out client-side from the
+      // roster's own position data instead of asking the model to repeat every ID a
+      // second time, which used to roughly double output size and risk truncation
+      // well before 1000 players.
+      maxTokens = Math.min(64000, 1024 + players.length * 35);
 
       const rawConstraints = detectTeamConstraints(userPrompt || '');
       teamBuilderConstraints = {
@@ -394,12 +426,11 @@ Return exactly this JSON format:
   "teams": [
     {
       "name": "Team A",
-      "players": ["player_id_1", "player_id_2"],
-      "skaters": ["player_id_1"],
-      "goalies": ["player_id_2"]
+      "players": ["player_id_1", "player_id_2"]
     }
   ]
 }
+Do NOT include "skaters" or "goalies" fields — list every player once in "players" only; positions are looked up separately.
 Every player ID in the roster must appear exactly once total — either in exactly one team's "players" array, or in the top-level "unassigned" array, never in both and never omitted.`;
     } else {
       throw new Error('Invalid action. Must be "summary", "compare", or "team_builder"');
@@ -408,14 +439,17 @@ Every player ID in the roster must appear exactly once total — either in exact
     let parsedResult = await callClaudeForJson(systemPrompt, prompt, maxTokens);
 
     if (action === 'team_builder') {
-      // Claude can drift on numeric constraints or drop/duplicate players once the
-      // roster/rankings payload gets long. Rather than silently handing the client
-      // a response with the wrong team count, validate it and give the model one
-      // corrective retry with the exact issues spelled out.
+      // Repair small mistakes (duplicate/hallucinated/dropped IDs) deterministically
+      // before validating — these are common on large rosters and don't need the
+      // model to try again. Only numeric constraint violations (wrong team count/
+      // size) fall through to a real corrective retry, since those need the model
+      // to actually reconsider the split.
+      parsedResult = reconcileTeamBuilderResult(parsedResult, teamBuilderPlayers);
       let issues = validateTeamBuilderResult(parsedResult, teamBuilderPlayers, teamBuilderConstraints);
       if (issues.length > 0) {
         const correctivePrompt = `${prompt}\n\nYour previous attempt was rejected for these reasons:\n${issues.map((i: string) => `- ${i}`).join('\n')}\nFix these issues exactly and return corrected JSON in the same format.`;
         parsedResult = await callClaudeForJson(systemPrompt, correctivePrompt, maxTokens);
+        parsedResult = reconcileTeamBuilderResult(parsedResult, teamBuilderPlayers);
         issues = validateTeamBuilderResult(parsedResult, teamBuilderPlayers, teamBuilderConstraints);
         if (issues.length > 0) {
           throw new Error(`The AI couldn't satisfy your instructions (${issues.join('; ')}). Please try again or simplify your instructions.`);
