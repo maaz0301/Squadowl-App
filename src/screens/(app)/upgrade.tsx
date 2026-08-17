@@ -243,7 +243,7 @@ export default function UpgradeScreen() {
                   <Text className="text-xl font-display font-bold" style={{ color: colors.ink }}>
                     {item.name}
                   </Text>
-                  <Text className="text-xs mb-3" style={{ color: colors.inkMuted }}>
+                  <Text className="text-sm mb-3" style={{ color: colors.inkMuted }}>
                     {item.tagline}
                   </Text>
                   <View className="flex-row items-baseline mb-4">
@@ -269,13 +269,13 @@ export default function UpgradeScreen() {
                 return (
                   <View key={f.label}>
                     <View className="flex-row gap-2">
-                      <Text style={{ color: markColor }}>{f.included ? '✓' : '○'}</Text>
-                      <Text style={{ color: f.included ? (f.fee ? colors.warning : colors.ink) : colors.inkMuted }}>
+                      <Text className="text-base" style={{ color: markColor }}>{f.included ? '✓' : '○'}</Text>
+                      <Text className="text-base" style={{ color: f.included ? (f.fee ? colors.warning : colors.ink) : colors.inkMuted }}>
                         {f.label}
                       </Text>
                     </View>
                     {f.subItems?.map((sub) => (
-                      <Text key={sub} className="text-xs ml-6" style={{ color: colors.warning }}>
+                      <Text key={sub} className="text-md ml-6" style={{ color: colors.warning }}>
                         + {sub}
                       </Text>
                     ))}
@@ -283,7 +283,7 @@ export default function UpgradeScreen() {
                 );
               })}
 
-              <Text className="text-[10px] mt-1" style={{ color: colors.inkFaint }}>
+              <Text className="text-xs mt-1" style={{ color: colors.inkFaint }}>
                 ○ not included · ✓ included ·{' '}
                 <Text style={{ color: colors.success }}>green ✓</Text> included on all plans ·{' '}
                 <Text style={{ color: colors.warning }}>orange</Text> fees applied to this tier
