@@ -32,6 +32,7 @@ import {
   useDeleteTeamMutation,
   useDeleteTryoutMutation,
   useArchiveTryoutMutation,
+  usePrefetchTryout,
 } from '@/features/queries';
 import { APP_CONFIG } from '@/config/app';
 import { canUseFeature, isAtAssessmentLimit, isAtTeamLimit } from '@/data/plans';
@@ -94,6 +95,7 @@ export default function DashboardScreen() {
   const archiveTryout = useArchiveTryoutMutation();
   const acceptAssignment = useAcceptAssignmentMutation();
   const rejectAssignment = useRejectAssignmentMutation();
+  const prefetchTryout = usePrefetchTryout();
   const [decliningId, setDecliningId] = useState<string | null>(null);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
 
@@ -120,6 +122,9 @@ export default function DashboardScreen() {
   };
 
   const openAssigned = (id: string) => {
+    // Kick the fetch off now so it runs during the navigation animation
+    // rather than after the roster has already mounted empty.
+    prefetchTryout(id);
     setCurrentTryout(id);
     setActiveAssessor(user?.displayName ? { name: user.displayName, email: user.email, role: 'assessor', status: 'accepted' } : null);
     navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: id, isAssessorOnly: true } });
@@ -191,6 +196,7 @@ export default function DashboardScreen() {
       toggleCombineTryout(id);
       return;
     }
+    prefetchTryout(id);
     setCurrentTryout(id);
     setNavigatingId(id);
     navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: id } });

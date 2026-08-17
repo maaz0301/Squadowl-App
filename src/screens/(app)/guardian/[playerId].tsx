@@ -14,7 +14,9 @@ import {
   ErrorState,
   Badge,
   Button,
+  Modal,
 } from '@/components/ui';
+import { ChatIconButton } from '@/components/ChatIconButton';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
   useGuardianRostersQuery,
@@ -201,6 +203,9 @@ export default function GuardianPortalScreen() {
   const playerId = route.params?.playerId;
   const colors = useThemeColors();
   const [tab, setTab] = useState('overview');
+  // Only shown when the athlete is on more than one team — with just one,
+  // the chat icon skips straight to it.
+  const [chatPickerOpen, setChatPickerOpen] = useState(false);
 
   const guardianQuery = useGuardianRostersQuery();
   // Keeps this screen in sync with a coach's event edits without needing to
@@ -250,6 +255,25 @@ export default function GuardianPortalScreen() {
     });
   }
 
+  // Shared by the header icon and the multi-team picker below.
+  const openTeamChat = (season: (typeof athlete.seasons)[number]) => {
+    setChatPickerOpen(false);
+    navigation.navigate('TeamChat', {
+      seasonId: season.id,
+      title: `${season.teamName} Chat`,
+      subtitle: season.name,
+      noSeasonMessage:
+        'This athlete has not been added to a team yet. Once a coach adds them to a roster, the team chat opens up here.',
+    });
+  };
+  const openChat = () => {
+    if (athlete.seasons.length === 1) {
+      openTeamChat(athlete.seasons[0]);
+    } else {
+      setChatPickerOpen(true);
+    }
+  };
+
   return (
     <Screen padded={false}>
       <View className="px-4 pb-2">
@@ -257,7 +281,8 @@ export default function GuardianPortalScreen() {
           title="Guardian Portal"
           showBack
           right={
-            <View className="flex-row gap-2">
+            <View className="flex-row items-center gap-2">
+              <ChatIconButton onPress={openChat} />
               <Button
                 label="Share"
                 size="sm"
@@ -344,6 +369,28 @@ export default function GuardianPortalScreen() {
           </Card>
         </View>
       )}
+
+      <Modal visible={chatPickerOpen} title="Choose a Team" onClose={() => setChatPickerOpen(false)}>
+        <View style={{ gap: 2 }}>
+          {athlete.seasons.map((s) => (
+            <Pressable
+              key={s.id}
+              onPress={() => openTeamChat(s)}
+              style={({ pressed }) => [
+                {
+                  padding: 12,
+                  backgroundColor: pressed ? colors.border : 'transparent',
+                  borderBottomWidth: 1,
+                  borderBottomColor: colors.border,
+                },
+              ]}
+            >
+              <Text className="font-bold" style={{ color: colors.ink }}>{s.teamName}</Text>
+              <Text className="text-xs mt-1" style={{ color: colors.inkMuted }}>{s.name}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </Modal>
     </Screen>
   );
 }

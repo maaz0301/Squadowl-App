@@ -157,9 +157,9 @@ export default function RegistrationsScreen() {
       } else {
         setPlacingProgress({ done: 0, total: ids.length });
         // The whole selection goes down as one call — the data source places it in
-        // chunks of 50 (fewer than 50 selected is a single chunk) and reports back
-        // as each chunk lands, so the bar moves without the screen having to
-        // orchestrate batching itself.
+        // chunks of 20, several in flight at once, and reports back as each chunk
+        // lands, so the bar moves without the screen having to orchestrate
+        // batching itself.
         await placeRegs.mutateAsync({ destination, registrationIds: ids });
       }
       setSelected((prev) => {

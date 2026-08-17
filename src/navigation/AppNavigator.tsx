@@ -38,6 +38,7 @@ export default function AppNavigator() {
       <Stack.Screen name="NewTeam" component={require('../screens/(app)/team/new').default} />
       <Stack.Screen name="TeamDetail" component={require('../screens/(app)/team/[id]').default} />
       <Stack.Screen name="TeamPlayer" component={require('../screens/(app)/team/[id]/player/[playerId]').default} />
+      <Stack.Screen name="TeamChat" component={require('../screens/(app)/team-chat').default} />
 
       {/* Player profile (standalone, athlete-identity-keyed) */}
       <Stack.Screen name="PlayerProfile" component={require('../screens/(app)/player/[athleteId]').default} />

@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, Platform, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Platform, Pressable, Text, View } from 'react-native';
 
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { DummyDataModal } from '@/components/DummyDataModal';
@@ -28,7 +28,9 @@ import {
   useGenerateTestDataMutation,
   useTryoutQuery,
   useUploadPlayerPhotoMutation,
+  tryoutBulkWriteKey,
 } from '@/features/queries';
+import { useIsMutating } from '@tanstack/react-query';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { useUser } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
@@ -43,6 +45,11 @@ export default function RosterScreen() {
   const uploadPhoto = useUploadPlayerPhotoMutation(id!);
   const [dummyProgress, setDummyProgress] = useState<{ done: number; total: number } | null>(null);
   const genTest = useGenerateTestDataMutation(id!, (done, total) => setDummyProgress({ done, total }));
+  // genTest.isPending flips false the instant generateTestData resolves —
+  // before the roster refetch below has even started. Tracked separately so
+  // the modal keeps showing "loading" through that refetch too, instead of
+  // going quiet right as the batch finishes.
+  const [refetchingAfterDummy, setRefetchingAfterDummy] = useState(false);
   const clearTest = useClearTestDataMutation(id!);
   const rosterFilter = useSessionStore((s) => s.rosterFilter);
   const setRosterFilter = useSessionStore((s) => s.setRosterFilter);
@@ -54,6 +61,11 @@ export default function RosterScreen() {
   const [showTools, setShowTools] = useState(false);
   const [showTestGen, setShowTestGen] = useState(false);
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
+  // A bulk add started from another screen (the Registrations tab's dummy-data
+  // dialog, typically) keeps writing players for minutes without this screen's
+  // query ever refetching — so without checking for it, an in-progress 1000
+  // player run looks exactly like an assessment nobody has added anyone to.
+  const bulkWriting = useIsMutating({ mutationKey: tryoutBulkWriteKey(id ?? '') }) > 0;
   const [playerSearch, setPlayerSearch] = useState('');
 
   const isAssociation = canUseFeature(user?.planTier ?? 'free', 'enterprise');
@@ -69,17 +81,28 @@ export default function RosterScreen() {
     }
   }, [tryoutQuery.data, user, activeAssessor, setActiveAssessor]);
 
+  // One pass over `evals` (not one per row, not one per render) to get each
+  // player's eval count — the FlatList row below and `scoredCount` further
+  // down both just look this up instead of filtering the full evals array.
+  const evalCountByPlayerId = useMemo(() => {
+    const counts = new Map<string, number>();
+    if (!tryoutQuery.data) return counts;
+    for (const e of tryoutQuery.data.evals) {
+      counts.set(e.playerId, (counts.get(e.playerId) ?? 0) + 1);
+    }
+    return counts;
+  }, [tryoutQuery.data]);
+
   const filteredRoster = useMemo(() => {
     if (!tryoutQuery.data) return [];
-    const { roster, evals } = tryoutQuery.data;
-    const scoredIds = new Set(evals.map((e) => e.playerId));
+    const { roster } = tryoutQuery.data;
     let result;
     switch (rosterFilter) {
       case 'scored':
-        result = roster.filter((p) => scoredIds.has(p.id));
+        result = roster.filter((p) => evalCountByPlayerId.has(p.id));
         break;
       case 'unscored':
-        result = roster.filter((p) => !scoredIds.has(p.id));
+        result = roster.filter((p) => !evalCountByPlayerId.has(p.id));
         break;
       case 'goalies':
         result = roster.filter((p) => p.pos?.toUpperCase() === 'GTL');
@@ -95,7 +118,7 @@ export default function RosterScreen() {
       result = result.filter((p) => `${p.first} ${p.last}`.toLowerCase().includes(search));
     }
     return result;
-  }, [tryoutQuery.data, rosterFilter, playerSearch]);
+  }, [tryoutQuery.data, rosterFilter, playerSearch, evalCountByPlayerId]);
 
   if (tryoutQuery.isLoading) return <LoadingState message="Loading roster..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
@@ -113,7 +136,15 @@ export default function RosterScreen() {
   };
 
   const hasPlayers = tryout.roster.length > 0;
-  const scoredCount = new Set(tryout.evals.map((e) => e.playerId)).size;
+  const scoredCount = evalCountByPlayerId.size;
+  // A background refetch keeps rendering the *previous* cached tryout, which
+  // right after a bulk add (dummy data, or QR registrations placed onto the
+  // roster) is still the empty one — `isLoading` is false the whole time
+  // because data technically exists. So an empty roster while a fetch or a
+  // bulk write is in flight means "not known yet", not "no players": showing
+  // the add-your-first-player prompt there is what made a slow refetch, or a
+  // still-running 1000-player generation, look like an empty assessment.
+  const rosterPending = !hasPlayers && (tryoutQuery.isFetching || bulkWriting);
 
   return (
     <Screen padded={false}>
@@ -203,7 +234,14 @@ export default function RosterScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100, flexGrow: 1 }}
         ListEmptyComponent={
-          hasPlayers ? (
+          rosterPending ? (
+            <View className="flex-1 items-center justify-center px-6 gap-3">
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text className="text-base text-center" style={{ color: colors.inkMuted }}>
+                {bulkWriting ? 'Adding players...' : 'Loading roster...'}
+              </Text>
+            </View>
+          ) : hasPlayers ? (
             <EmptyState
               title="No players match"
               message={
@@ -233,7 +271,7 @@ export default function RosterScreen() {
           )
         }
         renderItem={({ item }) => {
-          const evalCount = tryout.evals.filter((e) => e.playerId === item.id).length;
+          const evalCount = evalCountByPlayerId.get(item.id) ?? 0;
           return (
             <Pressable
               onPress={() => {
@@ -370,7 +408,7 @@ export default function RosterScreen() {
       <DummyDataModal
         variant="assessment"
         visible={showTestGen}
-        loading={genTest.isPending}
+        loading={genTest.isPending || refetchingAfterDummy}
         progress={dummyProgress ?? undefined}
         hasRubrics={(tryout.settings?.customRubrics?.length ?? 0) > 0}
         onAddRubrics={() => {
@@ -382,6 +420,13 @@ export default function RosterScreen() {
           setDummyProgress(null);
           try {
             const res = await genTest.mutateAsync(options);
+            // useGenerateTestDataMutation's onSuccess only invalidates (marks
+            // stale) — explicitly refetch here so the roster behind this modal
+            // is guaranteed to already show the new players/evals by the time
+            // it closes, instead of waiting on whatever triggers the next
+            // background refresh.
+            setRefetchingAfterDummy(true);
+            await tryoutQuery.refetch();
             setShowTestGen(false);
             const parts = [
               res.registrations ? `${res.registrations} pending registrations` : null,
@@ -398,6 +443,7 @@ export default function RosterScreen() {
             else Alert.alert('Error', msg);
           } finally {
             setDummyProgress(null);
+            setRefetchingAfterDummy(false);
           }
         }}
       />

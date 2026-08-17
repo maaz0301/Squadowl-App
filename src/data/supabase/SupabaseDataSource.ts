@@ -72,6 +72,7 @@ import type {
   SeasonPlayer,
   Team,
   TeamBuilderResult,
+  TeamMessage,
   TeamRosterPlayer,
   Tryout,
   UserProfile,
@@ -139,18 +140,39 @@ const DUMMY_CHUNK = {
 
 /**
  * Registrations placed onto a roster per round trip. A chunk of 20 is one
- * `select`, one bulk athlete RPC, one participant/roster insert, and one status
- * update — so a selection of 20 or fewer is placed in a single pass, and larger
- * selections stream through in 20s rather than one player at a time.
+ * `select`, one bulk guardian-resolve RPC, one bulk athlete RPC, one
+ * participant/roster insert, and one status update — so a selection of 20 or
+ * fewer is placed in a single pass, and larger selections stream through in
+ * 20s rather than one player at a time.
  */
 const REGISTRATION_CHUNK = 20;
 
 /**
- * Guardian provisioning is the one per-registration step inside a chunk, and it
- * can create a login and send an invite email — kept well under the chunk size
- * so a full batch doesn't fire 50 signups and 50 emails simultaneously.
+ * Chunks in flight at once for a bulk placement. Each chunk is its own set of
+ * round trips, so running them one at a time made a 1000-player selection (50
+ * chunks) pay 50x its per-chunk latency in full. Bounded rather than unlimited
+ * for the same reason as `DUMMY_MAX_CONCURRENCY.insert` — one shared Postgres
+ * pooler behind every chunk's requests.
  */
-const GUARDIAN_LOOKUP_CONCURRENCY = 10;
+const REGISTRATION_CHUNK_CONCURRENCY = 6;
+
+/**
+ * Guardian invite emails are fired after a chunk's accounts are resolved and
+ * are best-effort (a missed invite doesn't block placement), so they're kept
+ * off the placement critical path entirely and just bounded here so a chunk
+ * with many new guardians doesn't burst-invoke the send-email function.
+ */
+const GUARDIAN_EMAIL_CONCURRENCY = 10;
+
+/**
+ * Distinct guardian emails resolved per `resolve_guardians_for_caller` call.
+ * Deduplicated across the whole selection first (see
+ * `resolveGuardiansForRegistrations`), so this only needs to cover as many
+ * *distinct* guardians as a batch — kept small since each one can mean a
+ * bcrypt hash plus an `auth.users`/`auth.identities` insert, and a long single
+ * statement is exactly what risks a `statement_timeout` under load.
+ */
+const GUARDIAN_RESOLVE_BATCH = 50;
 
 /** Players per `generate-test-players` call — sized so one Claude response stays
  * within a comfortable output length rather than risking a truncated batch. */
@@ -484,35 +506,55 @@ export class SupabaseDataSource implements DataSource {
     };
   }
 
-  /** Assemble full Tryout objects for a set of tryout rows (batched relational fetch). */
   /**
    * PostgREST caps any single response at the project's default row limit
    * (commonly 1000), silently truncating rather than erroring — so a query
    * spanning tryouts whose combined rows exceed that cap would otherwise
    * return an incomplete (or, for later tryouts in the batch, empty) result.
    * Pages through with `.range()` until the server's own exact count is
-   * satisfied, advancing by however many rows actually came back each page
-   * (not the requested page size), since the server can cap below that too.
+   * satisfied. A 1000-player tryout with ~10 evaluations each needs ~10 pages
+   * just for `evaluations` — fetched one at a time this was ~10 sequential
+   * round trips (the dominant cost of the roster screen sitting on "Loading
+   * roster..." after a large bulk add). The first page still has to go alone
+   * (it's the only way to learn the total), but every page after that is
+   * independent — same `range()`, no shared state — so they're fetched
+   * concurrently instead.
    */
   private async fetchAllByIn(table: string, select: string, column: string, ids: string[]): Promise<Row[]> {
     if (ids.length === 0) return [];
     const supabase = getSupabase();
     const pageSize = 1000;
-    const out: Row[] = [];
-    let offset = 0;
-    let total: number | null = null;
-    while (total === null || offset < total) {
+
+    const fetchPage = async (offset: number, width: number) => {
       const { data, error, count } = await supabase
         .from(table)
         .select(select, { count: 'exact' })
         .in(column, ids)
-        .range(offset, offset + pageSize - 1);
+        .range(offset, offset + width - 1);
       if (error) throw new Error(error.message);
-      const rows = (data ?? []) as Row[];
-      out.push(...rows);
-      if (total === null) total = count ?? rows.length;
-      if (rows.length === 0) break;
-      offset += rows.length;
+      return { rows: (data ?? []) as Row[], count };
+    };
+
+    const first = await fetchPage(0, pageSize);
+    const total = first.count ?? first.rows.length;
+    // How many rows the server actually hands back per request, which can be
+    // lower than what we asked for (`db-max-rows`). Striding by the requested
+    // size instead would skip everything between the cap and the next offset.
+    const stride = first.rows.length;
+    if (stride === 0 || total <= stride) return first.rows;
+
+    const offsets: number[] = [];
+    for (let offset = stride; offset < total; offset += stride) offsets.push(offset);
+    const rest = await mapPool(offsets, 5, (offset) => fetchPage(offset, stride));
+
+    const out = first.rows.concat(...rest.map((p) => p.rows));
+    // The pages above assume a consistent cap. If the server was stingier on
+    // some page we'd be short, so finish sequentially rather than silently
+    // returning a partial roster.
+    while (out.length < total) {
+      const page = await fetchPage(out.length, stride);
+      if (page.rows.length === 0) break;
+      out.push(...page.rows);
     }
     return out;
   }
@@ -1169,28 +1211,26 @@ export class SupabaseDataSource implements DataSource {
 
     // A season's roster is normally seeded from tryout_participants when the
     // season is *created* (createSeason) — a player added to the team roster
-    // afterwards never gets that backfill, so their fee status silently never
-    // shows up. Upsert them into the team's current season roster here too,
-    // whenever this team actually collects a fee, so "Add Players" alone is
-    // enough to start tracking it.
-    const { data: team } = await supabase.from('teams').select('collects_fees').eq('id', teamId).maybeSingle();
-    if (team?.collects_fees) {
-      const { data: currentSeason } = await supabase
-        .from('seasons')
-        .select('id')
-        .eq('team_id', teamId)
-        .eq('archived', false)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (currentSeason) {
-        await supabase
-          .from('season_roster')
-          .upsert(
-            [...byAthlete.values()].map((e) => ({ season_id: currentSeason.id, athlete_id: e.athleteId })),
-            { onConflict: 'season_id,athlete_id', ignoreDuplicates: true },
-          );
-      }
+    // afterwards never gets that backfill. Season membership is what grants a
+    // player's guardian access to the team (can_access_season): the fee status,
+    // the schedule, and the team chat all key off it, so this syncs on every
+    // add rather than only for fee-collecting teams. Teams with no season yet
+    // are left alone; the flows that create one already sync the roster too.
+    const { data: currentSeason } = await supabase
+      .from('seasons')
+      .select('id')
+      .eq('team_id', teamId)
+      .eq('archived', false)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (currentSeason) {
+      await supabase
+        .from('season_roster')
+        .upsert(
+          [...byAthlete.values()].map((e) => ({ season_id: currentSeason.id, athlete_id: e.athleteId })),
+          { onConflict: 'season_id,athlete_id', ignoreDuplicates: true },
+        );
     }
 
     return this.listTeamRoster(teamId);
@@ -2770,48 +2810,82 @@ export class SupabaseDataSource implements DataSource {
   }
 
   /**
-   * Shared front half of both bulk placement paths: load one chunk's
-   * registrations, provision their guardian logins, and create every athlete in
-   * a single RPC. Returns the registration rows paired with their new athlete
-   * id, in the RPC's input order.
+   * Resolve (and create, where needed) every distinct guardian email across
+   * the *whole* selection in one pass, before any chunk starts creating
+   * athletes. Returns a lowercase-email -> guardian_user_id map.
+   *
+   * Deduplicating up front — rather than per chunk — is what makes it safe to
+   * run the resolve calls concurrently: since each email is only ever handed
+   * to one batch, two batches can never race to insert the same new
+   * auth.users row at once. That race (two concurrently-running chunks both
+   * seeing "doesn't exist yet" for the same sibling's guardian and both
+   * trying to create it) is what produced "canceling statement due to
+   * statement timeout" once chunk processing became concurrent — the second
+   * insert blocks on the first's still-open transaction and can sit waiting
+   * long enough to trip the timeout.
+   *
+   * Invite emails for newly created guardians are dispatched afterwards
+   * without being awaited — best-effort, same as the single-add path, and
+   * kept off the placement critical path since the caller only needs the
+   * returned map before it can create athletes.
    */
-  private async createAthletesForRegistrations(
-    supabase: any,
-    accountId: string,
-    registrationIds: string[],
-  ): Promise<{ reg: Row; athleteId: string }[]> {
-    // One request for the whole chunk. Postgres doesn't promise `.in()` comes
-    // back in the order the ids were passed, so everything downstream is keyed
-    // off this array's own order rather than the caller's id list.
-    const regs = unwrap(
-      await supabase.from('registrations').select('*').in('id', registrationIds),
-    ) as Row[];
-    if (regs.length === 0) return [];
+  private async resolveGuardiansForRegistrations(supabase: any, regs: Row[]): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    const displayNameByEmail = new Map<string, string>();
+    for (const reg of regs) {
+      const email = reg.guardian_email;
+      if (!email) continue;
+      const lc = String(email).toLowerCase();
+      if (!displayNameByEmail.has(lc)) displayNameByEmail.set(lc, reg.guardian_name || 'Guardian');
+    }
+    if (displayNameByEmail.size === 0) return map;
 
-    const fields = regs.map((reg) => ({
+    const entries = [...displayNameByEmail.entries()];
+    const batches: { email: string; display_name: string }[][] = [];
+    for (let i = 0; i < entries.length; i += GUARDIAN_RESOLVE_BATCH) {
+      batches.push(entries.slice(i, i + GUARDIAN_RESOLVE_BATCH).map(([email, display_name]) => ({ email, display_name })));
+    }
+
+    const invites: { email: string; password: string }[] = [];
+    await mapPool(batches, REGISTRATION_CHUNK_CONCURRENCY, async (batch) => {
+      try {
+        const { data, error } = await supabase.rpc('resolve_guardians_for_caller', { guardians: batch });
+        if (error) throw new Error(error.message);
+        const resolved = (data ?? []) as { email: string; user_id: string | null; created: boolean; password: string | null }[];
+        for (const r of resolved) {
+          if (r.email && r.user_id) map.set(r.email.toLowerCase(), r.user_id);
+          if (r.created && r.password) invites.push({ email: r.email, password: r.password });
+        }
+      } catch (err) {
+        console.warn('Failed to bulk-resolve guardian accounts:', err);
+      }
+    });
+
+    if (invites.length > 0) {
+      mapPool(invites, GUARDIAN_EMAIL_CONCURRENCY, (r) =>
+        this.sendEmail('org_invite', r.email, { role: 'guardian', password: r.password }).catch((emailErr) =>
+          console.warn('Failed to send auto-created guardian invite email:', emailErr),
+        ),
+      ).catch((err) => console.warn('Guardian invite dispatch failed:', err));
+    }
+
+    return map;
+  }
+
+  /** Build a `create_athletes_for_caller` payload row from a registration. */
+  private athleteFieldsFromRegistration(reg: Row, guardianMap: Map<string, string>): Row {
+    const guardianUserId = reg.guardian_email ? guardianMap.get(String(reg.guardian_email).toLowerCase()) : undefined;
+    return {
       first_name: reg.first_name,
       last_name: reg.last_name,
       year_of_birth: reg.year_of_birth ?? null,
       guardian_name: reg.guardian_name || null,
       guardian_email: reg.guardian_email || null,
       guardian_phone: reg.guardian_phone || null,
+      guardian_user_id: guardianUserId || null,
       medical_info: reg.medical_info || null,
       about: reg.about_player || null,
-    })) as Row[];
-
-    // The one part that genuinely can't be batched — each guardian needs its own
-    // existence check, and a new one needs an account plus an invite email. Held
-    // to a narrower pool than the placement chunk itself so a 50-registration
-    // batch can't fire 50 signups and 50 emails at once.
-    await mapPool(fields, GUARDIAN_LOOKUP_CONCURRENCY, (f) => this.resolveGuardianUserId(f));
-
-    const { data, error } = await supabase.rpc('create_athletes_for_caller', {
-      account_hint: accountId,
-      players: fields,
-    });
-    if (error) throw new Error(error.message);
-    const athleteIds = (data ?? []) as string[];
-    return regs.map((reg, i) => ({ reg, athleteId: athleteIds[i] }));
+    };
   }
 
   /** Mark a placed chunk's registrations as added, one request per chunk. */
@@ -2836,21 +2910,73 @@ export class SupabaseDataSource implements DataSource {
     );
   }
 
+  /**
+   * Shared body of both bulk placement paths: split into id chunks, load
+   * every chunk's registration rows up front (read-only, so this is fully
+   * parallel regardless of the write-side concurrency limit), resolve every
+   * distinct guardian in the whole selection exactly once, then create
+   * athletes chunk by chunk — with bounded concurrency, since none of this
+   * phase touches auth.users and so can't hit the guardian create-race above.
+   * `place` does the caller-specific roster/participant insert for a chunk's
+   * newly created athletes.
+   */
+  private async placeRegistrations(
+    supabase: any,
+    accountId: string,
+    registrationIds: string[],
+    place: (placed: { reg: Row; athleteId: string }[]) => Promise<void>,
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<number> {
+    const idChunks: string[][] = [];
+    for (let i = 0; i < registrationIds.length; i += REGISTRATION_CHUNK) {
+      idChunks.push(registrationIds.slice(i, i + REGISTRATION_CHUNK));
+    }
+    if (idChunks.length === 0) return 0;
+
+    const regChunks = await mapPool(idChunks, REGISTRATION_CHUNK_CONCURRENCY * 2, async (ids) => {
+      // Postgres doesn't promise `.in()` comes back in the order the ids were
+      // passed, so everything downstream is keyed off this array's own order
+      // rather than the caller's id list.
+      return unwrap(await supabase.from('registrations').select('*').in('id', ids)) as Row[];
+    });
+
+    const guardianMap = await this.resolveGuardiansForRegistrations(supabase, regChunks.flat());
+
+    let done = 0;
+    const total = registrationIds.length;
+    await mapPool(regChunks, REGISTRATION_CHUNK_CONCURRENCY, async (regs) => {
+      if (regs.length === 0) return;
+      const fields = regs.map((reg) => this.athleteFieldsFromRegistration(reg, guardianMap));
+      const { data, error } = await supabase.rpc('create_athletes_for_caller', {
+        account_hint: accountId,
+        players: fields,
+      });
+      if (error) throw new Error(error.message);
+      const athleteIds = (data ?? []) as string[];
+      const placed = regs.map((reg, i) => ({ reg, athleteId: athleteIds[i] }));
+
+      await place(placed);
+      await this.markRegistrationsAdded(supabase, placed);
+
+      done += placed.length;
+      onProgress?.(done, total);
+    });
+
+    if (done > 0) await this.markOnboarding({ addPlayers: true });
+    return done;
+  }
+
   async addRegistrationsToRoster(
     tryoutId: string,
     registrationIds: string[],
     onProgress?: (done: number, total: number) => void,
   ): Promise<number> {
     const { supabase, accountId } = await this.ctx();
-    const chunks: string[][] = [];
-    for (let i = 0; i < registrationIds.length; i += REGISTRATION_CHUNK) {
-      chunks.push(registrationIds.slice(i, i + REGISTRATION_CHUNK));
-    }
-
-    let done = 0;
-    for (const chunk of chunks) {
-      const placed = await this.createAthletesForRegistrations(supabase, accountId, chunk);
-      if (placed.length > 0) {
+    return this.placeRegistrations(
+      supabase,
+      accountId,
+      registrationIds,
+      async (placed) => {
         unwrap(
           await supabase
             .from('tryout_participants')
@@ -2877,14 +3003,9 @@ export class SupabaseDataSource implements DataSource {
             )
             .select('id'),
         );
-        await this.markRegistrationsAdded(supabase, placed);
-      }
-      done += placed.length;
-      onProgress?.(done, registrationIds.length);
-    }
-
-    if (done > 0) await this.markOnboarding({ addPlayers: true });
-    return done;
+      },
+      onProgress,
+    );
   }
 
   async addRegistrationsToTeam(
@@ -2893,15 +3014,11 @@ export class SupabaseDataSource implements DataSource {
     onProgress?: (done: number, total: number) => void,
   ): Promise<number> {
     const { supabase, accountId } = await this.ctx();
-    const chunks: string[][] = [];
-    for (let i = 0; i < registrationIds.length; i += REGISTRATION_CHUNK) {
-      chunks.push(registrationIds.slice(i, i + REGISTRATION_CHUNK));
-    }
-
-    let done = 0;
-    for (const chunk of chunks) {
-      const placed = await this.createAthletesForRegistrations(supabase, accountId, chunk);
-      if (placed.length > 0) {
+    return this.placeRegistrations(
+      supabase,
+      accountId,
+      registrationIds,
+      async (placed) => {
         // addTeamRosterPlayers already upserts the whole batch in one request
         // (and handles the season-roster backfill for fee-collecting teams).
         await this.addTeamRosterPlayers(
@@ -2911,14 +3028,9 @@ export class SupabaseDataSource implements DataSource {
             pos: reg.position_trying_out_for || undefined,
           })),
         );
-        await this.markRegistrationsAdded(supabase, placed);
-      }
-      done += placed.length;
-      onProgress?.(done, registrationIds.length);
-    }
-
-    if (done > 0) await this.markOnboarding({ addPlayers: true });
-    return done;
+      },
+      onProgress,
+    );
   }
 
   async dismissRegistration(_tryoutId: string, registrationId: string): Promise<void> {
@@ -3338,6 +3450,7 @@ export class SupabaseDataSource implements DataSource {
 
     const seasonId = row.id;
 
+    let rosterRows: Row[] = [];
     if (form.teamId) {
       // Find all tryouts linked to this team
       const { data: tryouts } = await supabase
@@ -3373,14 +3486,33 @@ export class SupabaseDataSource implements DataSource {
           }));
 
           if (rosterInserts.length > 0) {
-            unwrap(await supabase.from('season_roster').insert(rosterInserts).select());
+            rosterRows = unwrap(
+              await supabase.from('season_roster').insert(rosterInserts).select('*, athletes(*)'),
+            ) as Row[];
           }
         }
       }
     }
 
-    const [assembled] = await this.assembleSeasons([row], true);
-    return assembled;
+    // A season one statement old has no events, no availability and no portal
+    // invites, and the roster is exactly what was just inserted — so assemble it
+    // from what's already in hand rather than re-reading all of that back.
+    return {
+      id: row.id,
+      name: row.name,
+      teamName: row.team_name,
+      sport: row.sport,
+      year: row.year ?? undefined,
+      division: row.division ?? undefined,
+      coach: row.coach ?? undefined,
+      teamId: row.team_id ?? undefined,
+      events: [],
+      roster: rosterRows.map((r) => this.rowToSeasonPlayer(r, [])),
+      scheduleShareToken: row.schedule_share_token ?? undefined,
+      createdAt: toMs(row.created_at),
+      updatedAt: toMs(row.updated_at),
+      archived: row.archived || undefined,
+    } as Season;
   }
 
   async updateSeason(id: string, updates: Partial<Season>): Promise<Season> {
@@ -3429,51 +3561,72 @@ export class SupabaseDataSource implements DataSource {
 
     const eventId = row.id;
 
-    const season = await this.getSeason(seasonId);
-    if (season) {
+    // Only the roster is needed here — reading it directly instead of through
+    // getSeason() skips assembling the season's events, every availability row
+    // on them, and its portal invites, none of which this uses.
+    const rosterRows = unwrap(
+      await supabase
+        .from('season_roster')
+        .select('id, athletes(guardian_email)')
+        .eq('season_id', seasonId),
+    ) as Row[];
+
+    if (rosterRows.length > 0) {
       // Find which players are selected (default to all if none provided)
-      const selectedPlayerIds = form.playerIds && form.playerIds.length > 0
-        ? form.playerIds
-        : season.roster.map(p => p.id);
+      const selected = form.playerIds && form.playerIds.length > 0
+        ? rosterRows.filter((r) => form.playerIds!.includes(r.id))
+        : rosterRows;
 
       // Pre-populate event_availability for these players. This is what later
       // gates who receives schedule/reminder emails, so a failure here must
       // surface — don't swallow it, or the event silently ends up with no
       // recipients even though players are attached.
-      const availInserts = season.roster
-        .filter(p => selectedPlayerIds.includes(p.id))
-        .map(p => ({
-          season_event_id: eventId,
-          roster_id: p.id,
-          response: 'pending' as const,
-        }));
-
-      if (availInserts.length > 0) {
-        unwrap(await supabase.from('event_availability').insert(availInserts));
+      if (selected.length > 0) {
+        unwrap(
+          await supabase.from('event_availability').insert(
+            selected.map((r) => ({
+              season_event_id: eventId,
+              roster_id: r.id,
+              response: 'pending' as const,
+            })),
+          ),
+        );
       }
 
-      // Emailing on create is best-effort — never fail event creation over it.
-      try {
-        // Find all guardians related to the selected players and send them emails.
-        const emails = Array.from(new Set(
-          season.roster
-            .filter(p => selectedPlayerIds.includes(p.id))
-            .map(p => p.guardianEmail)
-            .filter(Boolean)
-        ));
+      // Find all guardians related to the selected players and send them emails.
+      const emails = Array.from(new Set(
+        selected
+          .map((r) => {
+            const a = Array.isArray(r.athletes) ? r.athletes[0] : r.athletes;
+            return a?.guardian_email as string | undefined;
+          })
+          .filter(Boolean) as string[],
+      ));
 
-        for (const email of emails) {
-          if (email) {
-            await this.sendEmail('schedule_update', email, {
+      // Emailing on create is best-effort — never fail event creation over it,
+      // and never make the coach wait on it. One send-email invoke per guardian
+      // used to run in series, so a 25-player team held the spinner for the sum
+      // of 25 edge-function round trips. Fire them all off in parallel and let
+      // them settle after this resolves.
+      if (emails.length > 0) {
+        void Promise.allSettled(
+          emails.map((email) =>
+            this.sendEmail('schedule_update', email, {
               eventName: form.title,
               date: form.date,
               time: form.startTime,
               location: form.location,
-            });
+            }),
+          ),
+        ).then((results) => {
+          const failed = results.filter((r) => r.status === 'rejected');
+          if (failed.length) {
+            console.error(
+              `Failed to send ${failed.length}/${emails.length} schedule emails`,
+              (failed[0] as PromiseRejectedResult).reason,
+            );
           }
-        }
-      } catch (e) {
-        console.error('Failed to send schedule emails', e);
+        });
       }
     }
 
@@ -3574,6 +3727,39 @@ export class SupabaseDataSource implements DataSource {
         .single(),
     ) as Row;
     return this.rowToSeasonPlayer(row, []);
+  }
+
+  async addSeasonPlayers(
+    seasonId: string,
+    players: { athleteId: string; jersey?: string; playerEmail?: string }[],
+  ): Promise<SeasonPlayer[]> {
+    if (players.length === 0) return [];
+    const { supabase } = await this.ctx();
+    // De-dupe in-memory first: `upsert` rejects a payload that hits the same
+    // (season_id, athlete_id) twice within one statement, and a team roster can
+    // legitimately list the same athlete more than once.
+    const byAthlete = new Map<string, { athleteId: string; jersey?: string; playerEmail?: string }>();
+    for (const p of players) {
+      if (p.athleteId && !byAthlete.has(p.athleteId)) byAthlete.set(p.athleteId, p);
+    }
+    const rows = unwrap(
+      await supabase
+        .from('season_roster')
+        .upsert(
+          Array.from(byAthlete.values()).map((p) => ({
+            season_id: seasonId,
+            athlete_id: p.athleteId,
+            jersey: p.jersey || null,
+            player_email: p.playerEmail || null,
+          })),
+          // Athletes already enrolled keep their existing row (jersey, fee
+          // status) — this is a "make sure they're on the season" call, not an
+          // edit. `unique (season_id, athlete_id)` backs the conflict target.
+          { onConflict: 'season_id,athlete_id', ignoreDuplicates: true },
+        )
+        .select('*, athletes(*)'),
+    ) as Row[];
+    return rows.map((r) => this.rowToSeasonPlayer(r, []));
   }
 
   async deleteSeasonPlayer(_seasonId: string, playerId: string): Promise<void> {
@@ -3742,6 +3928,51 @@ export class SupabaseDataSource implements DataSource {
         }).catch(console.error);
       }
     }
+  }
+
+  private mapTeamMessage(row: Row): TeamMessage {
+    return {
+      id: row.id,
+      seasonId: row.season_id,
+      authorUserId: row.author_user_id,
+      authorName: row.author_name,
+      authorRole: row.author_role,
+      body: row.body,
+      createdAt: toMs(row.created_at),
+    };
+  }
+
+  // userCtx() rather than ctx(): a guardian has no staff account of their own,
+  // and RLS here keys off can_access_season(), not the caller's account.
+  async listTeamMessages(seasonId: string): Promise<TeamMessage[]> {
+    const { supabase } = await this.userCtx();
+    // Newest-first with a cap so a long-running team's history doesn't grow
+    // unbounded on the wire; reversed to chronological for display.
+    const rows = unwrap(
+      await supabase
+        .from('season_messages')
+        .select('*')
+        .eq('season_id', seasonId)
+        .order('created_at', { ascending: false })
+        .limit(200),
+    ) as Row[] | null;
+    return (rows ?? []).reverse().map((row) => this.mapTeamMessage(row));
+  }
+
+  async sendTeamMessage(seasonId: string, body: string): Promise<TeamMessage> {
+    const { supabase } = await this.userCtx();
+    // author_name/author_role are derived inside the function — see the
+    // season_messages migration for why clients can't insert directly.
+    const data = unwrap(
+      await supabase.rpc('send_season_message', { p_season_id: seasonId, p_body: body }),
+    );
+    const row = Array.isArray(data) ? data[0] : data;
+    return this.mapTeamMessage(row as Row);
+  }
+
+  async deleteTeamMessage(messageId: string): Promise<void> {
+    const { supabase } = await this.userCtx();
+    unwrap(await supabase.from('season_messages').delete().eq('id', messageId));
   }
 
   async listAthletes(): Promise<Athlete[]> {

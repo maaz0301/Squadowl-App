@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { AppState, type AppStateStatus, Platform } from 'react-native';
+import { AppState, type AppStateStatus, LogBox, Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import RootNavigator from './navigation/RootNavigator';
 import { QueryClientProvider, focusManager } from '@tanstack/react-query';
@@ -11,6 +11,18 @@ import SplashScreen from 'react-native-splash-screen';
 import '../global.css';
 import { useAuthStore } from './state/authStore';
 import { usePushNotifications } from './hooks/usePushNotifications';
+
+// react-native-keyboard-aware-scroll-view (used by every <Screen scroll>
+// screen, e.g. login/signup/forgot-password) polls whether the focused
+// TextInput's native view still exists on every keyboard show/hide/frame
+// event. On Fabric that shadow-node lookup can lose a race when the screen
+// blurs or unmounts mid-transition — RN's own UIManager already guards this
+// case and no-ops (the message says so), so nothing is actually broken, but
+// it logs via console.error and hijacks the screen as a full LogBox overlay.
+// Ignoring only this exact message, not console.error generally, so a real
+// error still surfaces normally. Revisit if the library (0.9.5, stale
+// relative to RN 0.85's Fabric default) is ever upgraded or replaced.
+LogBox.ignoreLogs(['viewIsDescendantOf() noop']);
 
 // React Query's "refetch on focus" only listens for browser window-focus
 // events out of the box — on native it has to be told when the app itself

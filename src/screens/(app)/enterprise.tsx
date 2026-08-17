@@ -11,6 +11,7 @@ import {
   useTryoutsQuery,
   useTeamsQuery,
   useSeasonsQuery,
+  usePrefetchTryout,
 } from '@/features/queries';
 import type { Tryout } from '@/data/types';
 
@@ -85,6 +86,7 @@ export default function EnterpriseScreen() {
   const navigation = useNavigation<any>();
   const [tab, setTab] = useState<EntTab>('overview');
   const orgQuery = useOrgQuery();
+  const prefetchTryout = usePrefetchTryout();
   const paymentsQuery = useEnterprisePaymentsQuery();
   const membersQuery = useOrgMembersQuery();
   const tryoutsQuery = useTryoutsQuery(false);
@@ -193,8 +195,10 @@ export default function EnterpriseScreen() {
   const org = orgQuery.data;
   const unscoredPlayers = metrics.players - metrics.scoredPlayers;
 
-  const openAssessment = (id: string) =>
+  const openAssessment = (id: string) => {
+    prefetchTryout(id);
     navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id } });
+  };
 
   return (
     <Screen padded={false}>

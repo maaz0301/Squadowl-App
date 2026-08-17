@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Card, EmptyState, ErrorState, Header, Input, LoadingState, Screen } from '@/components/ui';
-import { useSeasonsQuery, useTryoutsQuery } from '@/features/queries';
+import { usePrefetchTryout, useSeasonsQuery, useTryoutsQuery } from '@/features/queries';
 import { globalSearch } from '@/data/extras';
 import { useSessionStore } from '@/state/sessionStore';
 
@@ -15,6 +15,7 @@ export default function SearchScreen() {
   const tryoutsQuery = useTryoutsQuery(true);
   const seasonsQuery = useSeasonsQuery();
   const setCurrentTryout = useSessionStore((s) => s.setCurrentTryout);
+  const prefetchTryout = usePrefetchTryout();
 
   const results = useMemo(() => {
     if (!tryoutsQuery.data) return { assessments: [], players: [], seasons: [] };
@@ -79,9 +80,11 @@ export default function SearchScreen() {
             <Pressable
               onPress={() => {
                 if (item.type === 'assessment') {
+                  prefetchTryout(item.id);
                   setCurrentTryout(item.id);
                   navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: item.id } });
                 } else if (item.type === 'player') {
+                  prefetchTryout(item.tryoutId);
                   setCurrentTryout(item.tryoutId);
                   navigation.navigate('AssessmentFlow', { screen: 'AssessmentPlayer', params: { id: item.tryoutId, playerId: item.id } });
                 } else {

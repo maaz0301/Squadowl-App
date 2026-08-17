@@ -32,6 +32,7 @@ import type {
   ShareComment,
   Team,
   TeamBuilderResult,
+  TeamMessage,
   Tryout,
   UserProfile,
 } from './types';
@@ -147,6 +148,9 @@ export interface DataSource {
   sendPortalInvite(seasonId: string, playerId: string, email: string): Promise<void>;
   sendTeamAnnouncement(seasonId: string, title: string, message: string): Promise<void>;
   setEventAvailability(seasonId: string, eventId: string, playerId: string, response: 'yes' | 'maybe' | 'no'): Promise<void>;
+  listTeamMessages(seasonId: string): Promise<TeamMessage[]>;
+  sendTeamMessage(seasonId: string, body: string): Promise<TeamMessage>;
+  deleteTeamMessage(messageId: string): Promise<void>;
   getAthleteHistory(athleteId: string): Promise<AthleteHistory>;
   getPlayerProfile(athleteId: string): Promise<PlayerProfile>;
   listAthletes(): Promise<Athlete[]>;
@@ -203,6 +207,16 @@ export interface DataSource {
   importLibraryPlayers(tryoutId: string, entries: { first: string; last: string; jersey?: string; pos?: string }[]): Promise<Player[]>;
   submitFeedback(submission: import('./extras').FeedbackSubmission): Promise<void>;
   addSeasonPlayer(seasonId: string, player: Omit<import('./types').SeasonPlayer, 'id'>): Promise<import('./types').SeasonPlayer>;
+  /**
+   * Bulk twin of addSeasonPlayer for players that already have an athlete row
+   * (e.g. syncing a team roster into a season). One upsert instead of one
+   * request per player — a 25-player team was ~25 sequential round trips.
+   * Athletes already on the season are left as they are, not an error.
+   */
+  addSeasonPlayers(
+    seasonId: string,
+    players: { athleteId: string; jersey?: string; playerEmail?: string }[],
+  ): Promise<import('./types').SeasonPlayer[]>;
   deleteSeasonPlayer(seasonId: string, playerId: string): Promise<void>;
   importSeasonPlayersFromTeam(seasonId: string): Promise<import('./types').SeasonPlayer[]>;
   emailScheduleToPlayers(seasonId: string): Promise<void>;

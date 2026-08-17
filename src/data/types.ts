@@ -793,6 +793,18 @@ export interface AthleteShare {
   updatedAt: number;
 }
 
+/** A message in a team's chat. Scoped to the team's season — see the
+ *  season_messages migration for why that's the roster boundary. */
+export interface TeamMessage {
+  id: string;
+  seasonId: string;
+  authorUserId: string;
+  authorName: string;
+  authorRole: 'coach' | 'guardian';
+  body: string;
+  createdAt: number;
+}
+
 export interface ShareComment {
   id: string;
   shareId: string;

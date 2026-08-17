@@ -125,12 +125,44 @@ export function useAssignedTryoutsQuery() {
   });
 }
 
+/**
+ * Key + fetcher for one tryout, shared by `useTryoutQuery` and
+ * `usePrefetchTryout` so a warmed entry always lands on exactly the key the
+ * screens read back.
+ */
+function tryoutQueryOptions(id: string) {
+  return {
+    queryKey: queryKeys.tryout(id),
+    queryFn: () => getDataSource().getTryout(id),
+  };
+}
+
 export function useTryoutQuery(id: string | undefined) {
   return useQuery({
-    queryKey: queryKeys.tryout(id ?? ''),
-    queryFn: () => getDataSource().getTryout(id!),
+    ...tryoutQueryOptions(id ?? ''),
     enabled: !!id,
+    // Assembling a tryout pulls its whole roster plus every evaluation, so a
+    // dropped cache entry costs a multi-second refetch behind a blocking
+    // "Loading roster..." on the next visit. Held well past the 5-minute
+    // default so stepping out of an assessment and back in renders instantly
+    // from cache, with the refetch happening quietly behind the visible list.
+    gcTime: 30 * 60 * 1000,
   });
+}
+
+/**
+ * Start loading a tryout before its screens mount. Called the moment the user
+ * taps into an assessment so the fetch overlaps the navigation animation
+ * rather than starting once the roster is already on screen — on a large
+ * roster that's the difference between landing on data and landing on a
+ * spinner. No-ops when the cache is already fresh.
+ */
+export function usePrefetchTryout() {
+  const qc = useQueryClient();
+  return (id: string | undefined) => {
+    if (!id) return;
+    qc.prefetchQuery({ ...tryoutQueryOptions(id), staleTime: 30_000 });
+  };
 }
 
 export function useTryoutRealtimeSync(id: string | undefined) {
@@ -454,12 +486,25 @@ export function useAddRegistrationToTeamMutation(tryoutId: string) {
  * once at the end instead of once per player, so a large batch doesn't kick off
  * a refetch storm while it's still running.
  */
+/**
+ * Shared key for the long-running writes that add players to a tryout. These
+ * can run for minutes and are started from whichever screen opened the
+ * dialog, so any *other* screen showing that tryout can call `useIsMutating`
+ * with this key to tell "this roster is genuinely empty" apart from "players
+ * are still being written into it right now".
+ */
+export const tryoutBulkWriteKey = (tryoutId: string) => ['tryoutBulkWrite', tryoutId] as const;
+
 export function usePlaceRegistrationsMutation(
   tryoutId: string,
   onProgress?: (done: number, total: number) => void,
 ) {
   const qc = useQueryClient();
   return useMutation({
+    // Keyed on the source assessment — the roster being filled is usually this
+    // one, and a placement into some other destination is short enough that it
+    // doesn't need the same treatment.
+    mutationKey: tryoutBulkWriteKey(tryoutId),
     mutationFn: ({
       destination,
       registrationIds,
@@ -481,6 +526,10 @@ export function usePlaceRegistrationsMutation(
       }
       qc.invalidateQueries({ queryKey: queryKeys.registrations(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.profile });
+      // The dashboard's per-assessment player count lives on the tryout *list*
+      // key, not the detail one — without this it keeps showing the old count
+      // until it happens to go stale on its own.
+      qc.invalidateQueries({ queryKey: ['tryouts'] });
     },
   });
 }
@@ -497,12 +546,14 @@ export function useDismissRegistrationMutation(tryoutId: string) {
 export function useGenerateTestDataMutation(tryoutId: string, onProgress?: (done: number, total: number) => void) {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: tryoutBulkWriteKey(tryoutId),
     mutationFn: (options: DummyDataOptions) => getDataSource().generateTestData(tryoutId, options, onProgress),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.results(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.registrations(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.profile });
+      qc.invalidateQueries({ queryKey: ['tryouts'] });
     },
   });
 }
@@ -515,6 +566,7 @@ export function useClearTestDataMutation(tryoutId: string) {
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.results(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.registrations(tryoutId) });
+      qc.invalidateQueries({ queryKey: ['tryouts'] });
     },
   });
 }
@@ -761,28 +813,21 @@ async function syncSeasonRosterFromTeam(teamId: string, seasonId: string) {
     ds.listTeamRoster(teamId),
     ds.getSeason(seasonId),
   ]);
-  const alreadyOnSeason = new Set((season?.roster ?? []).map((p) => p.athleteId).filter(Boolean));
+  const existing = season?.roster ?? [];
+  const alreadyOnSeason = new Set(existing.map((p) => p.athleteId).filter(Boolean));
   const missing = teamRoster.filter((p) => p.athleteId && !alreadyOnSeason.has(p.athleteId));
-  if (missing.length === 0) return season?.roster ?? [];
+  if (missing.length === 0) return existing;
 
-  for (const p of missing) {
-    try {
-      await ds.addSeasonPlayer(seasonId, {
-        athleteId: p.athleteId,
-        firstName: p.first,
-        lastName: p.last,
-        jersey: p.jersey,
-      });
-    } catch (e: any) {
-      // Already on the season roster (unique athlete-per-season constraint) —
-      // that's the state we wanted, so don't fail the event that triggered this.
-      const duplicate =
-        e?.code === '23505' || /duplicate key value/i.test(e?.message ?? '');
-      if (!duplicate) throw e;
-    }
-  }
-  const refreshed = await ds.getSeason(seasonId);
-  return refreshed?.roster ?? [];
+  // One upsert for the whole roster. This used to be one request per player in
+  // series plus a full getSeason() refetch, which is what made provisioning a
+  // season for a 25-player team take tens of seconds. The upsert ignores
+  // athletes already enrolled (unique athlete-per-season), so a racing caller
+  // is a no-op rather than the duplicate-key error this used to have to catch.
+  const added = await ds.addSeasonPlayers(
+    seasonId,
+    missing.map((p) => ({ athleteId: p.athleteId!, jersey: p.jersey })),
+  );
+  return [...existing, ...added];
 }
 
 /**
@@ -1177,6 +1222,59 @@ export function useAddShareCommentMutation() {
       qc.invalidateQueries({ queryKey: queryKeys.shareComments(shareId) });
     },
   });
+}
+
+// ---- Team chat ----
+export function useTeamMessagesQuery(seasonId?: string) {
+  return useQuery({
+    queryKey: queryKeys.teamMessages(seasonId ?? ''),
+    queryFn: () => getDataSource().listTeamMessages(seasonId!),
+    enabled: !!seasonId,
+  });
+}
+
+export function useSendTeamMessageMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ seasonId, body }: { seasonId: string; body: string }) =>
+      getDataSource().sendTeamMessage(seasonId, body),
+    onSuccess: (_, { seasonId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.teamMessages(seasonId) });
+    },
+  });
+}
+
+export function useDeleteTeamMessageMutation(seasonId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (messageId: string) => getDataSource().deleteTeamMessage(messageId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teamMessages(seasonId) }),
+  });
+}
+
+// Unlike the other realtime hooks here, this one refetches immediately rather
+// than on a 1s debounce — a visible delay between sending and seeing a message
+// is what makes a chat feel broken.
+export function useTeamChatRealtimeSync(seasonId: string | undefined) {
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (!seasonId) return;
+
+    const uniqueId = Math.random().toString(36).slice(2, 9);
+    const channel = getSupabase()
+      .channel(`realtime:season_chat_${seasonId}_${uniqueId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'season_messages', filter: `season_id=eq.${seasonId}` },
+        () => qc.invalidateQueries({ queryKey: queryKeys.teamMessages(seasonId) }),
+      )
+      .subscribe();
+
+    return () => {
+      getSupabase().removeChannel(channel);
+    };
+  }, [seasonId, qc]);
 }
 
 export function useEnterprisePaymentsQuery() {

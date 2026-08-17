@@ -15,6 +15,7 @@ import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
 import { BottomNav } from '@/components/BottomNav';
+import { ChatIconButton } from '@/components/ChatIconButton';
 import { PlanGate } from '@/components/PlanGate';
 import { DummyDataModal } from '@/components/DummyDataModal';
 import type { DummyDataOptions } from '@/data/testDataGenerator';
@@ -535,7 +536,22 @@ export default function TeamDetailScreen() {
         title={team.name}
         subtitle={team.season || undefined}
         showBack
-        right={<Button label="Edit" variant="ghost" size="sm" onPress={startEdit} />}
+        right={
+          <View className="flex-row items-center gap-2">
+            <ChatIconButton
+              onPress={() =>
+                navigation.navigate('TeamChat', {
+                  seasonId: teamSeasonId,
+                  title: `${team.name} Chat`,
+                  subtitle: team.season || undefined,
+                  noSeasonMessage:
+                    "This team doesn't have a season yet. Add a practice or game under Schedule, and the chat opens for everyone on the roster and their guardians.",
+                })
+              }
+            />
+            <Button label="Edit" variant="ghost" size="sm" onPress={startEdit} />
+          </View>
+        }
       />
       {team.logoUrl ? (
         <View className="items-center mt-2 mb-4">
