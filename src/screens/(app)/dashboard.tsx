@@ -204,8 +204,10 @@ export default function DashboardScreen() {
   const fabAction = () => {
     if (tab === 'teams') {
       const count = teamsQuery.data?.length ?? 0;
-      if (isAtTeamLimit(user?.planTier ?? 'free', count)) {
-        setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'teams', 'teams'));
+      if (isAtTeamLimit(user?.planTier ?? 'free', count, user?.extraTeamLicenses ?? 0)) {
+        setLimitMsg(
+          buildLimitReachedMessage(user?.planTier ?? 'free', 'teams', 'teams', user?.extraTeamLicenses ?? 0)
+        );
         return;
       }
       navigation.navigate('NewTeam');

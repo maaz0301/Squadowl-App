@@ -41,8 +41,8 @@ interface AssessmentProps {
   variant: 'assessment';
   visible: boolean;
   loading?: boolean;
-  /** How many of the requested players have been generated so far — only the
-   * AI-scored path is slow enough to need this; omit it for the instant path. */
+  /** How many of the requested records have been created so far — counted
+   * across generation and insertion, whatever the target. */
   progress?: { done: number; total: number };
   /** Blocks the scoring options and explains why — no rubrics defined yet. */
   hasRubrics: boolean;
@@ -137,7 +137,9 @@ export function DummyDataModal(props: DummyDataModalProps) {
                 />
               </View>
               <Text className="text-xs text-center" style={{ color: colors.inkMuted }}>
-                Generated {props.progress.done} of {props.progress.total} players...
+                {isTeam
+                  ? `Generated ${props.progress.done} of ${props.progress.total} players...`
+                  : `Created ${props.progress.done} of ${props.progress.total} records...`}
               </Text>
             </View>
           ) : null}

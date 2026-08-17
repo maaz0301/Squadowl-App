@@ -276,6 +276,17 @@ export const TeamRosterPlayerSchema = z.object({
 
 export type TeamRosterPlayer = z.infer<typeof TeamRosterPlayerSchema>;
 
+/** A permanently-saved snapshot of a Team Builder generation, so regenerating doesn't lose it. */
+export const TeamBuilderResultSchema = z.object({
+  id: z.string(),
+  tryoutId: z.string(),
+  label: z.string(),
+  state: z.any(), // TeamBuilderState, see src/data/teamBuilder.ts
+  createdAt: z.number(),
+});
+
+export type TeamBuilderResult = z.infer<typeof TeamBuilderResultSchema>;
+
 export const UserProfileSchema = z.object({
   id: z.string(),
   email: z.string().email(),
@@ -284,6 +295,8 @@ export const UserProfileSchema = z.object({
   avatarUrl: z.string().optional(),
   planTier: z.enum(PLAN_TIERS).default('coach'),
   subscriptionStatus: z.string().optional(),
+  /** Add-on team licenses purchased beyond the plan's included teams (Club: CAD$10/team/year). */
+  extraTeamLicenses: z.number().int().min(0).default(0),
   /** Whether the account's Stripe Connect account can accept registration-fee charges/payouts. */
   connectChargesEnabled: z.boolean().default(false),
   connectPayoutsEnabled: z.boolean().default(false),

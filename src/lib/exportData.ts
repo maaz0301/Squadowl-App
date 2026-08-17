@@ -3,8 +3,60 @@ import Share from 'react-native-share';
 import { Platform } from 'react-native';
 import { Tryout, ExportFormat } from '@/data/types';
 import { computePlayerResults } from '@/data/scoring';
+import { buildTeamBuilderExportRows, type TeamBuilderState } from '@/data/teamBuilder';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import * as XLSX from 'xlsx';
+
+/**
+ * Shared tail of every export: hand the generated file to the OS. On native
+ * this writes to the cache dir and opens the share sheet; on web it triggers
+ * a blob download via a hidden anchor.
+ */
+async function writeAndDeliverFile(
+  fileName: string,
+  content: string,
+  encoding: 'utf8' | 'base64',
+  mimeType: string,
+  format: string,
+): Promise<void> {
+  if (Platform.OS === 'web') {
+    let url: string;
+    if (encoding === 'base64') {
+      const byteCharacters = atob(content);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: mimeType });
+      url = URL.createObjectURL(blob);
+    } else {
+      const blob = new Blob([content], { type: `${mimeType};charset=utf-8;` });
+      url = URL.createObjectURL(blob);
+    }
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } else {
+    const path = `${RNFS.CachesDirectoryPath}/${fileName}`;
+    await RNFS.writeFile(path, content, encoding);
+    try {
+      await Share.open({
+        url: `file://${path}`,
+        type: mimeType,
+        filename: fileName,
+        title: `Export ${format.toUpperCase()}`,
+      });
+    } catch (e: any) {
+      if (e.message !== 'User did not share') {
+        throw new Error('Sharing failed: ' + e.message);
+      }
+    }
+  }
+}
 
 export async function exportTryoutData(tryout: Tryout, format: ExportFormat): Promise<void> {
   const results = computePlayerResults(tryout);
@@ -70,41 +122,68 @@ export async function exportTryoutData(tryout: Tryout, format: ExportFormat): Pr
     mimeType = 'application/pdf';
   }
 
-  if (Platform.OS === 'web') {
-    let url: string;
-    if (encoding === 'base64') {
-      const byteCharacters = atob(fileContent);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: mimeType });
-      url = URL.createObjectURL(blob);
-    } else {
-      const blob = new Blob([fileContent], { type: `${mimeType};charset=utf-8;` });
-      url = URL.createObjectURL(blob);
-    }
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', fileName);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  await writeAndDeliverFile(fileName, fileContent, encoding, mimeType, format);
+}
+
+/**
+ * Export a Team Builder result (all teams, or just one via `opts.teamId`) as
+ * XLSX or PDF — grouped by team so it's easy to print and double-check.
+ */
+export async function exportTeamBuilderData(
+  tryout: Tryout,
+  state: TeamBuilderState,
+  format: 'xlsx' | 'pdf',
+  opts?: { teamId?: string },
+): Promise<void> {
+  const { headers, rows } = buildTeamBuilderExportRows(tryout, state, opts);
+  const singleTeam = opts?.teamId ? state.teams.find((t) => t.id === opts.teamId) : undefined;
+
+  const safeName = tryout.name.replace(/\s+/g, '_');
+  const suffix = singleTeam ? `_${singleTeam.name.replace(/\s+/g, '_')}` : '_teams';
+  const fileName = `${safeName}${suffix}.${format}`;
+  let fileContent = '';
+  let encoding: 'utf8' | 'base64' = 'utf8';
+  let mimeType = 'text/plain';
+
+  if (format === 'xlsx') {
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Team Builder');
+    fileContent = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+    encoding = 'base64';
+    mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   } else {
-    const path = `${RNFS.CachesDirectoryPath}/${fileName}`;
-    await RNFS.writeFile(path, fileContent, encoding);
-    try {
-      await Share.open({
-        url: `file://${path}`,
-        type: mimeType,
-        filename: fileName,
-        title: `Export ${format.toUpperCase()}`
-      });
-    } catch (e: any) {
-      if (e.message !== 'User did not share') {
-        throw new Error('Sharing failed: ' + e.message);
+    const pdfDoc = await PDFDocument.create();
+    let page = pdfDoc.addPage([600, 800]);
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+    const title = singleTeam ? `${tryout.name}: ${singleTeam.name}` : `${tryout.name}: Team Builder`;
+    page.drawText(title, { x: 50, y: 750, size: 20, font: fontBold });
+
+    let y = 700;
+    const xOffsets = [50, 170, 320, 380, 430, 500];
+
+    headers.forEach((h, i) => {
+      page.drawText(h, { x: xOffsets[i], y, size: 10, font: fontBold });
+    });
+    y -= 20;
+
+    for (const row of rows) {
+      if (y < 50) {
+        page = pdfDoc.addPage([600, 800]);
+        y = 750;
       }
+      row.forEach((cell, i) => {
+        page.drawText(cell, { x: xOffsets[i], y, size: 10, font });
+      });
+      y -= 15;
     }
+
+    fileContent = await pdfDoc.saveAsBase64();
+    encoding = 'base64';
+    mimeType = 'application/pdf';
   }
+
+  await writeAndDeliverFile(fileName, fileContent, encoding, mimeType, format);
 }

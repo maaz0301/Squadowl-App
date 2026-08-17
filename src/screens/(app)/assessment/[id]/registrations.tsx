@@ -15,6 +15,7 @@ import {
   useDismissRegistrationMutation,
   useEnsureCloudSessionMutation,
   useGenerateTestDataMutation,
+  usePlaceRegistrationsMutation,
   useRegistrationsQuery,
   useSubmitRegistrationMutation,
   useTryoutQuery,
@@ -40,8 +41,6 @@ export default function RegistrationsScreen() {
   const tryoutQuery = useTryoutQuery(id);
   const regsQuery = useRegistrationsQuery(id!);
   const ensureCloud = useEnsureCloudSessionMutation();
-  const addToRoster = useAddRegistrationToRosterMutation(id!);
-  const addToTeam = useAddRegistrationToTeamMutation(id!);
   const allTryouts = useTryoutsQuery();
   const dismissReg = useDismissRegistrationMutation(id!);
   const submitReg = useSubmitRegistrationMutation(id!);
@@ -58,11 +57,16 @@ export default function RegistrationsScreen() {
   // Registration ids waiting on a destination choice. Non-null == picker open.
   const [placing, setPlacing] = useState<string[] | null>(null);
   const [placingProgress, setPlacingProgress] = useState<{ done: number; total: number } | null>(null);
-  // Tracked separately from the mutations' own isPending — those flip back to
-  // false for a beat between batches (once a batch settles, before the next
-  // batch's mutateAsync calls start), which made the progress bar flicker
-  // hidden/shown between every batch.
-  const [isPlacing, setIsPlacing] = useState(false);
+  // One mutation for the whole selection, so `isPending` stays true for the
+  // entire run — the old per-player mutations settled between batches and made
+  // the progress bar flicker hidden/shown each time.
+  const placeRegs = usePlaceRegistrationsMutation(id!, (done, total) =>
+    setPlacingProgress({ done, total }),
+  );
+  // A single selected registration skips the chunked bulk path and goes
+  // straight through the single-registration mutations below.
+  const addToRoster = useAddRegistrationToRosterMutation(id!);
+  const addToTeam = useAddRegistrationToTeamMutation(id!);
   // Registration whose submitted profile is open. Non-null == profile open.
   const [viewingId, setViewingId] = useState<string | null>(null);
 
@@ -125,12 +129,6 @@ export default function RegistrationsScreen() {
     setSelected(allPendingSelected ? new Set() : new Set(pendingIds));
   };
 
-  // Fires in small concurrent batches instead of one request at a time — with
-  // "Select All" this can be hundreds of registrations, and awaiting them
-  // sequentially made bulk-add visibly crawl. Batched (not all-at-once) so a
-  // huge selection doesn't fire hundreds of simultaneous requests at the backend.
-  const BULK_ADD_BATCH_SIZE = 10;
-
   const runPlacement = async (destination: RosterDestination) => {
     const ids = placing ?? [];
     if (ids.length === 0) return;
@@ -147,23 +145,22 @@ export default function RegistrationsScreen() {
       }
     }
 
-    setIsPlacing(true);
-    setPlacingProgress({ done: 0, total: ids.length });
     try {
-      // Fires in small concurrent batches instead of one request at a time — with
-      // "Select All" this can be hundreds of registrations, and awaiting them
-      // sequentially made bulk-add visibly crawl. Batched (not all-at-once) so a
-      // huge selection doesn't fire hundreds of simultaneous requests at the backend.
-      for (let i = 0; i < ids.length; i += BULK_ADD_BATCH_SIZE) {
-        const batch = ids.slice(i, i + BULK_ADD_BATCH_SIZE);
-        await Promise.all(
-          batch.map((registrationId) =>
-            destination.kind === 'team'
-              ? addToTeam.mutateAsync({ teamId: destination.id, registrationId })
-              : addToRoster.mutateAsync({ registrationId, targetTryoutId: destination.id }),
-          ),
-        );
-        setPlacingProgress({ done: Math.min(i + BULK_ADD_BATCH_SIZE, ids.length), total: ids.length });
+      if (ids.length === 1) {
+        // One player: go straight through the single-registration mutation
+        // instead of the chunked bulk path — no progress bar needed.
+        if (destination.kind === 'team') {
+          await addToTeam.mutateAsync({ teamId: destination.id, registrationId: ids[0] });
+        } else {
+          await addToRoster.mutateAsync({ registrationId: ids[0], targetTryoutId: destination.id });
+        }
+      } else {
+        setPlacingProgress({ done: 0, total: ids.length });
+        // The whole selection goes down as one call — the data source places it in
+        // chunks of 50 (fewer than 50 selected is a single chunk) and reports back
+        // as each chunk lands, so the bar moves without the screen having to
+        // orchestrate batching itself.
+        await placeRegs.mutateAsync({ destination, registrationIds: ids });
       }
       setSelected((prev) => {
         const next = new Set(prev);
@@ -174,7 +171,6 @@ export default function RegistrationsScreen() {
     } catch (e: any) {
       showAlert('Error', e?.message || 'Failed to add players.');
     } finally {
-      setIsPlacing(false);
       setPlacingProgress(null);
     }
   };
@@ -449,7 +445,11 @@ export default function RegistrationsScreen() {
         visible={placing !== null}
         count={placing?.length ?? 0}
         currentTryoutId={id}
-        loading={isPlacing}
+        loading={
+          (placing?.length ?? 0) === 1
+            ? addToRoster.isPending || addToTeam.isPending
+            : placeRegs.isPending
+        }
         progress={placingProgress ?? undefined}
         onClose={() => setPlacing(null)}
         onConfirm={runPlacement}

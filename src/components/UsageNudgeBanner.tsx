@@ -3,10 +3,16 @@ import { Text, View, Pressable } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Card, Button } from '@/components/ui';
-import { getPlanDefinition, getNextTier, usageFraction } from '@/data/plans';
+import { getNextTier, sellsExtraTeams, usageFraction } from '@/data/plans';
 import type { PlanTier } from '@/data/types';
 import { useUser } from '@/state/authStore';
-import { NUDGE_THRESHOLD, buildNudgeMessage, maybeSendUsageNudgePush, type UsageMetric } from '@/lib/usageNudges';
+import {
+  NUDGE_THRESHOLD,
+  buildNudgeMessage,
+  effectiveLimit,
+  maybeSendUsageNudgePush,
+  type UsageMetric,
+} from '@/lib/usageNudges';
 
 interface Props {
   tier: PlanTier;
@@ -25,20 +31,23 @@ export function UsageNudgeBanner({ tier, metric, count, label }: Props) {
   const user = useUser();
   const [dismissed, setDismissed] = useState(false);
 
-  const limit = getPlanDefinition(tier).limits[metric];
+  const extraTeamLicenses = user?.extraTeamLicenses ?? 0;
+  const limit = effectiveLimit(tier, metric, extraTeamLicenses);
   const fraction = usageFraction(limit, count);
   const atLimit = limit !== 'unlimited' && count >= limit;
   const nounLabel = label ?? metric;
 
   useEffect(() => {
     if (!user?.id) return;
-    void maybeSendUsageNudgePush(user.id, tier, metric, count, nounLabel);
-  }, [user?.id, tier, metric, count, nounLabel]);
+    void maybeSendUsageNudgePush(user.id, tier, metric, count, nounLabel, extraTeamLicenses);
+  }, [user?.id, tier, metric, count, nounLabel, extraTeamLicenses]);
 
   if (dismissed || limit === 'unlimited' || fraction < NUDGE_THRESHOLD || atLimit) return null;
 
-  const next = getNextTier(tier);
-  const message = buildNudgeMessage(tier, metric, count, nounLabel);
+  // Club has no tier above it, but it can still buy teams — so the CTA stays useful there.
+  const canBuyTeams = metric === 'teams' && sellsExtraTeams(tier);
+  const ctaLabel = canBuyTeams ? 'Add Teams' : getNextTier(tier) ? 'Upgrade' : null;
+  const message = buildNudgeMessage(tier, metric, count, nounLabel, extraTeamLicenses);
 
   return (
     <Card
@@ -49,8 +58,8 @@ export function UsageNudgeBanner({ tier, metric, count, label }: Props) {
         {message}
       </Text>
       <View className="gap-2">
-        {next ? (
-          <Button label="Upgrade" size="sm" onPress={() => navigation.navigate('Upgrade')} />
+        {ctaLabel ? (
+          <Button label={ctaLabel} size="sm" onPress={() => navigation.navigate('Upgrade')} />
         ) : null}
         <Pressable onPress={() => setDismissed(true)} hitSlop={8}>
           <Text className="text-xs text-center" style={{ color: colors.inkMuted }}>

@@ -254,7 +254,7 @@ export default function RosterScreen() {
                     #{item.jersey ?? '—'} · {item.pos ?? '—'}
                   </Text>
                 </View>
-                <View className="items-end gap-1">
+                <View className="flex-row items-center justify-end gap-1">
                   {evalCount > 0 ? (
                     <Badge label={`${evalCount} eval${evalCount > 1 ? 's' : ''}`} variant="success" />
                   ) : (

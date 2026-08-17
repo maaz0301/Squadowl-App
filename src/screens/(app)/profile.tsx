@@ -7,7 +7,7 @@ import { useThemeColors, useTheme } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Header, Input, Screen, Avatar } from '@/components/ui';
 import { useThemeStore } from '@/state/themeStore';
 import { useUser, useAuthStore, usePermissions } from '@/state/authStore';
-import { getPlanDefinition, canUseFeature, formatLimit } from '@/data/plans';
+import { getPlanDefinition, canUseFeature, formatLimit, getTeamAllowance } from '@/data/plans';
 import {
   useUpdateProfileMutation,
   useUpdatePasswordMutation,
@@ -50,6 +50,7 @@ export default function ProfileScreen() {
   const [loadingPortal, setLoadingPortal] = useState(false);
 
   const plan = getPlanDefinition(user?.planTier ?? 'free');
+  const extraTeamLicenses = user?.extraTeamLicenses ?? 0;
 
   const saveProfile = async () => {
     await updateProfile.mutateAsync({
@@ -240,8 +241,13 @@ export default function ProfileScreen() {
             </Text>
             <Text style={{ color: colors.inkMuted }}>
               Assessments: {formatLimit(plan.limits.assessments)} · Players: {formatLimit(plan.limits.players)} · Teams:{' '}
-              {formatLimit(plan.limits.teams)}
+              {formatLimit(getTeamAllowance(user?.planTier ?? 'free', user?.extraTeamLicenses ?? 0))}
             </Text>
+            {extraTeamLicenses > 0 ? (
+              <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                Includes {extraTeamLicenses} purchased team license{extraTeamLicenses === 1 ? '' : 's'}.
+              </Text>
+            ) : null}
             <View className="flex-row gap-2 mt-2">
               <Button label="Upgrade Plan" variant="secondary" onPress={() => navigation.navigate('Upgrade')} className="flex-1" />
               {user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'trialing' ? (

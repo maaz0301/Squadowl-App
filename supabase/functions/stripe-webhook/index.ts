@@ -34,6 +34,30 @@ serve(async (req: Request) => {
         const planTier = session.metadata?.planTier?.toLowerCase();
         console.log('Extracted accountId:', accountId, 'planTier:', planTier);
 
+        // Add-on team licenses (Club: CAD$10/team/year beyond the 6 included) carry no
+        // planTier — they raise the team cap and must leave the subscription tier alone.
+        if (accountId && session.metadata?.type === 'team_license') {
+          const quantity = Math.max(1, Math.round(Number(session.metadata?.quantity) || 1));
+          const { data: newTotal, error } = await supabaseAdmin.rpc('grant_team_licenses', {
+            p_account_id: accountId,
+            p_session_id: session.id,
+            p_quantity: quantity,
+            p_subscription_id: (session.subscription as string) ?? null,
+          });
+          if (error) {
+            console.error('Error granting team licenses:', error);
+            // Surface the failure so Stripe retries — grant_team_licenses is idempotent
+            // on the session id, so a retry can't double-grant.
+            return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+          }
+          if (newTotal === null) {
+            console.log('Team licenses already granted for session:', session.id);
+          } else {
+            console.log(`Granted ${quantity} team license(s); account now has ${newTotal}.`);
+          }
+          break;
+        }
+
         if (accountId && planTier) {
           console.log('Updating account in database...');
           // Update the account with the active subscription
@@ -82,7 +106,22 @@ serve(async (req: Request) => {
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
         const subscription = event.data.object;
-        
+
+        // An add-on team-license subscription is a second subscription on the same
+        // customer, so it never matches accounts.stripe_subscription_id below. Cancelling
+        // it gives the extra teams back instead of touching the plan tier.
+        if (event.type === 'customer.subscription.deleted' || subscription.status === 'canceled' || subscription.status === 'unpaid') {
+          const { data: revokedTotal, error: revokeError } = await supabaseAdmin.rpc('revoke_team_licenses', {
+            p_subscription_id: subscription.id,
+          });
+          if (revokeError) {
+            console.error('Error revoking team licenses:', revokeError);
+          } else if (revokedTotal !== null) {
+            console.log(`Revoked team licenses for subscription ${subscription.id}; account now has ${revokedTotal}.`);
+            break;
+          }
+        }
+
         // Find the account by stripe_subscription_id
         const { data: account } = await supabaseAdmin
           .from('accounts')

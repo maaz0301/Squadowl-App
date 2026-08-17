@@ -18,6 +18,7 @@ import AssessmentPlayerScreen from '../screens/(app)/assessment/[id]/player/[pla
 import AssessmentScoreScreen from '../screens/(app)/assessment/[id]/score/[playerId]';
 import AssessmentRinksideScreen from '../screens/(app)/assessment/[id]/rinkside';
 import AssessmentTeamBuilderScreen from '../screens/(app)/assessment/[id]/team-builder';
+import AssessmentTeamBuilderTeamScreen from '../screens/(app)/assessment/[id]/team-builder-team/[teamId]';
 import AssessmentCompareScreen from '../screens/(app)/assessment/[id]/compare';
 import AssessmentRosterLibraryScreen from '../screens/(app)/assessment/[id]/roster-library';
 import AssessmentScanSheetScreen from '../screens/(app)/assessment/[id]/scan-sheet';
@@ -87,6 +88,7 @@ export default function AssessmentTabNavigator() {
           'AssessmentScore',
           'AssessmentRinkside',
           'AssessmentTeamBuilder',
+          'AssessmentTeamBuilderTeam',
           'AssessmentCompare',
           'AssessmentRosterLibrary',
           'AssessmentScanSheet'
@@ -235,6 +237,7 @@ export default function AssessmentTabNavigator() {
       <Tab.Screen name="AssessmentScore" component={AssessmentScoreScreen} initialParams={{ id }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
       <Tab.Screen name="AssessmentRinkside" component={AssessmentRinksideScreen} initialParams={{ id }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
       <Tab.Screen name="AssessmentTeamBuilder" component={AssessmentTeamBuilderScreen} initialParams={{ id }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
+      <Tab.Screen name="AssessmentTeamBuilderTeam" component={AssessmentTeamBuilderTeamScreen} initialParams={{ id }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
       <Tab.Screen name="AssessmentCompare" component={AssessmentCompareScreen} initialParams={{ id }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
       <Tab.Screen name="AssessmentRosterLibrary" component={AssessmentRosterLibraryScreen} initialParams={{ id }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
       <Tab.Screen name="AssessmentScanSheet" component={AssessmentScanSheetScreen} initialParams={{ id }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />

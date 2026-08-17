@@ -1,4 +1,4 @@
-import { Text, View, Alert } from 'react-native';
+import { Text, View, Alert, Pressable } from 'react-native';
 import { InAppBrowser } from 'react-native-inappbrowser-reborn';
 import { useState, useCallback } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -6,7 +6,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/queryClient';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Header, Screen } from '@/components/ui';
-import { PLAN_DEFINITIONS, formatPlanPrice } from '@/data/plans';
+import {
+  PLAN_DEFINITIONS,
+  formatCad,
+  formatPlanPrice,
+  getPlanDefinition,
+  getTeamAllowance,
+  sellsExtraTeams,
+} from '@/data/plans';
 import { useUser, useAuthStore } from '@/state/authStore';
 import { getDataSource } from '@/data';
 
@@ -25,6 +32,8 @@ export default function UpgradeScreen() {
   const qc = useQueryClient();
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
   const [loadingPortal, setLoadingPortal] = useState(false);
+  const [extraTeams, setExtraTeams] = useState(1);
+  const [buyingTeams, setBuyingTeams] = useState(false);
   // Monthly billing is temporarily hidden — every checkout goes through yearly for now.
   const billingInterval = 'year' as const;
 
@@ -121,10 +130,91 @@ export default function UpgradeScreen() {
     }
   };
 
+  const currentTier = user?.planTier ?? 'free';
+  const currentLicenses = user?.extraTeamLicenses ?? 0;
+  const currentPlan = getPlanDefinition(currentTier);
+  const canBuyTeams = sellsExtraTeams(currentTier);
+  const extraTeamPrice = currentPlan.extraTeamPriceCents ?? 0;
+
+  // Extra teams are an add-on subscription on top of the current plan (Club only), so
+  // this checkout must not go through `upgrade` — that one switches the plan tier.
+  const buyTeams = async () => {
+    try {
+      setBuyingTeams(true);
+      const res = await getDataSource().createTeamLicenseCheckoutSession(extraTeams);
+      if (!res?.url) return;
+      if (await InAppBrowser.isAvailable()) {
+        await InAppBrowser.openAuth(res.url, 'aastryout://upgrade', {
+          dismissButtonStyle: 'cancel',
+          preferredBarTintColor: colors.bg,
+          preferredControlTintColor: colors.primary,
+          modalEnabled: true,
+          showTitle: true,
+          toolbarColor: colors.bg,
+          forceCloseOnRedirection: true,
+        });
+      } else {
+        const { Linking } = require('react-native');
+        await Linking.openURL(res.url);
+      }
+      // The webhook grants the licenses, so poll the profile the same way `upgrade` does.
+      for (let i = 0; i < 5; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await restoreSession(true);
+        await qc.invalidateQueries({ queryKey: queryKeys.profile });
+        if ((useAuthStore.getState().session?.user?.extraTeamLicenses ?? 0) >= currentLicenses + extraTeams) break;
+      }
+    } catch (err: any) {
+      Alert.alert('Checkout Error', err.message || 'Something went wrong.');
+    } finally {
+      setBuyingTeams(false);
+    }
+  };
+
   return (
     <Screen scroll padded={false}>
       <View className="px-4 pb-8">
         <Header title="Upgrade Plan" subtitle={`Current: ${user?.planTier ?? 'free'}`} showBack />
+
+        {canBuyTeams ? (
+          <Card className="mb-4 gap-2">
+            <Text className="font-display font-bold text-lg" style={{ color: colors.ink }}>
+              Add Teams
+            </Text>
+            <Text className="text-xs" style={{ color: colors.inkMuted }}>
+              Your plan includes {currentPlan.limits.teams} teams. Additional teams are{' '}
+              {formatCad(extraTeamPrice)} each per year.
+              {currentLicenses > 0
+                ? ` You've purchased ${currentLicenses} so far, for a cap of ${getTeamAllowance(currentTier, currentLicenses)} teams.`
+                : ''}
+            </Text>
+            <View className="flex-row items-center justify-between mt-2">
+              <View className="flex-row items-center gap-4">
+                <Pressable onPress={() => setExtraTeams((n) => Math.max(1, n - 1))} hitSlop={8}>
+                  <Text className="text-2xl" style={{ color: colors.primary }}>
+                    −
+                  </Text>
+                </Pressable>
+                <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
+                  {extraTeams}
+                </Text>
+                <Pressable onPress={() => setExtraTeams((n) => Math.min(50, n + 1))} hitSlop={8}>
+                  <Text className="text-2xl" style={{ color: colors.primary }}>
+                    +
+                  </Text>
+                </Pressable>
+              </View>
+              <Text className="font-display font-bold" style={{ color: colors.primary }}>
+                {formatCad(extraTeamPrice * extraTeams)}/yr
+              </Text>
+            </View>
+            <Button
+              label={`Add ${extraTeams} team${extraTeams === 1 ? '' : 's'}`}
+              onPress={buyTeams}
+              loading={buyingTeams}
+            />
+          </Card>
+        ) : null}
         {user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'trialing' ? (
           <View className="mb-2">
             <Button

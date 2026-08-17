@@ -45,6 +45,7 @@ export const queryKeys = {
   adminStats: ['admin', 'stats'] as const,
   adminUsers: ['admin', 'users'] as const,
   aiPlayer: (tryoutId: string, playerId: string) => ['ai', 'player', tryoutId, playerId] as const,
+  teamBuilderResults: (tryoutId: string) => ['teamBuilderResults', tryoutId] as const,
   guardianRosters: (userId?: string) => userId ? ['guardian', 'rosters', userId] as const : ['guardian', 'rosters'] as const,
   playerProfile: (athleteId: string) => ['playerProfile', athleteId] as const,
   coachDirectory: ['coachDirectory'] as const,

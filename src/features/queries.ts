@@ -448,6 +448,43 @@ export function useAddRegistrationToTeamMutation(tryoutId: string) {
   });
 }
 
+/**
+ * Bulk placement for a multi-select. One mutation for the whole selection —
+ * unlike firing the single-registration mutation per player, this invalidates
+ * once at the end instead of once per player, so a large batch doesn't kick off
+ * a refetch storm while it's still running.
+ */
+export function usePlaceRegistrationsMutation(
+  tryoutId: string,
+  onProgress?: (done: number, total: number) => void,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      destination,
+      registrationIds,
+    }: {
+      destination: { kind: 'assessment' | 'team'; id: string };
+      registrationIds: string[];
+    }) =>
+      destination.kind === 'team'
+        ? getDataSource().addRegistrationsToTeam(destination.id, registrationIds, onProgress)
+        : getDataSource().addRegistrationsToRoster(destination.id, registrationIds, onProgress),
+    onSuccess: (_count, { destination }) => {
+      if (destination.kind === 'team') {
+        qc.invalidateQueries({ queryKey: teamRosterKey(destination.id) });
+      } else {
+        qc.invalidateQueries({ queryKey: queryKeys.tryout(destination.id) });
+        if (destination.id !== tryoutId) {
+          qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
+        }
+      }
+      qc.invalidateQueries({ queryKey: queryKeys.registrations(tryoutId) });
+      qc.invalidateQueries({ queryKey: queryKeys.profile });
+    },
+  });
+}
+
 export function useDismissRegistrationMutation(tryoutId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -573,6 +610,31 @@ export function useGenerateTeamBuilderMutation(tryoutId: string) {
       );
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) }),
+  });
+}
+
+export function useTeamBuilderResultsQuery(tryoutId?: string) {
+  return useQuery({
+    queryKey: queryKeys.teamBuilderResults(tryoutId ?? ''),
+    queryFn: () => getDataSource().listTeamBuilderResults(tryoutId!),
+    enabled: !!tryoutId,
+  });
+}
+
+export function useSaveTeamBuilderResultMutation(tryoutId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ label, state }: { label: string; state: import('@/data/teamBuilder').TeamBuilderState }) =>
+      getDataSource().saveTeamBuilderResult(tryoutId, label, state),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teamBuilderResults(tryoutId) }),
+  });
+}
+
+export function useDeleteTeamBuilderResultMutation(tryoutId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => getDataSource().deleteTeamBuilderResult(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teamBuilderResults(tryoutId) }),
   });
 }
 

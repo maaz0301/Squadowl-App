@@ -13,8 +13,12 @@ serve(async (req) => {
   }
 
   try {
-    const { planTier, interval: rawInterval } = await req.json();
+    const { planTier, interval: rawInterval, addOn, quantity: rawQuantity } = await req.json();
     const interval: 'year' | 'month' = rawInterval === 'month' ? 'month' : 'year';
+    // Add-on team licenses (Club: CAD$10/team/year beyond the 6 included) go through
+    // the same checkout, but they must not touch plan_tier — see the metadata below.
+    const isTeamLicense = addOn === 'team_licenses';
+    const licenseQuantity = Math.max(1, Math.min(100, Math.round(Number(rawQuantity) || 1)));
 
     const authHeader = req.headers.get('Authorization')!;
     if (!authHeader) {
@@ -32,7 +36,7 @@ serve(async (req) => {
     // Lookup memberships to find the tenant account
     const { data: membership, error: membershipError } = await supabaseAdmin
       .from('memberships')
-      .select('account_id, accounts(id, stripe_customer_id, type)')
+      .select('account_id, accounts(id, stripe_customer_id, type, plan_tier)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: true })
       .limit(1)
@@ -44,7 +48,15 @@ serve(async (req) => {
 
     const accountId = membership.account_id;
     // @ts-ignore
-    let customerId = Array.isArray(membership.accounts) ? membership.accounts[0]?.stripe_customer_id : membership.accounts?.stripe_customer_id;
+    const account = Array.isArray(membership.accounts) ? membership.accounts[0] : membership.accounts;
+    let customerId = account?.stripe_customer_id;
+
+    // Extra teams are a Club-only add-on. Selling them to a lower tier would hand out
+    // teams the plan's cap ignores anyway (getTeamAllowance only counts licenses on
+    // tiers with extraTeamPriceCents), i.e. the customer would pay for nothing.
+    if (isTeamLicense && account?.plan_tier !== 'club') {
+      throw new Error('Additional teams are only available on the Club plan. Upgrade to Club first.');
+    }
 
     if (!customerId) {
       // Create a stripe customer
@@ -70,16 +82,32 @@ serve(async (req) => {
       club: { name: 'Club Plan', year: 9999, month: 1000 },
     };
 
-    const tierKey = planTier.toLowerCase();
-    const envKey = `STRIPE_PRICE_ID_${tierKey.toUpperCase()}_${interval === 'year' ? 'YEARLY' : 'MONTHLY'}`;
+    /** CAD$10/team/year — mirrors EXTRA_TEAM_PRICE_CENTS in src/data/plans.ts. */
+    const EXTRA_TEAM_PRICE_CENTS = 1000;
+
+    const envKey = isTeamLicense
+      ? 'STRIPE_PRICE_ID_TEAM_LICENSE_YEARLY'
+      : `STRIPE_PRICE_ID_${String(planTier ?? '').toUpperCase()}_${interval === 'year' ? 'YEARLY' : 'MONTHLY'}`;
     const rawPriceId = Deno.env.get(envKey);
     const priceId = rawPriceId && rawPriceId.trim() !== '' && rawPriceId !== 'undefined' && rawPriceId !== 'null' ? rawPriceId.trim() : null;
 
     let lineItem: any;
-    if (priceId) {
+    if (isTeamLicense) {
+      lineItem = priceId
+        ? { price: priceId, quantity: licenseQuantity }
+        : {
+            price_data: {
+              currency: 'cad',
+              product_data: { name: 'TryoutHQ Additional Team' },
+              unit_amount: EXTRA_TEAM_PRICE_CENTS,
+              recurring: { interval: 'year' },
+            },
+            quantity: licenseQuantity,
+          };
+    } else if (priceId) {
       lineItem = { price: priceId, quantity: 1 };
     } else {
-      const tierInfo = TIER_PRICES_CAD[tierKey];
+      const tierInfo = TIER_PRICES_CAD[String(planTier ?? '').toLowerCase()];
       if (!tierInfo) {
         throw new Error(`Invalid plan tier: ${planTier}`);
       }
@@ -105,11 +133,20 @@ serve(async (req) => {
       mode: 'subscription' as const,
       success_url: `aastryout://upgrade?success=true`,
       cancel_url: `aastryout://upgrade?canceled=true`,
-      metadata: {
-        accountId: accountId,
-        planTier: planTier,
-        interval: interval,
-      },
+      // A team-license purchase deliberately carries no planTier: the webhook keys off
+      // `type` and only increments extra_team_licenses, leaving the plan alone.
+      metadata: isTeamLicense
+        ? {
+            accountId: accountId,
+            type: 'team_license',
+            quantity: String(licenseQuantity),
+            interval: 'year',
+          }
+        : {
+            accountId: accountId,
+            planTier: planTier,
+            interval: interval,
+          },
     };
 
     try {

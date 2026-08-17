@@ -26,6 +26,12 @@ export interface PlanDefinition {
   highlight?: boolean;
   /** null for the Free tier, which has no Stripe pricing at all. */
   pricing: PlanPricing | null;
+  /**
+   * Per-year price of one team beyond `limits.teams`, for tiers that sell extra
+   * teams as an add-on (Club: CAD$10/team beyond the 6 included). Undefined means
+   * the tier has a hard team cap you can only raise by changing plans.
+   */
+  extraTeamPriceCents?: number;
   features: PlanFeature[];
   limits: {
     assessments: number | 'unlimited';
@@ -46,7 +52,13 @@ export interface PlanDefinition {
 }
 
 /** Stripe's own cut, shown as a sub-item under "Stripe payments" on every paid tier. */
-const STRIPE_FEE_SUBITEMS = ['0.5% of registration fees collected', 'Stripe: 2.9% + CAD$0.30 per transaction'];
+const STRIPE_FEE_SUBITEMS = ['0.5% of registration fees collected', 'Stripe: 2.9% ' , 'CAD$0.30 per transaction'];
+
+/** Per-year price of one additional Club team beyond the 6 included in the plan. */
+export const EXTRA_TEAM_PRICE_CENTS = 1000;
+
+/** Teams included in the Club plan before add-on team licenses are purchased. */
+const CLUB_INCLUDED_TEAMS = 6;
 
 export const PLAN_DEFINITIONS: PlanDefinition[] = [
   {
@@ -63,7 +75,6 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
       { label: 'Basic scoring', included: true },
       { label: 'Historical player profiles', included: true },
       { label: 'Stripe payments', included: false, fee: true },
-      { label: '0.5% platform fee', included: false, fee: true },
       { label: 'AI summaries', included: false },
       { label: 'PDF exports', included: false },
       { label: 'Dashboard', included: false },
@@ -133,7 +144,7 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
       { label: 'Unlimited assessments', included: true },
       { label: '100 players', included: true },
       { label: 'Everything in Coach', included: true },
-      { label: 'Enhanced payment dashboard', included: true },
+      { label: 'Full dashboard', included: true },
       { label: 'Per player fee breakdown', included: true },
       { label: 'Historical player profiles', included: true },
       { label: 'AI player summaries', included: true },
@@ -163,13 +174,20 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
     name: 'Club',
     tagline: 'For clubs & organizations of any size',
     pricing: { year: { amountCents: 9999 }, month: { amountCents: 1000 } },
+    extraTeamPriceCents: EXTRA_TEAM_PRICE_CENTS,
     features: [
       { label: 'Team Chat Messenger', included: true, allPlans: true },
       { label: 'Stripe payments', included: true, fee: true, subItems: STRIPE_FEE_SUBITEMS },
-      { label: 'Unlimited teams', included: true },
+      { label: `${CLUB_INCLUDED_TEAMS} teams included`, included: true },
+      {
+        label: `${formatCad(EXTRA_TEAM_PRICE_CENTS)} per additional team beyond ${CLUB_INCLUDED_TEAMS}`,
+        included: true,
+        fee: true,
+      },
       { label: 'Unlimited assessments', included: true },
       { label: 'Unlimited players', included: true },
       { label: 'Everything in Coach+', included: true },
+      { label: 'Full dashboard', included: true },
       { label: 'Full association dashboard', included: true },
       { label: 'Registration intake management', included: true },
       { label: 'Age group reporting', included: true },
@@ -183,7 +201,7 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
     limits: {
       assessments: 'unlimited',
       players: 'unlimited',
-      teams: 'unlimited',
+      teams: CLUB_INCLUDED_TEAMS,
       customRubrics: 'unlimited',
       teamBuilder: true,
       aiSummaries: true,
@@ -229,8 +247,27 @@ export function isAtPlayerLimit(tier: PlanTier, count: number): boolean {
   return count >= limit;
 }
 
-export function isAtTeamLimit(tier: PlanTier, count: number): boolean {
-  const limit = getPlanDefinition(tier).limits.teams;
+/**
+ * How many teams the account may have, once purchased add-on team licenses are
+ * counted in. Licenses only widen the cap on tiers that actually sell them
+ * (`extraTeamPriceCents`), so a license count left over on an account that has
+ * since downgraded can't silently raise a Free/Coach/Coach+ cap.
+ */
+export function getTeamAllowance(tier: PlanTier, extraTeamLicenses = 0): number | 'unlimited' {
+  const plan = getPlanDefinition(tier);
+  const limit = plan.limits.teams;
+  if (limit === 'unlimited') return 'unlimited';
+  if (!plan.extraTeamPriceCents) return limit;
+  return limit + Math.max(0, extraTeamLicenses);
+}
+
+/** Whether the tier sells extra teams as an add-on rather than hard-capping them. */
+export function sellsExtraTeams(tier: PlanTier): boolean {
+  return !!getPlanDefinition(tier).extraTeamPriceCents;
+}
+
+export function isAtTeamLimit(tier: PlanTier, count: number, extraTeamLicenses = 0): boolean {
+  const limit = getTeamAllowance(tier, extraTeamLicenses);
   if (limit === 'unlimited') return false;
   return count >= limit;
 }
@@ -279,14 +316,20 @@ export function getNextUsefulTier(tier: PlanTier, metric: UsageLimitMetric): Pla
   return null;
 }
 
+/** "CAD$39.99" / "CAD$10" — whole dollar amounts drop the cents. */
+export function formatCad(cents: number): string {
+  const dollars = cents / 100;
+  return `CAD$${Number.isInteger(dollars) ? dollars.toFixed(0) : dollars.toFixed(2)}`;
+}
+
 /** Formats a plan's price for a given billing interval, e.g. "CAD$39.99" / "/yr". */
 export function formatPlanPrice(
   plan: PlanDefinition,
   interval: BillingInterval
 ): { price: string; priceNote: string } {
   if (!plan.pricing) return { price: 'CAD$0', priceNote: 'forever' };
-  const cents = plan.pricing[interval].amountCents;
-  const dollars = cents / 100;
-  const display = Number.isInteger(dollars) ? dollars.toFixed(0) : dollars.toFixed(2);
-  return { price: `CAD$${display}`, priceNote: interval === 'year' ? '/yr' : '/month' };
+  return {
+    price: formatCad(plan.pricing[interval].amountCents),
+    priceNote: interval === 'year' ? '/yr' : '/month',
+  };
 }

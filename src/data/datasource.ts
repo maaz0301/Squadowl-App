@@ -31,6 +31,7 @@ import type {
   PlayerProfile,
   ShareComment,
   Team,
+  TeamBuilderResult,
   Tryout,
   UserProfile,
 } from './types';
@@ -104,10 +105,31 @@ export interface DataSource {
     teamId: string,
     registrationId: string,
   ): Promise<import('./types').TeamRosterPlayer[]>;
+  /**
+   * Bulk twins of the two single-registration placements above, for the
+   * "Add N to Roster" selection. Placed in chunks so a selection of any size is
+   * a handful of requests rather than ~8 per player; `onProgress` reports the
+   * running placed count. Both return how many registrations were actually
+   * placed — ids that no longer exist are skipped, not an error.
+   */
+  addRegistrationsToRoster(
+    tryoutId: string,
+    registrationIds: string[],
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<number>;
+  addRegistrationsToTeam(
+    teamId: string,
+    registrationIds: string[],
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<number>;
   dismissRegistration(tryoutId: string, registrationId: string): Promise<void>;
 
   // Phase 2: Team Builder, AI, Export
   generateTeamBuilder(tryoutId: string, config: TeamBuilderConfig): Promise<TeamBuilderState>;
+  /** Permanently-saved Team Builder snapshots for a tryout, newest first. */
+  listTeamBuilderResults(tryoutId: string): Promise<TeamBuilderResult[]>;
+  saveTeamBuilderResult(tryoutId: string, label: string, state: TeamBuilderState): Promise<TeamBuilderResult>;
+  deleteTeamBuilderResult(id: string): Promise<void>;
   getAiPlayerSummary(tryoutId: string, playerId: string): Promise<AiPlayerSummary>;
   getAiCompare(tryoutId: string, playerIds: string[]): Promise<AiCompareSummary>;
   exportTryout(tryoutId: string, format: ExportFormat): Promise<{ content: string; filename: string }>;
@@ -136,6 +158,8 @@ export interface DataSource {
   listAdminUsers(): Promise<AdminUserRow[]>;
   overrideUserPlan(userId: string, planTier: UserProfile['planTier']): Promise<void>;
   createCheckoutSession(planTier: string, interval: 'year' | 'month'): Promise<{ url: string }>;
+  /** Checkout for add-on team licenses beyond the plan's included teams (Club: CAD$10/team/year). */
+  createTeamLicenseCheckoutSession(quantity: number): Promise<{ url: string }>;
   createPortalSession(): Promise<{ url: string }>;
   /** Stripe Connect Standard onboarding for coaches collecting registration fees. */
   createConnectAccountLink(): Promise<{ url: string }>;

@@ -129,8 +129,10 @@ export default function NewTeamScreen() {
 
   const onSubmit = handleSubmit(async (data) => {
     const count = teamsQuery.data?.length ?? 0;
-    if (isAtTeamLimit(user?.planTier ?? 'free', count)) {
-      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'teams', 'teams'));
+    if (isAtTeamLimit(user?.planTier ?? 'free', count, user?.extraTeamLicenses ?? 0)) {
+      setLimitMsg(
+        buildLimitReachedMessage(user?.planTier ?? 'free', 'teams', 'teams', user?.extraTeamLicenses ?? 0)
+      );
       return;
     }
     const team = await createTeam.mutateAsync({ name: data.name, season: data.season });
@@ -179,9 +181,11 @@ export default function NewTeamScreen() {
 
   const runDummy = async (options: DummyTeamOptions) => {
     const existing = teamsQuery.data?.length ?? 0;
-    if (isAtTeamLimit(user?.planTier ?? 'free', existing + options.teams - 1)) {
+    if (isAtTeamLimit(user?.planTier ?? 'free', existing + options.teams - 1, user?.extraTeamLicenses ?? 0)) {
       setShowDummy(false);
-      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'teams', 'teams'));
+      setLimitMsg(
+        buildLimitReachedMessage(user?.planTier ?? 'free', 'teams', 'teams', user?.extraTeamLicenses ?? 0)
+      );
       return;
     }
     setDummyProgress(null);
