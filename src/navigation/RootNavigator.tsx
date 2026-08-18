@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AuthNavigator from './AuthNavigator';
 import AppNavigator from './AppNavigator';
@@ -8,27 +8,22 @@ import VerifyEmailScreen from '../screens/(auth)/verify-email';
 import { useAuthStore } from '@/state/authStore';
 import { SplashScreen } from '@/components/ui';
 
-/**
- * MMKV-backed persist rehydration is synchronous, so `isHydrated` is already
- * true on the very first render — there's no real loading window left to key
- * the splash off of. This timer gives the brand splash a minimum, deliberate
- * moment on screen instead of never appearing at all.
- */
-const MIN_SPLASH_MS = 1200;
-
 const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
   const { session, isHydrated } = useAuthStore();
-  const [minTimeElapsed, setMinTimeElapsed] = useState(false);
+  /**
+   * MMKV-backed persist rehydration is synchronous, so `isHydrated` is already
+   * true on the very first render — there's no real loading window left to key
+   * the splash off of. Instead the brand animation itself owns the timing and
+   * reports back here when it has played out (SplashScreen caps how long that
+   * can take, so this can't strand the user).
+   */
+  const [splashFinished, setSplashFinished] = useState(false);
+  const handleSplashFinish = useCallback(() => setSplashFinished(true), []);
 
-  useEffect(() => {
-    const timer = setTimeout(() => setMinTimeElapsed(true), MIN_SPLASH_MS);
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (!isHydrated || !minTimeElapsed) {
-    return <SplashScreen />;
+  if (!isHydrated || !splashFinished) {
+    return <SplashScreen onFinish={handleSplashFinish} />;
   }
 
   const isEmailUnverified = session?.user && session.user.emailVerified === false;
