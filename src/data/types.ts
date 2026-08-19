@@ -250,6 +250,23 @@ export const TeamSchema = z.object({
   collectsFees: z.boolean().optional(),
   /** Fee per player, in cents, charged only when collectsFees is true. */
   registrationFeeCents: z.number().optional(),
+  /** Team brand colour as "#RRGGBB", tinting the team banner and printed results. */
+  brandColor: z.string().optional(),
+  /**
+   * True when the caller reaches this team through a delegation rather than
+   * through their own account — i.e. a club handed them this one team. Drives
+   * the "Managed for <club>" banner treatment and hides account-level actions
+   * (delete, billing) the delegate has no rights to anyway.
+   */
+  managed: z.boolean().optional(),
+  /**
+   * The owning account's plan tier, set only when `managed` is true. Lets a
+   * delegate's screens gate features (exports, AI, Team Builder, custom
+   * rubrics, fees) against the club's plan instead of the delegate's own —
+   * the club already pays for the team, so the coach it was handed to
+   * shouldn't hit an upgrade wall for it.
+   */
+  ownerPlanTier: z.enum(PLAN_TIERS).optional(),
   createdAt: z.number(),
   updatedAt: z.number().optional(),
   tombstone: z.boolean().optional(),
@@ -643,6 +660,26 @@ export const OrgMemberSchema = z.object({
 });
 
 export type OrgMember = z.infer<typeof OrgMemberSchema>;
+
+/**
+ * Someone a club has handed a single team to (CLUB mode). Distinct from
+ * OrgMember: a membership is account-wide, a team manager reaches exactly one
+ * team. The club's own staff keep their access either way.
+ */
+export const TEAM_MANAGER_ROLES = ['manager', 'coach'] as const;
+export type TeamManagerRole = (typeof TEAM_MANAGER_ROLES)[number];
+
+export const TeamManagerSchema = z.object({
+  id: z.string(),
+  teamId: z.string(),
+  userId: z.string(),
+  email: z.string().email(),
+  name: z.string().optional(),
+  role: z.enum(TEAM_MANAGER_ROLES),
+  createdAt: z.number(),
+});
+
+export type TeamManager = z.infer<typeof TeamManagerSchema>;
 
 export interface AdminStats {
   totalUsers: number;

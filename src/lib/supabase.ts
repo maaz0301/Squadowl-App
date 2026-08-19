@@ -27,6 +27,7 @@ export function getSupabase(): SupabaseClient {
         'Supabase not configured. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.',
       );
     }
+    console.log('INIT SUPABASE WITH URL:', JSON.stringify(supabaseUrl));
     client = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         storage: mmkvAuthStorage,

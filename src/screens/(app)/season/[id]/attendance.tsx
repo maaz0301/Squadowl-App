@@ -3,6 +3,8 @@ import { FlatList, Text, View } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { TeamBanner } from '@/components/TeamBanner';
+import { useSeasonTeamBrand } from '@/features/useTeamBrand';
 import { Badge, Card, EmptyState, ErrorState, LoadingState, Screen } from '@/components/ui';
 import { useSeasonQuery } from '@/features/queries';
 
@@ -33,6 +35,10 @@ export default function SeasonAttendanceScreen() {
     });
   }, [seasonQuery.data]);
 
+  // Hook, so it runs before the loading/error guards — skipping it on the
+  // loading render would change hook order. Undefined season -> plain theme.
+  const { team, brand } = useSeasonTeamBrand(seasonQuery.data);
+
   if (seasonQuery.isLoading) return <LoadingState message="Loading attendance..." />;
   if (seasonQuery.isError || !seasonQuery.data) {
     return <ErrorState message="Could not load attendance." onRetry={() => seasonQuery.refetch()} />;
@@ -41,7 +47,8 @@ export default function SeasonAttendanceScreen() {
   const season = seasonQuery.data;
 
   return (
-    <Screen padded={false}>
+    <Screen padded={false} backgroundColor={brand.screenBg}>
+      {team ? <TeamBanner team={team} className="px-4 pt-3" /> : null}
       <View className="px-4 py-3">
         <Card accent className="gap-2">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>

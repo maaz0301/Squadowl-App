@@ -10,13 +10,17 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
 import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useGenerateTestDataMutation, useClearTestDataMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useRemoveTeamRosterPlayerMutation, useSeasonsQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation } from '@/features/queries';
 import { useUser } from '@/state/authStore';
-import { canUseFeature, isAtPlayerLimit } from '@/data/plans';
+import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit } from '@/data/plans';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
 import { BottomNav } from '@/components/BottomNav';
 import { ChatIconButton } from '@/components/ChatIconButton';
 import { PlanGate } from '@/components/PlanGate';
+import { TeamBanner } from '@/components/TeamBanner';
+import { teamBrandSurfaces } from '@/lib/teamBrand';
+import { TeamColorPicker } from '@/components/TeamColorPicker';
+import { TeamManagersCard } from '@/components/TeamManagersCard';
 import { DummyDataModal } from '@/components/DummyDataModal';
 import type { DummyDataOptions } from '@/data/testDataGenerator';
 import { getDataSource } from '@/data';
@@ -57,12 +61,12 @@ export default function TeamDetailScreen() {
   const uploadLogo = useUploadTeamLogoMutation();
   const user = useUser();
   const [editing, setEditing] = useState(false);
+  const [brandColor, setBrandColor] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [season, setSeason] = useState('');
   const [logo, setLogo] = useState<{ uri: string; type: string } | null>(null);
   const [collectsFees, setCollectsFees] = useState(false);
   const [feeInput, setFeeInput] = useState('');
-  const canCollectFees = canUseFeature(user?.planTier ?? 'free', 'payments');
   const [showAttachModal, setShowAttachModal] = useState(false);
   const [showDummy, setShowDummy] = useState(false);
   const [showAddPlayers, setShowAddPlayers] = useState(false);
@@ -242,9 +246,19 @@ export default function TeamDetailScreen() {
     );
   }
 
+  // Every surface on this screen — background, header ink, tabs, cards — is
+  // derived from the team's brand colour so the whole hub reads as the team's,
+  // not just the banner. Unbranded teams get the plain theme back.
+  const brand = teamBrandSurfaces(team.brandColor, colors);
+
+  // Gates against the owning club's tier for a delegated team, not the
+  // viewer's own — the club already pays for this team.
+  const effectiveTier = effectiveTierForTeam(team, user?.planTier ?? 'free');
+
   const linkedTryouts = (tryoutsQuery.data ?? []).filter((t) => t.teamId === team.id);
   const unlinkedTryouts = (tryoutsQuery.data ?? []).filter((t) => !t.teamId);
-  const isAssociation = canUseFeature(user?.planTier ?? 'free', 'enterprise');
+  const isAssociation = canUseFeature(effectiveTier, 'enterprise');
+  const canCollectFees = canUseFeature(effectiveTier, 'payments');
 
   const teamPlayers = rosterQuery.data ?? [];
 
@@ -253,8 +267,11 @@ export default function TeamDetailScreen() {
   const addPickedPlayers = async () => {
     const picked = candidates.filter((c) => pickedAthletes.has(c.athleteId));
     if (picked.length === 0) return;
-    if (isAtPlayerLimit(user?.planTier ?? 'free', teamPlayers.length + picked.length - 1)) {
-      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'players', 'players'));
+    // The roster lives on the owning club's account for a delegated team, so
+    // its player cap is the club's, not the delegate's own — same reasoning
+    // as effectiveTier everywhere else on this screen.
+    if (isAtPlayerLimit(effectiveTier, teamPlayers.length + picked.length - 1)) {
+      setLimitMsg(buildLimitReachedMessage(effectiveTier, 'players', 'players'));
       return;
     }
     const entries = picked.map((c) => ({
@@ -461,6 +478,7 @@ export default function TeamDetailScreen() {
     setLogo(null);
     setCollectsFees(team.collectsFees ?? false);
     setFeeInput(team.registrationFeeCents ? (team.registrationFeeCents / 100).toFixed(2) : '');
+    setBrandColor(team.brandColor ?? null);
     setEditing(true);
   };
 
@@ -507,7 +525,16 @@ export default function TeamDetailScreen() {
 
     await updateTeam.mutateAsync({
       id: team.id,
-      updates: { name: name.trim(), season: season.trim() || undefined, logoUrl, ...feeUpdates },
+      // '' rather than undefined when no colour is picked: undefined is "leave
+      // it alone" in updateTeam's patch builder, so clearing a colour has to be
+      // an explicit empty value to reach the column as NULL.
+      updates: {
+        name: name.trim(),
+        season: season.trim() || undefined,
+        logoUrl,
+        brandColor: brandColor ?? '',
+        ...feeUpdates,
+      },
     });
     setEditing(false);
   };
@@ -532,12 +559,17 @@ export default function TeamDetailScreen() {
 
   const headerBlock = (
     <>
-      <Header
-        title={team.name}
-        subtitle={team.season || undefined}
-        showBack
+      <Header title="Team" showBack />
+
+      {/* The team's own branding leads every tab, and the same banner repeats on
+          the schedule/roster/player screens below it. linkToHub is off here —
+          this is the hub. */}
+      <TeamBanner
+        team={team}
+        linkToHub={false}
+        className="mb-3"
         right={
-          <View className="flex-row items-center gap-2">
+          <View className="flex-row items-center gap-1">
             <ChatIconButton
               onPress={() =>
                 navigation.navigate('TeamChat', {
@@ -553,11 +585,6 @@ export default function TeamDetailScreen() {
           </View>
         }
       />
-      {team.logoUrl ? (
-        <View className="items-center mt-2 mb-4">
-          <Avatar uri={team.logoUrl} first="T" last="M" size={80} />
-        </View>
-      ) : null}
 
       <Tabs
         tabs={[
@@ -574,7 +601,7 @@ export default function TeamDetailScreen() {
   );
 
   return (
-    <Screen padded={false}>
+    <Screen padded={false} backgroundColor={brand.screenBg}>
       {tab === 'players' ? (
         // Players can number in the hundreds (dummy data goes up to 1000), so this
         // tab renders as a virtualized FlatList instead of the plain ScrollView the
@@ -745,7 +772,7 @@ export default function TeamDetailScreen() {
         {headerBlock}
 
         {tab === 'schedule' ? (
-          <PlanGate feature="seasonHub" title="Season Hub">
+          <PlanGate feature="seasonHub" title="Season Hub" tierOverride={effectiveTier}>
           <View>
             <Text className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: colors.inkMuted }}>
               Season Hub
@@ -882,6 +909,17 @@ export default function TeamDetailScreen() {
               <Button label="Edit Team Details" variant="secondary" size="sm" onPress={startEdit} />
             </Card>
 
+            {/* CLUB mode: hand this one team to another coach/manager. A viewer
+                who is themselves a delegate can see the list but not change it. */}
+            <View className="mb-3">
+              <TeamManagersCard
+                teamId={team.id}
+                teamName={team.name}
+                readOnly={!!team.managed}
+                tierOverride={effectiveTier}
+              />
+            </View>
+
             {isAssociation ? (
               <Card className="mb-3 gap-2">
                 <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
@@ -913,15 +951,20 @@ export default function TeamDetailScreen() {
               </Card>
             ) : null}
 
-            <Card className="gap-2">
-              <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.danger }}>
-                Danger Zone
-              </Text>
-              <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                Deleting a team removes its roster, schedule, and links to assessments.
-              </Text>
-              <Button label="Delete Team" variant="danger" size="sm" onPress={handleDelete} loading={deleteTeam.isPending} />
-            </Card>
+            {/* A delegated manager runs the team but doesn't own it — deleting
+                the club's team isn't theirs to do, and the teams RLS grants
+                them update but not delete, so the button would only ever fail. */}
+            {team.managed ? null : (
+              <Card className="gap-2">
+                <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.danger }}>
+                  Danger Zone
+                </Text>
+                <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                  Deleting a team removes its roster, schedule, and links to assessments.
+                </Text>
+                <Button label="Delete Team" variant="danger" size="sm" onPress={handleDelete} loading={deleteTeam.isPending} />
+              </Card>
+            )}
           </View>
         )}
       </ScrollView>
@@ -944,6 +987,8 @@ export default function TeamDetailScreen() {
           </Pressable>
           <Input label="Team name" value={name} onChangeText={setName} />
           <Input label="Season" value={season} onChangeText={setSeason} />
+
+          <TeamColorPicker value={brandColor} onChange={setBrandColor} />
 
           {canCollectFees ? (
             <>

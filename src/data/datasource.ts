@@ -65,6 +65,22 @@ export interface DataSource {
   uploadTeamLogo(teamId: string, fileUri: string, fileType: string): Promise<string>;
   deleteTeam(id: string): Promise<void>;
 
+  // Team managers (CLUB mode): hand one team to another coach/manager by email.
+  // The club's own staff keep full access to a delegated team.
+  listTeamManagers(teamId: string): Promise<import('./types').TeamManager[]>;
+  /**
+   * Delegates `teamId` to the account behind `email`. When no account exists for
+   * that address yet, one is created first (mirroring createAndInviteUser) so a
+   * club can hand a team to a coach who has never opened the app.
+   */
+  inviteTeamManager(
+    teamId: string,
+    email: string,
+    role: import('./types').TeamManagerRole,
+    name?: string,
+  ): Promise<import('./types').TeamManager>;
+  removeTeamManager(managerId: string): Promise<void>;
+
   // Tryouts
   listTryouts(includeArchived?: boolean): Promise<Tryout[]>;
   /** Tryouts the current user is invited to as an assessor (not owned by their account). */
@@ -201,7 +217,7 @@ export interface DataSource {
   addShareComment(shareId: string, body: string): Promise<ShareComment>;
 
   // Extended UI operations
-  sendEmail(type: 'org_invite' | 'tryout_invite' | 'schedule_update' | 'reminder' | 'registration_confirmation', to: string, payload: any): Promise<void>;
+  sendEmail(type: 'org_invite' | 'team_manager_invite' | 'tryout_invite' | 'schedule_update' | 'reminder' | 'registration_confirmation', to: string, payload: any): Promise<void>;
   copyTryout(id: string): Promise<Tryout>;
   restoreTryout(id: string): Promise<Tryout>;
   importLibraryPlayers(tryoutId: string, entries: { first: string; last: string; jersey?: string; pos?: string }[]): Promise<Player[]>;
@@ -219,6 +235,15 @@ export interface DataSource {
   ): Promise<import('./types').SeasonPlayer[]>;
   deleteSeasonPlayer(seasonId: string, playerId: string): Promise<void>;
   importSeasonPlayersFromTeam(seasonId: string): Promise<import('./types').SeasonPlayer[]>;
+  /**
+   * Just the roster — no events, no availability rows, no portal invites.
+   * getSeason() assembles all of that, which is fine for the season screen but
+   * a poor fit for a callsite that only needs athlete ids: on a season with a
+   * big roster and several events already scheduled, getSeason() means
+   * fetching every guardian's RSVP on every past event just to answer "who's
+   * already on this roster".
+   */
+  listSeasonRoster(seasonId: string): Promise<import('./types').SeasonPlayer[]>;
   emailScheduleToPlayers(seasonId: string): Promise<void>;
   updateTeam(id: string, updates: Partial<Team>): Promise<Team>;
 

@@ -10,6 +10,11 @@ const FROM_EMAIL = Deno.env.get('SMTP_FROM_EMAIL') || 'reachraza1@gmail.com';
 const FROM_NAME = Deno.env.get('SMTP_FROM_NAME') || 'Athlete Assessment';
 
 // ─── Shared dark-theme HTML wrapper ─────────────────────────────────────────
+/** Minimal HTML escaping for user-controlled strings (team/role names) dropped into template markup. */
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function wrap(title: string, body: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -69,6 +74,39 @@ function tplOrgInvite(role: string, password?: string) {
       ${pwBlock}
       <p style="color:#9ca3af;font-size:15px;line-height:1.7;margin:0 0 8px;">
         Log in (or sign up with this email) to accept the invite and get started.
+      </p>
+    `),
+  };
+}
+
+function tplTeamManagerInvite(teamName: string, role: string, password?: string) {
+  const safeTeam = escapeHtml(teamName);
+  const roleLabel = role === 'coach' ? 'Coach' : 'Manager';
+  const pwBlock = password ? `
+    <div style="background:#0f0f13;border:1px solid #6366f1;border-radius:12px;padding:24px;margin:24px 0;text-align:center;">
+      <p style="margin:0 0 8px;color:#9ca3af;font-size:12px;text-transform:uppercase;letter-spacing:1.5px;">Temporary Password</p>
+      <p style="margin:0;font-size:32px;font-weight:700;letter-spacing:8px;color:#a78bfa;font-family:monospace;">${password}</p>
+    </div>
+    <p style="color:#f59e0b;font-size:13px;margin:0 0 24px;padding:12px 16px;background:#1c1200;border-radius:8px;border-left:3px solid #f59e0b;">
+      ⚠️ Please change this password after your first login for security.
+    </p>` : '';
+  return {
+    subject: `You've been added to ${safeTeam} on Athlete Assessment`,
+    html: wrap("You've Been Added to a Team! 🏒", `
+      <p style="color:#d1d5db;font-size:16px;line-height:1.7;margin:0 0 20px;">
+        You've been given access to manage <strong style="color:#a78bfa;">${safeTeam}</strong> on
+        <strong style="color:#a78bfa;">Athlete Assessment</strong> as its
+        <span style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;padding:2px 14px;border-radius:20px;font-size:14px;font-weight:600;">${roleLabel}</span>.
+      </p>
+      ${pwBlock}
+      <div style="background:#0f0f13;border-radius:12px;padding:20px 24px;margin:20px 0;border-left:4px solid #6366f1;">
+        <p style="color:#9ca3af;font-size:13px;margin:0 0 4px;">What you can do</p>
+        <p style="color:#fff;font-size:15px;line-height:1.6;margin:0;">
+          View and manage this team's roster, schedule, chat, and assessments — no access to anything else on the club's account.
+        </p>
+      </div>
+      <p style="color:#9ca3af;font-size:15px;line-height:1.7;margin:0;">
+        Log in (or sign up with this email) to get started.
       </p>
     `),
   };
@@ -214,6 +252,7 @@ serve(async (req: Request) => {
     let html = '<p>You have a new notification.</p>';
 
     if (type === 'org_invite') ({ subject, html } = tplOrgInvite(payload?.role ?? 'Member', payload?.password));
+    else if (type === 'team_manager_invite') ({ subject, html } = tplTeamManagerInvite(payload?.teamName ?? 'a team', payload?.role ?? 'manager', payload?.password));
     else if (type === 'tryout_invite') ({ subject, html } = tplTryoutInvite(payload?.tryoutName));
     else if (type === 'schedule_update') ({ subject, html } = tplScheduleUpdate(payload?.eventName ?? 'New Event', payload?.date, payload?.time, payload?.location));
     else if (type === 'reminder') ({ subject, html } = tplReminder(payload?.title ?? 'Upcoming Event', payload?.message ?? 'This is a reminder for an upcoming event.'));

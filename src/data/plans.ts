@@ -1,4 +1,4 @@
-import type { PlanTier } from './types';
+import type { PlanTier, Team } from './types';
 
 export interface PlanFeature {
   label: string;
@@ -281,6 +281,25 @@ const TIER_ORDER: PlanTier[] = PLAN_DEFINITIONS.map((p) => p.tier);
 /** Whether `tier` is at or above `min` in the plan hierarchy (free < coach < coach_plus < club). */
 export function isTierAtLeast(tier: PlanTier, min: PlanTier): boolean {
   return TIER_ORDER.indexOf(tier) >= TIER_ORDER.indexOf(min);
+}
+
+/**
+ * The plan tier that should gate a team-scoped feature (exports, AI summaries,
+ * Team Builder, custom rubrics, fee collection). Normally the caller's own
+ * account tier — but when `team` is one delegated to them (CLUB mode), the
+ * owning club's tier instead: the club already pays for the team, so the
+ * coach it was handed to shouldn't hit an upgrade wall managing it.
+ *
+ * Falls back to `ownTier` whenever the team isn't managed, or the delegated
+ * team's owner tier hasn't loaded yet — never grants more than the caller
+ * actually has by default.
+ */
+export function effectiveTierForTeam(
+  team: Pick<Team, 'managed' | 'ownerPlanTier'> | null | undefined,
+  ownTier: PlanTier,
+): PlanTier {
+  if (team?.managed && team.ownerPlanTier) return team.ownerPlanTier;
+  return ownTier;
 }
 
 /** The next tier up from `tier`, or null if already on the top tier. */

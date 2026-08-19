@@ -9,6 +9,8 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { Button, Chip, Input, Header, ErrorState, LoadingState, Screen } from '@/components/ui';
 import { useCreateSeasonMutation, useTeamsQuery } from '@/features/queries';
 import { PlanGate } from '@/components/PlanGate';
+import { useUser } from '@/state/authStore';
+import { effectiveTierForTeam } from '@/data/plans';
 
 export default function NewSeasonScreen() {
   const colors = useThemeColors();
@@ -34,6 +36,12 @@ export default function NewSeasonScreen() {
   );
 
   const sport = watch('sport');
+  const selectedTeamId = watch('teamId');
+  const user = useUser();
+  // A season created for (or linked to) a delegated team gates against the
+  // owning club's tier, not the viewer's own.
+  const selectedTeam = selectedTeamId ? teamsQuery.data?.find((t) => t.id === selectedTeamId) : undefined;
+  const tier = effectiveTierForTeam(selectedTeam, user?.planTier ?? 'free');
 
   const onSubmit = handleSubmit(async (data) => {
     const season = await createSeason.mutateAsync(data);
@@ -53,7 +61,7 @@ export default function NewSeasonScreen() {
   return (
     <Screen scroll>
       <Header title="New Season" subtitle="Team Hub setup" showBack />
-      <PlanGate feature="seasonHub" title="Season Hub">
+      <PlanGate feature="seasonHub" title="Season Hub" tierOverride={tier}>
         <View className="gap-4 mt-2">
           <Controller
             control={control}

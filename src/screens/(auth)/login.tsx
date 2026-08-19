@@ -26,9 +26,10 @@ export default function LoginScreen() {
     setLoading(true);
     setError(null);
     try {
-      await login(data.email, data.password);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Login failed');
+      await login(data.email.trim(), data.password);
+    } catch (e: any) {
+      console.warn('Login failed:', e);
+      setError(e?.message || 'Login failed');
     } finally {
       setLoading(false);
     }

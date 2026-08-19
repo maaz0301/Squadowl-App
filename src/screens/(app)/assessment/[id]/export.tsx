@@ -17,18 +17,21 @@ import { PlanGate } from '@/components/PlanGate';
 import { useTryoutQuery, useExportTryoutMutation, useShareLinkMutation } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { canUseFeature, getPlanDefinition } from '@/data/plans';
-import { useUser } from '@/state/authStore';
+import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import type { ExportFormat } from '@/data/types';
 
 export default function ExportScreen() {
   const id = useAssessmentId();
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
-  const user = useUser();
   const tryoutQuery = useTryoutQuery(id);
   const exportMut = useExportTryoutMutation(id!);
   const shareMut = useShareLinkMutation(id!);
   const [isExporting, setIsExporting] = useState<string | null>(null);
+  // Hook, so it runs before the loading/error guards below — skipping it on
+  // the loading render would change hook order. A delegated team's tryout
+  // gates against the owning club's tier, not the viewer's own.
+  const tier = useEffectivePlanTier(tryoutQuery.data?.teamId);
 
   if (tryoutQuery.isLoading || !id) return <LoadingState />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
@@ -36,7 +39,6 @@ export default function ExportScreen() {
   }
 
   const tryout = tryoutQuery.data;
-  const tier = user?.planTier ?? 'free';
   const exportsAllowed = canUseFeature(tier, 'exports') || tier !== 'free';
   const allowedFormats = getPlanDefinition(tier).limits.exports;
 
@@ -103,12 +105,12 @@ export default function ExportScreen() {
           )}
         </View>
       ) : (
-        <PlanGate feature="exports" title="Exports">
+        <PlanGate feature="exports" title="Exports" tierOverride={tier}>
           <View />
         </PlanGate>
       )}
 
-      <PlanGate feature="shareLinks" title="Share Links">
+      <PlanGate feature="shareLinks" title="Share Links" tierOverride={tier}>
         <Card accent className="gap-3">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>
             Shareable Results Link

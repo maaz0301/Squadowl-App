@@ -6,6 +6,7 @@ import { InAppBrowser } from 'react-native-inappbrowser-reborn';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { DummyDataModal } from '@/components/DummyDataModal';
+import { TeamColorPicker } from '@/components/TeamColorPicker';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { Button, Card, Chip, ErrorState, Header, Input, LoadingState, Screen, Avatar, Badge } from '@/components/ui';
 import { canUseFeature, isAtTeamLimit } from '@/data/plans';
@@ -49,6 +50,7 @@ export default function NewTeamScreen() {
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
   const [showDummy, setShowDummy] = useState(false);
   const [logo, setLogo] = useState<{ uri: string; type: string } | null>(null);
+  const [brandColor, setBrandColor] = useState<string | null>(null);
   const [collectsFees, setCollectsFees] = useState(false);
   const [feeInput, setFeeInput] = useState('');
   const [connecting, setConnecting] = useState(false);
@@ -128,7 +130,8 @@ export default function NewTeamScreen() {
   };
 
   const onSubmit = handleSubmit(async (data) => {
-    const count = teamsQuery.data?.length ?? 0;
+    // Delegated teams belong to the club that pays for them, not to this plan.
+    const count = (teamsQuery.data ?? []).filter((t) => !t.managed).length;
     if (isAtTeamLimit(user?.planTier ?? 'free', count, user?.extraTeamLicenses ?? 0)) {
       setLimitMsg(
         buildLimitReachedMessage(user?.planTier ?? 'free', 'teams', 'teams', user?.extraTeamLicenses ?? 0)
@@ -150,16 +153,32 @@ export default function NewTeamScreen() {
       // Non-fatal: the team exists, and its first event will create the season.
     }
     
+    // createTeam only takes name/season, so branding is a follow-up write. Logo
+    // and colour go together in one update when both are set, so a team that
+    // picked both doesn't pay for two round trips.
+    let logoUrl: string | undefined;
     if (logo) {
       try {
-        const logoUrl = await uploadLogo.mutateAsync({
+        logoUrl = await uploadLogo.mutateAsync({
           teamId: team.id,
           fileUri: logo.uri,
           fileType: logo.type,
         });
-        await updateTeam.mutateAsync({ id: team.id, updates: { logoUrl } });
       } catch (e: any) {
         showAlert('Logo Upload Error', 'The team was created, but uploading the logo failed: ' + e.message);
+      }
+    }
+    if (logoUrl || brandColor) {
+      try {
+        await updateTeam.mutateAsync({
+          id: team.id,
+          updates: {
+            ...(logoUrl ? { logoUrl } : {}),
+            ...(brandColor ? { brandColor } : {}),
+          },
+        });
+      } catch (e: any) {
+        showAlert('Branding Error', 'The team was created, but saving its branding failed: ' + e.message);
       }
     }
 
@@ -180,7 +199,7 @@ export default function NewTeamScreen() {
   });
 
   const runDummy = async (options: DummyTeamOptions) => {
-    const existing = teamsQuery.data?.length ?? 0;
+    const existing = (teamsQuery.data ?? []).filter((t) => !t.managed).length;
     if (isAtTeamLimit(user?.planTier ?? 'free', existing + options.teams - 1, user?.extraTeamLicenses ?? 0)) {
       setShowDummy(false);
       setLimitMsg(
@@ -263,6 +282,8 @@ export default function NewTeamScreen() {
             <Input label="Season (optional)" onBlur={onBlur} onChangeText={onChange} value={value ?? ''} />
           )}
         />
+
+        <TeamColorPicker value={brandColor} onChange={setBrandColor} label="Team colour (optional)" />
         {canCollectFees ? (
           <>
             <View className="gap-2">

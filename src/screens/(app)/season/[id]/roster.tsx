@@ -5,6 +5,8 @@ import { useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { TeamBanner } from '@/components/TeamBanner';
+import { useSeasonTeamBrand } from '@/features/useTeamBrand';
 import { Badge, Button, Card, EmptyState, ErrorState, Header, Input, LoadingState, Modal, Screen } from '@/components/ui';
 import { useSeasonQuery, useAddSeasonPlayerMutation, useImportSeasonPlayersFromTeamMutation } from '@/features/queries';
 
@@ -22,6 +24,10 @@ export default function SeasonRosterScreen() {
   const [lastName, setLastName] = useState('');
   const [jersey, setJersey] = useState('');
   const [guardianEmail, setGuardianEmail] = useState('');
+
+  // Hook, so it runs before the loading/error guards — skipping it on the
+  // loading render would change hook order. Undefined season -> plain theme.
+  const { team, brand } = useSeasonTeamBrand(seasonQuery.data);
 
   if (seasonQuery.isLoading) return <LoadingState message="Loading roster..." />;
   if (seasonQuery.isError || !seasonQuery.data) {
@@ -58,7 +64,7 @@ export default function SeasonRosterScreen() {
   };
 
   return (
-    <Screen padded={false}>
+    <Screen padded={false} backgroundColor={brand.screenBg}>
       <Header
         title="Season Roster"
         showBack
@@ -74,6 +80,7 @@ export default function SeasonRosterScreen() {
           ) : undefined
         }
       />
+      {team ? <TeamBanner team={team} className="px-4 mb-2" /> : null}
       <FlatList
         data={season.roster}
         keyExtractor={(p) => p.id}

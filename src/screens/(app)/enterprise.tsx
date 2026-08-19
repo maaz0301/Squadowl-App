@@ -252,7 +252,7 @@ export default function EnterpriseScreen() {
                         : colors.danger
                   }
                 />
-                <Stat label="Teams" value={`${teamsQuery.data?.length ?? 0}`} />
+                <Stat label="Teams" value={`${(teamsQuery.data ?? []).filter((t) => !t.managed).length}`} />
                 <Stat label="Seasons" value={`${seasonsQuery.data?.length ?? 0}`} />
                 <Stat label="Registrations" value={`${metrics.regsTotal}`} hint={`${metrics.regsPending} pending`} />
               </View>

@@ -6,6 +6,8 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { TeamBanner } from '@/components/TeamBanner';
+import { useSeasonTeamBrand } from '@/features/useTeamBrand';
 import { Badge, Button, Card, Chip, EmptyState, ErrorState, Input, LoadingState, Modal, Screen, DateField, TimeField, Header } from '@/components/ui';
 import { useSeasonQuery, useAddSeasonEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation } from '@/features/queries';
 import { getDataSource } from '@/data';
@@ -28,6 +30,11 @@ export default function SeasonScheduleScreen() {
     resolver: zodResolver(CreateEventFormSchema),
     defaultValues: { type: 'Practice', title: '', date: '', startTime: '', location: '', playerIds: [] },
   });
+
+  // Called before the loading/error guards below: it's a hook, and skipping it
+  // on the loading render would change hook order between renders. It accepts
+  // an undefined season and returns the plain theme.
+  const { team, brand } = useSeasonTeamBrand(seasonQuery.data);
 
   if (seasonQuery.isLoading) return <LoadingState message="Loading schedule..." />;
   if (seasonQuery.isError || !seasonQuery.data) {
@@ -175,8 +182,11 @@ export default function SeasonScheduleScreen() {
   };
 
   return (
-    <Screen padded={false}>
+    <Screen padded={false} backgroundColor={brand.screenBg}>
       <Header title="Schedule" showBack />
+      {/* Same banner as the team hub, so a coach deep in the schedule still sees
+          whose team it belongs to. Tapping it goes back to the hub. */}
+      {team ? <TeamBanner team={team} className="px-4 mb-2" /> : null}
       <View className="px-4 py-3">
         <Button label="+ Add Event" onPress={openAdd} />
       </View>

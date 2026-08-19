@@ -1,3 +1,4 @@
+import 'react-native-url-polyfill/auto';
 import { AppRegistry } from 'react-native';
 import App from './src/App';
 // Since we deleted app.json, we will manually provide the app name

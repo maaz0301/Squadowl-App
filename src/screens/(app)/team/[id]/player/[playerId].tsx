@@ -2,8 +2,10 @@ import { useRoute } from '@react-navigation/native';
 import { ScrollView, Text, View } from 'react-native';
 
 import { Avatar, Badge, Card, EmptyState, Header, LoadingState, Screen } from '@/components/ui';
-import { useTeamRosterQuery, useTryoutsQuery } from '@/features/queries';
+import { useTeamRosterQuery, useTeamsQuery, useTryoutsQuery } from '@/features/queries';
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { TeamBanner } from '@/components/TeamBanner';
+import { teamBrandSurfaces } from '@/lib/teamBrand';
 import { BottomNav } from '@/components/BottomNav';
 
 function Row({ label, value, colors }: { label: string; value?: string; colors: any }) {
@@ -27,6 +29,11 @@ export default function TeamPlayerScreen() {
   // record, not the team_roster row — look it up by athleteId across every
   // assessment, since a team's roster can be sourced from more than one.
   const tryoutsQuery = useTryoutsQuery(false);
+  // The player card is reached from the team hub, so it keeps the team's
+  // branding rather than dropping back to the plain theme mid-flow.
+  const teamsQuery = useTeamsQuery();
+  const team = teamsQuery.data?.find((t) => t.id === teamId);
+  const brand = teamBrandSurfaces(team?.brandColor, colors);
 
   if (rosterQuery.isLoading || tryoutsQuery.isLoading) return <LoadingState />;
 
@@ -52,13 +59,17 @@ export default function TeamPlayerScreen() {
   const yearOfBirth = rosterEntry?.yearOfBirth != null ? String(rosterEntry.yearOfBirth) : fullPlayer?.yearOfBirth;
 
   return (
-    <Screen padded={false}>
+    <Screen padded={false} backgroundColor={brand.screenBg}>
       <ScrollView
         className="flex-1 px-4"
         contentContainerStyle={{ paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
       >
-        <Header title={`${first} ${last}`.trim() || 'Player'} showBack />
+        <Header
+          title={`${first} ${last}`.trim() || 'Player'}
+          showBack
+        />
+        {team ? <TeamBanner team={team} className="mb-3" /> : null}
 
         <View className="items-center py-4 gap-2">
           <Avatar first={first} last={last} pos={pos} size={72} uri={fullPlayer?.avatarUrl} />

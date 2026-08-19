@@ -809,11 +809,16 @@ export function useAddSeasonEventMutation(seasonId: string) {
  */
 async function syncSeasonRosterFromTeam(teamId: string, seasonId: string) {
   const ds = getDataSource();
-  const [teamRoster, season] = await Promise.all([
+  // listSeasonRoster, not getSeason: this only needs athlete ids to diff
+  // against the team roster. getSeason() assembles the whole season detail —
+  // every event, every guardian's RSVP on every one of them, every portal
+  // invite — which on a season with a big roster and several events already
+  // scheduled turned "add one more event" into fetching thousands of
+  // unrelated availability rows just to answer "who's already enrolled".
+  const [teamRoster, existing] = await Promise.all([
     ds.listTeamRoster(teamId),
-    ds.getSeason(seasonId),
+    ds.listSeasonRoster(seasonId),
   ]);
-  const existing = season?.roster ?? [];
   const alreadyOnSeason = new Set(existing.map((p) => p.athleteId).filter(Boolean));
   const missing = teamRoster.filter((p) => p.athleteId && !alreadyOnSeason.has(p.athleteId));
   if (missing.length === 0) return existing;
@@ -1102,6 +1107,40 @@ export function useRemoveMemberMutation() {
   return useMutation({
     mutationFn: (memberId: string) => getDataSource().removeOrgMember(memberId),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.orgMembers() }),
+  });
+}
+
+// --- Team managers (CLUB mode) ---------------------------------------------
+
+export function useTeamManagersQuery(teamId?: string) {
+  return useQuery({
+    queryKey: queryKeys.teamManagers(teamId),
+    queryFn: () => getDataSource().listTeamManagers(teamId!),
+    enabled: !!teamId,
+  });
+}
+
+export function useInviteTeamManagerMutation(teamId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      email,
+      role,
+      name,
+    }: {
+      email: string;
+      role: import('@/data/types').TeamManagerRole;
+      name?: string;
+    }) => getDataSource().inviteTeamManager(teamId, email, role, name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teamManagers(teamId) }),
+  });
+}
+
+export function useRemoveTeamManagerMutation(teamId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (managerId: string) => getDataSource().removeTeamManager(managerId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teamManagers(teamId) }),
   });
 }
 

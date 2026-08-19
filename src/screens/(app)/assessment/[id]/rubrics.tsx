@@ -6,14 +6,13 @@ import { PlanGate } from '@/components/PlanGate';
 import { UsageNudgeBanner } from '@/components/UsageNudgeBanner';
 import { useTryoutQuery, useUpdateTryoutMutation } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
-import { useUser } from '@/state/authStore';
 import { getPlanDefinition } from '@/data/plans';
+import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import type { ScoringType, RankingDirection } from '@/data/types';
 
 export default function RubricsScreen() {
   const id = useAssessmentId();
   const colors = useThemeColors();
-  const user = useUser();
   const tryoutQuery = useTryoutQuery(id);
   const updateTryout = useUpdateTryoutMutation();
 
@@ -42,6 +41,11 @@ export default function RubricsScreen() {
     }
   };
 
+  // Hook, so it runs before the loading/error guards below — skipping it on
+  // the loading render would change hook order. A delegated team's tryout
+  // gates against the owning club's tier, not the viewer's own.
+  const tier = useEffectivePlanTier(tryoutQuery.data?.teamId);
+
   if (tryoutQuery.isLoading || !id) return <LoadingState message="Loading rubrics..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
     return (
@@ -51,7 +55,7 @@ export default function RubricsScreen() {
 
   const tryout = tryoutQuery.data;
   const custom = tryout.settings.customRubrics ?? [];
-  const plan = getPlanDefinition(user?.planTier ?? 'free');
+  const plan = getPlanDefinition(tier);
   const customLimit = plan.limits.customRubrics;
   const atCustomLimit =
     customLimit !== 'unlimited' && custom.length >= (customLimit as number);
@@ -135,7 +139,7 @@ export default function RubricsScreen() {
       </Card>
 
       <UsageNudgeBanner
-        tier={user?.planTier ?? 'free'}
+        tier={tier}
         metric="customRubrics"
         count={custom.length}
         label="custom rubrics"
@@ -194,7 +198,7 @@ export default function RubricsScreen() {
         ) : null}
       </Card>
 
-      <PlanGate feature="customRubrics" title="Custom Rubrics">
+      <PlanGate feature="customRubrics" title="Custom Rubrics" tierOverride={tier}>
         <Card accent className="gap-3">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>
             Add Custom Drill / Category

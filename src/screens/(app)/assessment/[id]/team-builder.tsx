@@ -24,14 +24,13 @@ import {
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { getPlayerNameMap, type TeamBuilderState } from '@/data/teamBuilder';
 import { computePlayerResults } from '@/data/scoring';
-import { useUser } from '@/state/authStore';
 import { canUseFeature, getPlanDefinition } from '@/data/plans';
+import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 
 export default function TeamBuilderScreen() {
   const id = useAssessmentId();
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
-  const user = useUser();
   const tryoutQuery = useTryoutQuery(id);
   const generate = useGenerateTeamBuilderMutation(id!);
   const resultsQuery = useTeamBuilderResultsQuery(id);
@@ -67,6 +66,11 @@ export default function TeamBuilderScreen() {
     return () => clearInterval(int);
   }, [generate.isPending]);
 
+  // Hook, so it runs before the loading/error guards below — skipping it on
+  // the loading render would change hook order. A delegated team's tryout
+  // gates against the owning club's tier, not the viewer's own.
+  const tier = useEffectivePlanTier(tryoutQuery.data?.teamId);
+
   if (tryoutQuery.isLoading) return <LoadingState message="Loading..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
     return (
@@ -88,7 +92,6 @@ export default function TeamBuilderScreen() {
   const isUnsaved = !viewingResult && !!teamBuilder && teamBuilder.generatedAt !== lastSavedGeneratedAt;
   const nameMap = getPlayerNameMap(tryout);
 
-  const tier = user?.planTier ?? 'free';
   const exportsAllowed = canUseFeature(tier, 'exports') || tier !== 'free';
   const allowedFormats = getPlanDefinition(tier).limits.exports;
 
@@ -162,7 +165,7 @@ export default function TeamBuilderScreen() {
     <Screen scroll insideTabBar>
       <Header title="Team Builder" subtitle="Sort Out — balanced teams" showBack onBack={() => navigation.navigate('AssessmentResults')} />
 
-      <PlanGate feature="teamBuilder" title="Team Builder">
+      <PlanGate feature="teamBuilder" title="Team Builder" tierOverride={tier}>
         <Card accent className="gap-3 mb-4">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>
             Configuration

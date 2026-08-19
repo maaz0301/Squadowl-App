@@ -22,6 +22,12 @@ interface ScreenProps extends ViewProps {
    * covered by the keyboard.
    */
   insideTabBar?: boolean;
+  /**
+   * Overrides the theme background for the whole screen. Used by team-scoped
+   * screens to wash the page in the team's brand colour; omit everywhere else
+   * so screens keep tracking the light/dark theme.
+   */
+  backgroundColor?: string;
   children: React.ReactNode;
 }
 
@@ -33,10 +39,12 @@ export function Screen({
   keyboardAvoiding = true,
   keyboardOffset = Platform.OS === 'ios' ? 88 : 0,
   insideTabBar = false,
+  backgroundColor,
   children,
   ...props
 }: ScreenProps) {
   const colors = useThemeColors();
+  const bg = backgroundColor ?? colors.bg;
 
   const innerContent = (
     <View className={cn('flex-1', padded && 'px-4', className)} {...props}>
@@ -61,7 +69,7 @@ export function Screen({
   );
 
   return (
-    <SafeAreaView className="flex-1" edges={edges} style={{ backgroundColor: colors.bg }}>
+    <SafeAreaView className="flex-1" edges={edges} style={{ backgroundColor: bg }}>
       {!scroll && keyboardAvoiding ? (
         <KeyboardAvoidingView
           style={{ flex: 1 }}

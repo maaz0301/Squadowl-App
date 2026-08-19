@@ -36,6 +36,7 @@ import {
 } from '@/features/queries';
 import { APP_CONFIG } from '@/config/app';
 import { canUseFeature, isAtAssessmentLimit, isAtTeamLimit } from '@/data/plans';
+import { teamBrandSurfaces } from '@/lib/teamBrand';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 
 export default function DashboardScreen() {
@@ -209,7 +210,8 @@ export default function DashboardScreen() {
 
   const fabAction = () => {
     if (tab === 'teams') {
-      const count = teamsQuery.data?.length ?? 0;
+      // Teams delegated by a club don't consume this account's own allowance.
+      const count = (teamsQuery.data ?? []).filter((t) => !t.managed).length;
       if (isAtTeamLimit(user?.planTier ?? 'free', count, user?.extraTeamLicenses ?? 0)) {
         setLimitMsg(
           buildLimitReachedMessage(user?.planTier ?? 'free', 'teams', 'teams', user?.extraTeamLicenses ?? 0)
@@ -237,7 +239,20 @@ export default function DashboardScreen() {
       const isDeleting = busyId === item.id;
       return (
         <Pressable onPress={() => openTeam(item.id)} disabled={isDeleting}>
-          <Card className="mb-3" style={isDeleting ? { opacity: 0.5 } : undefined}>
+          <Card
+            className="mb-3"
+            style={[
+              // Teams are recognized by their colour before their name, so the
+              // dashboard card carries it too — a left edge in the team's
+              // colour plus the same tint its own screens use.
+              item.brandColor
+                ? { backgroundColor: teamBrandSurfaces(item.brandColor, colors).cardBg,
+                    borderLeftWidth: 4,
+                    borderLeftColor: item.brandColor }
+                : null,
+              isDeleting ? { opacity: 0.5 } : null,
+            ]}
+          >
             <View className="flex-row justify-between items-center">
               <View className="flex-1 flex-row items-center">
                 {item.logoUrl ? (
@@ -246,9 +261,13 @@ export default function DashboardScreen() {
                   </View>
                 ) : null}
                 <View className="flex-1">
-                  <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
-                    {item.name}
-                  </Text>
+                  <View className="flex-row items-center gap-2">
+                    <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
+                      {item.name}
+                    </Text>
+                    {/* Delegated to this user by a club — not one of their own. */}
+                    {item.managed ? <Badge label="Managed" variant="info" /> : null}
+                  </View>
                   {item.season ? (
                     <Text className="text-sm mt-0.5" style={{ color: colors.inkMuted }}>
                       {item.season}
@@ -258,7 +277,7 @@ export default function DashboardScreen() {
               </View>
               {isNavigating || isDeleting ? (
                 <ActivityIndicator size="small" color={isDeleting ? colors.danger : colors.primary} />
-              ) : (
+              ) : item.managed ? null : (
                 <Pressable
                   onPress={() => handleDeleteTeam(item.id, item.name)}
                   hitSlop={8}
@@ -344,7 +363,7 @@ export default function DashboardScreen() {
   };
 
   const evalCount = tryoutsQuery.data?.length ?? 0;
-  const teamCount = teamsQuery.data?.length ?? 0;
+  const teamCount = (teamsQuery.data ?? []).filter((t) => !t.managed).length;
 
   return (
     <Screen padded={false}>

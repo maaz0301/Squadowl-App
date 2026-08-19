@@ -10,13 +10,19 @@ interface Props {
   feature: keyof ReturnType<typeof getPlanDefinition>['limits'];
   children?: React.ReactNode;
   title?: string;
+  /**
+   * Gate against this tier instead of the caller's own account tier. Team
+   * screens pass effectiveTierForTeam's result here so a delegated (CLUB
+   * mode) team gates on the owning club's plan, not the delegate's own.
+   */
+  tierOverride?: PlanTier;
 }
 
-export function PlanGate({ feature, children, title }: Props) {
+export function PlanGate({ feature, children, title, tierOverride }: Props) {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const user = useUser();
-  const tier = user?.planTier ?? 'free';
+  const tier = tierOverride ?? user?.planTier ?? 'free';
 
   if (canUseFeature(tier, feature)) return <>{children}</>;
 

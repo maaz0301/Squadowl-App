@@ -5,6 +5,7 @@ import { Text } from 'react-native';
 import { PlanGate } from '@/components/PlanGate';
 import { Badge, Button, Card, EmptyState, Header, Input, LoadingState, Screen } from '@/components/ui';
 import { usePortalInviteMutation, useSeasonQuery } from '@/features/queries';
+import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 export default function SeasonPlayerScreen() {
@@ -14,6 +15,10 @@ export default function SeasonPlayerScreen() {
   const seasonQuery = useSeasonQuery(id);
   const portalInvite = usePortalInviteMutation(id!);
   const [email, setEmail] = useState('');
+  // Hook, so it runs before the loading guard below — skipping it on the
+  // loading render would change hook order. A delegated team's season gates
+  // against the owning club's tier, not the viewer's own.
+  const tier = useEffectivePlanTier(seasonQuery.data?.teamId);
 
   if (seasonQuery.isLoading) return <LoadingState />;
   const player = seasonQuery.data?.roster.find((p) => p.id === playerId);
@@ -37,7 +42,7 @@ export default function SeasonPlayerScreen() {
         ) : null}
       </Card>
 
-      <PlanGate feature="guardianPortal" title="Guardian Portal">
+      <PlanGate feature="guardianPortal" title="Guardian Portal" tierOverride={tier}>
         <Card accent className="gap-3">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>
             Send Portal Invite

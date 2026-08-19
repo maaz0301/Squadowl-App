@@ -728,7 +728,9 @@ export class SupabaseDataSource implements DataSource {
 
   async login(email: string, password: string): Promise<AuthSession> {
     const supabase = getSupabase();
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const cleanEmail = email.trim();
+    const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+    if (error) console.error('LOGIN ERROR:', error);
     if (error || !data.session) throw new Error(authErrorMessage(error, 'Login failed. Please try again.'));
     this.accountId = null;
     this.userId = data.session.user.id;
@@ -743,6 +745,7 @@ export class SupabaseDataSource implements DataSource {
       password,
       options: { data: { display_name: displayName, account_type: accountType } },
     });
+    if (error) console.error('SIGNUP ERROR:', error);
     if (error) throw new Error(authErrorMessage(error, 'Signup failed. Please try again.'));
     let session = data.session;
     if (!session) {
@@ -1007,7 +1010,7 @@ export class SupabaseDataSource implements DataSource {
   }
 
   // ─── Teams ───────────────────────────────────────────────────────────────────
-  private rowToTeam(t: Row): Team {
+  private rowToTeam(t: Row, managed = false, ownerPlanTier?: string): Team {
     let season = t.season_label ?? undefined;
     let logoUrl = t.logo_url ?? undefined;
     
@@ -1024,6 +1027,9 @@ export class SupabaseDataSource implements DataSource {
       season,
       collectsFees: t.collects_fees ?? undefined,
       registrationFeeCents: t.registration_fee_cents ?? undefined,
+      brandColor: t.brand_color ?? undefined,
+      managed: managed || undefined,
+      ownerPlanTier: managed ? ((ownerPlanTier as Team['ownerPlanTier']) ?? undefined) : undefined,
       createdAt: toMs(t.created_at),
       updatedAt: t.updated_at ? toMs(t.updated_at) : undefined,
       archived: t.archived || undefined,
@@ -1040,7 +1046,38 @@ export class SupabaseDataSource implements DataSource {
         .eq('archived', false)
         .order('created_at', { ascending: false }),
     ) as Row[];
-    return rows.map((t) => this.rowToTeam(t));
+
+    // Teams a club has delegated to this user (CLUB mode) live on someone
+    // else's account, so the query above can't see them. They come from a
+    // separate RPC rather than by dropping the account_id filter and leaning on
+    // RLS: has_account_access() is true for every account when the caller is a
+    // platform admin, so an unfiltered select would hand admins every team on
+    // the instance instead of their own.
+    const { data: managedRows, error: managedErr } = await supabase.rpc('list_teams_managed_by_me');
+    if (managedErr) {
+      // Pre-migration instances have no such function. Own teams are still
+      // correct without it, so degrade rather than failing the whole list.
+      console.log('list_teams_managed_by_me unavailable:', managedErr.message);
+      return rows.map((t) => this.rowToTeam(t));
+    }
+
+    const own = rows.map((t) => this.rowToTeam(t));
+    const ownIds = new Set(own.map((t) => t.id));
+
+    // Which club plan tier each delegated team should gate features against.
+    // Best-effort: if this lookup fails (pre-migration instance), managed
+    // teams just fall back to the caller's own tier via ownerPlanTier being
+    // undefined — same degrade-gracefully approach as managedRows above.
+    const { data: tierRows } = await supabase.rpc('list_managed_team_owner_tiers');
+    const tierByTeamId = new Map(((tierRows ?? []) as Row[]).map((r) => [r.team_id, r.plan_tier as string]));
+
+    const managed = ((managedRows ?? []) as Row[])
+      // An owner/admin delegating a team to themselves would otherwise show it
+      // twice; their own-account row wins, since it carries full rights.
+      .filter((t) => !ownIds.has(t.id))
+      .map((t) => this.rowToTeam(t, true, tierByTeamId.get(t.id)));
+
+    return [...own, ...managed];
   }
 
   async createTeam(name: string, season?: string): Promise<Team> {
@@ -1258,6 +1295,111 @@ export class SupabaseDataSource implements DataSource {
     unwrap(await supabase.from('teams').update({ archived: true }).eq('id', id).select().maybeSingle());
   }
 
+  // --------------------------------------------------------------------------
+  // Team managers (CLUB mode)
+  // --------------------------------------------------------------------------
+
+  async listTeamManagers(teamId: string): Promise<import('../types').TeamManager[]> {
+    const { supabase } = await this.ctx();
+    const { data, error } = await supabase.rpc('list_team_managers', { team_uuid: teamId });
+    if (error) {
+      // Nothing in the UI should hard-fail because an instance predates the
+      // migration — an empty list reads the same as "nobody delegated yet".
+      console.log('list_team_managers unavailable:', error.message);
+      return [];
+    }
+    return ((data ?? []) as any[]).map((r) => this.rowToTeamManager(r));
+  }
+
+  async inviteTeamManager(
+    teamId: string,
+    email: string,
+    role: import('../types').TeamManagerRole = 'manager',
+    name?: string,
+  ): Promise<import('../types').TeamManager> {
+    const { supabase } = await this.ctx();
+
+    // Read server-side rather than trusting a client-supplied team name — this
+    // is the only place that name reaches an email, and the RPC below already
+    // needs a round trip anyway.
+    const teamRow = (await supabase.from('teams').select('name').eq('id', teamId).maybeSingle()).data as
+      | Row
+      | null;
+    const teamName = teamRow?.name || 'a team';
+
+    const invite = async () =>
+      await supabase.rpc('invite_team_manager_by_email', {
+        team_uuid: teamId,
+        lookup_email: email.trim(),
+        manager_role: role,
+      });
+
+    let { data, error } = await invite();
+    let password: string | undefined;
+
+    // The invitee may not have an account yet. Stand one up the same way staff
+    // invites do (create-user edge function -> real GoTrue password hash), then
+    // retry the delegation once so the club isn't blocked on the coach signing
+    // up first.
+    if (error && error.message.includes('User not found')) {
+      // Same shape the guardian auto-invite uses at line ~1747: 8 random chars
+      // plus a fixed suffix so it always clears GoTrue's complexity rules.
+      password = Math.random().toString(36).slice(-8) + 'Aa1!';
+      const { data: created, error: fnError } = await supabase.functions.invoke('create-user', {
+        body: {
+          email: email.trim(),
+          password,
+          display_name: name?.trim() || email.trim().split('@')[0],
+          account_type: 'coach',
+        },
+      });
+      if (fnError) {
+        let msg = fnError.message;
+        try {
+          const body = await (fnError as any).context.json();
+          if (body?.error) msg = body.error;
+        } catch {}
+        throw new Error(msg || 'Could not create an account for that email address');
+      }
+      if ((created as any)?.error) throw new Error((created as any).error);
+
+      ({ data, error } = await invite());
+      if (error) throw error;
+    } else if (error) {
+      throw error;
+    }
+
+    // Sent either way now: an existing coach getting handed a team is exactly
+    // as much "you now have access to this" as one who needed an account
+    // created for them — only the credentials block differs (password is
+    // undefined on the existing-user path, so tplTeamManagerInvite omits it).
+    try {
+      await this.sendEmail('team_manager_invite', email.trim(), { teamName, role, password });
+    } catch (e) {
+      console.log('Failed to send team manager invite email:', e);
+    }
+
+    return this.rowToTeamManager(data);
+  }
+
+  async removeTeamManager(managerId: string): Promise<void> {
+    const { supabase } = await this.ctx();
+    const { error } = await supabase.rpc('remove_team_manager', { manager_id: managerId });
+    if (error) throw error;
+  }
+
+  private rowToTeamManager(r: any): import('../types').TeamManager {
+    return {
+      id: r.id,
+      teamId: r.teamId ?? r.team_id,
+      userId: r.userId ?? r.user_id,
+      email: r.email,
+      name: r.name ?? undefined,
+      role: (r.role ?? 'manager') as import('../types').TeamManagerRole,
+      createdAt: r.created_at ? toMs(r.created_at) : Date.now(),
+    };
+  }
+
   async updateTeam(id: string, updates: Partial<Team>): Promise<Team> {
     const { supabase } = await this.ctx();
     const patch: any = {};
@@ -1277,6 +1419,9 @@ export class SupabaseDataSource implements DataSource {
     if (updates.registrationFeeCents !== undefined) {
       patch.registration_fee_cents = updates.registrationFeeCents || null;
     }
+    // Empty string clears the colour back to the app theme; the column's CHECK
+    // only accepts #RRGGBB or NULL.
+    if (updates.brandColor !== undefined) patch.brand_color = updates.brandColor || null;
 
     // Try standard update first
     const { data, error } = await supabase.from('teams').update(patch).eq('id', id).select().single();
@@ -1310,7 +1455,36 @@ export class SupabaseDataSource implements DataSource {
       .order('created_at', { ascending: false });
     if (!includeArchived) q = q.eq('archived', false);
     const rows = unwrap(await q) as Row[];
-    return this.assembleTryouts(rows);
+
+    // Assessments linked to a team delegated to this user (CLUB mode) live on
+    // the club's account, so the account_id filter above can't see them — same
+    // reasoning as listTeams()'s managed-teams merge. Pre-migration instances
+    // have no such function; own tryouts are still correct without it.
+    const { data: managedRows, error: managedErr } = await supabase.rpc('list_tryouts_for_managed_teams');
+    if (managedErr) {
+      console.log('list_tryouts_for_managed_teams unavailable:', managedErr.message);
+      return this.assembleTryouts(rows);
+    }
+
+    // Mirror image of the above: a manager creating a *new* assessment for a
+    // team always inserts it under their own account (createTryout always
+    // does), so the club owner needs this to see it too — without it, a team
+    // the club owns could have assessments on it the club's own staff never
+    // see listed, only the delegate who happened to create them.
+    const { data: ownedTeamRows, error: ownedErr } = await supabase.rpc('list_tryouts_on_my_owned_teams');
+    if (ownedErr) {
+      console.log('list_tryouts_on_my_owned_teams unavailable:', ownedErr.message);
+    }
+
+    const ownIds = new Set(rows.map((t) => t.id));
+    const managed = ((managedRows ?? []) as Row[]).filter(
+      (t) => !ownIds.has(t.id) && !t.deleted_at && (includeArchived || !t.archived),
+    );
+    const onOwnedTeams = ((ownedTeamRows ?? []) as Row[]).filter(
+      (t) => !ownIds.has(t.id) && !managed.some((m) => m.id === t.id) && !t.deleted_at && (includeArchived || !t.archived),
+    );
+
+    return this.assembleTryouts([...rows, ...managed, ...onOwnedTeams]);
   }
 
   async getTryout(id: string): Promise<Tryout | null> {
@@ -1333,8 +1507,25 @@ export class SupabaseDataSource implements DataSource {
     const rows = unwrap(
       await supabase.from('tryouts').select('*').in('id', ids).eq('archived', false).is('deleted_at', null),
     ) as Row[];
-    // Exclude tryouts the user already owns (those show in listTryouts).
-    const assigned = rows.filter((t) => t.account_id !== accountId);
+
+    // Exclude tryouts already surfaced by listTryouts(): the caller's own
+    // account, a team delegated to them, or their own team a delegate
+    // created an assessment under (CLUB mode). Comparing account_id to the
+    // caller's single resolved ctx().accountId alone isn't enough for the
+    // latter two — those two return tryouts under an account_id that isn't
+    // the caller's ctx() account, so without this a club owner or coach who
+    // (as an assessor) is also staff on a delegated team's account, or a
+    // delegate managing a team, would see the same tryout listed twice.
+    const [managedRes, ownedTeamRes] = await Promise.all([
+      supabase.rpc('list_tryouts_for_managed_teams'),
+      supabase.rpc('list_tryouts_on_my_owned_teams'),
+    ]);
+    const ownIds = new Set<string>([
+      ...rows.filter((t) => t.account_id === accountId).map((t) => t.id as string),
+      ...((managedRes.data ?? []) as Row[]).map((t) => t.id as string),
+      ...((ownedTeamRes.data ?? []) as Row[]).map((t) => t.id as string),
+    ]);
+    const assigned = rows.filter((t) => !ownIds.has(t.id as string));
     return this.assembleTryouts(assigned);
   }
 
@@ -1356,7 +1547,25 @@ export class SupabaseDataSource implements DataSource {
 
   private async _createTryout(form: CreateAssessmentForm): Promise<Tryout> {
     const { supabase, userId } = await this.ctx();
-    const accountId = await this.writableAccountId();
+    let accountId = await this.writableAccountId();
+
+    // A new assessment for a team belongs to whoever owns the team, not
+    // whoever happens to be creating it. Without this, an assessment a
+    // delegate creates for a club's team would sit under the delegate's own
+    // account — counting against the delegate's own plan limits instead of
+    // the club's, and orphaned from the club's account entirely if the
+    // delegation is ever revoked. `tryouts_manager_write`'s RLS check only
+    // requires team_id + being a manager/owner of that team, not account_id
+    // matching the caller's own — so inserting under the team's real account
+    // is already permitted, this just does it. A no-op when the caller owns
+    // the team themselves, since teamRow.account_id then equals accountId.
+    if (form.teamId) {
+      const teamRow = (
+        await supabase.from('teams').select('account_id').eq('id', form.teamId).maybeSingle()
+      ).data as Row | null;
+      if (teamRow?.account_id) accountId = teamRow.account_id;
+    }
+
     const profile = await this.loadUserProfile(userId);
     const weights = getDefaultWeights(form.sport);
     const settings = {
@@ -1526,7 +1735,7 @@ export class SupabaseDataSource implements DataSource {
     );
   }
 
-  async sendEmail(type: 'org_invite' | 'tryout_invite' | 'schedule_update' | 'reminder' | 'registration_confirmation', to: string, payload: any): Promise<void> {
+  async sendEmail(type: 'org_invite' | 'team_manager_invite' | 'tryout_invite' | 'schedule_update' | 'reminder' | 'registration_confirmation', to: string, payload: any): Promise<void> {
     const { supabase } = await this.ctx();
     const { error } = await supabase.functions.invoke('send-email', {
       body: { type, to, payload },
@@ -3416,7 +3625,28 @@ export class SupabaseDataSource implements DataSource {
         .eq('archived', false)
         .order('created_at', { ascending: false }),
     ) as Row[];
-    return this.assembleSeasons(rows, true);
+
+    // Mirrors listTryouts()'s managed/owned-team merge (CLUB mode): a season
+    // for a delegated team can live under either side's account_id depending
+    // on who created it, so the plain account-scoped query above can't see
+    // it alone.
+    const { data: managedRows, error: managedErr } = await supabase.rpc('list_seasons_for_managed_teams');
+    if (managedErr) {
+      console.log('list_seasons_for_managed_teams unavailable:', managedErr.message);
+      return this.assembleSeasons(rows, true);
+    }
+    const { data: ownedTeamRows, error: ownedErr } = await supabase.rpc('list_seasons_on_my_owned_teams');
+    if (ownedErr) {
+      console.log('list_seasons_on_my_owned_teams unavailable:', ownedErr.message);
+    }
+
+    const ownIds = new Set(rows.map((s) => s.id));
+    const managed = ((managedRows ?? []) as Row[]).filter((s) => !ownIds.has(s.id));
+    const onOwnedTeams = ((ownedTeamRows ?? []) as Row[]).filter(
+      (s) => !ownIds.has(s.id) && !managed.some((m) => m.id === s.id),
+    );
+
+    return this.assembleSeasons([...rows, ...managed, ...onOwnedTeams], true);
   }
 
   async getSeason(id: string): Promise<Season | null> {
@@ -3428,8 +3658,32 @@ export class SupabaseDataSource implements DataSource {
     return assembled ?? null;
   }
 
+  async listSeasonRoster(seasonId: string): Promise<SeasonPlayer[]> {
+    const { supabase } = await this.ctx();
+    const rows = unwrap(
+      await supabase.from('season_roster').select('*, athletes(*)').eq('season_id', seasonId),
+    ) as Row[];
+    return rows.map((r) => this.rowToSeasonPlayer(r, []));
+  }
+
   async createSeason(form: CreateSeasonForm): Promise<Season> {
-    const { supabase, accountId } = await this.ctx();
+    const { supabase, accountId: callerAccountId } = await this.ctx();
+    let accountId = callerAccountId;
+
+    // A season for a team belongs to whoever owns the team, not whoever
+    // happens to be creating it -- matches `_createTryout`'s team-ownership
+    // resolution. Without this, a schedule a delegate creates for a club's
+    // team would sit under the delegate's own account, invisible to the
+    // club's own listSeasons() even though can_access_season already grants
+    // them read access to it. A no-op when the caller owns the team
+    // themselves, since teamRow.account_id then equals accountId.
+    if (form.teamId) {
+      const teamRow = (
+        await supabase.from('teams').select('account_id').eq('id', form.teamId).maybeSingle()
+      ).data as Row | null;
+      if (teamRow?.account_id) accountId = teamRow.account_id;
+    }
+
     const row = unwrap(
       await supabase
         .from('seasons')

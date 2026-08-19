@@ -2,6 +2,8 @@ import { ScrollView, Text, View } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { TeamBanner } from '@/components/TeamBanner';
+import { useSeasonTeamBrand } from '@/features/useTeamBrand';
 import { Badge, Card, EmptyState, ErrorState, LoadingState, Screen } from '@/components/ui';
 import { useSeasonQuery } from '@/features/queries';
 
@@ -10,6 +12,10 @@ export default function SeasonCalendarScreen() {
   const { id } = route.params || {};
   const colors = useThemeColors();
   const seasonQuery = useSeasonQuery(id);
+
+  // Hook, so it runs before the loading/error guards — skipping it on the
+  // loading render would change hook order. Undefined season -> plain theme.
+  const { team, brand } = useSeasonTeamBrand(seasonQuery.data);
 
   if (seasonQuery.isLoading) return <LoadingState />;
   if (seasonQuery.isError || !seasonQuery.data) {
@@ -25,7 +31,8 @@ export default function SeasonCalendarScreen() {
   }, {});
 
   return (
-    <Screen scroll padded={false}>
+    <Screen scroll padded={false} backgroundColor={brand.screenBg}>
+      {team ? <TeamBanner team={team} className="px-4 pt-3" /> : null}
       <ScrollView contentContainerStyle={{ padding: 16 }}>
         {Object.keys(byMonth).length === 0 ? (
           <EmptyState title="No events" message="Your calendar is empty." />

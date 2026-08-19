@@ -31,6 +31,8 @@ export const queryKeys = {
   session: ['session'] as const,
   profile: ['profile'] as const,
   teams: ['teams'] as const,
+  teamManagers: (teamId?: string) =>
+    teamId ? (['teamManagers', teamId] as const) : (['teamManagers'] as const),
   tryouts: (archived?: boolean) => ['tryouts', { archived }] as const,
   assignedTryouts: ['tryouts', 'assigned'] as const,
   tryout: (id: string) => ['tryout', id] as const,

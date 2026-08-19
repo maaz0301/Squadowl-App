@@ -3,6 +3,8 @@ import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { TeamBanner } from '@/components/TeamBanner';
+import { useSeasonTeamBrand } from '@/features/useTeamBrand';
 import { Badge, Button, Card, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
 import { useSeasonQuery } from '@/features/queries';
 
@@ -12,6 +14,10 @@ export default function SeasonHubScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const seasonQuery = useSeasonQuery(id);
+
+  // Hook, so it runs before the loading/error guards — skipping it on the
+  // loading render would change hook order. Undefined season -> plain theme.
+  const { team, brand } = useSeasonTeamBrand(seasonQuery.data);
 
   if (seasonQuery.isLoading) return <LoadingState />;
   if (seasonQuery.isError || !seasonQuery.data) {
@@ -30,7 +36,7 @@ export default function SeasonHubScreen() {
     .slice(0, 3);
 
   return (
-    <Screen scroll>
+    <Screen scroll backgroundColor={brand.screenBg}>
       <Header
         title="Season Hub"
         showBack
@@ -43,6 +49,7 @@ export default function SeasonHubScreen() {
           />
         }
       />
+      {team ? <TeamBanner team={team} className="mb-3" /> : null}
       <Card accent className="mb-4 gap-2">
         <Text className="text-xl font-display font-bold" style={{ color: colors.ink }}>
           {season.teamName}
