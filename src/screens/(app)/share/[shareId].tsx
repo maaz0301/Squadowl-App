@@ -225,10 +225,10 @@ export default function ShareDetailScreen() {
           on athlete_shares.athlete_assessments. Export stays coach-only by
           product requirement. */}
       {isShareGuardian
-        ? (guardianProfileQuery.data?.assessments.length ?? 0) > 0 && (
-            <AssessmentHistory assessments={guardianProfileQuery.data!.assessments} colors={colors} />
+        ? guardianProfileQuery.data && (
+            <AssessmentHistory assessments={guardianProfileQuery.data.assessments} colors={colors} />
           )
-        : share.assessments.length > 0 && (
+        : (
             <AssessmentHistory
               assessments={share.assessments}
               colors={colors}

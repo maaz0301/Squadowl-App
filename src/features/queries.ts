@@ -1201,6 +1201,10 @@ export function useAthleteShareQuery(shareId?: string) {
     queryKey: queryKeys.athleteShare(shareId ?? ''),
     queryFn: () => getDataSource().getAthleteShare(shareId!),
     enabled: !!shareId,
+    // Scores on a share are a live overlay on top of the frozen snapshot (see
+    // liveAthleteShareAssessments) — poll while this screen is open so a coach
+    // watching a pending evaluation come in doesn't have to manually refresh.
+    refetchInterval: 15_000,
   });
 }
 

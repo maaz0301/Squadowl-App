@@ -8,7 +8,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
-import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useGenerateTestDataMutation, useClearTestDataMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useRemoveTeamRosterPlayerMutation, useSeasonsQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation } from '@/features/queries';
+import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useRemoveTeamRosterPlayerMutation, useSeasonsQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation } from '@/features/queries';
 import { useUser } from '@/state/authStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit } from '@/data/plans';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
@@ -21,8 +21,6 @@ import { TeamBanner } from '@/components/TeamBanner';
 import { teamBrandSurfaces } from '@/lib/teamBrand';
 import { TeamColorPicker } from '@/components/TeamColorPicker';
 import { TeamManagersCard } from '@/components/TeamManagersCard';
-import { DummyDataModal } from '@/components/DummyDataModal';
-import type { DummyDataOptions } from '@/data/testDataGenerator';
 import { getDataSource } from '@/data';
 import { queryKeys } from '@/lib/queryClient';
 
@@ -68,7 +66,6 @@ export default function TeamDetailScreen() {
   const [collectsFees, setCollectsFees] = useState(false);
   const [feeInput, setFeeInput] = useState('');
   const [showAttachModal, setShowAttachModal] = useState(false);
-  const [showDummy, setShowDummy] = useState(false);
   const [showAddPlayers, setShowAddPlayers] = useState(false);
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
   // TEMP DIAGNOSTIC: logs tap-to-visible time for the Add Players modal so we
@@ -129,15 +126,6 @@ export default function TeamDetailScreen() {
   });
   const eventType = eventForm.watch('type');
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
-
-  // A team has no roster table of its own — its players are the participants of
-  // the assessments linked to it. Resolve the target assessment before the early
-  // returns below so these hooks stay unconditional.
-  const linkedForHooks = (tryoutsQuery.data ?? []).filter((t) => t.teamId === id);
-  const dummyTarget = linkedForHooks[0];
-  const [dummyProgress, setDummyProgress] = useState<{ done: number; total: number } | null>(null);
-  const genTest = useGenerateTestDataMutation(dummyTarget?.id ?? '', (done, total) => setDummyProgress({ done, total }));
-  const clearTest = useClearTestDataMutation(dummyTarget?.id ?? '');
 
   // Candidates for the "Add Players from Assessments" picker: every athlete on
   // any assessment's roster, from ALL assessments (not just this team's),
@@ -257,7 +245,6 @@ export default function TeamDetailScreen() {
 
   const linkedTryouts = (tryoutsQuery.data ?? []).filter((t) => t.teamId === team.id);
   const unlinkedTryouts = (tryoutsQuery.data ?? []).filter((t) => !t.teamId);
-  const isAssociation = canUseFeature(effectiveTier, 'enterprise');
   const canCollectFees = canUseFeature(effectiveTier, 'payments');
 
   const teamPlayers = rosterQuery.data ?? [];
@@ -443,33 +430,6 @@ export default function TeamDetailScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => deleteEvent.mutate(eventId) },
     ]);
-  };
-
-  const runDummy = async (options: DummyDataOptions) => {
-    setDummyProgress(null);
-    try {
-      const res = await genTest.mutateAsync(options);
-      setShowDummy(false);
-      Alert.alert(
-        'Dummy data added',
-        `Added ${res.players} players and ${res.evaluations} evaluations to ${dummyTarget?.name}.`,
-      );
-    } catch (e: any) {
-      Alert.alert('Error', e?.message === 'NO_RUBRICS'
-        ? 'Add at least one rubric to that assessment before generating scored players.'
-        : e?.message || 'Failed to generate dummy data.');
-    } finally {
-      setDummyProgress(null);
-    }
-  };
-
-  const runClearDummy = async () => {
-    try {
-      const res = await clearTest.mutateAsync();
-      Alert.alert('Cleared', `Removed ${res.removed} generated record${res.removed === 1 ? '' : 's'}.`);
-    } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Failed to clear dummy data.');
-    }
   };
 
   const startEdit = () => {
@@ -920,37 +880,6 @@ export default function TeamDetailScreen() {
               />
             </View>
 
-            {isAssociation ? (
-              <Card className="mb-3 gap-2">
-                <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-                  Testing Tools
-                </Text>
-                {dummyTarget ? (
-                  <>
-                    <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                      Generate dummy players — optionally scored — into{' '}
-                      <Text className="font-bold">{dummyTarget.name}</Text>. They appear under Players.
-                    </Text>
-                    <View className="flex-row flex-wrap gap-2 mt-1">
-                      <Button label="Dummy Players" size="sm" onPress={() => setShowDummy(true)} />
-                      <Button
-                        label="Clear Dummy Data"
-                        size="sm"
-                        variant="ghost"
-                        loading={clearTest.isPending}
-                        onPress={runClearDummy}
-                      />
-                    </View>
-                  </>
-                ) : (
-                  <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                    Link an assessment to this team first — dummy players are added to an assessment's
-                    roster, which is what fills the Players list.
-                  </Text>
-                )}
-              </Card>
-            ) : null}
-
             {/* A delegated manager runs the team but doesn't own it — deleting
                 the club's team isn't theirs to do, and the teams RLS grants
                 them update but not delete, so the button would only ever fail. */}
@@ -1308,25 +1237,6 @@ export default function TeamDetailScreen() {
           ))}
         </View>
       </Modal>
-
-      <DummyDataModal
-        variant="assessment"
-        visible={showDummy}
-        loading={genTest.isPending}
-        progress={dummyProgress ?? undefined}
-        hasRubrics={(dummyTarget?.settings.customRubrics?.length ?? 0) > 0}
-        onAddRubrics={() => {
-          setShowDummy(false);
-          if (dummyTarget) {
-            navigation.navigate('AssessmentFlow', {
-              screen: 'AssessmentRubrics',
-              params: { id: dummyTarget.id },
-            });
-          }
-        }}
-        onClose={() => setShowDummy(false)}
-        onSubmit={runDummy}
-      />
 
       <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
 

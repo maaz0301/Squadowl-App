@@ -70,6 +70,7 @@ import type {
   Season,
   SeasonEvent,
   SeasonPlayer,
+  Sport,
   Team,
   TeamBuilderResult,
   TeamMessage,
@@ -5465,6 +5466,54 @@ export class SupabaseDataSource implements DataSource {
     };
   }
 
+  /**
+   * Replaces a share's frozen assessment snapshot with live data via
+   * get_athlete_share_live_scores() — every tryout this one athlete has ever
+   * participated in, including ones added after the share, but never any
+   * other athlete on the guardian's roster (that boundary is enforced in the
+   * SQL function itself). Falls back to the frozen snapshot passed in if the
+   * RPC errors or the caller isn't authorized for this share.
+   */
+  private async liveAthleteShareAssessments(
+    supabase: SupabaseClient,
+    shareId: string,
+    fallback: PlayerProfileAssessment[],
+  ): Promise<PlayerProfileAssessment[]> {
+    const { data, error } = await supabase.rpc('get_athlete_share_live_scores', { p_share_id: shareId });
+    if (error || !Array.isArray(data)) return fallback;
+
+    return data
+      .map((live: any): PlayerProfileAssessment => {
+        const position = live.position ?? undefined;
+        const sport = live.sport as Sport;
+        const settings = live.settings ?? {};
+        const categories = getPlayerCategories(sport, position, settings.customRubrics ?? []);
+        const weights = isGoaliePosition(position) ? settings.goalieWeights ?? {} : settings.skaterWeights ?? {};
+        const evals = ((live.evaluations ?? []) as any[]).map((row) => this.rowToEval(row));
+        const overall = evals.length ? weightedOverallAcrossEvals(evals, categories, weights) : 0;
+        const categoryScores = categoryAveragesAcrossEvals(evals, categories);
+        const latest = [...evals].sort((x, y) => y.createdAt - x.createdAt)[0];
+
+        return {
+          tryoutId: live.tryout_id,
+          tryoutName: live.tryout_name,
+          seasonId: live.season_id ?? undefined,
+          eventType: live.event_type as EventType,
+          sport,
+          date: live.tryout_date ?? undefined,
+          position,
+          teamName: live.team_name ?? undefined,
+          overall,
+          categoryScores,
+          evalCount: evals.length,
+          latestRecommendation: (latest?.recommendation ?? '') as Recommendation,
+          participantId: live.participant_id,
+          evaluations: evals.map((ev) => ({ ...ev, overall: weightedOverallAcrossEvals([ev], categories, weights) })),
+        };
+      })
+      .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
+  }
+
   async getCoachDirectory(): Promise<CoachDirectoryEntry[]> {
     const { supabase } = await this.userCtx();
     const { data, error } = await supabase.rpc('list_coach_directory');
@@ -5567,7 +5616,9 @@ export class SupabaseDataSource implements DataSource {
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!data) throw new Error('Share not found');
-    return this.mapAthleteShareRow(data as Row);
+    const share = this.mapAthleteShareRow(data as Row);
+    share.assessments = await this.liveAthleteShareAssessments(supabase, shareId, share.assessments);
+    return share;
   }
 
   async acceptAthleteShare(shareId: string, tryoutId: string): Promise<AthleteShare> {

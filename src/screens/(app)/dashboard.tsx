@@ -211,8 +211,7 @@ export default function DashboardScreen() {
   const fabAction = () => {
     if (tab === 'teams') {
       // Teams delegated by a club don't consume this account's own allowance.
-      const count = (teamsQuery.data ?? []).filter((t) => !t.managed).length;
-      if (isAtTeamLimit(user?.planTier ?? 'free', count, user?.extraTeamLicenses ?? 0)) {
+      if (isAtTeamLimit(user?.planTier ?? 'free', ownedTeamCount, user?.extraTeamLicenses ?? 0)) {
         setLimitMsg(
           buildLimitReachedMessage(user?.planTier ?? 'free', 'teams', 'teams', user?.extraTeamLicenses ?? 0)
         );
@@ -363,7 +362,11 @@ export default function DashboardScreen() {
   };
 
   const evalCount = tryoutsQuery.data?.length ?? 0;
-  const teamCount = (teamsQuery.data ?? []).filter((t) => !t.managed).length;
+  // Visible count: every team the user can see, including ones delegated to
+  // them. Distinct from ownedTeamCount below, which feeds the plan-limit
+  // nudge/gate — delegated teams don't consume this account's own allowance.
+  const teamCount = (teamsQuery.data ?? []).length;
+  const ownedTeamCount = (teamsQuery.data ?? []).filter((t) => !t.managed).length;
 
   return (
     <Screen padded={false}>
@@ -482,7 +485,7 @@ export default function DashboardScreen() {
 
             {!isGuardianOnly ? (
               <>
-                <UsageNudgeBanner tier={user?.planTier ?? 'free'} metric="teams" count={teamCount} label="teams" />
+                <UsageNudgeBanner tier={user?.planTier ?? 'free'} metric="teams" count={ownedTeamCount} label="teams" />
                 <UsageNudgeBanner
                   tier={user?.planTier ?? 'free'}
                   metric="assessments"
