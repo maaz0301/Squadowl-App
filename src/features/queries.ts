@@ -67,11 +67,31 @@ export function useTeamRosterQuery(teamId: string | undefined) {
   });
 }
 
-export function useAddTeamRosterPlayersMutation(teamId: string) {
+export function useAddTeamRosterPlayersMutation(
+  teamId: string,
+  onProgress?: (done: number, total: number) => void,
+) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (entries: { athleteId: string; jersey?: string; pos?: string; sourceTryoutId?: string }[]) =>
-      getDataSource().addTeamRosterPlayers(teamId, entries),
+      getDataSource().addTeamRosterPlayers(teamId, entries, onProgress),
+    onSuccess: () => qc.invalidateQueries({ queryKey: teamRosterKey(teamId) }),
+  });
+}
+
+export function useAddManualTeamPlayerMutation(teamId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (form: AddPlayerForm) => getDataSource().addManualTeamPlayer(teamId, form),
+    onSuccess: () => qc.invalidateQueries({ queryKey: teamRosterKey(teamId) }),
+  });
+}
+
+export function useUploadTeamPlayerPhotoMutation(teamId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ athleteId, fileUri, fileType }: { athleteId: string; fileUri: string; fileType: string }) =>
+      getDataSource().uploadPlayerPhoto(athleteId, fileUri, fileType),
     onSuccess: () => qc.invalidateQueries({ queryKey: teamRosterKey(teamId) }),
   });
 }
@@ -548,7 +568,10 @@ export function useGenerateTestDataMutation(tryoutId: string, onProgress?: (done
   return useMutation({
     mutationKey: tryoutBulkWriteKey(tryoutId),
     mutationFn: (options: DummyDataOptions) => getDataSource().generateTestData(tryoutId, options, onProgress),
-    onSuccess: () => {
+    // Same reasoning as useGenerateDummyTeamsMutation: this writes
+    // incrementally, so a failure mid-batch still leaves real rows behind and
+    // the refetch has to happen either way.
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.results(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.registrations(tryoutId) });
@@ -575,10 +598,15 @@ export function useGenerateDummyTeamsMutation(onProgress?: (done: number, total:
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (options: DummyTeamOptions) => getDataSource().generateDummyTeams(options, onProgress),
-    onSuccess: () => {
+    // onSettled, not onSuccess: generateDummyTeams creates its teams one at a
+    // time, so a failure partway through still leaves real teams and
+    // assessments behind. Refetching only on success left those rows invisible
+    // until the user manually reloaded the screen.
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: queryKeys.teams });
       // Prefix match — invalidates every archived/unarchived tryout list.
       qc.invalidateQueries({ queryKey: ['tryouts'] });
+      qc.invalidateQueries({ queryKey: queryKeys.seasons });
       qc.invalidateQueries({ queryKey: queryKeys.profile });
     },
   });
@@ -1162,6 +1190,33 @@ export function useGuardianRostersQuery() {
     queryKey: queryKeys.guardianRosters(userId),
     queryFn: () => getDataSource().getGuardianRosters(),
     enabled: !!userId,
+  });
+}
+
+const familyContactsKey = (athleteId: string) => ['athletes', athleteId, 'familyContacts'] as const;
+
+export function useFamilyContactsQuery(athleteId: string | undefined) {
+  return useQuery({
+    queryKey: familyContactsKey(athleteId ?? ''),
+    queryFn: () => getDataSource().listFamilyContacts(athleteId!),
+    enabled: !!athleteId,
+  });
+}
+
+export function useAddFamilyContactMutation(athleteId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (contact: { name: string; relationship?: string; email?: string; phone?: string }) =>
+      getDataSource().addFamilyContact(athleteId, contact),
+    onSuccess: () => qc.invalidateQueries({ queryKey: familyContactsKey(athleteId) }),
+  });
+}
+
+export function useRemoveFamilyContactMutation(athleteId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => getDataSource().removeFamilyContact(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: familyContactsKey(athleteId) }),
   });
 }
 

@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   LayoutAnimation,
   Platform,
+  Pressable,
   ScrollView,
+  Switch,
   Text,
   View,
   Keyboard,
@@ -14,15 +17,32 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { CreateAssessmentFormSchema, SPORTS, EVENT_TYPES, type CreateAssessmentForm } from '@/data/types';
+import {
+  CreateAssessmentFormSchema,
+  SPORTS,
+  EVENT_TYPES,
+  type CreateAssessmentForm,
+  type Assessor,
+  type CustomRubric,
+  type ScoringType,
+  type RankingDirection,
+} from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Button, Chip, DateField, TimeField, Input, Screen, Header, ErrorState, LoadingState } from '@/components/ui';
-import { useCreateTryoutMutation, useTeamsQuery, useTryoutsQuery } from '@/features/queries';
+import { Button, Chip, DateField, TimeField, Input, Modal, Screen, Header, ErrorState, LoadingState } from '@/components/ui';
+import { useCreateTryoutMutation, useTeamsQuery, useTryoutsQuery, useUpdateTryoutMutation } from '@/features/queries';
 import { useSessionStore } from '@/state/sessionStore';
 import { useUser } from '@/state/authStore';
 import { isAtAssessmentLimit } from '@/data/plans';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
+import { getDataSource } from '@/data';
+
+const SCORING_TYPE_LABEL: Record<ScoringType, string> = {
+  skill: 'Skill / Technique',
+  time: 'Time-based',
+  distance: 'Distance-based',
+  speed: 'Speed-based',
+};
 
 export default function NewAssessmentScreen() {
   const colors = useThemeColors();
@@ -34,7 +54,113 @@ export default function NewAssessmentScreen() {
   const teamsQuery = useTeamsQuery();
   const tryoutsQuery = useTryoutsQuery(false);
   const user = useUser();
+  const updateTryout = useUpdateTryoutMutation();
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
+
+  // Rubrics and assessors used to only be reachable on the settings screen
+  // after creation — a second step for something coaches expect to finish in
+  // one go. Both are collected here instead and applied right after the
+  // tryout row exists (they're keyed to a tryout id, so neither can be
+  // written before that). Mirrors the web create-assessment screen.
+  const [pendingAssessors, setPendingAssessors] = useState<Assessor[]>([]);
+  const [showAssessorForm, setShowAssessorForm] = useState(false);
+  const [assessorName, setAssessorName] = useState('');
+  const [assessorEmail, setAssessorEmail] = useState('');
+  const [checkingAssessor, setCheckingAssessor] = useState(false);
+
+  const [pendingRubrics, setPendingRubrics] = useState<CustomRubric[]>([]);
+  const [showRubricForm, setShowRubricForm] = useState(false);
+  const [rubricLabel, setRubricLabel] = useState('');
+  const [rubricType, setRubricType] = useState<ScoringType>('skill');
+  const [rubricScale, setRubricScale] = useState<'1-5' | '1-10'>('1-5');
+  const [rubricUnit, setRubricUnit] = useState('');
+  const [rubricMinStr, setRubricMinStr] = useState('');
+  const [rubricMaxStr, setRubricMaxStr] = useState('');
+  const [rubricRankingDirection, setRubricRankingDirection] = useState<RankingDirection>('higher_is_better');
+
+  const handleRubricTypeChange = (type: ScoringType) => {
+    setRubricType(type);
+    setRubricRankingDirection(type === 'time' ? 'lower_is_better' : 'higher_is_better');
+  };
+
+  const addAssessorToList = async () => {
+    const name = assessorName.trim();
+    const email = assessorEmail.trim();
+    if (!name || !email) {
+      Alert.alert('Missing Info', 'An assessor needs both a name and an email address.');
+      return;
+    }
+    setCheckingAssessor(true);
+    try {
+      const exists = await getDataSource().checkUserExistsByEmail(email);
+      if (!exists) {
+        Alert.alert(
+          'Email Not Registered',
+          'This email is not registered in the system. Assessors must create an account before they can be invited.',
+        );
+        return;
+      }
+      setPendingAssessors((prev) => [...prev, { name, email, role: 'assessor', status: 'pending' }]);
+      setAssessorName('');
+      setAssessorEmail('');
+      setShowAssessorForm(false);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not verify this assessor.');
+    } finally {
+      setCheckingAssessor(false);
+    }
+  };
+
+  const removeAssessorFromList = (index: number) => {
+    setPendingAssessors((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const addRubricToList = () => {
+    const label = rubricLabel.trim();
+    if (!label) return;
+    const key = label.toLowerCase().replace(/\s+/g, '_');
+    if (pendingRubrics.some((r) => r.key === key)) {
+      Alert.alert('Duplicate Rubric', 'A rubric with this name has already been added.');
+      return;
+    }
+
+    let defaultUnit = rubricUnit.trim();
+    if (rubricType === 'time') {
+      if (!defaultUnit) defaultUnit = 'sec';
+    } else if (rubricType === 'distance') {
+      if (!defaultUnit) defaultUnit = 'ft';
+    } else if (rubricType === 'speed') {
+      if (!defaultUnit) defaultUnit = 'mph';
+    }
+    const minNum = rubricMinStr.trim() !== '' ? parseFloat(rubricMinStr) : undefined;
+    const maxNum = rubricMaxStr.trim() !== '' ? parseFloat(rubricMaxStr) : undefined;
+
+    setPendingRubrics((prev) => [
+      ...prev,
+      {
+        key,
+        label,
+        scoringType: rubricType,
+        scale: rubricType === 'skill' ? rubricScale : '1-5',
+        unit: rubricType !== 'skill' ? defaultUnit : undefined,
+        minVal: minNum != null && !isNaN(minNum) ? minNum : undefined,
+        maxVal: maxNum != null && !isNaN(maxNum) ? maxNum : undefined,
+        rankingDirection: rubricRankingDirection,
+      },
+    ]);
+    setRubricLabel('');
+    setRubricType('skill');
+    setRubricScale('1-5');
+    setRubricUnit('');
+    setRubricMinStr('');
+    setRubricMaxStr('');
+    setRubricRankingDirection('higher_is_better');
+    setShowRubricForm(false);
+  };
+
+  const removeRubricFromList = (key: string) => {
+    setPendingRubrics((prev) => prev.filter((r) => r.key !== key));
+  };
 
   // Neither platform's native resize is trustworthy here: iOS has no
   // window-resize equivalent to Android's adjustResize at all, and on
@@ -119,9 +245,46 @@ export default function NewAssessmentScreen() {
       setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'assessments', 'assessments'));
       return;
     }
-    const tryout = await createTryout.mutateAsync(data);
+    let tryout;
+    try {
+      tryout = await createTryout.mutateAsync(data);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not create the assessment.');
+      return;
+    }
     setCurrentTryout(tryout.id);
-    navigation.replace('AssessmentFlow', { screen: 'AssessmentSettings', params: { id: tryout.id, welcome: 1 } });
+
+    if (pendingAssessors.length || pendingRubrics.length) {
+      try {
+        const updated = await updateTryout.mutateAsync({
+          id: tryout.id,
+          updates: {
+            ...(pendingAssessors.length ? { assessors: pendingAssessors } : {}),
+            ...(pendingRubrics.length
+              ? { settings: { ...tryout.settings, customRubrics: pendingRubrics } }
+              : {}),
+          },
+        });
+        // Best-effort: the assessment and its assessor list are already saved,
+        // so a failed invite email shouldn't block the coach from moving on —
+        // they can still resend from the settings screen.
+        for (const a of updated.assessors) {
+          if (!a.email) continue;
+          try {
+            await getDataSource().sendEmail('tryout_invite', a.email, { role: 'assessor' });
+          } catch (err) {
+            console.error('Error sending assessor invite email', err);
+          }
+        }
+      } catch (e: any) {
+        Alert.alert(
+          'Partial Save',
+          `The assessment was created, but saving its rubrics/assessors failed: ${e?.message || 'Unknown error'}`,
+        );
+      }
+    }
+
+    navigation.replace('AssessmentFlow', { screen: 'AssessmentSettings', params: { id: tryout.id } });
   });
 
   if (teamsQuery.isLoading || tryoutsQuery.isLoading) return <LoadingState message="Loading..." />;
@@ -268,6 +431,57 @@ export default function NewAssessmentScreen() {
                 )}
               />
             </View>
+
+            <View>
+              <View className="flex-row items-center justify-between mb-2">
+                <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                  Custom Rubrics (optional)
+                </Text>
+                <Button label="+ Add Rubric" variant="ghost" size="sm" onPress={() => setShowRubricForm(true)} />
+              </View>
+              {pendingRubrics.length === 0 ? (
+                <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                  Every sport already scores on a default set of skills — add one here only if this
+                  assessment needs something extra.
+                </Text>
+              ) : (
+                <View className="flex-row flex-wrap gap-2">
+                  {pendingRubrics.map((r) => (
+                    <Chip key={r.key} label={`${r.label} ✕`} active onPress={() => removeRubricFromList(r.key)} />
+                  ))}
+                </View>
+              )}
+            </View>
+
+            <View>
+              <View className="flex-row items-center justify-between mb-2">
+                <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                  Assessors (optional)
+                </Text>
+                <Button label="+ Add Assessor" variant="ghost" size="sm" onPress={() => setShowAssessorForm(true)} />
+              </View>
+              {pendingAssessors.length === 0 ? (
+                <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                  Invite whoever else is scoring — they get an email once the assessment is created.
+                </Text>
+              ) : (
+                <View className="gap-2">
+                  {pendingAssessors.map((a, i) => (
+                    <View
+                      key={`${a.email}-${i}`}
+                      className="flex-row items-center gap-2 rounded-xl px-3 py-2"
+                      style={{ backgroundColor: colors.tile }}
+                    >
+                      <View className="flex-1">
+                        <Text numberOfLines={1} className="text-sm font-bold" style={{ color: colors.ink }}>{a.name}</Text>
+                        <Text numberOfLines={1} className="text-xs" style={{ color: colors.inkMuted }}>{a.email}</Text>
+                      </View>
+                      <Button label="Remove" variant="ghost" size="sm" onPress={() => removeAssessorFromList(i)} />
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
           </View>
         </ScrollView>
         <View
@@ -282,6 +496,139 @@ export default function NewAssessmentScreen() {
         </View>
       </View>
       <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
+
+      <Modal
+        visible={showRubricForm}
+        title="Add Custom Drill / Category"
+        onClose={() => setShowRubricForm(false)}
+        footer={
+          <View className="mt-4 gap-2">
+            <Button label="Add Rubric Category" onPress={addRubricToList} disabled={!rubricLabel.trim()} />
+          </View>
+        }
+      >
+        <View className="gap-4">
+          <Input
+            label="1. Drill / Category Name"
+            value={rubricLabel}
+            onChangeText={setRubricLabel}
+            placeholder="e.g. 40-Yard Dash, Long Throw, Shot Speed"
+          />
+
+          <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+            2. Scoring Type
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            {(Object.keys(SCORING_TYPE_LABEL) as ScoringType[]).map((t) => (
+              <Chip key={t} label={SCORING_TYPE_LABEL[t]} active={rubricType === t} onPress={() => handleRubricTypeChange(t)} />
+            ))}
+          </View>
+
+          {rubricType === 'skill' ? (
+            <View className="gap-2">
+              <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                3. Scale Choice
+              </Text>
+              <View className="flex-row flex-wrap gap-2">
+                <Chip label="1-5 Scale" active={rubricScale === '1-5'} onPress={() => setRubricScale('1-5')} />
+                <Chip label="1-10 Scale" active={rubricScale === '1-10'} onPress={() => setRubricScale('1-10')} />
+              </View>
+              <Text className="text-xs italic" style={{ color: colors.inkMuted }}>
+                Ranking Rule: Highest number = highest rank (Score 5)
+              </Text>
+            </View>
+          ) : (
+            <View className="gap-3">
+              <Input
+                label="3. Unit Label (Free-form)"
+                value={rubricUnit}
+                onChangeText={setRubricUnit}
+                placeholder={
+                  rubricType === 'time' ? 'e.g. sec, s, min' : rubricType === 'speed' ? 'e.g. mph, km/h' : 'e.g. ft, m, inches'
+                }
+              />
+
+              <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                4. Ranking Rule
+              </Text>
+              <Pressable
+                onPress={() =>
+                  setRubricRankingDirection(rubricRankingDirection === 'lower_is_better' ? 'higher_is_better' : 'lower_is_better')
+                }
+                className="flex-row items-center justify-between rounded-lg border px-4 py-3"
+                style={{ borderColor: colors.border, backgroundColor: colors.field }}
+              >
+                <View className="flex-1 pr-3">
+                  <Text className="font-bold text-sm" style={{ color: colors.ink }}>
+                    {rubricRankingDirection === 'lower_is_better' ? 'Lowest / Shortest wins' : 'Highest / Farthest wins'}
+                  </Text>
+                  <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
+                    {rubricRankingDirection === 'lower_is_better'
+                      ? 'Best performance = lowest value (e.g. fastest sprint)'
+                      : 'Best performance = highest value (e.g. longest throw)'}
+                  </Text>
+                </View>
+                <Switch
+                  value={rubricRankingDirection === 'lower_is_better'}
+                  onValueChange={(val) => setRubricRankingDirection(val ? 'lower_is_better' : 'higher_is_better')}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#fff"
+                />
+              </Pressable>
+
+              <Text className="text-xs font-bold uppercase tracking-wider mt-1" style={{ color: colors.inkMuted }}>
+                5. Score Range Benchmarks (Min &amp; Max)
+              </Text>
+              <View className="flex-row gap-2">
+                <View className="flex-1">
+                  <Input
+                    label="Min Value"
+                    value={rubricMinStr}
+                    onChangeText={setRubricMinStr}
+                    keyboardType="numeric"
+                    placeholder={rubricType === 'time' ? '12 (Best)' : '5 (Worst)'}
+                  />
+                </View>
+                <View className="flex-1">
+                  <Input
+                    label="Max Value"
+                    value={rubricMaxStr}
+                    onChangeText={setRubricMaxStr}
+                    keyboardType="numeric"
+                    placeholder={rubricType === 'time' ? '25 (Worst)' : '25 (Best)'}
+                  />
+                </View>
+              </View>
+
+              <Text className="text-xs font-bold italic" style={{ color: colors.primary }}>
+                Score Benchmark Rule:{' '}
+                {rubricRankingDirection === 'lower_is_better'
+                  ? `Min value (${rubricMinStr || '10'}) = 5.0 points (Best)  ·  Max value (${rubricMaxStr || '25'}) = 1.0 points (Worst)`
+                  : `Min value (${rubricMinStr || '5'}) = 1.0 points (Worst)  ·  Max value (${rubricMaxStr || '25'}) = 5.0 points (Best)`}
+              </Text>
+            </View>
+          )}
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showAssessorForm}
+        title="Add Assessor"
+        onClose={() => setShowAssessorForm(false)}
+        footer={
+          <View className="mt-4 gap-2">
+            <Button label="Add" onPress={addAssessorToList} loading={checkingAssessor} disabled={!assessorName.trim() || !assessorEmail.trim()} />
+          </View>
+        }
+      >
+        <View className="gap-3">
+          <Input label="Name" value={assessorName} onChangeText={setAssessorName} />
+          <Input label="Email" value={assessorEmail} onChangeText={setAssessorEmail} autoCapitalize="none" keyboardType="email-address" />
+          <Text className="text-xs" style={{ color: colors.inkMuted }}>
+            They must already have a TryoutHQ account — this checks their email before adding them.
+          </Text>
+        </View>
+      </Modal>
     </Screen>
   );
 }

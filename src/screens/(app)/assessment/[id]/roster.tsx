@@ -149,7 +149,7 @@ export default function RosterScreen() {
   return (
     <Screen padded={false}>
       <Header
-        title="Assessment Roster"
+        title={tryout.name}
         showBack
         onBack={() => navigation.navigate('DashboardMain')}
       />
@@ -427,7 +427,6 @@ export default function RosterScreen() {
             // background refresh.
             setRefetchingAfterDummy(true);
             await tryoutQuery.refetch();
-            setShowTestGen(false);
             const parts = [
               res.registrations ? `${res.registrations} pending registrations` : null,
               res.players ? `${res.players} roster players` : null,
@@ -442,6 +441,10 @@ export default function RosterScreen() {
             if (Platform.OS === 'web') alert(msg);
             else Alert.alert('Error', msg);
           } finally {
+            // In `finally`, not after the await: generateTestData writes
+            // incrementally, so a partial run still created real rows and the
+            // modal must not stay open over a stale form.
+            setShowTestGen(false);
             setDummyProgress(null);
             setRefetchingAfterDummy(false);
           }

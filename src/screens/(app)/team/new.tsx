@@ -138,7 +138,13 @@ export default function NewTeamScreen() {
       );
       return;
     }
-    const team = await createTeam.mutateAsync({ name: data.name, season: data.season });
+    let team;
+    try {
+      team = await createTeam.mutateAsync({ name: data.name, season: data.season });
+    } catch (e: any) {
+      showAlert('Error', e?.message || 'Failed to create team.');
+      return;
+    }
     // Events hang off a season, so every team gets one up front — the coach
     // never sees it, they just add practices and games on the team screen.
     try {
@@ -210,7 +216,6 @@ export default function NewTeamScreen() {
     setDummyProgress(null);
     try {
       const res = await genDummy.mutateAsync(options);
-      setShowDummy(false);
       showAlert(
         'Dummy teams created',
         `Created ${res.teams} team${res.teams === 1 ? '' : 's'} with ${res.assessments} linked ` +
@@ -221,6 +226,10 @@ export default function NewTeamScreen() {
     } catch (e: any) {
       showAlert('Error', e?.message || 'Failed to generate dummy teams.');
     } finally {
+      // In `finally`, not after the await: a partial run still created real
+      // teams, and leaving the modal open over a stale form made it look like
+      // nothing had happened at all.
+      setShowDummy(false);
       setDummyProgress(null);
     }
   };

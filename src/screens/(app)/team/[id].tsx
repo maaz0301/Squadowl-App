@@ -8,12 +8,12 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
-import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useRemoveTeamRosterPlayerMutation, useSeasonsQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation } from '@/features/queries';
-import { useUser } from '@/state/authStore';
+import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useSeasonsQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation } from '@/features/queries';
+import { useUser, usePermissions } from '@/state/authStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit } from '@/data/plans';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
-import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
+import { CreateEventFormSchema, EVENT_KINDS, type AddPlayerForm as AddPlayerFormValues, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
 import { BottomNav } from '@/components/BottomNav';
 import { ChatIconButton } from '@/components/ChatIconButton';
 import { PlanGate } from '@/components/PlanGate';
@@ -21,6 +21,7 @@ import { TeamBanner } from '@/components/TeamBanner';
 import { teamBrandSurfaces } from '@/lib/teamBrand';
 import { TeamColorPicker } from '@/components/TeamColorPicker';
 import { TeamManagersCard } from '@/components/TeamManagersCard';
+import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { getDataSource } from '@/data';
 import { queryKeys } from '@/lib/queryClient';
 
@@ -58,6 +59,7 @@ export default function TeamDetailScreen() {
   const updateTryout = useUpdateTryoutMutation();
   const uploadLogo = useUploadTeamLogoMutation();
   const user = useUser();
+  const { canManageTeam } = usePermissions();
   const [editing, setEditing] = useState(false);
   const [brandColor, setBrandColor] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -99,8 +101,37 @@ export default function TeamDetailScreen() {
   });
 
   const rosterQuery = useTeamRosterQuery(id);
-  const addRosterPlayers = useAddTeamRosterPlayersMutation(id);
+  const [addPlayersProgress, setAddPlayersProgress] = useState<{ done: number; total: number } | null>(null);
+  const addRosterPlayers = useAddTeamRosterPlayersMutation(id, (done, total) => setAddPlayersProgress({ done, total }));
+  const addManualPlayer = useAddManualTeamPlayerMutation(id);
+  const uploadTeamPlayerPhoto = useUploadTeamPlayerPhotoMutation(id);
   const removeRosterPlayer = useRemoveTeamRosterPlayerMutation(id);
+
+  // A player who never went through an assessment (no tryout roster to pull
+  // them from) has no other way onto the team — this is that direct path.
+  // Same AddPlayerForm the assessment roster uses, just attached to the team
+  // roster instead of a tryout's participants.
+  const [showAddManualPlayer, setShowAddManualPlayer] = useState(false);
+
+  const submitManualPlayer = async (data: AddPlayerFormValues) => {
+    try {
+      const { athleteId } = await addManualPlayer.mutateAsync(data);
+      if (athleteId && data.avatarUrl && data.avatarUrl.startsWith('file://')) {
+        try {
+          await uploadTeamPlayerPhoto.mutateAsync({
+            athleteId,
+            fileUri: data.avatarUrl,
+            fileType: 'image/jpeg',
+          });
+        } catch (e: any) {
+          Alert.alert('Upload Error', 'Failed to upload profile picture: ' + e.message);
+        }
+      }
+      setShowAddManualPlayer(false);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not add this player.');
+    }
+  };
 
   // Events live on the season attached to this team, but that's an implementation
   // detail — the team screen is the only place a coach touches them, and the
@@ -199,14 +230,22 @@ export default function TeamDetailScreen() {
     return q ? players.filter((p) => `${p.first} ${p.last}`.toLowerCase().includes(q)) : players;
   }, [rosterQuery.data, playerSearch]);
 
-  const availableCount = useMemo(() => candidates.filter((c) => !c.alreadyOnTeam).length, [candidates]);
-
+  // "Select all" and its available-count must track the ACTIVE assessment
+  // filter, not the full cross-assessment candidate pool — otherwise picking
+  // one assessment's tab still selects every athlete on the account when
+  // "Select all" is tapped, which is what actually produced a batch of 1001
+  // instead of the one assessment's roster.
   const filteredCandidates = useMemo(() => {
     const q = candidateSearch.trim().toLowerCase();
     return candidates
       .filter((c) => !candidateTryoutFilter || c.tryoutIds.has(candidateTryoutFilter))
       .filter((c) => (q ? `${c.first} ${c.last}`.toLowerCase().includes(q) : true));
   }, [candidates, candidateTryoutFilter, candidateSearch]);
+
+  const availableCount = useMemo(
+    () => filteredCandidates.filter((c) => !c.alreadyOnTeam).length,
+    [filteredCandidates],
+  );
 
   if (teamsQuery.isLoading || tryoutsQuery.isLoading) return <LoadingState message="Loading team..." />;
   if (teamsQuery.isError || tryoutsQuery.isError) {
@@ -233,6 +272,15 @@ export default function TeamDetailScreen() {
       </Screen>
     );
   }
+
+  // Mirrors the DB write policies (teams_rw, teams_manager_update): a
+  // delegated manager can edit this one team regardless of their own account
+  // role, and everyone else needs owner/admin/coach on the account that owns
+  // it. Without this gate, an account member with a lesser role (e.g. an
+  // assessor who's also a member of the account for another reason) could
+  // still see the Edit button, fill out the form, and hit Save only to be
+  // rejected with a raw "new row violates row-level security policy" error.
+  const canEditTeam = !!team.managed || canManageTeam;
 
   // Every surface on this screen — background, header ink, tabs, cards — is
   // derived from the team's brand colour so the whole hub reads as the team's,
@@ -267,6 +315,7 @@ export default function TeamDetailScreen() {
       pos: c.pos,
       sourceTryoutId: c.tryoutId,
     }));
+    setAddPlayersProgress({ done: 0, total: entries.length });
     try {
       await addRosterPlayers.mutateAsync(entries);
 
@@ -274,11 +323,21 @@ export default function TeamDetailScreen() {
       // picked athlete there too if they aren't already a participant on it.
       if (linkedTryouts.length > 0) {
         setEnrollingAssessments(true);
-        const enrollments = picked.flatMap((c) =>
+        // Build the (athlete, tryout) work list first — deferred, not started —
+        // then run it through a bounded worker pool below. `picked.flatMap(...
+        // .map((t) => getDataSource().addPlayer(...)))` looked bounded because
+        // of the `await Promise.all(...)` after it, but `.map()`'s callback
+        // calls and returns the promise immediately: every addPlayer() call —
+        // up to players × linked assessments — fired over the wire in the same
+        // tick, well past what the connection pool or a statement timeout can
+        // absorb for a large batch. Promise.all was only ever waiting on
+        // requests that had already all been fired at once.
+        const enrollmentTasks = picked.flatMap((c) =>
           linkedTryouts
             .filter((t) => !c.tryoutIds.has(t.id))
-            .map((t) =>
-              getDataSource().addPlayer(t.id, {
+            .map((t) => ({
+              tryoutId: t.id,
+              form: {
                 athleteId: c.athleteId,
                 first: c.first,
                 last: c.last,
@@ -288,11 +347,25 @@ export default function TeamDetailScreen() {
                 // addPlayer ignores guardian fields once athleteId is set (existing
                 // athlete) — passed through only to satisfy the now-required type.
                 guardianEmail: c.guardianEmail || '',
-              }),
-            ),
+              },
+            })),
         );
-        if (enrollments.length > 0) {
-          await Promise.all(enrollments);
+        if (enrollmentTasks.length > 0) {
+          const ENROLLMENT_CONCURRENCY = 8;
+          let nextIndex = 0;
+          let completed = 0;
+          setAddPlayersProgress({ done: 0, total: enrollmentTasks.length });
+          const worker = async () => {
+            while (nextIndex < enrollmentTasks.length) {
+              const task = enrollmentTasks[nextIndex++];
+              await getDataSource().addPlayer(task.tryoutId, task.form);
+              completed++;
+              setAddPlayersProgress({ done: completed, total: enrollmentTasks.length });
+            }
+          };
+          await Promise.all(
+            Array.from({ length: Math.min(ENROLLMENT_CONCURRENCY, enrollmentTasks.length) }, worker),
+          );
           for (const t of linkedTryouts) qc.invalidateQueries({ queryKey: queryKeys.tryout(t.id) });
           qc.invalidateQueries({ queryKey: queryKeys.tryouts(false) });
         }
@@ -305,6 +378,7 @@ export default function TeamDetailScreen() {
       Alert.alert('Error', e?.message || 'Could not add players to the team.');
     } finally {
       setEnrollingAssessments(false);
+      setAddPlayersProgress(null);
     }
   };
 
@@ -483,19 +557,28 @@ export default function TeamDetailScreen() {
         : { collectsFees: false, registrationFeeCents: 0 }
       : {};
 
-    await updateTeam.mutateAsync({
-      id: team.id,
-      // '' rather than undefined when no colour is picked: undefined is "leave
-      // it alone" in updateTeam's patch builder, so clearing a colour has to be
-      // an explicit empty value to reach the column as NULL.
-      updates: {
-        name: name.trim(),
-        season: season.trim() || undefined,
-        logoUrl,
-        brandColor: brandColor ?? '',
-        ...feeUpdates,
-      },
-    });
+    try {
+      await updateTeam.mutateAsync({
+        id: team.id,
+        // '' rather than undefined when no colour is picked: undefined is "leave
+        // it alone" in updateTeam's patch builder, so clearing a colour has to be
+        // an explicit empty value to reach the column as NULL.
+        updates: {
+          name: name.trim(),
+          season: season.trim() || undefined,
+          logoUrl,
+          brandColor: brandColor ?? '',
+          ...feeUpdates,
+        },
+      });
+    } catch (e: any) {
+      // canEditTeam above hides this form from anyone who'd hit the RLS
+      // check on save, but surface a readable message instead of a raw
+      // Postgres error on the off chance the client's view of the team is
+      // stale (e.g. a delegation just revoked from another device).
+      Alert.alert('Error', e?.message || 'Could not save these changes.');
+      return;
+    }
     setEditing(false);
   };
 
@@ -509,8 +592,12 @@ export default function TeamDetailScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            await deleteTeam.mutateAsync(team.id);
-            navigation.replace('DashboardMain', { tab: 'teams' });
+            try {
+              await deleteTeam.mutateAsync(team.id);
+              navigation.replace('DashboardMain', { tab: 'teams' });
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'Could not delete this team.');
+            }
           },
         },
       ]
@@ -541,7 +628,7 @@ export default function TeamDetailScreen() {
                 })
               }
             />
-            <Button label="Edit" variant="ghost" size="sm" onPress={startEdit} />
+            {canEditTeam ? <Button label="Edit" variant="ghost" size="sm" onPress={startEdit} /> : null}
           </View>
         }
       />
@@ -572,18 +659,25 @@ export default function TeamDetailScreen() {
         <View className="flex-1">
           <View className="px-4">
             {headerBlock}
-            <Button
-              label="Add Players from Assessments"
-              size="sm"
-              className="mb-3 self-start"
-              onPress={() => {
-                addPlayersPressAt.current = performance.now();
-                setPickedAthletes(new Set());
-                setCandidateSearch('');
-                setCandidateTryoutFilter(null);
-                setShowAddPlayers(true);
-              }}
-            />
+            <View className="flex-row flex-wrap gap-2 mb-3">
+              <Button
+                label="Add Players from Assessments"
+                size="sm"
+                onPress={() => {
+                  addPlayersPressAt.current = performance.now();
+                  setPickedAthletes(new Set());
+                  setCandidateSearch('');
+                  setCandidateTryoutFilter(null);
+                  setShowAddPlayers(true);
+                }}
+              />
+              <Button
+                label="+ Add Player Manually"
+                size="sm"
+                variant="secondary"
+                onPress={() => setShowAddManualPlayer(true)}
+              />
+            </View>
             {teamPlayers.length > 0 ? (
               <Input
                 value={playerSearch}
@@ -862,12 +956,14 @@ export default function TeamDetailScreen() {
           </PlanGate>
         ) : (
           <View>
-            <Card className="mb-3 gap-2">
-              <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-                Team
-              </Text>
-              <Button label="Edit Team Details" variant="secondary" size="sm" onPress={startEdit} />
-            </Card>
+            {canEditTeam ? (
+              <Card className="mb-3 gap-2">
+                <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                  Team
+                </Text>
+                <Button label="Edit Team Details" variant="secondary" size="sm" onPress={startEdit} />
+              </Card>
+            ) : null}
 
             {/* CLUB mode: hand this one team to another coach/manager. A viewer
                 who is themselves a delegate can see the list but not change it. */}
@@ -1010,7 +1106,32 @@ export default function TeamDetailScreen() {
           setShowAddPlayers(false);
         }}
         footer={
-          <View className="mt-4">
+          <View className="mt-4" style={{ gap: 8 }}>
+            {isAddingPlayers && addPlayersProgress && addPlayersProgress.total > 0 ? (
+              <View style={{ gap: 4 }}>
+                <View
+                  style={{
+                    width: '100%',
+                    height: 8,
+                    borderRadius: 999,
+                    overflow: 'hidden',
+                    backgroundColor: colors.tile,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: `${Math.min(100, Math.max(4, Math.round((addPlayersProgress.done / addPlayersProgress.total) * 100)))}%`,
+                      height: '100%',
+                      borderRadius: 999,
+                      backgroundColor: colors.primary,
+                    }}
+                  />
+                </View>
+                <Text className="text-xs text-center" style={{ color: colors.inkMuted }}>
+                  Added {addPlayersProgress.done} of {addPlayersProgress.total} players...
+                </Text>
+              </View>
+            ) : null}
             <Button
               label={pickedAthletes.size === 0 ? 'Select players to add' : `Add ${pickedAthletes.size} to ${team.name}`}
               disabled={pickedAthletes.size === 0 || isAddingPlayers}
@@ -1021,7 +1142,13 @@ export default function TeamDetailScreen() {
         }
       >
         {!showAddPlayers ? null : isAddingPlayers ? (
-          <LoadingState message="Adding players..." />
+          <LoadingState
+            message={
+              addPlayersProgress && addPlayersProgress.total > 0
+                ? `Added ${addPlayersProgress.done} of ${addPlayersProgress.total} players...`
+                : 'Adding players...'
+            }
+          />
         ) : candidates.length === 0 ? (
           <Text className="text-sm py-3" style={{ color: colors.inkMuted }}>
             No assessments have players yet — add players to an assessment roster first.
@@ -1062,7 +1189,7 @@ export default function TeamDetailScreen() {
                     setPickedAthletes((prev) =>
                       prev.size === availableCount
                         ? new Set()
-                        : new Set(candidates.filter((c) => !c.alreadyOnTeam).map((c) => c.athleteId)),
+                        : new Set(filteredCandidates.filter((c) => !c.alreadyOnTeam).map((c) => c.athleteId)),
                     )
                   }
                   hitSlop={8}
@@ -1126,6 +1253,20 @@ export default function TeamDetailScreen() {
             />
           </View>
         )}
+      </Modal>
+
+      <Modal
+        visible={showAddManualPlayer}
+        title="Add Player Manually"
+        onClose={() => {
+          if (addManualPlayer.isPending || uploadTeamPlayerPhoto.isPending) return;
+          setShowAddManualPlayer(false);
+        }}
+      >
+        <AddPlayerForm
+          loading={addManualPlayer.isPending || uploadTeamPlayerPhoto.isPending}
+          onSubmit={submitManualPlayer}
+        />
       </Modal>
 
       <Modal

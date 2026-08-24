@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FlatList, View, Text, Pressable, Alert } from 'react-native';
+import { FlatList, View, Text, Pressable, Alert, ActivityIndicator } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 import { InAppBrowser } from 'react-native-inappbrowser-reborn';
 import { useQueryClient } from '@tanstack/react-query';
@@ -15,6 +15,7 @@ import {
   Badge,
   Button,
   Modal,
+  Input,
 } from '@/components/ui';
 import { ChatIconButton } from '@/components/ChatIconButton';
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -23,6 +24,9 @@ import {
   useGuardianRealtimeSync,
   useSetAvailabilityMutation,
   useCreateTeamFeePaymentMutation,
+  useFamilyContactsQuery,
+  useAddFamilyContactMutation,
+  useRemoveFamilyContactMutation,
 } from '@/features/queries';
 import { queryKeys } from '@/lib/queryClient';
 import { useAuthStore } from '@/state/authStore';
@@ -212,6 +216,48 @@ export default function GuardianPortalScreen() {
   // navigate away and back for the cache to refresh.
   useGuardianRealtimeSync();
 
+  const familyContactsQuery = useFamilyContactsQuery(playerId);
+  const addFamilyContact = useAddFamilyContactMutation(playerId);
+  const removeFamilyContact = useRemoveFamilyContactMutation(playerId);
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [contactName, setContactName] = useState('');
+  const [contactRelationship, setContactRelationship] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+
+  const submitFamilyContact = async () => {
+    if (!contactName.trim()) {
+      Alert.alert('Missing Info', 'Enter at least a name.');
+      return;
+    }
+    try {
+      await addFamilyContact.mutateAsync({
+        name: contactName.trim(),
+        relationship: contactRelationship.trim() || undefined,
+        email: contactEmail.trim() || undefined,
+        phone: contactPhone.trim() || undefined,
+      });
+      setContactName('');
+      setContactRelationship('');
+      setContactEmail('');
+      setContactPhone('');
+      setShowAddContact(false);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not add this contact.');
+    }
+  };
+
+  const confirmRemoveContact = (id: string, name: string) => {
+    Alert.alert('Remove Contact', `Remove ${name} from this athlete's family contacts?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => removeFamilyContact.mutate(id),
+      },
+    ]);
+  };
+
   if (guardianQuery.isLoading) {
     return <LoadingState message="Loading portal..." />;
   }
@@ -358,7 +404,50 @@ export default function GuardianPortalScreen() {
               <Text className="font-medium" style={{ color: colors.ink }}>{athlete.lastName}</Text>
             </View>
           </Card>
-          
+
+          <Card className="mb-3">
+            <View className="flex-row items-center justify-between mb-2">
+              <Text className="text-lg font-bold" style={{ color: colors.ink }}>
+                Family Contacts
+              </Text>
+              <Button label="+ Add" size="sm" variant="ghost" onPress={() => setShowAddContact(true)} />
+            </View>
+            <Text className="text-xs mb-2" style={{ color: colors.inkMuted }}>
+              Other family members — a second parent, a grandparent, an emergency contact.
+            </Text>
+            {familyContactsQuery.isLoading ? (
+              <ActivityIndicator />
+            ) : (familyContactsQuery.data ?? []).length === 0 ? (
+              <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                No additional contacts added yet.
+              </Text>
+            ) : (
+              (familyContactsQuery.data ?? []).map((c) => (
+                <View
+                  key={c.id}
+                  className="flex-row items-center justify-between py-2 border-b"
+                  style={{ borderBottomColor: colors.border }}
+                >
+                  <View className="flex-1 mr-2">
+                    <Text className="font-medium" style={{ color: colors.ink }}>
+                      {c.name}
+                      {c.relationship ? ` · ${c.relationship}` : ''}
+                    </Text>
+                    {c.email ? (
+                      <Text className="text-xs" style={{ color: colors.inkMuted }}>{c.email}</Text>
+                    ) : null}
+                    {c.phone ? (
+                      <Text className="text-xs" style={{ color: colors.inkMuted }}>{c.phone}</Text>
+                    ) : null}
+                  </View>
+                  <Pressable onPress={() => confirmRemoveContact(c.id, c.name)} hitSlop={8}>
+                    <Text style={{ color: colors.danger, fontSize: 18, fontWeight: 'bold' }}>✕</Text>
+                  </Pressable>
+                </View>
+              ))
+            )}
+          </Card>
+
           <Card>
              <Text className="text-lg font-bold mb-2" style={{ color: colors.ink }}>
               Account Link
@@ -389,6 +478,37 @@ export default function GuardianPortalScreen() {
               <Text className="text-xs mt-1" style={{ color: colors.inkMuted }}>{s.name}</Text>
             </Pressable>
           ))}
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showAddContact}
+        title="Add Family Contact"
+        onClose={() => {
+          if (addFamilyContact.isPending) return;
+          setShowAddContact(false);
+        }}
+        footer={
+          <View className="mt-4">
+            <Button
+              label="Add Contact"
+              onPress={submitFamilyContact}
+              loading={addFamilyContact.isPending}
+              disabled={!contactName.trim()}
+            />
+          </View>
+        }
+      >
+        <View className="gap-3">
+          <Input label="Name" value={contactName} onChangeText={setContactName} />
+          <Input
+            label="Relationship"
+            value={contactRelationship}
+            onChangeText={setContactRelationship}
+            placeholder="e.g. Grandmother, Emergency Contact"
+          />
+          <Input label="Email" value={contactEmail} onChangeText={setContactEmail} autoCapitalize="none" keyboardType="email-address" />
+          <Input label="Phone" value={contactPhone} onChangeText={setContactPhone} keyboardType="phone-pad" />
         </View>
       </Modal>
     </Screen>

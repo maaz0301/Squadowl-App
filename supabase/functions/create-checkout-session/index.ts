@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { stripe } from '../_shared/stripe.ts';
 import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
+import { resolveWebOrigin } from '../_shared/webOrigin.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,8 +14,9 @@ serve(async (req) => {
   }
 
   try {
-    const { planTier, interval: rawInterval, addOn, quantity: rawQuantity } = await req.json();
+    const { planTier, interval: rawInterval, addOn, quantity: rawQuantity, origin } = await req.json();
     const interval: 'year' | 'month' = rawInterval === 'month' ? 'month' : 'year';
+    const webOrigin = resolveWebOrigin(origin);
     // Add-on team licenses (Club: CAD$10/team/year beyond the 6 included) go through
     // the same checkout, but they must not touch plan_tier — see the metadata below.
     const isTeamLicense = addOn === 'team_licenses';
@@ -131,8 +133,8 @@ serve(async (req) => {
       customer: customerId,
       line_items: [lineItem],
       mode: 'subscription' as const,
-      success_url: `aastryout://upgrade?success=true`,
-      cancel_url: `aastryout://upgrade?canceled=true`,
+      success_url: webOrigin ? `${webOrigin}/upgrade?success=true` : `aastryout://upgrade?success=true`,
+      cancel_url: webOrigin ? `${webOrigin}/upgrade?canceled=true` : `aastryout://upgrade?canceled=true`,
       // A team-license purchase deliberately carries no planTier: the webhook keys off
       // `type` and only increments extra_team_licenses, leaving the plan alone.
       metadata: isTeamLicense

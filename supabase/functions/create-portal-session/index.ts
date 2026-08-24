@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { stripe } from '../_shared/stripe.ts';
 import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
+import { resolveWebOrigin } from '../_shared/webOrigin.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,6 +14,8 @@ serve(async (req) => {
   }
 
   try {
+    const webOrigin = resolveWebOrigin((await req.json().catch(() => ({})))?.origin);
+
     const authHeader = req.headers.get('Authorization')!;
     if (!authHeader) {
       throw new Error('No authorization header');
@@ -47,7 +50,7 @@ serve(async (req) => {
 
     const session = await stripe.billingPortal.sessions.create({
       customer: customerId,
-      return_url: `aastryout://profile`,
+      return_url: webOrigin ? `${webOrigin}/profile` : `aastryout://profile`,
     });
 
     return new Response(JSON.stringify({ url: session.url }), {

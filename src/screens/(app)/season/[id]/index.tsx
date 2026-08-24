@@ -4,6 +4,7 @@ import { useRoute } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { TeamBanner } from '@/components/TeamBanner';
+import { ChatIconButton } from '@/components/ChatIconButton';
 import { useSeasonTeamBrand } from '@/features/useTeamBrand';
 import { Badge, Button, Card, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
 import { useSeasonQuery } from '@/features/queries';
@@ -41,12 +42,25 @@ export default function SeasonHubScreen() {
         title="Season Hub"
         showBack
         right={
-          <Button
-            label="Settings"
-            variant="ghost"
-            size="sm"
-            onPress={() => navigation.navigate('SeasonSettings', { id: id })}
-          />
+          <View className="flex-row items-center gap-1">
+            <ChatIconButton
+              onPress={() =>
+                navigation.navigate('TeamChat', {
+                  seasonId: id,
+                  title: `${season.teamName} Chat`,
+                  subtitle: `${season.sport} · ${season.year}`,
+                  noSeasonMessage:
+                    "This team doesn't have a season yet. Add a practice or game under Schedule, and the chat opens for everyone on the roster and their guardians.",
+                })
+              }
+            />
+            <Button
+              label="Settings"
+              variant="ghost"
+              size="sm"
+              onPress={() => navigation.navigate('SeasonSettings', { id: id })}
+            />
+          </View>
         }
       />
       {team ? <TeamBanner team={team} className="mb-3" /> : null}
@@ -69,6 +83,9 @@ export default function SeasonHubScreen() {
         </Pressable>
         <Pressable onPress={() => navigation.navigate('SeasonAttendance', { id: id })}>
           <Badge label="Attendance" variant="info" />
+        </Pressable>
+        <Pressable onPress={() => navigation.navigate('SeasonCalendar', { id: id })}>
+          <Badge label="Calendar" />
         </Pressable>
       </View>
 

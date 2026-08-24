@@ -219,7 +219,6 @@ export default function RegistrationsScreen() {
     setDummyProgress(null);
     try {
       const res = await genTest.mutateAsync(options);
-      setShowTestGen(false);
       const parts = [
         res.registrations ? `${res.registrations} pending registrations` : null,
         res.players ? `${res.players} roster players` : null,
@@ -231,6 +230,10 @@ export default function RegistrationsScreen() {
         ? 'Add at least one rubric before generating scored players.'
         : e?.message || 'Failed to generate dummy data.');
     } finally {
+      // In `finally`, not after the await: generateTestData writes
+      // incrementally, so a partial run still created real rows and the modal
+      // must not stay open over a stale form.
+      setShowTestGen(false);
       setDummyProgress(null);
     }
   };

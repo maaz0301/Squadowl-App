@@ -109,9 +109,15 @@ export default function DashboardScreen() {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
             setBusyId(id);
-            deleteTeam.mutate(id, { onSettled: () => setBusyId(null) });
+            try {
+              await deleteTeam.mutateAsync(id);
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'Could not delete this team.');
+            } finally {
+              setBusyId(null);
+            }
           },
         },
       ]

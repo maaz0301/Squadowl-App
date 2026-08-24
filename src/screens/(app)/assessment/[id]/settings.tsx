@@ -128,7 +128,14 @@ export default function SettingsScreen() {
       return;
     }
 
-    const exists = await getDataSource().checkUserExistsByEmail(emailToInvite);
+    // Wrapped because none of this was: a failing checkUserExistsByEmail or
+    // updateTryout threw straight past setShowAssessor(false) as an unhandled
+    // rejection, so the modal just sat there with no error and no visible
+    // reason — which reads as "the modal won't close". It deliberately stays
+    // open on failure so the entry can be corrected and retried; what was
+    // missing was saying why.
+    try {
+      const exists = await getDataSource().checkUserExistsByEmail(emailToInvite);
       if (!exists) {
         Alert.alert(
           'Email Not Registered',
@@ -137,23 +144,26 @@ export default function SettingsScreen() {
         return;
       }
 
-    const newAssessor = { name: assessorName.trim(), email: emailToInvite, role: 'assessor' as const, status: 'pending' as const };
-    
-    await updateTryout.mutateAsync({
-      id: tryout.id,
-      updates: {
-        assessors: [
-          ...tryout.assessors,
-          newAssessor,
-        ],
-      },
-    });
-    setAssessorName('');
-    setAssessorEmail('');
-    setShowAssessor(false);
+      const newAssessor = { name: assessorName.trim(), email: emailToInvite, role: 'assessor' as const, status: 'pending' as const };
 
-    if (newAssessor.email) {
-      await shareAssessorInvite(newAssessor);
+      await updateTryout.mutateAsync({
+        id: tryout.id,
+        updates: {
+          assessors: [
+            ...tryout.assessors,
+            newAssessor,
+          ],
+        },
+      });
+      setAssessorName('');
+      setAssessorEmail('');
+      setShowAssessor(false);
+
+      if (newAssessor.email) {
+        await shareAssessorInvite(newAssessor);
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not add this assessor.');
     }
   };
 

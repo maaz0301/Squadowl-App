@@ -9,7 +9,7 @@
 enabled = true
 site_url = "aastryout://"
 external_url = "http://127.0.0.1:54321/auth/v1"
-additional_redirect_urls = []
+additional_redirect_urls = ["https://athlete-assessment-web.vercel.app/auth/callback", "http://localhost:3000/auth/callback"]
 jwt_expiry = 3600
 jwt_issuer = "http://127.0.0.1:54321/auth/v1"
 enable_refresh_token_rotation = true

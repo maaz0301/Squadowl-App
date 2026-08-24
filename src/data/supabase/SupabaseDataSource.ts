@@ -61,6 +61,7 @@ import type {
   EventKind,
   EventType,
   ExportFormat,
+  FamilyContact,
   Org,
   Player,
   Recommendation,
@@ -146,6 +147,16 @@ const DUMMY_CHUNK = {
  * fewer is placed in a single pass, and larger selections stream through in
  * 20s rather than one player at a time.
  */
+/**
+ * Rows per request when reading a team roster. The embedded `athletes(*)` join
+ * makes PostgREST evaluate the athletes_read policy — can_access_athlete(),
+ * five OR'd EXISTS subqueries after the assessor/sharing/team-manager
+ * migrations widened it — once per row. A large roster read in one statement
+ * therefore outruns the statement timeout long before it outruns the row cap,
+ * so the read is paged to keep each statement's share of that predicate bounded.
+ */
+const TEAM_ROSTER_PAGE = 200;
+
 const REGISTRATION_CHUNK = 20;
 
 /**
@@ -1157,13 +1168,24 @@ export class SupabaseDataSource implements DataSource {
    */
   async listTeamRoster(teamId: string): Promise<TeamRosterPlayer[]> {
     const { supabase } = await this.ctx();
-    const rows = unwrap(
-      await supabase
-        .from('team_roster')
-        .select('*, athletes(*), tryouts:source_tryout_id(name)')
-        .eq('team_id', teamId)
-        .order('created_at', { ascending: true }),
-    ) as Row[];
+    const rows: Row[] = [];
+    for (let from = 0; ; from += TEAM_ROSTER_PAGE) {
+      const page = unwrap(
+        await supabase
+          .from('team_roster')
+          .select('*, athletes(*), tryouts:source_tryout_id(name)')
+          .eq('team_id', teamId)
+          // created_at ties are the norm here, not the exception — a bulk add
+          // writes a whole chunk on the same timestamp — so id breaks them.
+          // Without a total order the pages can overlap or skip rows.
+          .order('created_at', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, from + TEAM_ROSTER_PAGE - 1),
+      ) as Row[] | null;
+      const batch = page ?? [];
+      rows.push(...batch);
+      if (batch.length < TEAM_ROSTER_PAGE) break;
+    }
 
     // Fee status lives on season_roster, not team_roster (a team's fee is
     // charged per season enrollment — see 20260811183700_season_team_fee_payments.sql),
@@ -1177,17 +1199,22 @@ export class SupabaseDataSource implements DataSource {
       const { data: teamSeasons } = await supabase.from('seasons').select('id').eq('team_id', teamId);
       const seasonIds = (teamSeasons ?? []).map((s) => s.id);
       if (seasonIds.length > 0) {
-        const { data: srRows } = await supabase
-          .from('season_roster')
-          .select('athlete_id, fee_status, created_at')
-          .in('season_id', seasonIds)
-          .in('athlete_id', athleteIds)
-          .order('created_at', { ascending: false });
-        for (const sr of srRows ?? []) {
-          // Most recent season enrollment wins when an athlete has been on this
-          // team across more than one season.
-          if (!feeStatusByAthlete.has(sr.athlete_id)) {
-            feeStatusByAthlete.set(sr.athlete_id, sr.fee_status as TeamRosterPlayer['feeStatus']);
+        // Batched for the same reason the roster read above is paged: a single
+        // `.in()` carrying a whole large roster's athlete ids is both an
+        // enormous URL and one statement's worth of RLS work.
+        for (let i = 0; i < athleteIds.length; i += TEAM_ROSTER_PAGE) {
+          const { data: srRows } = await supabase
+            .from('season_roster')
+            .select('athlete_id, fee_status, created_at')
+            .in('season_id', seasonIds)
+            .in('athlete_id', athleteIds.slice(i, i + TEAM_ROSTER_PAGE))
+            .order('created_at', { ascending: false });
+          for (const sr of srRows ?? []) {
+            // Most recent season enrollment wins when an athlete has been on this
+            // team across more than one season.
+            if (!feeStatusByAthlete.has(sr.athlete_id)) {
+              feeStatusByAthlete.set(sr.athlete_id, sr.fee_status as TeamRosterPlayer['feeStatus']);
+            }
           }
         }
       }
@@ -1223,6 +1250,7 @@ export class SupabaseDataSource implements DataSource {
   async addTeamRosterPlayers(
     teamId: string,
     entries: { athleteId: string; jersey?: string; pos?: string; sourceTryoutId?: string }[],
+    onProgress?: (done: number, total: number) => void,
   ): Promise<TeamRosterPlayer[]> {
     if (entries.length === 0) return [];
     const { supabase } = await this.ctx();
@@ -1230,22 +1258,34 @@ export class SupabaseDataSource implements DataSource {
     // that hits the same conflict target twice.
     const byAthlete = new Map<string, (typeof entries)[number]>();
     for (const e of entries) if (e.athleteId) byAthlete.set(e.athleteId, e);
+    const rosterRows = [...byAthlete.values()].map((e) => ({
+      team_id: teamId,
+      athlete_id: e.athleteId,
+      jersey: e.jersey || null,
+      position: e.pos || null,
+      source_tryout_id: e.sourceTryoutId || null,
+    }));
 
-    unwrap(
-      await supabase
-        .from('team_roster')
-        .upsert(
-          [...byAthlete.values()].map((e) => ({
-            team_id: teamId,
-            athlete_id: e.athleteId,
-            jersey: e.jersey || null,
-            position: e.pos || null,
-            source_tryout_id: e.sourceTryoutId || null,
-          })),
-          { onConflict: 'team_id,athlete_id' },
-        )
-        .select('id'),
-    );
+    // A single upsert with a large enough batch (hundreds+ rows — a real club
+    // combine, not just test data) can outrun Postgres's statement timeout and
+    // fail the whole write with nothing saved. Chunk it at the same size this
+    // codebase already proved safe for a comparable upsert (REGISTRATION_CHUNK,
+    // used for the registration bulk-placement path — see TODO.md 1i) rather
+    // than guessing a larger number.
+    const CHUNK_SIZE = 20;
+    // Progress covers this phase only, not the season-roster sync below — that
+    // one's conditional and typically fast, and the batch that can actually run
+    // long (hundreds+ athletes) is this one.
+    onProgress?.(0, rosterRows.length);
+    for (let i = 0; i < rosterRows.length; i += CHUNK_SIZE) {
+      unwrap(
+        await supabase
+          .from('team_roster')
+          .upsert(rosterRows.slice(i, i + CHUNK_SIZE), { onConflict: 'team_id,athlete_id' })
+          .select('id'),
+      );
+      onProgress?.(Math.min(rosterRows.length, i + CHUNK_SIZE), rosterRows.length);
+    }
 
     // A season's roster is normally seeded from tryout_participants when the
     // season is *created* (createSeason) — a player added to the team roster
@@ -1263,15 +1303,45 @@ export class SupabaseDataSource implements DataSource {
       .limit(1)
       .maybeSingle();
     if (currentSeason) {
-      await supabase
-        .from('season_roster')
-        .upsert(
-          [...byAthlete.values()].map((e) => ({ season_id: currentSeason.id, athlete_id: e.athleteId })),
-          { onConflict: 'season_id,athlete_id', ignoreDuplicates: true },
-        );
+      const seasonRows = [...byAthlete.values()].map((e) => ({ season_id: currentSeason.id, athlete_id: e.athleteId }));
+      for (let i = 0; i < seasonRows.length; i += CHUNK_SIZE) {
+        await supabase
+          .from('season_roster')
+          .upsert(seasonRows.slice(i, i + CHUNK_SIZE), { onConflict: 'season_id,athlete_id', ignoreDuplicates: true });
+      }
     }
 
     return this.listTeamRoster(teamId);
+  }
+
+  // Same shape as the assessment roster's "Add Player" (AddPlayerForm) — a
+  // manually-added team player picks from or creates an athlete exactly the
+  // same way, just attached to the team roster instead of tryout_participants.
+  async addManualTeamPlayer(teamId: string, form: AddPlayerForm): Promise<{ athleteId: string }> {
+    return this.withFreshAccount(() => this._addManualTeamPlayer(teamId, form));
+  }
+
+  private async _addManualTeamPlayer(teamId: string, form: AddPlayerForm): Promise<{ athleteId: string }> {
+    const accountId = await this.writableAccountId();
+    let athleteId = form.athleteId;
+    if (typeof athleteId === 'object' && athleteId !== null) {
+      athleteId = String((athleteId as any).id || athleteId);
+    }
+    if (!athleteId) {
+      athleteId = await this.createAthlete(accountId, {
+        first_name: form.first,
+        last_name: form.last,
+        year_of_birth: form.yearOfBirth ? Number(form.yearOfBirth) : null,
+        guardian_name: form.guardianName || null,
+        guardian_email: form.guardianEmail || null,
+        guardian_phone: form.guardianPhone || null,
+        medical_info: form.medicalInfo || null,
+        about: form.aboutChild || null,
+        avatar_url: form.avatarUrl || null,
+      });
+    }
+    await this.addTeamRosterPlayers(teamId, [{ athleteId, jersey: form.jersey, pos: form.pos }]);
+    return { athleteId };
   }
 
   async removeTeamRosterPlayer(teamId: string, athleteId: string): Promise<void> {
@@ -1289,11 +1359,31 @@ export class SupabaseDataSource implements DataSource {
   async deleteTeam(id: string): Promise<void> {
     const { supabase } = await this.ctx();
     // Assessments outlive the team they were grouped under — detach them so they
-    // show up as unlinked and can be attached to another team.
-    unwrap(await supabase.from('tryouts').update({ team_id: null }).eq('team_id', id).select());
+    // show up as unlinked and can be attached to another team. Goes through an
+    // RPC, not a plain update: a tryout created by a delegated manager (or, from
+    // a manager's side, one created by the club) can carry an account_id other
+    // than the caller's own, and no RLS policy's WITH CHECK can authorize nulling
+    // team_id on such a row directly — see migration
+    // 20260821100000_fix_team_delete_tryout_detach.sql for the full story.
+    const { error: detachError } = await supabase.rpc('detach_team_tryouts', { p_team_id: id });
+    if (detachError) throw new Error(detachError.message);
     // The team's schedule goes with it; a new team provisions its own season.
     unwrap(await supabase.from('seasons').update({ archived: true }).eq('team_id', id).select());
-    unwrap(await supabase.from('teams').update({ archived: true }).eq('id', id).select().maybeSingle());
+    // `.maybeSingle()` on its own hides an RLS-blocked write: an update that
+    // matches zero rows comes back as { data: null, error: null }, identical to
+    // a genuine "no row with this id" — so a delete silently blocked by teams_rw
+    // (caller isn't owner/admin/coach on this team's account) looked like a
+    // successful delete. Same silent-no-op trap as the team-chat and
+    // assessor-status deletes; check the row actually came back before treating
+    // this as done, same as the caller's own confirm-then-navigate assumes.
+    const row = unwrap(
+      await supabase.from('teams').update({ archived: true }).eq('id', id).select().maybeSingle(),
+    );
+    if (!row) {
+      throw new Error(
+        "This team couldn't be deleted. You need to be an owner, admin, or coach on the account that owns it.",
+      );
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -4227,7 +4317,20 @@ export class SupabaseDataSource implements DataSource {
 
   async deleteTeamMessage(messageId: string): Promise<void> {
     const { supabase } = await this.userCtx();
-    unwrap(await supabase.from('season_messages').delete().eq('id', messageId));
+    // `.select()` is load-bearing: a DELETE that RLS filters down to zero rows
+    // comes back with no error and no data, so without it a blocked delete is
+    // indistinguishable from a successful one — the caller invalidates, refetches,
+    // and the message is simply still there with nothing shown to the user. Same
+    // silent-no-op trap as the assessor `.delete()` that set_assessor_status fixed.
+    const rows = unwrap(
+      await supabase.from('season_messages').delete().eq('id', messageId).select('id'),
+    ) as Row[] | null;
+    if (!rows || rows.length === 0) {
+      throw new Error(
+        'That message could not be removed. season_messages_delete only allows the message author, ' +
+          'or an owner/admin/coach on the account that owns this season.',
+      );
+    }
   }
 
   async listAthletes(): Promise<Athlete[]> {
@@ -5222,6 +5325,56 @@ export class SupabaseDataSource implements DataSource {
   //       .filter(Boolean),
   //   }));
   // }
+  private rowToFamilyContact(r: Row): FamilyContact {
+    return {
+      id: r.id,
+      athleteId: r.athlete_id,
+      name: r.name,
+      relationship: r.relationship ?? undefined,
+      email: r.email ?? undefined,
+      phone: r.phone ?? undefined,
+    };
+  }
+
+  async listFamilyContacts(athleteId: string): Promise<FamilyContact[]> {
+    const { supabase } = await this.ctx();
+    const rows = unwrap(
+      await supabase
+        .from('athlete_family_contacts')
+        .select()
+        .eq('athlete_id', athleteId)
+        .order('created_at', { ascending: true }),
+    ) as Row[] | null;
+    return (rows ?? []).map((r) => this.rowToFamilyContact(r));
+  }
+
+  async addFamilyContact(
+    athleteId: string,
+    contact: { name: string; relationship?: string; email?: string; phone?: string },
+  ): Promise<FamilyContact> {
+    const { supabase, userId } = await this.ctx();
+    const row = unwrap(
+      await supabase
+        .from('athlete_family_contacts')
+        .insert({
+          athlete_id: athleteId,
+          name: contact.name,
+          relationship: contact.relationship || null,
+          email: contact.email || null,
+          phone: contact.phone || null,
+          created_by: userId,
+        })
+        .select()
+        .single(),
+    ) as Row;
+    return this.rowToFamilyContact(row);
+  }
+
+  async removeFamilyContact(id: string): Promise<void> {
+    const { supabase } = await this.ctx();
+    unwrap(await supabase.from('athlete_family_contacts').delete().eq('id', id));
+  }
+
   async getGuardianRosters(): Promise<import('../types').GuardianRosterAthlete[]> {
     const { supabase, userId } = await this.userCtx();
     if (!userId) return [];
