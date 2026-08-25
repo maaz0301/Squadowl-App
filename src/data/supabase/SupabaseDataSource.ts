@@ -538,37 +538,52 @@ export class SupabaseDataSource implements DataSource {
     const pageSize = 1000;
 
     const fetchPage = async (offset: number, width: number) => {
-      const { data, error, count } = await supabase
+      const { data, error } = await supabase
         .from(table)
-        .select(select, { count: 'exact' })
+        .select(select)
+        // LIMIT/OFFSET with no ORDER BY lets Postgres hand back rows in whatever
+        // order it likes, so pages could overlap or skip rows. The primary key is
+        // unique, which makes the paging deterministic.
+        .order('id')
         .in(column, ids)
         .range(offset, offset + width - 1);
       if (error) throw new Error(error.message);
-      return { rows: (data ?? []) as Row[], count };
+      return (data ?? []) as Row[];
     };
 
     const first = await fetchPage(0, pageSize);
-    const total = first.count ?? first.rows.length;
-    // How many rows the server actually hands back per request, which can be
-    // lower than what we asked for (`db-max-rows`). Striding by the requested
-    // size instead would skip everything between the cap and the next offset.
-    const stride = first.rows.length;
-    if (stride === 0 || total <= stride) return first.rows;
+    // A page shorter than requested means that's everything.
+    if (first.length < pageSize) return first;
 
-    const offsets: number[] = [];
-    for (let offset = stride; offset < total; offset += stride) offsets.push(offset);
-    const rest = await mapPool(offsets, 5, (offset) => fetchPage(offset, stride));
-
-    const out = first.rows.concat(...rest.map((p) => p.rows));
-    // The pages above assume a consistent cap. If the server was stingier on
-    // some page we'd be short, so finish sequentially rather than silently
-    // returning a partial roster.
-    while (out.length < total) {
-      const page = await fetchPage(out.length, stride);
-      if (page.rows.length === 0) break;
-      out.push(...page.rows);
+    // Deliberately never asks PostgREST for `count: 'exact'`: that forces a
+    // second full scan of the matching set, re-checking this table's RLS
+    // predicate (`can_access_tryout` and, via the embedded athlete,
+    // `can_access_athlete` — each a security-definer function call) for every
+    // row, not just the page's worth. On a large roster that scan alone costs
+    // as much as the page fetch and was what pushed requests past the API's
+    // statement timeout. Instead, page completeness is inferred from a short
+    // (or empty) response, which only ever costs that page's own rows.
+    //
+    // The server may also cap rows below what we asked for (`db-max-rows`);
+    // the first page's actual length is the real per-request cap, so stride
+    // by that instead of `pageSize` or later pages would skip rows.
+    const stride = first.length;
+    const out = first;
+    let offset = stride;
+    for (;;) {
+      const batch = await mapPool(
+        Array.from({ length: 5 }, (_, i) => offset + i * stride),
+        5,
+        (o) => fetchPage(o, stride),
+      );
+      let reachedEnd = false;
+      for (const page of batch) {
+        out.push(...page);
+        if (page.length < stride) reachedEnd = true;
+      }
+      if (reachedEnd) return out;
+      offset += 5 * stride;
     }
-    return out;
   }
 
   private async assembleTryouts(tryoutRows: Row[]): Promise<Tryout[]> {
