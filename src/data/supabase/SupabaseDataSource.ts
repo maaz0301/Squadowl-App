@@ -157,6 +157,22 @@ const DUMMY_CHUNK = {
  */
 const TEAM_ROSTER_PAGE = 200;
 
+/** Default rows per request for fetchAllByIn — PostgREST's own row cap. */
+const FETCH_PAGE_SIZE = 1000;
+
+/**
+ * Rows per request for the reads that embed `athletes(*)` or
+ * `evaluation_scores(...)`. Same reasoning as TEAM_ROSTER_PAGE: the embed makes
+ * PostgREST evaluate the child table's read policy once per row, so a
+ * full-size page costs far more than its row count suggests. Keyset paging
+ * (see fetchAllByIn) keeps the cost flat across pages; these keep the cost of
+ * any single page bounded. Mirrors the web app's PARTICIPANTS_PAGE /
+ * SEASON_ROSTER_PAGE / EVALUATIONS_PAGE.
+ */
+const PARTICIPANTS_PAGE = 200;
+const SEASON_ROSTER_PAGE = 200;
+const EVALUATIONS_PAGE = 300;
+
 const REGISTRATION_CHUNK = 20;
 
 /**
@@ -519,70 +535,48 @@ export class SupabaseDataSource implements DataSource {
   }
 
   /**
+   * Every row of `table` whose `column` is one of `ids`, read in pages.
+   *
    * PostgREST caps any single response at the project's default row limit
    * (commonly 1000), silently truncating rather than erroring — so a query
    * spanning tryouts whose combined rows exceed that cap would otherwise
    * return an incomplete (or, for later tryouts in the batch, empty) result.
-   * Pages through with `.range()` until the server's own exact count is
-   * satisfied. A 1000-player tryout with ~10 evaluations each needs ~10 pages
-   * just for `evaluations` — fetched one at a time this was ~10 sequential
-   * round trips (the dominant cost of the roster screen sitting on "Loading
-   * roster..." after a large bulk add). The first page still has to go alone
-   * (it's the only way to learn the total), but every page after that is
-   * independent — same `range()`, no shared state — so they're fetched
-   * concurrently instead.
+   *
+   * Paged by **keyset** (`id > last id seen`), not OFFSET. OFFSET makes every
+   * later page re-scan and re-authorize everything it has already skipped:
+   * the row-level policy runs on candidate rows *before* LIMIT applies, so
+   * `offset=5000` pays for 5000 rows' worth of `can_access_*` before
+   * returning one. That is what produced 500s on the roster read once an
+   * account had a few thousand participants — and shrinking the page alone
+   * cannot fix it, only push the crossover point further out. Keyset paging
+   * makes every page cost the same as the first regardless of how deep it is.
+   *
+   * `id` is the primary key, so ordering by it is total — pages can neither
+   * overlap nor skip rows.
    */
-  private async fetchAllByIn(table: string, select: string, column: string, ids: string[]): Promise<Row[]> {
+  private async fetchAllByIn(
+    table: string,
+    select: string,
+    column: string,
+    ids: string[],
+    pageSize = FETCH_PAGE_SIZE,
+  ): Promise<Row[]> {
     if (ids.length === 0) return [];
     const supabase = getSupabase();
-    const pageSize = 1000;
 
-    const fetchPage = async (offset: number, width: number) => {
-      const { data, error } = await supabase
-        .from(table)
-        .select(select)
-        // LIMIT/OFFSET with no ORDER BY lets Postgres hand back rows in whatever
-        // order it likes, so pages could overlap or skip rows. The primary key is
-        // unique, which makes the paging deterministic.
-        .order('id')
-        .in(column, ids)
-        .range(offset, offset + width - 1);
-      if (error) throw new Error(error.message);
-      return (data ?? []) as Row[];
-    };
-
-    const first = await fetchPage(0, pageSize);
-    // A page shorter than requested means that's everything.
-    if (first.length < pageSize) return first;
-
-    // Deliberately never asks PostgREST for `count: 'exact'`: that forces a
-    // second full scan of the matching set, re-checking this table's RLS
-    // predicate (`can_access_tryout` and, via the embedded athlete,
-    // `can_access_athlete` — each a security-definer function call) for every
-    // row, not just the page's worth. On a large roster that scan alone costs
-    // as much as the page fetch and was what pushed requests past the API's
-    // statement timeout. Instead, page completeness is inferred from a short
-    // (or empty) response, which only ever costs that page's own rows.
-    //
-    // The server may also cap rows below what we asked for (`db-max-rows`);
-    // the first page's actual length is the real per-request cap, so stride
-    // by that instead of `pageSize` or later pages would skip rows.
-    const stride = first.length;
-    const out = first;
-    let offset = stride;
+    const out: Row[] = [];
+    let cursor: string | null = null;
     for (;;) {
-      const batch = await mapPool(
-        Array.from({ length: 5 }, (_, i) => offset + i * stride),
-        5,
-        (o) => fetchPage(o, stride),
-      );
-      let reachedEnd = false;
-      for (const page of batch) {
-        out.push(...page);
-        if (page.length < stride) reachedEnd = true;
-      }
-      if (reachedEnd) return out;
-      offset += 5 * stride;
+      let q = supabase.from(table).select(select).in(column, ids).order('id').limit(pageSize);
+      if (cursor !== null) q = q.gt('id', cursor);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+
+      const page = (data ?? []) as Row[];
+      out.push(...page);
+      // A short page means the server had nothing left to give.
+      if (page.length < pageSize) return out;
+      cursor = page[page.length - 1].id as string;
     }
   }
 
@@ -591,9 +585,15 @@ export class SupabaseDataSource implements DataSource {
     const ids = tryoutRows.map((t) => t.id);
 
     const [pRowsAll, aRows, eRows, rRows] = await Promise.all([
-      this.fetchAllByIn('tryout_participants', '*, athletes(*)', 'tryout_id', ids),
+      this.fetchAllByIn('tryout_participants', '*, athletes(*)', 'tryout_id', ids, PARTICIPANTS_PAGE),
       this.fetchAllByIn('tryout_assessors', '*', 'tryout_id', ids),
-      this.fetchAllByIn('evaluations', '*, evaluation_scores(rubric_key, value)', 'tryout_id', ids),
+      this.fetchAllByIn(
+        'evaluations',
+        '*, evaluation_scores(rubric_key, value)',
+        'tryout_id',
+        ids,
+        EVALUATIONS_PAGE,
+      ),
       this.fetchAllByIn('registrations', '*', 'tryout_id', ids),
     ]);
     // Soft-removed players (see deletePlayer) stay in the table so their
@@ -3668,7 +3668,7 @@ export class SupabaseDataSource implements DataSource {
     // is cosmetic (chronological display) — sort client-side after fetching all rows.
     const [eventRowsUnsorted, rosterRows] = await Promise.all([
       this.fetchAllByIn('season_events', '*', 'season_id', ids),
-      this.fetchAllByIn('season_roster', '*, athletes(*)', 'season_id', ids),
+      this.fetchAllByIn('season_roster', '*, athletes(*)', 'season_id', ids, SEASON_ROSTER_PAGE),
     ]);
     const eventRows = [...eventRowsUnsorted].sort((a, b) =>
       String(a.event_date ?? '').localeCompare(String(b.event_date ?? '')),
@@ -4547,6 +4547,7 @@ export class SupabaseDataSource implements DataSource {
       '*, evaluation_scores(rubric_key, value)',
       'participant_id',
       participantIds,
+      EVALUATIONS_PAGE,
     );
     const evalsByParticipant = new Map<string, Evaluation[]>();
     for (const row of evalRows) {
