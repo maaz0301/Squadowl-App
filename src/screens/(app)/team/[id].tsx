@@ -955,7 +955,12 @@ export default function TeamDetailScreen() {
 
                     {expanded ? (
                       <View className="rounded-md border overflow-hidden" style={{ borderColor: colors.border }}>
-                        {rsvp.rows.length === 0 ? (
+                        {rsvp.rows.length === 0 && ev.availabilityUnavailable ? (
+                          <Text className="text-xs p-3" style={{ color: colors.warning }}>
+                            RSVPs couldn’t be loaded for this event. Everyone invited is still invited —
+                            reload to try again.
+                          </Text>
+                        ) : rsvp.rows.length === 0 ? (
                           <Text className="text-xs p-3" style={{ color: colors.inkMuted }}>
                             Nobody was invited to this event yet.
                           </Text>

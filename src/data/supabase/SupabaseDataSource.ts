@@ -244,6 +244,13 @@ function shardRangesAfter(cursor: string): ShardRange[] {
 const PARTICIPANTS_PAGE = 200;
 const SEASON_ROSTER_PAGE = 200;
 const EVALUATIONS_PAGE = 300;
+// event_availability's read policy re-checks can_access_season per row, so a
+// single unbounded page over a 1000-invite event runs that expensive predicate
+// 1000× in one statement and trips the 8s statement timeout — which is exactly
+// why the RSVPs failed to load (and, before the assemble was made resilient,
+// took the whole schedule down with them). Bounded pages keep each statement
+// cheap, same reasoning as SEASON_ROSTER_PAGE / EVALUATIONS_PAGE.
+const AVAILABILITY_PAGE = 200;
 
 /**
  * Exactly the columns rowToPlayer / rowToEval read, rather than `*` plus a
@@ -4321,7 +4328,7 @@ export class SupabaseDataSource implements DataSource {
       // Team screen for big rosters — while the lighter listSeasons() still
       // showed the event. Mirrors the web app's graceful degradation.
       const [availResult, inviteResult] = await Promise.allSettled([
-        this.fetchAllByIn('event_availability', '*', 'season_event_id', eventIds),
+        this.fetchAllByIn('event_availability', '*', 'season_event_id', eventIds, AVAILABILITY_PAGE),
         this.fetchAllByIn('portal_invites', '*', 'season_id', ids),
       ]);
       if (availResult.status === 'fulfilled') {
