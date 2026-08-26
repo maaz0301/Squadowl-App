@@ -665,6 +665,17 @@ export default function TeamDetailScreen() {
         }
       />
 
+      <View style={{ padding: 8, backgroundColor: 'yellow', marginBottom: 8, borderRadius: 4 }}>
+        <Text style={{ color: 'black', fontSize: 10 }}>
+          DEBUG: teamSeasonId={teamSeasonId ?? 'null'} | 
+          seasonsCount={seasonsQuery.data?.length ?? 'null'} | 
+          listEvents={seasonsQuery.data?.find((s) => s.teamId === id)?.events?.length ?? 'null'} | 
+          seasonQueryLoading={seasonQuery.isLoading ? 'yes' : 'no'} | 
+          seasonQueryEvents={teamSeason?.events?.length ?? 'null'} | 
+          allTeamEvents={allTeamEvents.length}
+        </Text>
+      </View>
+
       <Tabs
         tabs={[
           { key: 'schedule', label: 'Schedule', badge: allTeamEvents.length || undefined },
