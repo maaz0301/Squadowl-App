@@ -3,12 +3,13 @@ import { useNavigation } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, EmptyState, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
-import { useRestoreTryoutMutation, useTryoutsQuery } from '@/features/queries';
+import { useRestoreTryoutMutation, useTryoutSummariesQuery } from '@/features/queries';
 
 export default function ArchivedAssessmentsScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
-  const tryoutsQuery = useTryoutsQuery(true);
+  // Card fields only — see useTryoutSummariesQuery.
+  const tryoutsQuery = useTryoutSummariesQuery(true);
   const restore = useRestoreTryoutMutation();
 
   if (tryoutsQuery.isLoading) return <LoadingState message="Loading archived..." />;
@@ -45,7 +46,7 @@ export default function ArchivedAssessmentsScreen() {
                 {item.name}
               </Text>
               <Text className="text-sm mt-1" style={{ color: colors.inkMuted }}>
-                {item.sport} · {item.roster.length} players
+                {item.sport} · {item.playerCount} players
               </Text>
             </Pressable>
             <View className="flex-row gap-2 mt-2">

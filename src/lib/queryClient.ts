@@ -34,8 +34,22 @@ export const queryKeys = {
   teamManagers: (teamId?: string) =>
     teamId ? (['teamManagers', teamId] as const) : (['teamManagers'] as const),
   tryouts: (archived?: boolean) => ['tryouts', { archived }] as const,
+  /**
+   * The light list-screen read (listTryoutSummaries). Keyed as a *superset* of
+   * `tryouts(archived)` on purpose: react-query matches object segments
+   * partially, so every existing `invalidateQueries({ queryKey: tryouts(x) })`
+   * refreshes the summaries too and no write path had to learn a second key.
+   */
+  tryoutSummaries: (archived?: boolean) => ['tryouts', { archived, view: 'summary' }] as const,
   assignedTryouts: ['tryouts', 'assigned'] as const,
+  /** Same superset trick as tryoutSummaries, against `assignedTryouts`. */
+  assignedTryoutSummaries: ['tryouts', 'assigned', { view: 'summary' }] as const,
   tryout: (id: string) => ['tryout', id] as const,
+  /** listAssessmentAthletes — the flat (athlete, assessment) candidate list behind
+   * a team's "Add Players from Assessments" picker. Deliberately its own key
+   * rather than a slice of `tryouts`: it comes back shaped as AssessmentAthlete[]
+   * rows, not Tryout[], so it can't share a cache entry with either. */
+  assessmentAthletes: ['assessmentAthletes'] as const,
   registrations: (tryoutId: string) => ['registrations', tryoutId] as const,
   results: (tryoutId: string) => ['results', tryoutId] as const,
   seasons: ['seasons'] as const,

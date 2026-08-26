@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { Button, Card, Header, Screen } from '@/components/ui';
-import { useCreateTeamMutation, useCreateTryoutMutation, useTeamsQuery, useTryoutsQuery, useUpdateProfileMutation } from '@/features/queries';
+import { useCreateTeamMutation, useCreateTryoutMutation, useTeamsQuery, useTryoutSummariesQuery, useUpdateProfileMutation } from '@/features/queries';
 import { useAuthStore, useUser } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { useOnboardingStore } from '@/state/uiStore';
@@ -63,7 +63,8 @@ export default function WizardScreen() {
   const updateProfile = updateProfileMutation.mutateAsync;
   const createTeam = useCreateTeamMutation();
   const createTryout = useCreateTryoutMutation();
-  const tryoutsQuery = useTryoutsQuery(false);
+  // Only the first assessment's id is read from this — see useTryoutSummariesQuery.
+  const tryoutsQuery = useTryoutSummariesQuery(false);
   const teamsQuery = useTeamsQuery();
   const setCurrentTryout = useSessionStore((s) => s.setCurrentTryout);
 

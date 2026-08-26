@@ -5,6 +5,7 @@ import type {
   AdminUserRow,
   AiCompareSummary,
   AiPlayerSummary,
+  AssessmentAthlete,
   AuthSession,
   CreateAssessmentForm,
   ConnectAccountStatus,
@@ -34,6 +35,7 @@ import type {
   TeamBuilderResult,
   TeamMessage,
   Tryout,
+  TryoutSummary,
   UserProfile,
 } from './types';
 import type { TeamBuilderConfig, TeamBuilderState } from './teamBuilder';
@@ -83,8 +85,21 @@ export interface DataSource {
 
   // Tryouts
   listTryouts(includeArchived?: boolean): Promise<Tryout[]>;
+  /**
+   * The list screens' read — see TryoutSummary. Same tryouts as listTryouts(),
+   * without the rosters, evaluations and registrations no card ever shows.
+   */
+  listTryoutSummaries(includeArchived?: boolean): Promise<TryoutSummary[]>;
+  /**
+   * Every athlete on any assessment roster, one row per (athlete, assessment) —
+   * the candidate pool for a team's "Add Players from Assessments" picker. See
+   * listTryoutSummaries(): same reasoning, one level further down.
+   */
+  listAssessmentAthletes(): Promise<AssessmentAthlete[]>;
   /** Tryouts the current user is invited to as an assessor (not owned by their account). */
   listAssignedTryouts(): Promise<Tryout[]>;
+  /** listAssignedTryouts() in the light shape — see listTryoutSummaries(). */
+  listAssignedTryoutSummaries(): Promise<TryoutSummary[]>;
   acceptAssignedTryout(tryoutId: string): Promise<void>;
   rejectAssignedTryout(tryoutId: string): Promise<void>;
   getTryout(id: string): Promise<Tryout | null>;
@@ -158,7 +173,16 @@ export interface DataSource {
   createSeason(form: CreateSeasonForm): Promise<Season>;
   updateSeason(id: string, updates: Partial<Season>): Promise<Season>;
   deleteSeason(id: string): Promise<void>;
-  addSeasonEvent(seasonId: string, form: CreateEventForm): Promise<SeasonEvent>;
+  /**
+   * `onProgress` reports the per-player invite writes — everyone on the roster
+   * gets an availability row, so on a big team this is the slow part of saving
+   * an event and the UI shows a progress bar against it.
+   */
+  addSeasonEvent(
+    seasonId: string,
+    form: CreateEventForm,
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<SeasonEvent>;
   updateSeasonEvent(seasonId: string, eventId: string, updates: Partial<SeasonEvent>): Promise<SeasonEvent>;
   deleteSeasonEvent(seasonId: string, eventId: string): Promise<void>;
   sendPortalInvite(seasonId: string, playerId: string, email: string): Promise<void>;
@@ -232,6 +256,7 @@ export interface DataSource {
   addSeasonPlayers(
     seasonId: string,
     players: { athleteId: string; jersey?: string; playerEmail?: string }[],
+    onProgress?: (done: number, total: number) => void,
   ): Promise<import('./types').SeasonPlayer[]>;
   deleteSeasonPlayer(seasonId: string, playerId: string): Promise<void>;
   importSeasonPlayersFromTeam(seasonId: string): Promise<import('./types').SeasonPlayer[]>;

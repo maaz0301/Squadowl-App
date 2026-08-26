@@ -51,6 +51,7 @@ const PLAN_REQUIRED: Partial<Record<keyof ReturnType<typeof getPlanDefinition>['
   seasonHub: 'coach',
   guardianPortal: 'coach',
   enterprise: 'club',
+  teamManagers: 'coach_plus',
   qrRegistration: 'free',
   payments: 'coach',
 };

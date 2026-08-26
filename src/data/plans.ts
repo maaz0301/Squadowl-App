@@ -45,6 +45,8 @@ export interface PlanDefinition {
     seasonHub: boolean;
     guardianPortal: boolean;
     enterprise: boolean;
+    /** Delegate a team to another coach/manager by email (Coach+ and up). */
+    teamManagers: boolean;
     qrRegistration: boolean;
     /** Stripe payment collection (+ 0.5% TryoutHQ platform fee) for this tier. */
     payments: boolean;
@@ -91,6 +93,7 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
       seasonHub: false,
       guardianPortal: false,
       enterprise: false,
+      teamManagers: false,
       qrRegistration: true,
       payments: false,
     },
@@ -127,6 +130,7 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
       seasonHub: true,
       guardianPortal: true,
       enterprise: false,
+      teamManagers: false,
       qrRegistration: true,
       payments: true,
     },
@@ -165,6 +169,7 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
       seasonHub: true,
       guardianPortal: true,
       enterprise: false,
+      teamManagers: true,
       qrRegistration: true,
       payments: true,
     },
@@ -210,6 +215,7 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
       seasonHub: true,
       guardianPortal: true,
       enterprise: true,
+      teamManagers: true,
       qrRegistration: true,
       payments: true,
     },

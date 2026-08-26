@@ -26,7 +26,7 @@ import {
   usePlayerProfileQuery,
   useRejectAthleteShareMutation,
   useShareCommentsQuery,
-  useTryoutsQuery,
+  useTryoutSummariesQuery,
 } from '@/features/queries';
 import type { AthleteShareStatus } from '@/data/types';
 
@@ -68,7 +68,8 @@ export default function ShareDetailScreen() {
 
   const shareQuery = useAthleteShareQuery(shareId);
   const commentsQuery = useShareCommentsQuery(shareId);
-  const tryoutsQuery = useTryoutsQuery();
+  // The picker below shows names only — see useTryoutSummariesQuery.
+  const tryoutsQuery = useTryoutSummariesQuery();
   const addCommentMutation = useAddShareCommentMutation();
   const acceptMutation = useAcceptAthleteShareMutation();
   const rejectMutation = useRejectAthleteShareMutation();

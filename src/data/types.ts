@@ -255,6 +255,57 @@ export const TryoutSchema = z.object({
 
 export type Tryout = z.infer<typeof TryoutSchema>;
 
+/**
+ * A tryout as the *list* screens need it.
+ *
+ * Everything a card renders — a name, a sport, a date, a headcount — and
+ * nothing else. The full `Tryout` drags along every player, every evaluation
+ * with its scores, and every registration, so the cost of listing assessments
+ * scaled with how much scoring an account had done rather than with how many
+ * assessments it had. Screens that genuinely need rosters or evaluations
+ * (search, roster library, combine, the enterprise metrics) keep using
+ * `Tryout`. Mirrors the web app's type of the same name.
+ */
+/**
+ * One athlete's appearance on one assessment's roster — the candidate list
+ * behind a team's "Add Players from Assessments" picker.
+ *
+ * Deliberately not a Tryout[]: that picker used to run off the full
+ * listTryouts() read, which drags every evaluation, every score and every
+ * registration in the account across the wire to show a list of names.
+ */
+export interface AssessmentAthlete {
+  athleteId: string;
+  first: string;
+  last: string;
+  jersey?: string;
+  pos?: string;
+  yearOfBirth?: string;
+  guardianEmail?: string;
+  tryoutId: string;
+  tryoutName: string;
+}
+
+export interface TryoutSummary {
+  id: string;
+  name: string;
+  teamId?: string;
+  seasonId?: string;
+  createdAt: number;
+  updatedAt: number;
+  eventType: EventType;
+  tryoutDate?: string;
+  startTime?: string;
+  rink?: string;
+  sport: Sport;
+  sportOther?: string;
+  /** Small enough to come along for free, and the assigned list needs it. */
+  assessors: Assessor[];
+  /** Active roster size — soft-removed participants excluded, as elsewhere. */
+  playerCount: number;
+  archived: boolean;
+}
+
 export const TeamSchema = z.object({
   id: z.string(),
   name: z.string(),

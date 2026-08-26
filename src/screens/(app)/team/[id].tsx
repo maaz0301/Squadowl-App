@@ -8,7 +8,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
-import { useTeamsQuery, useTryoutsQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useSeasonsQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation } from '@/features/queries';
+import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useSeasonsQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit } from '@/data/plans';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
@@ -52,7 +52,10 @@ export default function TeamDetailScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const teamsQuery = useTeamsQuery();
-  const tryoutsQuery = useTryoutsQuery(false);
+  // The badges, tab counts, Assessments tab and Attach modal only need names
+  // and headcounts, so they run off this light read — see
+  // useTryoutSummariesQuery.
+  const tryoutsQuery = useTryoutSummariesQuery(false);
   const qc = useQueryClient();
   const updateTeam = useUpdateTeamMutation();
   const deleteTeam = useDeleteTeamMutation();
@@ -69,6 +72,13 @@ export default function TeamDetailScreen() {
   const [feeInput, setFeeInput] = useState('');
   const [showAttachModal, setShowAttachModal] = useState(false);
   const [showAddPlayers, setShowAddPlayers] = useState(false);
+  // Full assessment reads (every roster entry joined to its athlete, every
+  // evaluation, score and registration for the whole account) are the heaviest
+  // query in the app — see listTryouts(). The add-players candidate picker only
+  // ever needed the athlete fields, so it reads listAssessmentAthletes()
+  // instead — deferred until the picker is actually open rather than paid for
+  // on every visit to this screen.
+  const assessmentAthletesQuery = useAssessmentAthletesQuery(showAddPlayers);
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
   // TEMP DIAGNOSTIC: logs tap-to-visible time for the Add Players modal so we
   // can see whether the delay is JS-side (state/render) or native/animation.
@@ -142,10 +152,12 @@ export default function TeamDetailScreen() {
   // Keeps RSVPs/event edits in sync with a guardian's portal without the coach
   // having to navigate away and back for the cache to refresh.
   useSeasonRealtimeSync(teamSeasonId);
+  const [saveEventProgress, setSaveEventProgress] = useState<{ done: number; total: number } | null>(null);
   const addEvent = useAddTeamEventMutation(
     id,
     teamsQuery.data?.find((t) => t.id === id)?.name ?? 'Team',
     teamSeasonId,
+    (done, total) => setSaveEventProgress({ done, total }),
   );
   const updateEvent = useUpdateSeasonEventMutation(teamSeasonId ?? '');
   const deleteEvent = useDeleteSeasonEventMutation(teamSeasonId ?? '');
@@ -188,37 +200,35 @@ export default function TeamDetailScreen() {
         alreadyOnTeam: boolean;
       }
     >();
-    for (const t of tryoutsQuery.data ?? []) {
-      for (const p of t.roster ?? []) {
-        const athleteId = p.athleteId;
-        if (!athleteId) continue;
-        const existing = candidatesByAthlete.get(athleteId);
-        if (existing) {
-          existing.tryoutIds.add(t.id);
-          existing.tryoutNames.add(t.name);
-          continue;
-        }
-        candidatesByAthlete.set(athleteId, {
-          athleteId,
-          first: p.first,
-          last: p.last,
-          jersey: p.jersey,
-          pos: p.pos,
-          yearOfBirth: p.yearOfBirth,
-          guardianEmail: p.guardianEmail,
-          tryoutId: t.id,
-          tryoutName: t.name,
-          tryoutIds: new Set([t.id]),
-          tryoutNames: new Set([t.name]),
-          alreadyOnTeam: onRosterIds.has(athleteId),
-        });
+    for (const p of assessmentAthletesQuery.data ?? []) {
+      const athleteId = p.athleteId;
+      if (!athleteId) continue;
+      const existing = candidatesByAthlete.get(athleteId);
+      if (existing) {
+        existing.tryoutIds.add(p.tryoutId);
+        existing.tryoutNames.add(p.tryoutName);
+        continue;
       }
+      candidatesByAthlete.set(athleteId, {
+        athleteId,
+        first: p.first,
+        last: p.last,
+        jersey: p.jersey,
+        pos: p.pos,
+        yearOfBirth: p.yearOfBirth,
+        guardianEmail: p.guardianEmail,
+        tryoutId: p.tryoutId,
+        tryoutName: p.tryoutName,
+        tryoutIds: new Set([p.tryoutId]),
+        tryoutNames: new Set([p.tryoutName]),
+        alreadyOnTeam: onRosterIds.has(athleteId),
+      });
     }
     const list = [...candidatesByAthlete.values()];
     // Already-on-team entries sink to the bottom so the actionable ones lead.
     list.sort((a, b) => Number(a.alreadyOnTeam) - Number(b.alreadyOnTeam));
     return list;
-  }, [tryoutsQuery.data, rosterQuery.data]);
+  }, [assessmentAthletesQuery.data, rosterQuery.data]);
 
   // Same reasoning as `candidates` above: these are recomputed on every render
   // of the screen (RSVP taps, unrelated form edits, etc.), not just when their
@@ -382,6 +392,23 @@ export default function TeamDetailScreen() {
     }
   };
 
+  const confirmRemoveAssessmentFromTeam = (tryoutId: string, label: string) => {
+    Alert.alert('Remove Assessment', `Remove "${label}" from ${team.name}? The assessment itself is kept — this only unlinks it from this team.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await updateTryout.mutateAsync({ id: tryoutId, updates: { teamId: '' } });
+          } catch (e: any) {
+            Alert.alert('Error', e?.message || 'Could not remove this assessment from the team.');
+          }
+        },
+      },
+    ]);
+  };
+
   const confirmRemovePlayer = (athleteId: string, label: string) => {
     Alert.alert('Remove Player', `Remove ${label} from ${team.name}?`, [
       { text: 'Cancel', style: 'cancel' },
@@ -394,9 +421,11 @@ export default function TeamDetailScreen() {
   };
 
   const teamSeason = seasonQuery.data;
-  const upcomingEvents = [...(teamSeason?.events ?? [])]
-    .filter((e) => e.date >= new Date().toISOString().split('T')[0])
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const allTeamEvents = [...(teamSeason?.events ?? [])].sort((a, b) => a.date.localeCompare(b.date));
+  const upcomingEvents = allTeamEvents.filter((e) => (e.endDate || e.date) >= todayStr);
+  const pastEvents = allTeamEvents.filter((e) => (e.endDate || e.date) < todayStr);
 
   // Availability is stored per invited season-roster player; the coach sees it
   // as a Yes/Maybe/No tally that expands into the actual names.
@@ -483,12 +512,15 @@ export default function TeamDetailScreen() {
             },
           });
         } else {
+          setSaveEventProgress(null);
           await addEvent.mutateAsync(data);
         }
         setShowAddEvent(false);
         setEditingEventId(null);
       } catch (e: any) {
         alertMsg('Error', e?.message || 'Could not save the event.');
+      } finally {
+        setSaveEventProgress(null);
       }
     },
     (errors) => {
@@ -635,7 +667,7 @@ export default function TeamDetailScreen() {
 
       <Tabs
         tabs={[
-          { key: 'schedule', label: 'Schedule', badge: upcomingEvents.length },
+          { key: 'schedule', label: 'Schedule', badge: allTeamEvents.length || undefined },
           { key: 'players', label: 'Players', badge: teamPlayers.length },
           { key: 'assessments', label: 'Assessments', badge: linkedTryouts.length },
           { key: 'settings', label: 'Settings' },
@@ -695,6 +727,12 @@ export default function TeamDetailScreen() {
             data={rosterQuery.isLoading ? [] : filteredTeamPlayers}
             keyExtractor={(p) => p.id}
             extraData={navigatingId}
+            // See the assessment roster's list: cap how much of a large roster
+            // is mounted before the first paint.
+            initialNumToRender={12}
+            maxToRenderPerBatch={12}
+            windowSize={7}
+            removeClippedSubviews
             ListEmptyComponent={
               rosterQuery.isLoading ? (
                 <View className="items-center py-6 gap-2">
@@ -804,13 +842,24 @@ export default function TeamDetailScreen() {
                   <View className="flex-1 pr-2">
                     <Text className="font-bold" style={{ color: colors.ink }}>{t.name}</Text>
                     <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
-                      {t.sport} · {t.eventType} · {t.roster?.length ?? 0} players
+                      {t.sport} · {t.eventType} · {t.playerCount} players
                     </Text>
                   </View>
                   {navigatingId === t.id ? (
                     <ActivityIndicator size="small" color={colors.primary} />
                   ) : (
-                    <Badge label="Open" variant="brand" />
+                    <View className="flex-row items-center gap-1">
+                      {canEditTeam ? (
+                        <Button
+                          label="Remove"
+                          size="sm"
+                          variant="ghost"
+                          loading={updateTryout.isPending && updateTryout.variables?.id === t.id}
+                          onPress={() => confirmRemoveAssessmentFromTeam(t.id, t.name)}
+                        />
+                      ) : null}
+                      <Badge label="Open" variant="brand" />
+                    </View>
                   )}
                 </Card>
               </Pressable>
@@ -836,12 +885,12 @@ export default function TeamDetailScreen() {
               <Button label="+ Game" size="sm" variant="secondary" onPress={() => openEventModal('Game')} />
             </View>
 
-            {seasonsQuery.isLoading || seasonQuery.isLoading ? (
+            {seasonsQuery.isLoading || (teamSeasonId ? seasonQuery.isLoading : false) ? (
               <View className="items-center py-6 gap-2">
                 <ActivityIndicator size="small" color={colors.primary} />
                 <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading events...</Text>
               </View>
-            ) : upcomingEvents.length === 0 ? (
+            ) : allTeamEvents.length === 0 ? (
               <Card className="items-center py-6 gap-1">
                 <Text className="font-bold" style={{ color: colors.ink }}>No upcoming events</Text>
                 <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
@@ -850,7 +899,7 @@ export default function TeamDetailScreen() {
                 </Text>
               </Card>
             ) : (
-              upcomingEvents.map((ev) => {
+              allTeamEvents.map((ev) => {
                 const rsvp = rsvpSummary(ev);
                 const expanded = openRsvpEventId === ev.id;
                 return (
@@ -1088,7 +1137,7 @@ export default function TeamDetailScreen() {
               >
                 <Text className="font-bold" style={{ color: colors.ink }}>{t.name}</Text>
                 <Text className="text-xs mt-1" style={{ color: colors.inkMuted }}>
-                  {isAttaching ? 'Attaching...' : `${t.sport} · ${t.roster.length} players`}
+                  {isAttaching ? 'Attaching...' : `${t.sport} · ${t.playerCount} players`}
                 </Text>
               </Pressable>
               );
@@ -1149,6 +1198,15 @@ export default function TeamDetailScreen() {
                 : 'Adding players...'
             }
           />
+        ) : assessmentAthletesQuery.isLoading ? (
+          // The candidate list's read only starts when this panel opens, so it
+          // has its own wait — without this the picker would flash "no
+          // assessments have players yet" every time before the rosters land.
+          <LoadingState message="Loading players..." />
+        ) : assessmentAthletesQuery.isError ? (
+          <Text className="text-sm py-3" style={{ color: colors.inkMuted }}>
+            Could not load players. Close and reopen to try again.
+          </Text>
         ) : candidates.length === 0 ? (
           <Text className="text-sm py-3" style={{ color: colors.inkMuted }}>
             No assessments have players yet — add players to an assessment roster first.
@@ -1338,6 +1396,31 @@ export default function TeamDetailScreen() {
               Everyone on the roster is invited by default.
             </Text>
           )}
+          {addEvent.isPending && saveEventProgress && saveEventProgress.total > 0 ? (
+            <View style={{ gap: 4 }}>
+              <View
+                style={{
+                  width: '100%',
+                  height: 8,
+                  borderRadius: 999,
+                  overflow: 'hidden',
+                  backgroundColor: colors.tile,
+                }}
+              >
+                <View
+                  style={{
+                    width: `${Math.min(100, Math.max(4, Math.round((saveEventProgress.done / saveEventProgress.total) * 100)))}%`,
+                    height: '100%',
+                    borderRadius: 999,
+                    backgroundColor: colors.primary,
+                  }}
+                />
+              </View>
+              <Text className="text-xs text-center" style={{ color: colors.inkMuted }}>
+                Inviting {saveEventProgress.done} of {saveEventProgress.total} players...
+              </Text>
+            </View>
+          ) : null}
           <Button
             label={editingEventId ? 'Update Event' : 'Save Event'}
             onPress={submitEvent}

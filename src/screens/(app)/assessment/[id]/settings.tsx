@@ -20,7 +20,7 @@ import {
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import {
   useTryoutQuery,
-  useTryoutsQuery,
+  useTryoutSummariesQuery,
   useUpdateTryoutMutation,
   useArchiveTryoutMutation,
   useDeleteTryoutMutation,
@@ -42,7 +42,10 @@ export default function SettingsScreen() {
   const user = useUser();
   const welcomedRef = useRef(false);
   const tryoutQuery = useTryoutQuery(id);
-  const tryoutsQuery = useTryoutsQuery(false);
+  // Only `.length` is read from this, for the plan-limit check — the full
+  // read pulled every roster, evaluation and registration in the account to
+  // get a number. See useTryoutSummariesQuery.
+  const tryoutsQuery = useTryoutSummariesQuery(false);
   const updateTryout = useUpdateTryoutMutation();
   const archiveTryout = useArchiveTryoutMutation();
   const deleteTryout = useDeleteTryoutMutation();

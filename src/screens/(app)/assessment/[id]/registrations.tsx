@@ -19,7 +19,7 @@ import {
   useRegistrationsQuery,
   useSubmitRegistrationMutation,
   useTryoutQuery,
-  useTryoutsQuery,
+  useTryoutSummariesQuery,
 } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { useUser } from '@/state/authStore';
@@ -41,7 +41,9 @@ export default function RegistrationsScreen() {
   const tryoutQuery = useTryoutQuery(id);
   const regsQuery = useRegistrationsQuery(id!);
   const ensureCloud = useEnsureCloudSessionMutation();
-  const allTryouts = useTryoutsQuery();
+  // Only the destination's headcount is read below, so the light list is
+  // enough — see useTryoutSummariesQuery.
+  const allTryouts = useTryoutSummariesQuery();
   const dismissReg = useDismissRegistrationMutation(id!);
   const submitReg = useSubmitRegistrationMutation(id!);
   const [dummyProgress, setDummyProgress] = useState<{ done: number; total: number } | null>(null);
@@ -138,7 +140,7 @@ export default function RegistrationsScreen() {
     // which may not be the destination. A team roster isn't capped this way.
     if (destination.kind === 'assessment') {
       const target = (allTryouts.data ?? []).find((t) => t.id === destination.id);
-      const existing = target?.roster.length ?? 0;
+      const existing = target?.playerCount ?? 0;
       if (isAtPlayerLimit(user?.planTier ?? 'free', existing + ids.length - 1)) {
         setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'players', 'players'));
         return;

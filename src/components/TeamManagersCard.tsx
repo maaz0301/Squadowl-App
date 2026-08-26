@@ -12,12 +12,13 @@ import { TEAM_MANAGER_ROLES, type PlanTier, type TeamManagerRole } from '@/data/
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 /**
- * CLUB mode delegation: hand this one team to another coach or manager by
- * email. They get the team, its roster, schedule, and chat — and nothing else
- * on the club's account. The club's own staff keep full access either way,
- * which is why this list never affects the inviter's own rights.
+ * Delegation: hand this one team to another coach or manager by email. They
+ * get the team, its roster, schedule, and chat — and nothing else on the
+ * account. The account's own staff keep full access either way, which is why
+ * this list never affects the inviter's own rights.
  *
- * Gated on `enterprise` (Club tier) to match where the feature was sold.
+ * Gated on `teamManagers` (Coach+ and up) — mirrors the web app's plans.ts,
+ * which sells this starting at Coach+, not just Club/enterprise.
  */
 
 const ROLE_LABEL: Record<TeamManagerRole, string> = {
@@ -93,7 +94,7 @@ export function TeamManagersCard({ teamId, teamName, readOnly, tierOverride }: P
   };
 
   return (
-    <PlanGate feature="enterprise" title="Team Managers" tierOverride={tierOverride}>
+    <PlanGate feature="teamManagers" title="Team Managers" tierOverride={tierOverride}>
       <Card className="gap-3">
         <View>
           <Text className="font-display font-bold text-base" style={{ color: colors.ink }}>

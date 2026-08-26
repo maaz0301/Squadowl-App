@@ -12,6 +12,7 @@ import { Button, Card, Chip, ErrorState, Header, Input, LoadingState, Screen, Av
 import { canUseFeature, isAtTeamLimit } from '@/data/plans';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import type { DummyTeamOptions } from '@/data/testDataGenerator';
+import { TEAM_MANAGER_ROLES, type TeamManagerRole } from '@/data/types';
 import { getDataSource } from '@/data';
 import { queryKeys } from '@/lib/queryClient';
 import {
@@ -53,6 +54,8 @@ export default function NewTeamScreen() {
   const [brandColor, setBrandColor] = useState<string | null>(null);
   const [collectsFees, setCollectsFees] = useState(false);
   const [feeInput, setFeeInput] = useState('');
+  const [managerEmail, setManagerEmail] = useState('');
+  const [managerRole, setManagerRole] = useState<TeamManagerRole>('manager');
   const [connecting, setConnecting] = useState(false);
   const qc = useQueryClient();
   const restoreSession = useAuthStore((s) => s.restoreSession);
@@ -63,6 +66,7 @@ export default function NewTeamScreen() {
 
   const isAssociation = canUseFeature(user?.planTier ?? 'free', 'enterprise');
   const canCollectFees = canUseFeature(user?.planTier ?? 'free', 'payments');
+  const canManageTeamCoaches = canUseFeature(user?.planTier ?? 'free', 'teamManagers');
 
   const connectPayouts = async () => {
     try {
@@ -201,7 +205,21 @@ export default function NewTeamScreen() {
       }
     }
 
-    navigation.goBack();
+    // Coach+/Club only: let the same "creating a team" flow hand it straight to
+    // another coach instead of making them find the new team afterward just to
+    // invite someone to it.
+    if (canManageTeamCoaches && managerEmail.trim()) {
+      try {
+        await getDataSource().inviteTeamManager(team.id, managerEmail.trim(), managerRole);
+      } catch (e: any) {
+        showAlert('Invite Error', `The team was created, but inviting ${managerEmail.trim()} failed: ` + e.message);
+      }
+    }
+
+    // Land straight on the new team's own screen instead of back on the list —
+    // a coach who just filled out this form wants to keep going on the team
+    // they made (add players, set up a season), not re-find it in the list.
+    navigation.replace('TeamDetail', { id: team.id });
   });
 
   const runDummy = async (options: DummyTeamOptions) => {
@@ -293,6 +311,38 @@ export default function NewTeamScreen() {
         />
 
         <TeamColorPicker value={brandColor} onChange={setBrandColor} label="Team colour (optional)" />
+
+        {canManageTeamCoaches ? (
+          <View className="gap-2">
+            <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+              Invite a coach or manager (optional)
+            </Text>
+            <Text className="text-xs" style={{ color: colors.inkMuted }}>
+              Give them this team's roster, schedule, and chat as soon as it's created — nothing else on
+              your account. If they don't have a TryoutHQ account yet, one is created and their sign-in
+              details are emailed to them.
+            </Text>
+            <Input
+              label="Email address"
+              value={managerEmail}
+              onChangeText={setManagerEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              placeholder="coach@example.com"
+            />
+            <View className="flex-row gap-2">
+              {TEAM_MANAGER_ROLES.map((r) => (
+                <Chip
+                  key={r}
+                  label={r === 'coach' ? 'Coach' : 'Manager'}
+                  active={managerRole === r}
+                  onPress={() => setManagerRole(r)}
+                />
+              ))}
+            </View>
+          </View>
+        ) : null}
+
         {canCollectFees ? (
           <>
             <View className="gap-2">

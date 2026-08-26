@@ -29,7 +29,7 @@ import {
 } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Button, Chip, DateField, TimeField, Input, Modal, Screen, Header, ErrorState, LoadingState } from '@/components/ui';
-import { useCreateTryoutMutation, useTeamsQuery, useTryoutsQuery, useUpdateTryoutMutation } from '@/features/queries';
+import { useCreateTryoutMutation, useTeamsQuery, useTryoutSummariesQuery, useUpdateTryoutMutation } from '@/features/queries';
 import { useSessionStore } from '@/state/sessionStore';
 import { useUser } from '@/state/authStore';
 import { isAtAssessmentLimit } from '@/data/plans';
@@ -52,7 +52,10 @@ export default function NewAssessmentScreen() {
   const createTryout = useCreateTryoutMutation();
   const setCurrentTryout = useSessionStore((s) => s.setCurrentTryout);
   const teamsQuery = useTeamsQuery();
-  const tryoutsQuery = useTryoutsQuery(false);
+  // Only `.length` is read from this, for the plan-limit check — the full
+  // read pulled every roster, evaluation and registration in the account to
+  // get a number. See useTryoutSummariesQuery.
+  const tryoutsQuery = useTryoutSummariesQuery(false);
   const user = useUser();
   const updateTryout = useUpdateTryoutMutation();
   const [limitMsg, setLimitMsg] = useState<string | null>(null);

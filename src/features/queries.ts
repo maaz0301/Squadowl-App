@@ -7,7 +7,9 @@ import {
 import type {
   AddPlayerForm,
   CreateAssessmentForm,
+  Registration,
   RegistrationSubmit,
+  TeamRosterPlayer,
   ScoreForm,
   Team,
   Tryout,
@@ -64,6 +66,12 @@ export function useTeamRosterQuery(teamId: string | undefined) {
     queryKey: teamRosterKey(teamId ?? ''),
     queryFn: () => getDataSource().listTeamRoster(teamId!),
     enabled: !!teamId,
+    // Same reasoning as useTryoutQuery's gcTime: a roster read is several
+    // round trips plus a per-athlete fee lookup, so dropping the entry after
+    // the 5-minute default means stepping out of a team and back in lands on a
+    // blocking spinner instead of the list. Held long enough that the return
+    // trip renders from cache and refetches quietly underneath.
+    gcTime: 30 * 60 * 1000,
   });
 }
 
@@ -100,7 +108,18 @@ export function useRemoveTeamRosterPlayerMutation(teamId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (athleteId: string) => getDataSource().removeTeamRosterPlayer(teamId, athleteId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: teamRosterKey(teamId) }),
+    // The row leaves the list the moment the delete lands, instead of staying
+    // on screen until a full roster refetch comes back — on a large roster
+    // that refetch is seconds, and the player the coach just removed sat there
+    // the whole time looking like the tap did nothing. The invalidate still
+    // runs underneath and remains the source of truth; it just no longer gates
+    // what the user sees.
+    onSuccess: (_data, athleteId) => {
+      qc.setQueryData<TeamRosterPlayer[] | undefined>(teamRosterKey(teamId), (old) =>
+        old?.filter((p) => p.athleteId !== athleteId),
+      );
+      qc.invalidateQueries({ queryKey: teamRosterKey(teamId) });
+    },
   });
 }
 
@@ -131,10 +150,45 @@ export function useRejectAssignmentMutation() {
 }
 
 // ---- Tryouts ----
-export function useTryoutsQuery(includeArchived = false) {
+/**
+ * The **full** tryouts, rosters/evaluations/registrations and all. Only for
+ * screens that genuinely read that data — search (it matches player names),
+ * the roster library, combine, and the enterprise metrics. Anything drawing
+ * list cards wants useTryoutSummariesQuery instead.
+ */
+export function useTryoutsQuery(includeArchived = false, enabled = true) {
   return useQuery({
     queryKey: queryKeys.tryouts(includeArchived),
     queryFn: () => getDataSource().listTryouts(includeArchived),
+    enabled,
+  });
+}
+
+/**
+ * The list screens' read — a name, a sport, a date and a headcount per card.
+ *
+ * See TryoutSummary. The key is a superset of `tryouts(includeArchived)`, so
+ * every `invalidateQueries({ queryKey: queryKeys.tryouts(x) })` already in the
+ * write paths refreshes this too — react-query matches object key segments
+ * partially, so no mutation had to learn a second key.
+ */
+export function useTryoutSummariesQuery(includeArchived = false) {
+  return useQuery({
+    queryKey: queryKeys.tryoutSummaries(includeArchived),
+    queryFn: () => getDataSource().listTryoutSummaries(includeArchived),
+  });
+}
+
+/**
+ * The flat (athlete, assessment) candidate list behind a team's "Add Players
+ * from Assessments" picker — see AssessmentAthlete. Enabled on demand since
+ * the picker's modal is the only consumer and needn't be paid for otherwise.
+ */
+export function useAssessmentAthletesQuery(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.assessmentAthletes,
+    queryFn: () => getDataSource().listAssessmentAthletes(),
+    enabled,
   });
 }
 
@@ -142,6 +196,14 @@ export function useAssignedTryoutsQuery() {
   return useQuery({
     queryKey: queryKeys.assignedTryouts,
     queryFn: () => getDataSource().listAssignedTryouts(),
+  });
+}
+
+/** Light counterpart of useAssignedTryoutsQuery — see useTryoutSummariesQuery. */
+export function useAssignedTryoutSummariesQuery() {
+  return useQuery({
+    queryKey: queryKeys.assignedTryoutSummaries,
+    queryFn: () => getDataSource().listAssignedTryoutSummaries(),
   });
 }
 
@@ -371,7 +433,19 @@ export function useDeletePlayerMutation(tryoutId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (playerId: string) => getDataSource().deletePlayer(tryoutId, playerId),
-    onSuccess: () => {
+    onSuccess: (_data, playerId) => {
+      // Drop the player from the cached roster right away — see
+      // useRemoveTeamRosterPlayerMutation. Their evaluations go with them so a
+      // stale eval can't resurrect a row through evalCountByPlayerId.
+      qc.setQueryData<Tryout | undefined>(queryKeys.tryout(tryoutId), (old) =>
+        old
+          ? {
+              ...old,
+              roster: old.roster.filter((p) => p.id !== playerId),
+              evals: old.evals.filter((e) => e.playerId !== playerId),
+            }
+          : old,
+      );
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
       // The deleted player may have come from an accepted athlete share, which
       // deletePlayer flips to 'released' as a side effect — refresh that list too.
@@ -559,7 +633,16 @@ export function useDismissRegistrationMutation(tryoutId: string) {
   return useMutation({
     mutationFn: (registrationId: string) =>
       getDataSource().dismissRegistration(tryoutId, registrationId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.registrations(tryoutId) }),
+    // Same reasoning as useRemoveTeamRosterPlayerMutation: flip the row's
+    // status in place so it leaves the Pending tab immediately. Dismissing is
+    // a status change rather than a delete, so the row is rewritten, not
+    // dropped — it still has to show up under All and Dismissed.
+    onSuccess: (_data, registrationId) => {
+      qc.setQueryData<Registration[] | undefined>(queryKeys.registrations(tryoutId), (old) =>
+        old?.map((r) => (r.id === registrationId ? { ...r, status: 'dismissed' as const } : r)),
+      );
+      qc.invalidateQueries({ queryKey: queryKeys.registrations(tryoutId) });
+    },
   });
 }
 
@@ -873,6 +956,7 @@ export function useAddTeamEventMutation(
   teamId: string,
   teamName: string,
   seasonId: string | undefined,
+  onProgress?: (done: number, total: number) => void,
 ) {
   const qc = useQueryClient();
   return useMutation({
@@ -891,7 +975,10 @@ export function useAddTeamEventMutation(
       // team after the season existed still gets the event (and their guardian
       // sees it in the portal).
       const roster = await syncSeasonRosterFromTeam(teamId, sid);
-      await getDataSource().addSeasonEvent(sid, { ...form, playerIds: roster.map((p) => p.id) });
+      // addSeasonEvent already chunks the per-player availability write and
+      // reports progress on it — this was going unheard, so a big roster's
+      // "Save Event" sat on a bare spinner with no sense of how long was left.
+      await getDataSource().addSeasonEvent(sid, { ...form, playerIds: roster.map((p) => p.id) }, onProgress);
       return sid;
     },
     onSuccess: (sid) => {

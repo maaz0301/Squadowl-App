@@ -23,8 +23,8 @@ import { useAuthStore, useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import {
   useTeamsQuery,
-  useTryoutsQuery,
-  useAssignedTryoutsQuery,
+  useTryoutSummariesQuery,
+  useAssignedTryoutSummariesQuery,
   useAcceptAssignmentMutation,
   useRejectAssignmentMutation,
   useGuardianRostersQuery,
@@ -88,8 +88,11 @@ export default function DashboardScreen() {
   });
 
   const teamsQuery = useTeamsQuery();
-  const tryoutsQuery = useTryoutsQuery(false);
-  const assignedQuery = useAssignedTryoutsQuery();
+  // Summaries, not full tryouts: these cards show a name, a sport, a date and a
+  // headcount, and the full read drags every roster, evaluation, score and
+  // registration in the account along with it. See useTryoutSummariesQuery.
+  const tryoutsQuery = useTryoutSummariesQuery(false);
+  const assignedQuery = useAssignedTryoutSummariesQuery();
   const guardianQuery = useGuardianRostersQuery();
   const deleteTeam = useDeleteTeamMutation();
   const deleteTryout = useDeleteTryoutMutation();
@@ -322,7 +325,7 @@ export default function DashboardScreen() {
             </View>
             <View className="items-end gap-2">
               <View className="flex-row items-center gap-2">
-                <Badge label={`${item.roster?.length ?? 0} players`} />
+                <Badge label={`${item.playerCount} players`} />
                 {isNavigating || isBusy ? (
                   <ActivityIndicator size="small" color={isBusy ? colors.danger : colors.primary} />
                 ) : (
@@ -538,7 +541,7 @@ export default function DashboardScreen() {
                             {t.name}
                           </Text>
                           <Text className="text-sm mt-1" style={{ color: colors.inkMuted }}>
-                            {t.sport} · {t.roster?.length ?? 0} players
+                            {t.sport} · {t.playerCount} players
                           </Text>
                         </View>
                         <Badge label="Score" variant="brand" />

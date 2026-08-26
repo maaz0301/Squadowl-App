@@ -13,7 +13,6 @@ import {
   useUpdatePasswordMutation,
   useGuardianRostersQuery,
   useTeamsQuery,
-  useTryoutsQuery,
   useSeasonsQuery,
   useUploadCoachPhotoMutation,
 } from '@/features/queries';
@@ -35,7 +34,6 @@ export default function ProfileScreen() {
   const { role, isGuardian } = usePermissions();
   const guardianQuery = useGuardianRostersQuery();
   const teamsQuery = useTeamsQuery();
-  const tryoutsQuery = useTryoutsQuery(false);
   const seasonsQuery = useSeasonsQuery();
 
 

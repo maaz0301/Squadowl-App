@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import { Button, Chip, Modal } from '@/components/ui';
-import { useTeamsQuery, useTryoutsQuery } from '@/features/queries';
+import { useTeamsQuery, useTryoutSummariesQuery } from '@/features/queries';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 export type RosterDestination =
@@ -43,7 +43,8 @@ export function AddToRosterModal({
   const [kind, setKind] = useState<Kind | null>(null);
   const [targetId, setTargetId] = useState<string | null>(null);
 
-  const tryoutsQuery = useTryoutsQuery();
+  // Name plus a headcount hint — see useTryoutSummariesQuery.
+  const tryoutsQuery = useTryoutSummariesQuery();
   const teamsQuery = useTeamsQuery();
 
   // Reopening always starts at the kind choice rather than resurfacing whatever
@@ -60,7 +61,7 @@ export function AddToRosterModal({
       ? (tryoutsQuery.data ?? []).map((t) => ({
           id: t.id,
           name: t.name,
-          hint: t.id === currentTryoutId ? 'Current' : `${t.roster.length} players`,
+          hint: t.id === currentTryoutId ? 'Current' : `${t.playerCount} players`,
         }))
       : kind === 'team'
         ? (teamsQuery.data ?? []).map((t) => ({ id: t.id, name: t.name, hint: t.season ?? '' }))

@@ -233,6 +233,13 @@ export default function RosterScreen() {
         data={filteredRoster}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100, flexGrow: 1 }}
+        // A tryout roster runs to hundreds of players. Without these the list
+        // mounts ten screens' worth of rows before it paints anything, which
+        // reads as the roster still loading well after the data has arrived.
+        initialNumToRender={12}
+        maxToRenderPerBatch={12}
+        windowSize={7}
+        removeClippedSubviews
         ListEmptyComponent={
           rosterPending ? (
             <View className="flex-1 items-center justify-center px-6 gap-3">
