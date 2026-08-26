@@ -583,6 +583,11 @@ export const SeasonEventSchema = z.object({
   location: z.string().optional(),
   notes: z.string().optional(),
   availability: z.record(z.string(), z.enum(['yes', 'maybe', 'no', 'pending'])).optional(),
+  // Set when the season's RSVP/availability read failed (e.g. a statement
+  // timeout on a large roster) but the event itself still loaded. Lets the UI
+  // show the schedule and note that RSVPs couldn't be loaded, instead of the
+  // whole schedule vanishing. Mirrors the web app's SeasonEvent contract.
+  availabilityUnavailable: z.boolean().optional(),
   createdAt: z.number(),
   updatedAt: z.number().optional(),
 });

@@ -4245,7 +4245,11 @@ export class SupabaseDataSource implements DataSource {
   }
 
   // ─── Phase 3: Seasons ───────────────────────────────────────────────────────────
-  private rowToSeasonEvent(ev: Row, availability: Record<string, string>): SeasonEvent {
+  private rowToSeasonEvent(
+    ev: Row,
+    availability: Record<string, string>,
+    availabilityUnavailable = false,
+  ): SeasonEvent {
     return {
       id: ev.id,
       type: EVENT_KIND_FROM_DB[ev.kind] ?? 'Game',
@@ -4257,6 +4261,7 @@ export class SupabaseDataSource implements DataSource {
       location: ev.location ?? undefined,
       notes: ev.notes ?? undefined,
       availability: availability as SeasonEvent['availability'],
+      ...(availabilityUnavailable ? { availabilityUnavailable: true } : {}),
       createdAt: toMs(ev.created_at),
       updatedAt: ev.updated_at ? toMs(ev.updated_at) : undefined,
     };
@@ -4300,12 +4305,36 @@ export class SupabaseDataSource implements DataSource {
 
     let availabilityRows: Row[] = [];
     let inviteRows: Row[] = [];
+    // Set when the availability read fails so the events are still returned with
+    // an "RSVPs couldn't be loaded" flag rather than the whole season throwing.
+    let availabilityFailed = false;
     if (withDetail) {
       const eventIds = eventRows.map((e) => e.id);
-      [availabilityRows, inviteRows] = await Promise.all([
+      // These two reads are the ONLY thing getSeason (withDetail) does that
+      // listSeasons doesn't, and on a large season they're the heaviest part of
+      // the assembly — the availability read in particular can hit the
+      // statement timeout. A failure here must NOT discard the events (the
+      // schedule) themselves: allSettled keeps a slow/failed availability or
+      // invites read from rejecting the whole assemble, so the season still
+      // comes back with its events. Without this, one timed-out availability
+      // read made getSeason() throw and the entire schedule vanished on the
+      // Team screen for big rosters — while the lighter listSeasons() still
+      // showed the event. Mirrors the web app's graceful degradation.
+      const [availResult, inviteResult] = await Promise.allSettled([
         this.fetchAllByIn('event_availability', '*', 'season_event_id', eventIds),
         this.fetchAllByIn('portal_invites', '*', 'season_id', ids),
       ]);
+      if (availResult.status === 'fulfilled') {
+        availabilityRows = availResult.value;
+      } else {
+        availabilityFailed = true;
+        console.warn('Season availability read failed, returning events without RSVPs:', availResult.reason?.message ?? availResult.reason);
+      }
+      if (inviteResult.status === 'fulfilled') {
+        inviteRows = inviteResult.value;
+      } else {
+        console.warn('Season portal-invites read failed, returning roster without invite status:', inviteResult.reason?.message ?? inviteResult.reason);
+      }
     }
 
     const eventsBySeason: Record<string, Row[]> = {};
@@ -4335,7 +4364,7 @@ export class SupabaseDataSource implements DataSource {
       coach: s.coach ?? undefined,
       teamId: s.team_id ?? undefined,
       events: (eventsBySeason[s.id] ?? []).map((ev) =>
-        this.rowToSeasonEvent(ev, availByEvent[ev.id] ?? {}),
+        this.rowToSeasonEvent(ev, availByEvent[ev.id] ?? {}, availabilityFailed),
       ),
       roster: (rosterBySeason[s.id] ?? []).map((r) => this.rowToSeasonPlayer(r, inviteRows)),
       scheduleShareToken: s.schedule_share_token ?? undefined,
