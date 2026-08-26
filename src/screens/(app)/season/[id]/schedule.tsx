@@ -1,24 +1,47 @@
 import { useState, useEffect, useRef } from 'react';
-import { FlatList, Text, View, ScrollView, Pressable } from 'react-native';
+import { FlatList, Text, View, ScrollView, Pressable, Alert, Platform } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm } from '@/data/types';
+import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm, type SeasonEvent } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { TeamBanner } from '@/components/TeamBanner';
 import { useSeasonTeamBrand } from '@/features/useTeamBrand';
 import { Badge, Button, Card, Chip, EmptyState, ErrorState, Input, LoadingState, Modal, Screen, DateField, TimeField, Header } from '@/components/ui';
 import { useSeasonQuery, useAddSeasonEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation } from '@/features/queries';
 import { getDataSource } from '@/data';
-import { Alert, Platform } from 'react-native';
+
+/** Alert.alert is a no-op on react-native-web, so fall back to the DOM dialog. */
+function notify(title: string, message: string) {
+  if (Platform.OS === 'web') alert(`${title}\n\n${message}`);
+  else Alert.alert(title, message);
+}
+
+function confirmAsync(opts: { title: string; message: string; confirmLabel: string; destructive?: boolean }) {
+  return new Promise<boolean>((resolve) => {
+    if (Platform.OS === 'web') {
+      resolve(confirm(`${opts.title}\n\n${opts.message}`));
+      return;
+    }
+    Alert.alert(opts.title, opts.message, [
+      { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+      {
+        text: opts.confirmLabel,
+        style: opts.destructive ? 'destructive' : 'default',
+        onPress: () => resolve(true),
+      },
+    ]);
+  });
+}
 
 export default function SeasonScheduleScreen() {
   const route = useRoute<any>();
   const { id } = route.params || {};
   const colors = useThemeColors();
   const seasonQuery = useSeasonQuery(id);
-  const addEvent = useAddSeasonEventMutation(id!);
+  const [eventProgress, setEventProgress] = useState<{ done: number; total: number } | null>(null);
+  const addEvent = useAddSeasonEventMutation(id!, (done, total) => setEventProgress({ done, total }));
   const updateEvent = useUpdateSeasonEventMutation(id!);
   const deleteEvent = useDeleteSeasonEventMutation(id!);
   const [showAdd, setShowAdd] = useState(false);
@@ -30,18 +53,17 @@ export default function SeasonScheduleScreen() {
     resolver: zodResolver(CreateEventFormSchema),
     defaultValues: { type: 'Practice', title: '', date: '', startTime: '', location: '', playerIds: [] },
   });
+  const eventType = watch('type');
 
   // Called before the loading/error guards below: it's a hook, and skipping it
   // on the loading render would change hook order between renders. It accepts
   // an undefined season and returns the plain theme.
   const { team, brand } = useSeasonTeamBrand(seasonQuery.data);
 
-  if (seasonQuery.isLoading) return <LoadingState message="Loading schedule..." />;
-  if (seasonQuery.isError || !seasonQuery.data) {
-    return <ErrorState message="Could not load schedule." onRetry={() => seasonQuery.refetch()} />;
-  }
+  // Likewise every hook below: the season is undefined on the first render and
+  // the guards return early, so anything hook-shaped has to sit above them or
+  // React sees a different hook count once the query resolves.
   const season = seasonQuery.data;
-  const eventType = watch('type');
 
   useEffect(() => {
     if (showAdd && !editingEventId && season?.roster) {
@@ -51,12 +73,14 @@ export default function SeasonScheduleScreen() {
 
   const openAdd = () => {
     setEditingEventId(null);
+    setEventProgress(null);
     reset({ type: 'Practice', title: '', date: '', startTime: '', endTime: '', location: '', notes: '', playerIds: [] });
     setShowAdd(true);
   };
 
-  const openEdit = (event: import('@/data/types').SeasonEvent) => {
+  const openEdit = (event: SeasonEvent) => {
     setEditingEventId(event.id);
+    setEventProgress(null);
     reset({
       type: event.type,
       title: event.title,
@@ -73,6 +97,7 @@ export default function SeasonScheduleScreen() {
   const closeModal = () => {
     setShowAdd(false);
     setEditingEventId(null);
+    setEventProgress(null);
     reset();
   };
 
@@ -80,7 +105,7 @@ export default function SeasonScheduleScreen() {
   // Events), open that event in the edit modal once, after the season loads.
   const editParamHandled = useRef(false);
   useEffect(() => {
-    if (editParamHandled.current) return;
+    if (editParamHandled.current || !season) return;
     const editId = route.params?.editEventId;
     if (!editId) return;
     const ev = season.events.find((e) => e.id === editId);
@@ -88,7 +113,13 @@ export default function SeasonScheduleScreen() {
       editParamHandled.current = true;
       openEdit(ev);
     }
-  }, [route.params?.editEventId, season.events]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.editEventId, season]);
+
+  if (seasonQuery.isLoading) return <LoadingState message="Loading schedule..." />;
+  if (seasonQuery.isError || !season) {
+    return <ErrorState message="Could not load schedule." onRetry={() => seasonQuery.refetch()} />;
+  }
 
   const onSubmit = handleSubmit(
     async (data) => {
@@ -97,54 +128,62 @@ export default function SeasonScheduleScreen() {
       const [hour, min] = (data.startTime || '00:00').split(':').map(Number);
       const eventDate = new Date(y, m - 1, d, hour, min);
 
-      const now = new Date();
-
-      if (eventDate < now) {
-        setError('date', {
-          type: 'manual',
-          message: 'Event must be scheduled from today onwards.',
-        });
-        const errorMsg = 'Event must be scheduled from today onwards.';
-        if (Platform.OS === 'web') {
-          alert(`Validation Error\n\n${errorMsg}`);
-        } else {
-          Alert.alert('Validation Error', errorMsg);
-        }
+      if (eventDate < new Date()) {
+        const msg = 'Event must be scheduled from today onwards.';
+        setError('date', { type: 'manual', message: msg });
+        notify('Validation Error', msg);
         return;
       }
 
-      if (editingEventId) {
-        await updateEvent.mutateAsync({
-          eventId: editingEventId,
-          updates: {
-            type: data.type,
-            title: data.title,
-            date: data.date,
-            startTime: data.startTime,
-            endTime: data.endTime,
-            location: data.location,
-            notes: data.notes,
-          },
-        });
-      } else {
-        await addEvent.mutateAsync({
-          ...data,
-          playerIds: selectedPlayerIds,
-        });
+      try {
+        if (editingEventId) {
+          await updateEvent.mutateAsync({
+            eventId: editingEventId,
+            updates: {
+              type: data.type,
+              title: data.title,
+              date: data.date,
+              startTime: data.startTime,
+              endTime: data.endTime,
+              location: data.location,
+              notes: data.notes,
+            },
+          });
+        } else {
+          await addEvent.mutateAsync({ ...data, playerIds: selectedPlayerIds });
+        }
+        closeModal();
+      } catch (e) {
+        notify('Error', e instanceof Error ? e.message : 'Could not save the event.');
       }
-      closeModal();
     },
     (errors) => {
       const msg = errors.date?.message || errors.title?.message || 'Please check the required fields and date format.';
-      if (Platform.OS === 'web') {
-        alert(`Validation Error\n\n${msg}`);
-      } else {
-        Alert.alert('Validation Error', msg);
-      }
+      notify('Validation Error', msg);
     }
   );
 
-  const sendReminder = async (event: import('@/data/types').SeasonEvent) => {
+  const sendReminder = async (event: SeasonEvent) => {
+    // Recipients are derived from the RSVP rows, so a failed availability read
+    // would otherwise look like an event with nobody on it and report "no
+    // guardians with emails" — while the invited roster sits there unreminded.
+    if (event.availabilityUnavailable && Object.keys(event.availability ?? {}).length === 0) {
+      notify(
+        'RSVPs Unavailable',
+        "This event's invite list couldn't be loaded, so there's no way to tell who to remind. Reload and try again."
+      );
+      return;
+    }
+    // A partial list can still be reminded — just say so, rather than quietly
+    // skipping the players whose rows never arrived.
+    if (event.availabilityUnavailable) {
+      const proceed = await confirmAsync({
+        title: 'Partial Invite List',
+        message: "Some of this event's RSVPs couldn't be loaded. Remind only the players that did load?",
+        confirmLabel: 'Send Anyway',
+      });
+      if (!proceed) return;
+    }
     try {
       setReminding(event.id);
       const assignedRosterIds = new Set(Object.keys(event.availability || {}));
@@ -154,13 +193,12 @@ export default function SeasonScheduleScreen() {
           .flatMap(p => [p.playerEmail, p.guardianEmail, ...(p.portalInviteEmails ?? [])])
           .filter(Boolean)
       ));
-      
+
       if (emails.length === 0) {
-        if (Platform.OS === 'web') alert('No Emails: There are no guardians with emails in the roster.');
-        else Alert.alert('No Emails', 'There are no guardians with emails in the roster.');
+        notify('No Emails', 'There are no guardians with emails in the roster.');
         return;
       }
-      
+
       let sent = 0;
       for (const email of emails) {
         if (email) {
@@ -171,15 +209,25 @@ export default function SeasonScheduleScreen() {
           sent++;
         }
       }
-      if (Platform.OS === 'web') alert(`Reminders Sent: Successfully sent ${sent} reminder(s).`);
-      else Alert.alert('Reminders Sent', `Successfully sent ${sent} reminder(s).`);
-    } catch (e: any) {
-      if (Platform.OS === 'web') alert(`Error: ${e.message || 'Failed to send reminders.'}`);
-      else Alert.alert('Error', e.message || 'Failed to send reminders.');
+      notify('Reminders Sent', `Successfully sent ${sent} reminder(s).`);
+    } catch (e) {
+      notify('Error', e instanceof Error ? e.message : 'Failed to send reminders.');
     } finally {
       setReminding(null);
     }
   };
+
+  const confirmDeleteEvent = async (eventId: string, label: string) => {
+    const ok = await confirmAsync({
+      title: 'Delete Event',
+      message: `Delete "${label}"?`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (ok) deleteEvent.mutate(eventId);
+  };
+
+  const formBusy = addEvent.isPending || updateEvent.isPending;
 
   return (
     <Screen padded={false} backgroundColor={brand.screenBg}>
@@ -205,10 +253,16 @@ export default function SeasonScheduleScreen() {
               {item.date} · {item.startTime ?? '—'}–{item.endTime ?? '—'}
             </Text>
             {item.location ? <Text style={{ color: colors.inkFaint }}>{item.location}</Text> : null}
-            <View className="flex-row gap-2 mt-2">
+            <View className="flex-row flex-wrap gap-2 mt-2">
               <Button label="Send Reminder" variant="secondary" size="sm" onPress={() => sendReminder(item)} loading={reminding === item.id} />
               <Button label="Edit" variant="secondary" size="sm" onPress={() => openEdit(item)} />
-              <Button label="Delete" variant="ghost" size="sm" onPress={() => deleteEvent.mutate(item.id)} />
+              <Button
+                label="Delete"
+                variant="ghost"
+                size="sm"
+                loading={deleteEvent.isPending && deleteEvent.variables === item.id}
+                onPress={() => confirmDeleteEvent(item.id, item.title)}
+              />
             </View>
           </Card>
         )}
@@ -216,58 +270,84 @@ export default function SeasonScheduleScreen() {
 
       <Modal visible={showAdd} title={editingEventId ? 'Edit Event' : 'Add Event'} onClose={closeModal}>
         <View className="gap-3">
-          <View className="flex-row flex-wrap">
-            {EVENT_KINDS.map((t) => (
-              <Chip key={t} label={t} active={eventType === t} onPress={() => setValue('type', t)} />
-            ))}
+          {/* Freezes the fields while a save is in flight — the submit button
+              stays outside so its spinner and the progress bar below it don't
+              get dimmed along with them. */}
+          <View
+            className="gap-3"
+            style={{ pointerEvents: formBusy ? 'none' : 'auto', opacity: formBusy ? 0.6 : 1 }}
+          >
+            <View className="flex-row flex-wrap">
+              {EVENT_KINDS.map((t) => (
+                <Chip key={t} label={t} active={eventType === t} onPress={() => setValue('type', t)} />
+              ))}
+            </View>
+            <Controller control={control} name="title" render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
+              <Input label="Title" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
+            )} />
+            <Controller control={control} name="date" render={({ field: { onChange, value }, fieldState: { error } }) => (
+              <DateField label="Date" value={value} onChange={onChange} placeholder="Select a date" error={error?.message} disablePast />
+            )} />
+            <Controller control={control} name="startTime" render={({ field: { onChange, value }, fieldState: { error } }) => (
+              <TimeField label="Start Time" value={value} onChange={onChange} placeholder="Select a time" error={error?.message} disablePast dateValue={watch('date')} />
+            )} />
+            <Controller control={control} name="location" render={({ field: { onChange, onBlur, value } }) => (
+              <Input label="Location" onBlur={onBlur} onChangeText={onChange} value={value} />
+            )} />
+            {editingEventId ? null : (
+              <>
+                <Text className="font-bold text-xs uppercase tracking-wider mt-2" style={{ color: colors.inkMuted }}>
+                  Roster Assignment ({selectedPlayerIds.length}/{season.roster.length})
+                </Text>
+                <ScrollView style={{ maxHeight: 150 }} nestedScrollEnabled>
+                  {season.roster.map((player) => {
+                    const isSelected = selectedPlayerIds.includes(player.id);
+                    return (
+                      <Pressable
+                        key={player.id}
+                        onPress={() => {
+                          if (isSelected) {
+                            setSelectedPlayerIds(selectedPlayerIds.filter(pid => pid !== player.id));
+                          } else {
+                            setSelectedPlayerIds([...selectedPlayerIds, player.id]);
+                          }
+                        }}
+                        className="flex-row items-center justify-between py-2 border-b"
+                        style={{ borderColor: colors.border }}
+                      >
+                        <Text style={{ color: colors.ink }}>
+                          {player.firstName} {player.lastName}
+                        </Text>
+                        <Badge
+                          label={isSelected ? 'Selected' : 'Deselected'}
+                          variant={isSelected ? 'success' : 'default'}
+                        />
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            )}
           </View>
-          <Controller control={control} name="title" render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
-            <Input label="Title" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
-          )} />
-          <Controller control={control} name="date" render={({ field: { onChange, value }, fieldState: { error } }) => (
-            <DateField label="Date" value={value} onChange={onChange} placeholder="Select a date" error={error?.message} disablePast />
-          )} />
-          <Controller control={control} name="startTime" render={({ field: { onChange, value }, fieldState: { error } }) => (
-            <TimeField label="Start Time" value={value} onChange={onChange} placeholder="Select a time" error={error?.message} disablePast dateValue={watch('date')} />
-          )} />
-          <Controller control={control} name="location" render={({ field: { onChange, onBlur, value } }) => (
-            <Input label="Location" onBlur={onBlur} onChangeText={onChange} value={value} />
-          )} />
-          {editingEventId ? null : (
-            <>
-              <Text className="font-bold text-xs uppercase tracking-wider mt-2" style={{ color: colors.inkMuted }}>
-                Roster Assignment ({selectedPlayerIds.length}/{season.roster.length})
+
+          {addEvent.isPending && eventProgress && eventProgress.total > 0 ? (
+            <View className="gap-1">
+              <View className="h-2 w-full rounded-full overflow-hidden" style={{ backgroundColor: colors.tile }}>
+                <View
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${Math.min(100, Math.max(4, Math.round((eventProgress.done / eventProgress.total) * 100)))}%`,
+                    backgroundColor: colors.primary,
+                  }}
+                />
+              </View>
+              <Text className="text-center text-xs" style={{ color: colors.inkMuted }}>
+                {`Sending invites to ${eventProgress.done} of ${eventProgress.total} guardians...`}
               </Text>
-              <ScrollView style={{ maxHeight: 150 }} nestedScrollEnabled>
-                {season.roster.map((player) => {
-                  const isSelected = selectedPlayerIds.includes(player.id);
-                  return (
-                    <Pressable
-                      key={player.id}
-                      onPress={() => {
-                        if (isSelected) {
-                          setSelectedPlayerIds(selectedPlayerIds.filter(id => id !== player.id));
-                        } else {
-                          setSelectedPlayerIds([...selectedPlayerIds, player.id]);
-                        }
-                      }}
-                      className="flex-row items-center justify-between py-2 border-b"
-                      style={{ borderColor: colors.border }}
-                    >
-                      <Text style={{ color: colors.ink }}>
-                        {player.firstName} {player.lastName}
-                      </Text>
-                      <Badge
-                        label={isSelected ? 'Selected' : 'Deselected'}
-                        variant={isSelected ? 'success' : 'default'}
-                      />
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </>
-          )}
-          <Button label={editingEventId ? 'Update Event' : 'Save Event'} onPress={onSubmit} loading={addEvent.isPending || updateEvent.isPending} />
+            </View>
+          ) : null}
+
+          <Button label={editingEventId ? 'Update Event' : 'Save Event'} onPress={onSubmit} loading={formBusy} />
         </View>
       </Modal>
     </Screen>

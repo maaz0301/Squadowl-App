@@ -903,11 +903,14 @@ export function useDeleteSeasonMutation() {
   });
 }
 
-export function useAddSeasonEventMutation(seasonId: string) {
+export function useAddSeasonEventMutation(
+  seasonId: string,
+  onProgress?: (done: number, total: number) => void,
+) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (form: import('@/data/types').CreateEventForm) =>
-      getDataSource().addSeasonEvent(seasonId, form),
+      getDataSource().addSeasonEvent(seasonId, form, onProgress),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.season(seasonId) }),
   });
 }

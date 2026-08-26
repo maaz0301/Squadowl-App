@@ -251,6 +251,12 @@ const EVALUATIONS_PAGE = 300;
 // took the whole schedule down with them). Bounded pages keep each statement
 // cheap, same reasoning as SEASON_ROSTER_PAGE / EVALUATIONS_PAGE.
 const AVAILABILITY_PAGE = 200;
+/**
+ * Events per statement when the RSVP read has to filter `event_availability`
+ * itself. Small because that path pays the per-row policy: a chunk is one
+ * statement's worth of events, and the chunks run concurrently.
+ */
+const EVENT_AVAILABILITY_EVENT_CHUNK = 25;
 
 /**
  * Exactly the columns rowToPlayer / rowToEval read, rather than `*` plus a
@@ -4296,6 +4302,143 @@ export class SupabaseDataSource implements DataSource {
     };
   }
 
+  /**
+   * Every RSVP row for a set of events.
+   *
+   * Prefers the `get_event_availability` RPC for the same reason
+   * getGuardianRosters() prefers `get_guardian_rosters`: reading this table
+   * directly makes Postgres evaluate its row-level policy once per RSVP row,
+   * and on a full-roster event that overruns the statement timeout (57014)
+   * before any rows come back. Client-side paging does not help — the policy
+   * runs on candidate rows *before* the LIMIT applies, so a bounded page on a
+   * single event times out exactly as an unbounded read does. That is why the
+   * schedule kept reporting "RSVPs couldn't be loaded" on a 1,000-player team:
+   * the read never failed to *find* the rows, it never got to run at all.
+   *
+   * Returns `failed: true` rather than throwing when the read didn't work.
+   * Reporting zero RSVPs and "nobody was invited" for what is really a failed
+   * read is the worse outcome: it reads as data loss to a coach who just
+   * invited a full roster. Mirrors the web app's fetchEventAvailability().
+   */
+  private async fetchEventAvailability(eventIds: string[]): Promise<{ rows: Row[]; failed: boolean }> {
+    if (eventIds.length === 0) return { rows: [], failed: false };
+
+    const supabase = getSupabase();
+    const { data, error } = await supabase.rpc('get_event_availability', { p_event_ids: eventIds });
+    if (!error) return { rows: (data as Row[]) ?? [], failed: false };
+
+    const missingFunction = error.code === 'PGRST202' || error.code === '42883';
+    if (!missingFunction) {
+      console.error('get_event_availability failed:', error);
+      return { rows: [], failed: true };
+    }
+    console.warn('get_event_availability() not deployed — trying the embedded read.');
+
+    // Attempt 2: read the rows as an embed hanging off season_events instead of
+    // filtering event_availability directly.
+    //
+    // Same statement, different plan. In the direct form the `season_event_id`
+    // filter is an ordinary user qual and the policy is evaluated ahead of it.
+    // As an embed, PostgREST emits a LATERAL keyed on `season_events.id`, so
+    // the FK is a join condition that can drive the scan before the policy is
+    // applied to what survives.
+    const embedded = await this.fetchAvailabilityViaEvents(eventIds);
+    if (embedded.ok) return { rows: embedded.rows, failed: false };
+
+    const eventChunks: string[][] = [];
+    for (let i = 0; i < eventIds.length; i += EVENT_AVAILABILITY_EVENT_CHUNK) {
+      eventChunks.push(eventIds.slice(i, i + EVENT_AVAILABILITY_EVENT_CHUNK));
+    }
+    let failed = false;
+    const chunks = await mapPool(eventChunks, REGISTRATION_CHUNK_CONCURRENCY, async (chunk) => {
+      const { rows, complete } = await this.readAvailabilityChunk(chunk);
+      if (!complete) failed = true;
+      return rows;
+    });
+    return { rows: chunks.flat(), failed };
+  }
+
+  /**
+   * RSVP rows read as an embed on their parent event.
+   *
+   * Only the fields the callers actually use are selected — the rest of the row
+   * is dead weight through a LATERAL. Returns `ok: false` on any error so the
+   * caller falls through to the direct read rather than this becoming another
+   * way to silently report zero RSVPs.
+   */
+  private async fetchAvailabilityViaEvents(eventIds: string[]): Promise<{ rows: Row[]; ok: boolean }> {
+    const rows: Row[] = [];
+    const chunks: string[][] = [];
+    for (let i = 0; i < eventIds.length; i += EVENT_AVAILABILITY_EVENT_CHUNK) {
+      chunks.push(eventIds.slice(i, i + EVENT_AVAILABILITY_EVENT_CHUNK));
+    }
+
+    try {
+      const parentChunks = await mapPool(chunks, REGISTRATION_CHUNK_CONCURRENCY, (chunk) =>
+        this.fetchAllByIn('season_events', 'id, event_availability(roster_id, response)', 'id', chunk),
+      );
+      for (const parent of parentChunks.flat()) {
+        for (const a of (parent.event_availability ?? []) as Row[]) {
+          // Flattened back into the row shape the direct read returns, so the
+          // caller can't tell which path produced it.
+          rows.push({ season_event_id: parent.id, roster_id: a.roster_id, response: a.response });
+        }
+      }
+      return { rows, ok: true };
+    } catch (e) {
+      console.warn('Embedded event_availability read failed; falling back to the direct read.', e);
+      return { rows: [], ok: false };
+    }
+  }
+
+  /**
+   * One chunk of events' RSVP rows, read directly and paged.
+   *
+   * Deliberately does *not* retry a statement timeout (57014) at a smaller page
+   * size: the policy is evaluated before the filter and the LIMIT, so a
+   * narrower window costs the same 8s and only multiplies the time spent
+   * failing. Whatever pages did land are kept — a partial RSVP list is more use
+   * to a coach than an empty one — so `complete` reports the shortfall instead
+   * of the rows being thrown away.
+   */
+  private async readAvailabilityChunk(eventIds: string[]): Promise<{ rows: Row[]; complete: boolean }> {
+    const supabase = getSupabase();
+    const rows: Row[] = [];
+    let from = 0;
+
+    for (;;) {
+      try {
+        const page = (unwrap(
+          await supabase
+            .from('event_availability')
+            .select('*')
+            .in('season_event_id', eventIds)
+            // Offset paging needs a total order or pages silently overlap and
+            // skip. This pair is the table's unique key, so it orders rows
+            // completely.
+            .order('season_event_id', { ascending: true })
+            .order('roster_id', { ascending: true })
+            .range(from, from + AVAILABILITY_PAGE - 1),
+        ) ?? []) as Row[];
+
+        rows.push(...page);
+        if (page.length < AVAILABILITY_PAGE) return { rows, complete: true };
+        from += AVAILABILITY_PAGE;
+      } catch (e) {
+        if (isStatementTimeout(e)) {
+          console.error(
+            'event_availability read hit the statement timeout. This is a database-side problem — ' +
+              'the row-level policy runs before the season_event_id filter. Deploy ' +
+              'get_event_availability() and the event_availability indexes.',
+          );
+        } else {
+          console.error('Failed to read event_availability', e);
+        }
+        return { rows, complete: false };
+      }
+    }
+  }
+
   private async assembleSeasons(seasonRows: Row[], withDetail: boolean): Promise<Season[]> {
     if (seasonRows.length === 0) return [];
     const ids = seasonRows.map((s) => s.id);
@@ -4316,23 +4459,24 @@ export class SupabaseDataSource implements DataSource {
     // an "RSVPs couldn't be loaded" flag rather than the whole season throwing.
     let availabilityFailed = false;
     if (withDetail) {
-      const eventIds = eventRows.map((e) => e.id);
+      const eventIds = eventRows.map((e) => e.id as string);
       // These two reads are the ONLY thing getSeason (withDetail) does that
       // listSeasons doesn't, and on a large season they're the heaviest part of
-      // the assembly — the availability read in particular can hit the
-      // statement timeout. A failure here must NOT discard the events (the
-      // schedule) themselves: allSettled keeps a slow/failed availability or
-      // invites read from rejecting the whole assemble, so the season still
-      // comes back with its events. Without this, one timed-out availability
-      // read made getSeason() throw and the entire schedule vanished on the
-      // Team screen for big rosters — while the lighter listSeasons() still
-      // showed the event. Mirrors the web app's graceful degradation.
+      // the assembly. A failure here must NOT discard the events (the schedule)
+      // themselves: fetchEventAvailability reports a failure instead of
+      // throwing, and allSettled keeps a slow/failed invites read from
+      // rejecting the whole assemble, so the season still comes back with its
+      // events. Without this, one timed-out availability read made getSeason()
+      // throw and the entire schedule vanished on the Team screen for big
+      // rosters — while the lighter listSeasons() still showed the event.
+      // Mirrors the web app's graceful degradation.
       const [availResult, inviteResult] = await Promise.allSettled([
-        this.fetchAllByIn('event_availability', '*', 'season_event_id', eventIds, AVAILABILITY_PAGE),
+        this.fetchEventAvailability(eventIds),
         this.fetchAllByIn('portal_invites', '*', 'season_id', ids),
       ]);
       if (availResult.status === 'fulfilled') {
-        availabilityRows = availResult.value;
+        availabilityRows = availResult.value.rows;
+        availabilityFailed = availResult.value.failed;
       } else {
         availabilityFailed = true;
         console.warn('Season availability read failed, returning events without RSVPs:', availResult.reason?.message ?? availResult.reason);
@@ -4349,8 +4493,12 @@ export class SupabaseDataSource implements DataSource {
     const rosterBySeason: Record<string, Row[]> = {};
     for (const r of rosterRows) (rosterBySeason[r.season_id] ??= []).push(r);
     const availByEvent: Record<string, Record<string, string>> = {};
+    // Indexed once rather than a .find() per availability row — that scan was
+    // O(roster × RSVPs), which for a full-roster event on a large team is a
+    // million comparisons on the JS thread before anything renders.
+    const rosterById = new Map(rosterRows.map((r) => [r.id, r]));
     for (const a of availabilityRows) {
-      const rosterItem = rosterRows.find((r) => r.id === a.roster_id);
+      const rosterItem = rosterById.get(a.roster_id);
       if (rosterItem) {
         if (rosterItem.athlete_id) {
           (availByEvent[a.season_event_id] ??= {})[rosterItem.athlete_id] = a.response;

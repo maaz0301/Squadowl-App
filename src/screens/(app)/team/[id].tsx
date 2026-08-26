@@ -46,6 +46,15 @@ const RSVP_VARIANT: Record<Rsvp, 'success' | 'warning' | 'danger' | 'info'> = {
   pending: 'info',
 };
 
+type RsvpRow = { playerId: string; name: string; response: Rsvp };
+type RsvpSummary = { counts: Record<Rsvp, number>; rows: RsvpRow[] };
+
+const EMPTY_RSVP: RsvpSummary = { counts: { yes: 0, maybe: 0, no: 0, pending: 0 }, rows: [] };
+
+// A season roster can run to four figures; mounting every RSVP row at once is
+// what made the expander feel like it hung, so the list grows on demand.
+const RSVP_PAGE = 25;
+
 export default function TeamDetailScreen() {
   const route = useRoute<any>();
   const { id } = route.params || {};
@@ -98,6 +107,9 @@ export default function TeamDetailScreen() {
   const [showAddEvent, setShowAddEvent] = useState(false);
   const [tab, setTab] = useState('schedule');
   const [openRsvpEventId, setOpenRsvpEventId] = useState<string | null>(null);
+  const [rsvpVisible, setRsvpVisible] = useState(RSVP_PAGE);
+  const [rsvpSearch, setRsvpSearch] = useState('');
+  const [rsvpPending, setRsvpPending] = useState(false);
   const [availabilityTarget, setAvailabilityTarget] = useState<{
     eventId: string;
     playerId: string;
@@ -428,25 +440,44 @@ export default function TeamDetailScreen() {
   const pastEvents = allTeamEvents.filter((e) => (e.endDate || e.date) < todayStr);
 
   // Availability is stored per invited season-roster player; the coach sees it
-  // as a Yes/Maybe/No tally that expands into the actual names.
-  const rsvpSummary = (ev: SeasonEvent) => {
+  // as a Yes/Maybe/No tally that expands into the actual names. On a big roster
+  // this is a per-event pass over every invite, and it feeds the badges on
+  // every card, so it runs once per read instead of on every render.
+  const rsvpByEvent = useMemo(() => {
     const byId = new Map((teamSeason?.roster ?? []).map((p) => [p.id, p]));
-    const counts: Record<Rsvp, number> = { yes: 0, maybe: 0, no: 0, pending: 0 };
-    const rows = Object.entries(ev.availability ?? {})
-      .filter(([playerId]) => byId.has(playerId))
-      .map(([playerId, response]) => {
+    const order: Rsvp[] = ['yes', 'maybe', 'no', 'pending'];
+    const out = new Map<string, RsvpSummary>();
+    for (const ev of teamSeason?.events ?? []) {
+      const counts: Record<Rsvp, number> = { yes: 0, maybe: 0, no: 0, pending: 0 };
+      const rows: RsvpRow[] = [];
+      for (const [playerId, response] of Object.entries(ev.availability ?? {})) {
+        const player = byId.get(playerId);
+        if (!player) continue;
         const r = (response ?? 'pending') as Rsvp;
         counts[r] += 1;
-        const player = byId.get(playerId)!;
-        return {
-          playerId,
-          name: `${player.firstName} ${player.lastName}`,
-          response: r,
-        };
-      });
-    const order: Rsvp[] = ['yes', 'maybe', 'no', 'pending'];
-    rows.sort((a, b) => order.indexOf(a.response) - order.indexOf(b.response));
-    return { counts, rows };
+        rows.push({ playerId, name: `${player.firstName} ${player.lastName}`, response: r });
+      }
+      rows.sort(
+        (a, b) => order.indexOf(a.response) - order.indexOf(b.response) || a.name.localeCompare(b.name),
+      );
+      out.set(ev.id, { counts, rows });
+    }
+    return out;
+  }, [teamSeason?.roster, teamSeason?.events]);
+
+  // Open the panel on the next frame so the tap paints (chevron flips, spinner
+  // shows) before the rows mount, instead of the row work blocking the touch.
+  const toggleRsvp = (eventId: string) => {
+    const closing = openRsvpEventId === eventId;
+    setRsvpVisible(RSVP_PAGE);
+    setRsvpSearch('');
+    setOpenRsvpEventId(closing ? null : eventId);
+    if (closing) {
+      setRsvpPending(false);
+      return;
+    }
+    setRsvpPending(true);
+    requestAnimationFrame(() => setRsvpPending(false));
   };
 
   const openEventModal = (kind: EventKind) => {
@@ -664,17 +695,6 @@ export default function TeamDetailScreen() {
           </View>
         }
       />
-
-      <View style={{ padding: 8, backgroundColor: 'yellow', marginBottom: 8, borderRadius: 4 }}>
-        <Text style={{ color: 'black', fontSize: 10 }}>
-          DEBUG: teamSeasonId={teamSeasonId ?? 'null'} | 
-          seasonsCount={seasonsQuery.data?.length ?? 'null'} | 
-          listEvents={seasonsQuery.data?.find((s) => s.teamId === id)?.events?.length ?? 'null'} | 
-          seasonQueryLoading={seasonQuery.isLoading ? 'yes' : 'no'} | 
-          seasonQueryEvents={teamSeason?.events?.length ?? 'null'} | 
-          allTeamEvents={allTeamEvents.length}
-        </Text>
-      </View>
 
       <Tabs
         tabs={[
@@ -911,8 +931,17 @@ export default function TeamDetailScreen() {
               </Card>
             ) : (
               allTeamEvents.map((ev) => {
-                const rsvp = rsvpSummary(ev);
+                const rsvp = rsvpByEvent.get(ev.id) ?? EMPTY_RSVP;
                 const expanded = openRsvpEventId === ev.id;
+                // Only the open card pays for filtering/slicing its roster.
+                const q = expanded ? rsvpSearch.trim().toLowerCase() : '';
+                const matchedRows = !expanded
+                  ? EMPTY_RSVP.rows
+                  : q
+                    ? rsvp.rows.filter((r) => r.name.toLowerCase().includes(q))
+                    : rsvp.rows;
+                const shownRows = expanded ? matchedRows.slice(0, rsvpVisible) : EMPTY_RSVP.rows;
+                const remaining = matchedRows.length - shownRows.length;
                 return (
                   <Card key={ev.id} className="mb-3 gap-2">
                     <View className="flex-row justify-between items-start">
@@ -939,7 +968,7 @@ export default function TeamDetailScreen() {
                     </View>
 
                     <Pressable
-                      onPress={() => setOpenRsvpEventId(expanded ? null : ev.id)}
+                      onPress={() => toggleRsvp(ev.id)}
                       className="flex-row items-center justify-between rounded-md px-3 py-2.5 border"
                       style={{
                         backgroundColor: expanded ? colors.tile : 'rgba(255,107,43,0.08)',
@@ -950,12 +979,21 @@ export default function TeamDetailScreen() {
                       <Text className="text-sm font-bold" style={{ color: colors.primary }}>
                         {expanded ? 'Hide RSVPs' : 'Who’s coming? Set RSVPs'}
                       </Text>
-                      <Text style={{ color: colors.primary, fontSize: 14 }}>{expanded ? '▴' : '▾'}</Text>
+                      {expanded && rsvpPending ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <Text style={{ color: colors.primary, fontSize: 14 }}>{expanded ? '▴' : '▾'}</Text>
+                      )}
                     </Pressable>
 
                     {expanded ? (
                       <View className="rounded-md border overflow-hidden" style={{ borderColor: colors.border }}>
-                        {rsvp.rows.length === 0 && ev.availabilityUnavailable ? (
+                        {rsvpPending ? (
+                          <View className="items-center py-6 gap-2">
+                            <ActivityIndicator size="small" color={colors.primary} />
+                            <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading RSVPs...</Text>
+                          </View>
+                        ) : rsvp.rows.length === 0 && ev.availabilityUnavailable ? (
                           <Text className="text-xs p-3" style={{ color: colors.warning }}>
                             RSVPs couldn’t be loaded for this event. Everyone invited is still invited —
                             reload to try again.
@@ -971,8 +1009,27 @@ export default function TeamDetailScreen() {
                               style={{ color: colors.inkMuted, backgroundColor: colors.tile }}
                             >
                               Tap a player to set their RSVP
+                              {rsvp.rows.length > RSVP_PAGE ? ` · ${rsvp.rows.length} invited` : ''}
                             </Text>
-                            {rsvp.rows.map((r, i) => (
+                            {rsvp.rows.length > RSVP_PAGE ? (
+                              <View className="px-3 pt-2">
+                                <Input
+                                  value={rsvpSearch}
+                                  onChangeText={(t) => {
+                                    setRsvpSearch(t);
+                                    setRsvpVisible(RSVP_PAGE);
+                                  }}
+                                  placeholder="Search players by name"
+                                  autoCapitalize="none"
+                                />
+                              </View>
+                            ) : null}
+                            {shownRows.length === 0 ? (
+                              <Text className="text-xs p-3" style={{ color: colors.inkMuted }}>
+                                No players match "{rsvpSearch}".
+                              </Text>
+                            ) : null}
+                            {shownRows.map((r, i) => (
                               <Pressable
                                 key={r.playerId}
                                 onPress={() =>
@@ -998,6 +1055,17 @@ export default function TeamDetailScreen() {
                                 </View>
                               </Pressable>
                             ))}
+                            {remaining > 0 ? (
+                              <Pressable
+                                onPress={() => setRsvpVisible((v) => v + RSVP_PAGE * 2)}
+                                className="px-3 py-3 items-center"
+                                style={{ borderTopWidth: 1, borderTopColor: colors.border }}
+                              >
+                                <Text className="text-sm font-bold" style={{ color: colors.primary }}>
+                                  Show {Math.min(remaining, RSVP_PAGE * 2)} more ({remaining} left)
+                                </Text>
+                              </Pressable>
+                            ) : null}
                           </>
                         )}
                       </View>
