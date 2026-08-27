@@ -13,9 +13,12 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 
 /**
  * Delegation: hand this one team to another coach or manager by email. They
- * get the team, its roster, schedule, and chat — and nothing else on the
- * account. The account's own staff keep full access either way, which is why
- * this list never affects the inviter's own rights.
+ * get the team, its roster, schedule, and chat, its athletes' profiles, and
+ * that team's payment records — and nothing else on the account (other teams,
+ * org billing, org membership). The account's own staff keep full access
+ * either way, which is why this list never affects the inviter's own rights.
+ * A delegate can also manage this list themselves, on this team only — they
+ * cannot delegate a team they don't already manage.
  *
  * Gated on `teamManagers` (Coach+ and up) — mirrors the web app's plans.ts,
  * which sells this starting at Coach+, not just Club/enterprise.
@@ -30,9 +33,11 @@ interface Props {
   teamId: string;
   teamName: string;
   /**
-   * True when the viewer reached this team through a delegation of their own.
-   * Delegates can see who else manages the team but can't change the list —
-   * can_delegate_team() enforces the same thing server-side.
+   * Optional override to force the list read-only regardless of what the
+   * viewer is otherwise permitted. A delegate of this team can manage this
+   * list themselves (can_delegate_team() permits it server-side too, as of
+   * 20260827120000_team_manager_full_access.sql) — this prop no longer needs
+   * to be set from team.managed for that case.
    */
   readOnly?: boolean;
   /**

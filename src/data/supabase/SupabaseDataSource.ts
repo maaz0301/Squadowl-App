@@ -311,6 +311,16 @@ const EVALUATIONS_PAGE = 300;
 // cheap, same reasoning as SEASON_ROSTER_PAGE / EVALUATIONS_PAGE.
 const AVAILABILITY_PAGE = 200;
 /**
+ * Rows per `get_event_availability()` call. Much larger than AVAILABILITY_PAGE
+ * because the RPC authorizes once per event rather than once per row, so a page
+ * costs roughly what its row count suggests — the reason the function exists.
+ * It is bounded at all only because a set-returning RPC is still subject to
+ * PostgREST's db-max-rows cap, so the client has to page to know it has
+ * everything; keep this at or below that server-side limit or the short-page
+ * check that ends the loop can never fire.
+ */
+const AVAILABILITY_RPC_PAGE = 1000;
+/**
  * Events per statement when the RSVP read has to filter `event_availability`
  * itself. Small because that path pays the per-row policy: a chunk is one
  * statement's worth of events, and the chunks run concurrently.
@@ -4493,15 +4503,44 @@ export class SupabaseDataSource implements DataSource {
     if (eventIds.length === 0) return { rows: [], failed: false };
 
     const supabase = getSupabase();
-    const { data, error } = await supabase.rpc('get_event_availability', { p_event_ids: eventIds });
-    if (!error) return { rows: (data as Row[]) ?? [], failed: false };
 
-    const missingFunction = error.code === 'PGRST202' || error.code === '42883';
-    if (!missingFunction) {
-      console.error('get_event_availability failed:', error);
-      return { rows: [], failed: true };
+    // Keyset-paged, not one shot: the RPC returns a row set, so PostgREST caps
+    // it at db-max-rows exactly like a table read. Taking the first response as
+    // the whole answer silently dropped every RSVP past ~1000 — undercounting
+    // the yes/maybe/no tallies on precisely the full-roster events this path
+    // exists to rescue, and doing it invisibly, with no error to notice.
+    const rpcRows: Row[] = [];
+    let cursor: string | null = null;
+    for (;;) {
+      const { data, error } = await supabase.rpc('get_event_availability', {
+        p_event_ids: eventIds,
+        p_after_id: cursor,
+        p_limit: AVAILABILITY_RPC_PAGE,
+      });
+
+      if (error) {
+        const missingFunction = error.code === 'PGRST202' || error.code === '42883';
+        if (!missingFunction) {
+          console.error('get_event_availability failed:', error);
+          // Pages that already landed are real rows and worth keeping; the
+          // caller treats `failed` as "this list may be short", which is
+          // exactly right for a read that died partway through.
+          return { rows: rpcRows, failed: true };
+        }
+        // Only a genuinely absent function falls through to the older, slower
+        // paths — and only from the first page, since a function that existed
+        // a moment ago cannot vanish mid-scan.
+        if (rpcRows.length > 0) return { rows: rpcRows, failed: true };
+        console.warn('get_event_availability() not deployed — trying the embedded read.');
+        break;
+      }
+
+      const page = ((data as Row[]) ?? []) as Row[];
+      rpcRows.push(...page);
+      // A short page means the server had nothing left to give.
+      if (page.length < AVAILABILITY_RPC_PAGE) return { rows: rpcRows, failed: false };
+      cursor = page[page.length - 1].id as string;
     }
-    console.warn('get_event_availability() not deployed — trying the embedded read.');
 
     // Attempt 2: read the rows as an embed hanging off season_events instead of
     // filtering event_availability directly.

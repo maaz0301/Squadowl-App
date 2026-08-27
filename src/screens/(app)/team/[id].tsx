@@ -1113,13 +1113,15 @@ export default function TeamDetailScreen() {
               </Card>
             ) : null}
 
-            {/* CLUB mode: hand this one team to another coach/manager. A viewer
-                who is themselves a delegate can see the list but not change it. */}
+            {/* CLUB mode: hand this one team to another coach/manager. A
+                delegate of this team can now manage the list too (see
+                can_delegate_team() in 20260827120000_team_manager_full_access.sql) —
+                readOnly no longer applies to a viewer who reached this screen
+                as this team's own manager. */}
             <View className="mb-3">
               <TeamManagersCard
                 teamId={team.id}
                 teamName={team.name}
-                readOnly={!!team.managed}
                 tierOverride={effectiveTier}
               />
             </View>

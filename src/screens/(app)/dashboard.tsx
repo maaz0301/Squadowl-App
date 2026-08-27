@@ -505,8 +505,11 @@ export default function DashboardScreen() {
               )
             ) : null}
 
-            {/* Assigned Tryouts */}
-            {assignedQuery.data && assignedQuery.data.length > 0 ? (
+            {/* Assigned Tryouts — assessments only. This is a tryout assignment
+                (assessor status on a tryout), which has no meaning on the
+                Teams tab; it used to render under both because nothing here
+                checked `tab` at all. */}
+            {tab === 'assessments' && assignedQuery.data && assignedQuery.data.length > 0 ? (
               <View className="mb-4">
                 <Pressable
                   onPress={() => setAssignedExpanded(!assignedExpanded)}
