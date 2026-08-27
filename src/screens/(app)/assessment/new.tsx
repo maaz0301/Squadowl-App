@@ -276,7 +276,10 @@ export default function NewAssessmentScreen() {
           try {
             await getDataSource().sendEmail('tryout_invite', a.email, { role: 'assessor' });
           } catch (err) {
-            console.error('Error sending assessor invite email', err);
+            // console.warn, not console.error: this is the best-effort path above —
+            // a failed invite email must stay silent in the background, not hijack
+            // the screen with LogBox's full-screen error overlay.
+            console.warn('Error sending assessor invite email', err);
           }
         }
       } catch (e: any) {

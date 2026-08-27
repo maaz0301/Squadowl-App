@@ -493,15 +493,16 @@ export default function DashboardScreen() {
             )}
 
             {!isGuardianOnly ? (
-              <>
+              tab === 'teams' ? (
                 <UsageNudgeBanner tier={user?.planTier ?? 'free'} metric="teams" count={ownedTeamCount} label="teams" />
+              ) : (
                 <UsageNudgeBanner
                   tier={user?.planTier ?? 'free'}
                   metric="assessments"
                   count={evalCount}
                   label="assessments"
                 />
-              </>
+              )
             ) : null}
 
             {/* Assigned Tryouts */}

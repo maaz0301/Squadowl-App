@@ -1,0 +1,15 @@
+-- Defence in depth for get_evaluations_for_tryouts (20260826160000).
+--
+-- Supabase's default privileges in schema `public` grant EXECUTE on newly
+-- created functions to `anon` as well as `authenticated`, and a direct grant to
+-- `anon` is not removed by `revoke ... from public`. Verified against the live
+-- project: an unauthenticated PostgREST call reached the function and returned
+-- `[]` rather than being refused.
+--
+-- No data was exposed — with auth.uid() null, can_access_tryout() is false for
+-- every tryout and `evaluator_user_id = auth.uid()` is never true, so the
+-- predicate already returns nothing. But this function is SECURITY DEFINER and
+-- therefore runs with RLS bypassed; the predicate inside it is the only thing
+-- standing between a caller and every evaluation in the database. A function
+-- like that should not be reachable by an unauthenticated role at all.
+revoke execute on function public.get_evaluations_for_tryouts(uuid[], uuid, int) from anon;

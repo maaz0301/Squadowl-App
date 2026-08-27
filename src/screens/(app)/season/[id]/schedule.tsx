@@ -342,7 +342,7 @@ export default function SeasonScheduleScreen() {
                 />
               </View>
               <Text className="text-center text-xs" style={{ color: colors.inkMuted }}>
-                {`Sending invites to ${eventProgress.done} of ${eventProgress.total} guardians...`}
+                {`Inviting ${eventProgress.done} of ${eventProgress.total} players...`}
               </Text>
             </View>
           ) : null}

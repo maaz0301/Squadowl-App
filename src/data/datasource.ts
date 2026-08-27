@@ -259,7 +259,15 @@ export interface DataSource {
     onProgress?: (done: number, total: number) => void,
   ): Promise<import('./types').SeasonPlayer[]>;
   deleteSeasonPlayer(seasonId: string, playerId: string): Promise<void>;
-  importSeasonPlayersFromTeam(seasonId: string): Promise<import('./types').SeasonPlayer[]>;
+  /**
+   * `onProgress` reports the enrollment writes. On a team whose linked
+   * assessments carry a large roster this is the slow half of saving that
+   * team's first event, so the UI shows a progress bar against it.
+   */
+  importSeasonPlayersFromTeam(
+    seasonId: string,
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<import('./types').SeasonPlayer[]>;
   /**
    * Just the roster — no events, no availability rows, no portal invites.
    * getSeason() assembles all of that, which is fine for the season screen but

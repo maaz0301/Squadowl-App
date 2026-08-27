@@ -164,12 +164,14 @@ export default function TeamDetailScreen() {
   // Keeps RSVPs/event edits in sync with a guardian's portal without the coach
   // having to navigate away and back for the cache to refresh.
   useSeasonRealtimeSync(teamSeasonId);
-  const [saveEventProgress, setSaveEventProgress] = useState<{ done: number; total: number } | null>(null);
+  const [saveEventProgress, setSaveEventProgress] = useState<
+    { phase: 'roster' | 'invites'; done: number; total: number } | null
+  >(null);
   const addEvent = useAddTeamEventMutation(
     id,
     teamsQuery.data?.find((t) => t.id === id)?.name ?? 'Team',
     teamSeasonId,
-    (done, total) => setSaveEventProgress({ done, total }),
+    (phase, done, total) => setSaveEventProgress({ phase, done, total }),
   );
   const updateEvent = useUpdateSeasonEventMutation(teamSeasonId ?? '');
   const deleteEvent = useDeleteSeasonEventMutation(teamSeasonId ?? '');
@@ -770,6 +772,19 @@ export default function TeamDetailScreen() {
                   <ActivityIndicator size="small" color={colors.primary} />
                   <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading roster...</Text>
                 </View>
+              ) : rosterQuery.isError ? (
+                // Distinct from "No players yet" below: an errored fetch was
+                // silently rendering as a genuinely empty roster, which reads as
+                // "this team has no players" when it may well have hundreds —
+                // the read just failed. Same distinction the RSVP list makes
+                // above for a failed availability read.
+                <Card className="items-center py-6 gap-2">
+                  <Text className="font-bold" style={{ color: colors.warning }}>Couldn't load the roster</Text>
+                  <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
+                    This team's players couldn't be loaded. They're still on the roster — reload to try again.
+                  </Text>
+                  <Button label="Retry" variant="secondary" size="sm" onPress={() => rosterQuery.refetch()} />
+                </Card>
               ) : teamPlayers.length === 0 ? (
                 <Card className="items-center py-6 gap-1">
                   <Text className="font-bold" style={{ color: colors.ink }}>No players yet</Text>
@@ -1480,7 +1495,11 @@ export default function TeamDetailScreen() {
               Everyone on the roster is invited by default.
             </Text>
           )}
-          {addEvent.isPending && saveEventProgress && saveEventProgress.total > 0 ? (
+          {/* Shown for the whole save, not just once a (done, total) has
+              arrived: enrolling a large roster and writing its invites are two
+              serial phases, and the gap before the first progress event used to
+              leave nothing on screen but the button spinner. */}
+          {addEvent.isPending ? (
             <View style={{ gap: 4 }}>
               <View
                 style={{
@@ -1493,7 +1512,10 @@ export default function TeamDetailScreen() {
               >
                 <View
                   style={{
-                    width: `${Math.min(100, Math.max(4, Math.round((saveEventProgress.done / saveEventProgress.total) * 100)))}%`,
+                    width:
+                      saveEventProgress && saveEventProgress.total > 0
+                        ? `${Math.min(100, Math.max(4, Math.round((saveEventProgress.done / saveEventProgress.total) * 100)))}%`
+                        : '4%',
                     height: '100%',
                     borderRadius: 999,
                     backgroundColor: colors.primary,
@@ -1501,7 +1523,28 @@ export default function TeamDetailScreen() {
                 />
               </View>
               <Text className="text-xs text-center" style={{ color: colors.inkMuted }}>
-                Inviting {saveEventProgress.done} of {saveEventProgress.total} players...
+                {!saveEventProgress
+                  ? 'Saving event...'
+                  : saveEventProgress.total === 0
+                    ? saveEventProgress.done > 0
+                      ? // total: 0 with a nonzero count is the "still scanning
+                        // linked assessments, don't know the total yet" state
+                        // (see importSeasonPlayersFromTeam) — surfacing the
+                        // running count is what keeps this from reading as
+                        // frozen on a big roster, even without a fraction.
+                        //
+                        // "entries", not "players": this counts participant
+                        // rows across every assessment linked to the team, so
+                        // an athlete who tried out three times is three of
+                        // them, and rows for cut players are still in the scan
+                        // (they're filtered after it). Calling those players
+                        // put a number on screen that was always higher than
+                        // the roster the coach ended up with.
+                        `Checking ${saveEventProgress.done} assessment entries so far...`
+                      : 'Saving event...'
+                    : saveEventProgress.phase === 'roster'
+                      ? `Adding ${saveEventProgress.done} of ${saveEventProgress.total} players to the season...`
+                      : `Sending invites to ${saveEventProgress.done} of ${saveEventProgress.total} players...`}
               </Text>
             </View>
           ) : null}

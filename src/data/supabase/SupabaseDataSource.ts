@@ -215,6 +215,65 @@ const SHARD_BOUNDS = ['2', '4', '6', '8', 'a', 'c', 'e'].map(
 type ShardRange = [string | undefined, string | undefined];
 
 /**
+ * The select list `fetchPage` actually issues, guaranteed to carry the keyset
+ * column.
+ *
+ * Keyset paging reads `id` off the last row of a page to place the next one, so
+ * a caller that selects only the columns it needs — `'athlete_id'`, say — hands
+ * the pager rows with no `id` on them. That cursor is `undefined`, `fetchPage`
+ * treats an undefined bound as "unbounded" and skips the `gt('id', …)` filter
+ * entirely, and every page then re-reads the same first rows forever. It hangs
+ * rather than erroring, because a full page is also the signal to keep going:
+ * the short-page exit never fires. Requesting `id` alongside whatever was asked
+ * for costs one indexed column already in the primary key and removes the whole
+ * class of bug.
+ *
+ * Only top-level tokens count — `athletes(id, …)` selects an `id` on the
+ * *embedded* row, which never appears on this row at all.
+ */
+function withKeysetColumn(select: string): string {
+  const top: string[] = [];
+  let depth = 0;
+  let token = '';
+  for (const ch of select) {
+    if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    if (ch === ',' && depth === 0) {
+      top.push(token);
+      token = '';
+    } else {
+      token += ch;
+    }
+  }
+  top.push(token);
+  // `*` already brings the primary key with it.
+  const hasId = top.some((t) => {
+    const name = t.trim();
+    return name === 'id' || name === '*';
+  });
+  return hasId ? select : `id,${select}`;
+}
+
+/**
+ * The `id` to resume a keyset scan after, or a thrown error.
+ *
+ * withKeysetColumn() means a page always *should* carry one. If something ever
+ * strips it again anyway, the caller is one round trip away from re-reading
+ * this same page forever (see withKeysetColumn) — an unkillable spinner with a
+ * counter climbing behind it and no error anywhere to point at the cause.
+ * Failing here turns that hang into something diagnosable.
+ */
+function keysetCursor(table: string, page: Row[]): string {
+  const cursor = page[page.length - 1]?.id;
+  if (typeof cursor !== 'string') {
+    throw new Error(
+      `Keyset paging over "${table}" read a row without an id, so the next page cannot be placed.`,
+    );
+  }
+  return cursor;
+}
+
+/**
  * The key space above `cursor`, cut into ranges at every SHARD_BOUNDS point
  * that is still ahead of it. Bounds at or below the cursor are dropped — that
  * ground is already read — so a cursor past the last bound yields a single
@@ -765,6 +824,7 @@ export class SupabaseDataSource implements DataSource {
     column: string,
     ids: string[],
     pageSize = FETCH_PAGE_SIZE,
+    onRows?: (soFar: number) => void,
   ): Promise<Row[]> {
     if (ids.length === 0) return [];
 
@@ -782,11 +842,17 @@ export class SupabaseDataSource implements DataSource {
     // rest of the key space is split into disjoint ranges that are keyset-paged
     // independently and all at once.
     const first = await this.fetchPage(table, select, column, ids, pageSize, [undefined, undefined]);
+    onRows?.(first.length);
     if (first.length < pageSize) return first;
 
-    const cursor = first[first.length - 1].id as string;
+    // Shards run concurrently, so their row counts are tallied through one
+    // shared counter rather than each reporting its own — onRows is meant to
+    // read as "how far into the whole read are we", not restart from zero
+    // once every shard's own count.
+    let total = first.length;
+    const cursor = keysetCursor(table, first);
     const rest = await mapPool(shardRangesAfter(cursor), SHARD_BOUNDS.length + 1, (range) =>
-      this.fetchShard(table, select, column, ids, pageSize, range),
+      this.fetchShard(table, select, column, ids, pageSize, range, (n) => onRows?.((total += n))),
     );
     return first.concat(rest.flat());
   }
@@ -802,15 +868,17 @@ export class SupabaseDataSource implements DataSource {
     ids: string[],
     pageSize: number,
     [from, to]: ShardRange,
+    onRows?: (n: number) => void,
   ): Promise<Row[]> {
     const out: Row[] = [];
     let cursor = from;
     for (;;) {
       const page = await this.fetchPage(table, select, column, ids, pageSize, [cursor, to]);
       out.push(...page);
+      onRows?.(page.length);
       // A short page means the server had nothing left to give.
       if (page.length < pageSize) return out;
-      cursor = page[page.length - 1].id as string;
+      cursor = keysetCursor(table, page);
     }
   }
 
@@ -824,12 +892,67 @@ export class SupabaseDataSource implements DataSource {
     [from, to]: ShardRange,
   ): Promise<Row[]> {
     const supabase = getSupabase();
-    let q = supabase.from(table).select(select).in(column, ids).order('id').limit(pageSize);
+    let q = supabase
+      .from(table)
+      .select(withKeysetColumn(select))
+      .in(column, ids)
+      .order('id')
+      .limit(pageSize);
     if (from !== undefined) q = q.gt('id', from);
     if (to !== undefined) q = q.lte('id', to);
     const { data, error } = await q;
     if (error) throw new Error(error.message);
     return (data ?? []) as Row[];
+  }
+
+  /**
+   * Every evaluation (with its scores) for a batch of tryouts.
+   *
+   * Prefers get_evaluations_for_tryouts() — see
+   * 20260826160000_evaluations_rpc_and_analyze.sql. Reading `evaluations` with
+   * `evaluation_scores` embedded makes Postgres evaluate BOTH of that table's
+   * permissive policies for every score row, and each one re-queries
+   * `evaluations` and then can_access_tryout(). On a 1000-player x 5-session
+   * assessment (~50,000 score rows) that is what overran the 8s statement
+   * timeout and made the roster screen show "Could not load roster."; the RPC
+   * authorizes once per tryout instead, admitting exactly the same rows.
+   *
+   * Keyset-paged because a `setof jsonb` RPC is still capped by PostgREST's
+   * db-max-rows, exactly like a table read — taking one call's result as
+   * complete would silently drop the excess.
+   *
+   * Any failure falls back to the embedded read rather than surfacing, so a
+   * database that hasn't had the migration applied yet keeps working (just
+   * slowly) instead of reporting an assessment with no evaluations at all —
+   * which a coach would read as lost scores.
+   */
+  private async fetchEvaluationsForTryouts(ids: string[]): Promise<Row[]> {
+    if (ids.length === 0) return [];
+    const supabase = getSupabase();
+
+    try {
+      const rows: Row[] = [];
+      let cursor: string | null = null;
+      for (;;) {
+        const { data, error } = await supabase.rpc('get_evaluations_for_tryouts', {
+          p_tryout_ids: ids,
+          p_after_id: cursor,
+          p_limit: EVALUATIONS_PAGE,
+        });
+        if (error) throw new Error(error.message);
+        const page = ((data as Row[]) ?? []) as Row[];
+        rows.push(...page);
+        // A short page means the server had nothing left to give.
+        if (page.length < EVALUATIONS_PAGE) return rows;
+        cursor = page[page.length - 1].id as string;
+      }
+    } catch (e) {
+      console.warn(
+        'get_evaluations_for_tryouts unavailable — falling back to the embedded read.',
+        e,
+      );
+      return this.fetchAllByIn('evaluations', EVALUATION_SELECT, 'tryout_id', ids, EVALUATIONS_PAGE);
+    }
   }
 
   private async assembleTryouts(tryoutRows: Row[]): Promise<Tryout[]> {
@@ -839,7 +962,7 @@ export class SupabaseDataSource implements DataSource {
     const [pRowsAll, aRows, eRows, rRows] = await Promise.all([
       this.fetchAllByIn('tryout_participants', PARTICIPANT_SELECT, 'tryout_id', ids, PARTICIPANTS_PAGE),
       this.fetchAllByIn('tryout_assessors', '*', 'tryout_id', ids),
-      this.fetchAllByIn('evaluations', EVALUATION_SELECT, 'tryout_id', ids, EVALUATIONS_PAGE),
+      this.fetchEvaluationsForTryouts(ids),
       this.fetchAllByIn('registrations', '*', 'tryout_id', ids),
     ]);
     // Soft-removed players (see deletePlayer) stay in the table so their
@@ -2346,15 +2469,61 @@ export class SupabaseDataSource implements DataSource {
       patch.ai_assessments = next;
     }
 
-    if (Object.keys(patch).length) {
-      unwrap(await supabase.from('tryouts').update(patch).eq('id', id).select().single());
-    }
+    const row = Object.keys(patch).length
+      ? (unwrap(await supabase.from('tryouts').update(patch).eq('id', id).select().single()) as Row)
+      : (unwrap(await supabase.from('tryouts').select('*').eq('id', id).single()) as Row);
+
     if (updates.assessors !== undefined) {
       await this.syncAssessors(id, updates.assessors);
     }
-    const result = await this.getTryout(id);
-    if (!result) throw new Error('Tryout not found');
-    return result;
+
+    // Built from the patched row plus a cheap assessors fetch, instead of
+    // getTryout()'s full reassembly (every player, every evaluation, every
+    // registration). Every caller of updateTryout either discards this
+    // return value — relying on useUpdateTryoutMutation's cache invalidation
+    // to pick up the change in the background — or, the one exception
+    // (assessment/new.tsx right after creating a tryout), only reads
+    // `.assessors`. Nobody needs roster/evals/registrations here, and a patch
+    // as small as re-linking a tryout's team was paying the same cost as
+    // opening the full roster screen — which is what timed out attaching a
+    // 1,000-player assessment to a team.
+    const assessorRows = unwrap(
+      await supabase.from('tryout_assessors').select('*').eq('tryout_id', id),
+    ) as Row[];
+    const settings = row.settings ?? { skaterWeights: {}, goalieWeights: {}, customRubrics: [] };
+    const ai = row.ai_assessments ?? {};
+    const { teamBuilder, ...aiAssessments } = ai;
+
+    return {
+      id: row.id,
+      name: row.name,
+      teamId: row.team_id ?? undefined,
+      seasonId: row.season_id ?? undefined,
+      createdAt: toMs(row.created_at),
+      updatedAt: toMs(row.updated_at),
+      eventType: EVENT_TYPE_FROM_DB[row.event_type] ?? 'Tryout',
+      tryoutDate: row.tryout_date ?? undefined,
+      startTime: row.start_time ?? undefined,
+      endTime: row.end_time ?? undefined,
+      rink: row.location ?? undefined,
+      sport: row.sport,
+      sportOther: row.sport_other ?? undefined,
+      defaultPosition: row.default_position ?? undefined,
+      headAssessor: row.head_assessor ?? undefined,
+      headCoach: row.head_coach ?? undefined,
+      assessors: assessorRows.map((a) => this.rowToAssessor(a)),
+      roster: [],
+      evals: [],
+      registrations: [],
+      settings,
+      cloud: row.registration_code
+        ? { id: row.registration_code, enabled: row.registration_open }
+        : undefined,
+      archived: row.archived,
+      registrationFeeCents: row.registration_fee_cents ?? undefined,
+      teamBuilder,
+      aiAssessments: Object.keys(aiAssessments).length ? aiAssessments : undefined,
+    } as Tryout;
   }
 
   /** Reconcile the desired assessor list against the tryout_assessors table. */
@@ -4716,12 +4885,83 @@ export class SupabaseDataSource implements DataSource {
     unwrap(await supabase.from('seasons').delete().eq('id', id).select().maybeSingle());
   }
 
+  /**
+   * Emails every guardian about a newly created event, without making the
+   * caller wait. Best-effort by design: never fail event creation over a mail
+   * problem, and never hold the coach's spinner for the sum of one
+   * send-email invoke per guardian (in series, a 25-player team was 25 round
+   * trips of dead time; a 1000-player team was hopeless).
+   */
+  private dispatchScheduleEmails(emails: string[], form: CreateEventForm): void {
+    if (emails.length === 0) return;
+    void Promise.allSettled(
+      emails.map((email) =>
+        this.sendEmail('schedule_update', email, {
+          eventName: form.title,
+          date: form.date,
+          time: form.startTime,
+          location: form.location,
+        }),
+      ),
+    ).then((results) => {
+      const failed = results.filter((r) => r.status === 'rejected');
+      if (failed.length) {
+        console.error(
+          `Failed to send ${failed.length}/${emails.length} schedule emails`,
+          (failed[0] as PromiseRejectedResult).reason,
+        );
+      }
+    });
+  }
+
   async addSeasonEvent(
     seasonId: string,
     form: CreateEventForm,
     onProgress?: (done: number, total: number) => void,
   ): Promise<SeasonEvent> {
     const { supabase } = await this.ctx();
+
+    // Fast path: the event row and every invite in ONE statement, server-side.
+    //
+    // The fallback below has to read the roster (paged) and then write the
+    // invites back in small chunks, because event_availability's write policy
+    // is re-evaluated per row and a big insert from the client trips the 8s
+    // statement timeout. create_season_event_for_caller() authorizes once for
+    // the season and then inserts set-based as a definer, so a 1000-player
+    // event costs one round trip instead of ~55. See
+    // 20260826180000_create_season_event_rpc.sql.
+    const selectedIds = form.playerIds && form.playerIds.length > 0 ? form.playerIds : null;
+    if (selectedIds) onProgress?.(0, selectedIds.length);
+    const rpc = await supabase.rpc('create_season_event_for_caller', {
+      p_season_id: seasonId,
+      p_event: {
+        kind: EVENT_KIND_TO_DB[form.type] ?? 'game',
+        title: form.title,
+        event_date: form.date,
+        end_date: form.endDate || form.date,
+        start_time: form.startTime ?? null,
+        end_time: form.endTime ?? null,
+        location: form.location ?? null,
+        notes: form.notes ?? null,
+      },
+      p_roster_ids: selectedIds,
+    });
+    if (!rpc.error) {
+      const payload = (rpc.data ?? {}) as Row;
+      const eventRow = payload.event as Row;
+      const invited = Number(payload.invited_count ?? 0);
+      onProgress?.(invited, invited);
+      this.dispatchScheduleEmails((payload.guardian_emails as string[]) ?? [], form);
+      return this.rowToSeasonEvent(eventRow, {});
+    }
+    // Only a not-yet-deployed function falls through — anything else (a real
+    // authorization failure, a bad date) must surface rather than be retried
+    // the slow way and fail again at the end of a long progress bar.
+    if (rpc.error.code !== 'PGRST202' && rpc.error.code !== '42883') {
+      throw new Error(rpc.error.message);
+    }
+    console.warn('create_season_event_for_caller() not deployed — falling back to the chunked write.');
+
     const row = unwrap(
       await supabase
         .from('season_events')
@@ -4773,19 +5013,31 @@ export class SupabaseDataSource implements DataSource {
           response: 'pending' as const,
         }));
         // Chunked for the same reason the roster upserts are: a whole large
-        // team's worth of rows in one insert outran the statement timeout, and
-        // this one must not fail — it is what gates who receives the event.
+        // team's worth of rows in one insert outran the statement timeout.
         const chunks: (typeof availability)[] = [];
         for (let i = 0; i < availability.length; i += ROSTER_UPSERT_CHUNK) {
           chunks.push(availability.slice(i, i + ROSTER_UPSERT_CHUNK));
         }
         let done = 0;
+        let failedRows = 0;
         onProgress?.(0, availability.length);
         await mapPool(chunks, ROSTER_WRITE_CONCURRENCY, async (chunk) => {
-          unwrap(await supabase.from('event_availability').insert(chunk));
-          done += chunk.length;
-          onProgress?.(Math.min(availability.length, done), availability.length);
+          try {
+            unwrap(await supabase.from('event_availability').insert(chunk));
+          } catch (e) {
+            // A slow/failed chunk must not cost the rest of the roster their
+            // invite, or throw away the chunks that already landed — only
+            // surface an error below if literally nobody got invited.
+            failedRows += chunk.length;
+            console.error('Failed to insert an event_availability chunk', e);
+          } finally {
+            done += chunk.length;
+            onProgress?.(Math.min(availability.length, done), availability.length);
+          }
         });
+        if (failedRows === availability.length) {
+          throw new Error('Could not invite any players to this event. Please try again.');
+        }
       }
 
       // Find all guardians related to the selected players and send them emails.
@@ -4798,31 +5050,7 @@ export class SupabaseDataSource implements DataSource {
           .filter(Boolean) as string[],
       ));
 
-      // Emailing on create is best-effort — never fail event creation over it,
-      // and never make the coach wait on it. One send-email invoke per guardian
-      // used to run in series, so a 25-player team held the spinner for the sum
-      // of 25 edge-function round trips. Fire them all off in parallel and let
-      // them settle after this resolves.
-      if (emails.length > 0) {
-        void Promise.allSettled(
-          emails.map((email) =>
-            this.sendEmail('schedule_update', email, {
-              eventName: form.title,
-              date: form.date,
-              time: form.startTime,
-              location: form.location,
-            }),
-          ),
-        ).then((results) => {
-          const failed = results.filter((r) => r.status === 'rejected');
-          if (failed.length) {
-            console.error(
-              `Failed to send ${failed.length}/${emails.length} schedule emails`,
-              (failed[0] as PromiseRejectedResult).reason,
-            );
-          }
-        });
-      }
+      this.dispatchScheduleEmails(emails, form);
     }
 
     return this.rowToSeasonEvent(row, {});
@@ -4983,7 +5211,10 @@ export class SupabaseDataSource implements DataSource {
     );
   }
 
-  async importSeasonPlayersFromTeam(seasonId: string): Promise<SeasonPlayer[]> {
+  async importSeasonPlayersFromTeam(
+    seasonId: string,
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<SeasonPlayer[]> {
     const { supabase } = await this.ctx();
     const seasonRow = unwrap(
       await supabase.from('seasons').select('team_id').eq('id', seasonId).single()
@@ -4999,50 +5230,101 @@ export class SupabaseDataSource implements DataSource {
       .select('id')
       .eq('team_id', teamId);
 
+    // The season roster as it stands, not an empty list: this returns the
+    // roster, and "there was nothing new to import" is not the same as "this
+    // season has nobody on it". Callers use the return value as the set of
+    // players to invite (see syncSeasonRosterFromTeam), so answering [] here
+    // would drop every athlete already enrolled.
     if (!tryouts || tryouts.length === 0) {
-      return [];
+      return this.listSeasonRoster(seasonId);
     }
 
     const tryoutIds = tryouts.map((t) => t.id);
 
-    const { data: participants } = await supabase
-      .from('tryout_participants')
-      .select('athlete_id, jersey')
-      .in('tryout_id', tryoutIds)
-      .is('removed_at', null);
+    // Paged, for the same reason every other read of these two tables is: an
+    // unbounded select stops at PostgREST's row cap, so a team whose linked
+    // assessments carry more than ~1000 participants silently imported only
+    // the first page of them — and a capped read of the *existing* roster
+    // made the diff below re-add athletes that were already enrolled.
+    // total: 0 is the "still scanning, don't know the total yet" signal the
+    // UI reads as distinct from a finished count — this read is the part that
+    // can genuinely run long on a big linked assessment (RLS is evaluated per
+    // row) with no fixed total to report until it's done, so without this the
+    // progress bar had nothing to show but a static placeholder for however
+    // long it took.
+    const participants = await this.fetchAllByIn(
+      'tryout_participants',
+      'athlete_id, jersey, removed_at',
+      'tryout_id',
+      tryoutIds,
+      PARTICIPANTS_PAGE,
+      (soFar) => onProgress?.(soFar, 0),
+    );
+    // Soft-removed participants stay in the table so their evaluations still
+    // count toward the athlete's history, but they are no longer on the
+    // assessment's active roster and must not be enrolled onto the season.
+    const active = participants.filter((p) => !p.removed_at);
 
-    if (!participants || participants.length === 0) {
-      return [];
+    // Same reasoning as the no-linked-assessments case above.
+    if (active.length === 0) {
+      return this.listSeasonRoster(seasonId);
     }
 
-    const { data: existingRoster } = await supabase
-      .from('season_roster')
-      .select('athlete_id')
-      .eq('season_id', seasonId);
+    const existingRoster = await this.fetchAllByIn(
+      'season_roster',
+      'athlete_id',
+      'season_id',
+      [seasonId],
+      SEASON_ROSTER_PAGE,
+    );
 
-    const existingAthleteIds = new Set(existingRoster?.map((r) => r.athlete_id) || []);
+    const existingAthleteIds = new Set(existingRoster.map((r) => r.athlete_id));
 
     const uniqueAthletes = new Map<string, string | null>();
-    for (const p of participants) {
-      if (p.athlete_id && !existingAthleteIds.has(p.athlete_id)) {
+    const distinctActiveIds = new Set<string>();
+    for (const p of active) {
+      if (!p.athlete_id) continue;
+      distinctActiveIds.add(p.athlete_id);
+      if (!existingAthleteIds.has(p.athlete_id)) {
         if (!uniqueAthletes.has(p.athlete_id) || p.jersey) {
           uniqueAthletes.set(p.athlete_id, p.jersey);
         }
       }
     }
 
-    const rosterInserts = Array.from(uniqueAthletes.entries()).map(([athleteId, jersey]) => ({
-      season_id: seasonId,
-      athlete_id: athleteId,
-      jersey: jersey || null,
-    }));
+    // Reported the moment the scan above finishes, not left blank through it:
+    // the two paginated reads this function starts with are themselves a
+    // real, if usually brief, network cost on a large linked assessment, and
+    // there's no meaningful done/total to report until they've both landed —
+    // this turns "nothing on screen while it works" into an honest starting
+    // count (which, when nothing new needs enrolling, is already the answer).
+    let done = distinctActiveIds.size - uniqueAthletes.size;
+    onProgress?.(done, distinctActiveIds.size);
 
-    if (rosterInserts.length > 0) {
-      unwrap(await supabase.from('season_roster').insert(rosterInserts).select());
+    if (uniqueAthletes.size > 0) {
+      // Chunked for the same reason the other season_roster writes are: one
+      // insert for a whole assessment's worth of athletes outran the statement
+      // timeout, and PostgREST re-evaluates the insert policy per row.
+      const inserts = Array.from(uniqueAthletes.entries()).map(([athleteId, jersey]) => ({
+        season_id: seasonId,
+        athlete_id: athleteId,
+        jersey: jersey || null,
+      }));
+      const chunks: (typeof inserts)[] = [];
+      for (let i = 0; i < inserts.length; i += ROSTER_UPSERT_CHUNK) {
+        chunks.push(inserts.slice(i, i + ROSTER_UPSERT_CHUNK));
+      }
+      await mapPool(chunks, ROSTER_WRITE_CONCURRENCY, async (chunk) => {
+        unwrap(await supabase.from('season_roster').insert(chunk));
+        done += chunk.length;
+        onProgress?.(Math.min(distinctActiveIds.size, done), distinctActiveIds.size);
+      });
     }
 
-    const updatedSeason = await this.getSeason(seasonId);
-    return updatedSeason?.roster || [];
+    // listSeasonRoster, not getSeason: callers only ever want the roster, and
+    // getSeason() assembles every event and every RSVP row on all of them on
+    // top of it — the dominant cost of this call, and pure waste here.
+    return this.listSeasonRoster(seasonId);
   }
 
   async emailScheduleToPlayers(seasonId: string): Promise<void> {

@@ -359,7 +359,13 @@ export function useCreateTryoutMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (form: CreateAssessmentForm) => withTimeout(getDataSource().createTryout(form), 15000),
-    onSuccess: () => {
+    onSuccess: (tryout) => {
+      // Seed the single-tryout cache with what the create call already
+      // returned — without this, navigating straight to the new assessment's
+      // settings screen lands useTryoutQuery on an empty cache, which refetches
+      // the whole roster+evaluations bundle behind a blocking spinner instead
+      // of rendering immediately.
+      qc.setQueryData(queryKeys.tryout(tryout.id), tryout);
       qc.invalidateQueries({ queryKey: queryKeys.tryouts(false) });
       qc.invalidateQueries({ queryKey: queryKeys.profile });
     },
@@ -903,6 +909,56 @@ export function useDeleteSeasonMutation() {
   });
 }
 
+/**
+ * Splices a just-saved event into the cached season so the schedule shows it
+ * the moment the save returns.
+ *
+ * Invalidating alone was not enough: getSeason() re-reads the whole season —
+ * every event, the full roster, and every RSVP row on every event — so on a
+ * 1000-player team the coach sat looking at a schedule *without* the event they
+ * had just created until that refetch landed. The event row here is what the
+ * server actually returned, and its invites were all just written as 'pending',
+ * so this is the real state, not a guess. The invalidation still runs
+ * afterwards to pick up anything else that moved; it's now a background
+ * refresh rather than the thing standing between the coach and their event.
+ *
+ * Keyed by roster id AND athlete id, and sorted by date, to match exactly what
+ * assembleSeasons() produces — otherwise the row would visibly rearrange when
+ * the refetch replaced it.
+ *
+ * `invitedRoster` is the actual roster rows invited, not just their ids: a
+ * team event can sync brand-new season-roster rows into existence in the same
+ * call (see useAddTeamEventMutation), and those rows aren't in the cached
+ * `prev.roster` yet. Building availability by matching ids against the stale
+ * cache silently dropped every one of them — the event saved and invited them
+ * correctly server-side, but showed "nobody invited" until the background
+ * refetch below caught up. Merging `invitedRoster` into the cached roster too
+ * means both the invite map and the name lookup that renders it are correct
+ * immediately.
+ */
+function addEventToSeasonCache(
+  qc: ReturnType<typeof useQueryClient>,
+  seasonId: string,
+  event: import('@/data/types').SeasonEvent,
+  invitedRoster: import('@/data/types').SeasonPlayer[],
+) {
+  qc.setQueryData<import('@/data/types').Season>(queryKeys.season(seasonId), (prev) => {
+    if (!prev) return prev;
+    if (prev.events.some((e) => e.id === event.id)) return prev;
+    const availability: Record<string, 'pending'> = {};
+    for (const p of invitedRoster) {
+      availability[p.id] = 'pending';
+      if (p.athleteId) availability[p.athleteId] = 'pending';
+    }
+    const existingIds = new Set(prev.roster.map((p) => p.id));
+    const roster = [...prev.roster, ...invitedRoster.filter((p) => !existingIds.has(p.id))];
+    const events = [...prev.events, { ...event, availability }].sort((a, b) =>
+      a.date.localeCompare(b.date),
+    );
+    return { ...prev, roster, events };
+  });
+}
+
 export function useAddSeasonEventMutation(
   seasonId: string,
   onProgress?: (done: number, total: number) => void,
@@ -911,7 +967,15 @@ export function useAddSeasonEventMutation(
   return useMutation({
     mutationFn: (form: import('@/data/types').CreateEventForm) =>
       getDataSource().addSeasonEvent(seasonId, form, onProgress),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.season(seasonId) }),
+    onSuccess: (event, form) => {
+      const cached = qc.getQueryData<import('@/data/types').Season>(queryKeys.season(seasonId));
+      const roster = cached?.roster ?? [];
+      const invitedRoster = form.playerIds?.length
+        ? roster.filter((p) => form.playerIds!.includes(p.id))
+        : roster;
+      addEventToSeasonCache(qc, seasonId, event, invitedRoster);
+      qc.invalidateQueries({ queryKey: queryKeys.season(seasonId) });
+    },
   });
 }
 
@@ -920,19 +984,44 @@ export function useAddSeasonEventMutation(
  * returns the season roster. Availability (and therefore guardian portal
  * visibility) is keyed on season roster entries, so this is what makes a team
  * player actually receive events.
+ *
+ * Returns the WHOLE season roster on purpose, not just athletes on
+ * `team_roster`. A season roster is seeded by createSeason() from every
+ * participant of every tryout linked to the team, and that's the set coaches
+ * expect an event to reach: attaching an assessment to a team is what puts
+ * its players on the team as far as the schedule is concerned, without
+ * anyone having to re-import them through Players → "Add Players from
+ * Assessments" first. Narrowing this to team_roster (as the web app does)
+ * means a team whose players only exist on an attached assessment invites
+ * nobody at all. The trade-off is that athletes who tried out and were cut
+ * stay on the season roster and keep getting invited — prune them from the
+ * season roster if that matters.
  */
-async function syncSeasonRosterFromTeam(teamId: string, seasonId: string) {
+async function syncSeasonRosterFromTeam(
+  teamId: string,
+  seasonId: string,
+  onProgress?: (done: number, total: number) => void,
+) {
   const ds = getDataSource();
-  // listSeasonRoster, not getSeason: this only needs athlete ids to diff
-  // against the team roster. getSeason() assembles the whole season detail —
-  // every event, every guardian's RSVP on every one of them, every portal
-  // invite — which on a season with a big roster and several events already
-  // scheduled turned "add one more event" into fetching thousands of
-  // unrelated availability rows just to answer "who's already enrolled".
-  const [teamRoster, existing] = await Promise.all([
-    ds.listTeamRoster(teamId),
-    ds.listSeasonRoster(seasonId),
-  ]);
+  // Back-fill from every assessment linked to the team first. createSeason()
+  // seeds the season roster from linked tryouts, but only at the moment the
+  // season is created — attaching an assessment to a team afterwards adds
+  // nobody, and nothing else ever back-fills. A team whose players only exist
+  // on an assessment attached after its season already existed therefore had
+  // an empty season roster, so every event it saved invited nobody at all and
+  // the RSVP list read "Nobody was invited to this event yet." This is a no-op
+  // once those athletes are enrolled.
+  // Best-effort: this now sits on the critical path of every event save, and
+  // it can throw (a season with no team linked, a transient read). Saving the
+  // event with whoever is already enrolled beats failing the save outright.
+  const existing = await ds
+    .importSeasonPlayersFromTeam(seasonId, onProgress)
+    .catch(async (e) => {
+      console.warn('Could not back-fill the season roster from linked assessments', e);
+      return ds.listSeasonRoster(seasonId);
+    });
+
+  const teamRoster = await ds.listTeamRoster(teamId);
   const alreadyOnSeason = new Set(existing.map((p) => p.athleteId).filter(Boolean));
   const missing = teamRoster.filter((p) => p.athleteId && !alreadyOnSeason.has(p.athleteId));
   if (missing.length === 0) return existing;
@@ -942,10 +1031,12 @@ async function syncSeasonRosterFromTeam(teamId: string, seasonId: string) {
   // season for a 25-player team take tens of seconds. The upsert ignores
   // athletes already enrolled (unique athlete-per-season), so a racing caller
   // is a no-op rather than the duplicate-key error this used to have to catch.
+  onProgress?.(0, missing.length);
   const added = await ds.addSeasonPlayers(
     seasonId,
     missing.map((p) => ({ athleteId: p.athleteId!, jersey: p.jersey })),
   );
+  onProgress?.(missing.length, missing.length);
   return [...existing, ...added];
 }
 
@@ -959,7 +1050,14 @@ export function useAddTeamEventMutation(
   teamId: string,
   teamName: string,
   seasonId: string | undefined,
-  onProgress?: (done: number, total: number) => void,
+  /**
+   * Covers the two serial phases a team event can spend real time in on a big
+   * roster: enrolling players onto the season roster, then writing each one's
+   * invite. `phase` tells the caller which one a given (done, total) belongs
+   * to, since they're separate totals — without it the bar jumps backwards
+   * when the second phase starts against a different denominator.
+   */
+  onProgress?: (phase: 'roster' | 'invites', done: number, total: number) => void,
 ) {
   const qc = useQueryClient();
   return useMutation({
@@ -973,18 +1071,33 @@ export function useAddTeamEventMutation(
           teamId,
         });
         sid = season.id;
+        // addEventToSeasonCache() below no-ops when nothing is cached yet for
+        // this season id — and a season created one line above has never been
+        // fetched, so without this the coach's very first event on a brand-new
+        // team season saved fine server-side but showed no roster/RSVP list
+        // until the background invalidation refetch happened to land.
+        qc.setQueryData(queryKeys.season(sid), season);
       }
-      // Everyone on the team's Players list is invited, so a player added to the
-      // team after the season existed still gets the event (and their guardian
-      // sees it in the portal).
-      const roster = await syncSeasonRosterFromTeam(teamId, sid);
-      // addSeasonEvent already chunks the per-player availability write and
-      // reports progress on it — this was going unheard, so a big roster's
-      // "Save Event" sat on a bare spinner with no sense of how long was left.
-      await getDataSource().addSeasonEvent(sid, { ...form, playerIds: roster.map((p) => p.id) }, onProgress);
-      return sid;
+      // Everyone on the season roster is invited — the team's own players plus
+      // anyone from an assessment attached to it (see syncSeasonRosterFromTeam)
+      // — so a player added to the team after the season existed, or one who
+      // only exists on an attached assessment, still gets the event and their
+      // guardian still sees it in the portal.
+      const roster = await syncSeasonRosterFromTeam(teamId, sid, (done, total) =>
+        onProgress?.('roster', done, total),
+      );
+      // addSeasonEvent writes the invites and reports progress on them — this
+      // was going unheard, so a big roster's "Save Event" sat on a bare spinner
+      // with no sense of how long was left. On the RPC path it's one round trip
+      // and the bar goes straight to done.
+      const playerIds = roster.map((p) => p.id);
+      const event = await getDataSource().addSeasonEvent(sid, { ...form, playerIds }, (done, total) =>
+        onProgress?.('invites', done, total),
+      );
+      return { seasonId: sid, event, roster };
     },
-    onSuccess: (sid) => {
+    onSuccess: ({ seasonId: sid, event, roster }) => {
+      addEventToSeasonCache(qc, sid, event, roster);
       qc.invalidateQueries({ queryKey: queryKeys.seasons });
       qc.invalidateQueries({ queryKey: queryKeys.season(sid) });
     },
