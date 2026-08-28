@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Text, View, Pressable, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
@@ -14,8 +14,14 @@ export default function LoginScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const login = useAuthStore((s) => s.login);
+  const sessionExpired = useAuthStore((s) => s.sessionExpired);
+  const clearSessionExpired = useAuthStore((s) => s.clearSessionExpired);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    return () => clearSessionExpired();
+  }, [clearSessionExpired]);
 
   const { control, handleSubmit } = useForm({
     resolver: zodResolver(LoginFormSchema),
@@ -51,6 +57,17 @@ export default function LoginScreen() {
           Sign in to manage tryouts and evaluate players
         </Text>
       </View>
+
+      {sessionExpired ? (
+        <View
+          className="mb-4 rounded-xl px-4 py-3 border"
+          style={{ backgroundColor: colors.tile, borderColor: colors.warning }}
+        >
+          <Text className="text-sm font-medium" style={{ color: colors.warning }}>
+            Your session has expired. Please sign in again.
+          </Text>
+        </View>
+      ) : null}
 
       <View className="gap-4">
         <Controller

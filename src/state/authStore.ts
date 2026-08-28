@@ -9,11 +9,13 @@ import { useSessionStore } from './sessionStore';
 interface AuthState {
   session: AuthSession | null;
   isHydrated: boolean;
+  sessionExpired: boolean;
   setSession: (session: AuthSession | null) => void;
   setHydrated: (v: boolean) => void;
+  clearSessionExpired: () => void;
   login: (email: string, password: string) => Promise<void>;
   signup: (displayName: string, email: string, password: string, accountType: string) => Promise<void>;
-  logout: () => Promise<void>;
+  logout: (reason?: 'expired') => Promise<void>;
   restoreSession: (forceRefresh?: boolean) => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
@@ -28,11 +30,13 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       session: null,
       isHydrated: false,
+      sessionExpired: false,
       setSession: (session) => {
         queryClient.clear();
         set({ session });
       },
       setHydrated: (v) => set({ isHydrated: v }),
+      clearSessionExpired: () => set({ sessionExpired: false }),
       login: async (email, password) => {
         const session = await getDataSource().login(email, password);
         get().setSession(session);
@@ -41,7 +45,7 @@ export const useAuthStore = create<AuthState>()(
         const session = await getDataSource().signup(displayName, email, password, accountType);
         get().setSession(session);
       },
-      logout: async () => {
+      logout: async (reason?: 'expired') => {
         try {
           await getDataSource().logout();
         } catch (e) {
@@ -59,6 +63,7 @@ export const useAuthStore = create<AuthState>()(
             combineTryoutIds: [],
             completedSessions: {},
           });
+          set({ sessionExpired: reason === 'expired' });
           get().setSession(null);
         }
       },

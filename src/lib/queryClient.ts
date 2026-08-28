@@ -6,7 +6,7 @@ export const queryClient = new QueryClient({
       if (error.message === 'Not authenticated' || error.message.includes('Auth session missing')) {
         try {
           const { useAuthStore } = require('../state/authStore');
-          useAuthStore.getState().logout();
+          useAuthStore.getState().logout('expired');
         } catch (e) {
           console.error('Failed to auto-logout on auth failure:', e);
         }
