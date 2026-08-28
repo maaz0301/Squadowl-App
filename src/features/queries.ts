@@ -981,21 +981,20 @@ export function useAddSeasonEventMutation(
 
 /**
  * Copies any team-roster player missing from the season roster across, then
- * returns the season roster. Availability (and therefore guardian portal
- * visibility) is keyed on season roster entries, so this is what makes a team
- * player actually receive events.
+ * returns the season roster plus the team's own roster. Availability (and
+ * therefore guardian portal visibility) is keyed on season roster entries,
+ * so this is what makes a team player actually receive events.
  *
- * Returns the WHOLE season roster on purpose, not just athletes on
- * `team_roster`. A season roster is seeded by createSeason() from every
- * participant of every tryout linked to the team, and that's the set coaches
- * expect an event to reach: attaching an assessment to a team is what puts
- * its players on the team as far as the schedule is concerned, without
- * anyone having to re-import them through Players → "Add Players from
- * Assessments" first. Narrowing this to team_roster (as the web app does)
- * means a team whose players only exist on an attached assessment invites
- * nobody at all. The trade-off is that athletes who tried out and were cut
- * stay on the season roster and keep getting invited — prune them from the
- * season roster if that matters.
+ * Also back-fills from every assessment linked to the team, so a season
+ * roster still enrolls athletes who only exist on an attached assessment
+ * (attaching an assessment to a team is what puts its players on the team as
+ * far as the schedule is concerned, without anyone having to re-import them
+ * through Players → "Add Players from Assessments" first). But callers that
+ * need "who should an event actually invite" must intersect the returned
+ * `roster` against `teamRoster` — every assessment ever attached to the team
+ * stays on the season roster forever (nothing prunes it when an assessment
+ * is detached, or when the same dummy data gets regenerated), so the season
+ * roster alone can balloon far past the team's real headcount.
  */
 async function syncSeasonRosterFromTeam(
   teamId: string,
@@ -1024,7 +1023,7 @@ async function syncSeasonRosterFromTeam(
   const teamRoster = await ds.listTeamRoster(teamId);
   const alreadyOnSeason = new Set(existing.map((p) => p.athleteId).filter(Boolean));
   const missing = teamRoster.filter((p) => p.athleteId && !alreadyOnSeason.has(p.athleteId));
-  if (missing.length === 0) return existing;
+  if (missing.length === 0) return { roster: existing, teamRoster };
 
   // One upsert for the whole roster. This used to be one request per player in
   // series plus a full getSeason() refetch, which is what made provisioning a
@@ -1037,7 +1036,7 @@ async function syncSeasonRosterFromTeam(
     missing.map((p) => ({ athleteId: p.athleteId!, jersey: p.jersey })),
   );
   onProgress?.(missing.length, missing.length);
-  return [...existing, ...added];
+  return { roster: [...existing, ...added], teamRoster };
 }
 
 /**
@@ -1078,23 +1077,29 @@ export function useAddTeamEventMutation(
         // until the background invalidation refetch happened to land.
         qc.setQueryData(queryKeys.season(sid), season);
       }
-      // Everyone on the season roster is invited — the team's own players plus
-      // anyone from an assessment attached to it (see syncSeasonRosterFromTeam)
-      // — so a player added to the team after the season existed, or one who
-      // only exists on an attached assessment, still gets the event and their
-      // guardian still sees it in the portal.
-      const roster = await syncSeasonRosterFromTeam(teamId, sid, (done, total) =>
+      // Only the team's actual roster is invited. syncSeasonRosterFromTeam
+      // also back-fills the season roster from every assessment ever attached
+      // to the team (so those athletes are enrolled and reachable elsewhere),
+      // but inviting all of them to every event let a team's invite count
+      // balloon far past its real headcount — e.g. a team with 1000 players
+      // ended up inviting 20000+ once several thousand-player test
+      // assessments had been attached and detached over time. Intersecting
+      // against teamRoster keeps invites scoped to who's actually on the team
+      // right now.
+      const { roster, teamRoster } = await syncSeasonRosterFromTeam(teamId, sid, (done, total) =>
         onProgress?.('roster', done, total),
       );
+      const teamAthleteIds = new Set(teamRoster.map((p) => p.athleteId).filter(Boolean));
+      const invitedRoster = roster.filter((p) => p.athleteId && teamAthleteIds.has(p.athleteId));
       // addSeasonEvent writes the invites and reports progress on them — this
       // was going unheard, so a big roster's "Save Event" sat on a bare spinner
       // with no sense of how long was left. On the RPC path it's one round trip
       // and the bar goes straight to done.
-      const playerIds = roster.map((p) => p.id);
+      const playerIds = invitedRoster.map((p) => p.id);
       const event = await getDataSource().addSeasonEvent(sid, { ...form, playerIds }, (done, total) =>
         onProgress?.('invites', done, total),
       );
-      return { seasonId: sid, event, roster };
+      return { seasonId: sid, event, roster: invitedRoster };
     },
     onSuccess: ({ seasonId: sid, event, roster }) => {
       addEventToSeasonCache(qc, sid, event, roster);

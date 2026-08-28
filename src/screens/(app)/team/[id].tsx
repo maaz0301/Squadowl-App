@@ -406,23 +406,6 @@ export default function TeamDetailScreen() {
     }
   };
 
-  const confirmRemoveAssessmentFromTeam = (tryoutId: string, label: string) => {
-    Alert.alert('Remove Assessment', `Remove "${label}" from ${team.name}? The assessment itself is kept — this only unlinks it from this team.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await updateTryout.mutateAsync({ id: tryoutId, updates: { teamId: '' } });
-          } catch (e: any) {
-            Alert.alert('Error', e?.message || 'Could not remove this assessment from the team.');
-          }
-        },
-      },
-    ]);
-  };
-
   const confirmRemovePlayer = (athleteId: string, label: string) => {
     Alert.alert('Remove Player', `Remove ${label} from ${team.name}?`, [
       { text: 'Cancel', style: 'cancel' },
@@ -894,18 +877,7 @@ export default function TeamDetailScreen() {
                   {navigatingId === t.id ? (
                     <ActivityIndicator size="small" color={colors.primary} />
                   ) : (
-                    <View className="flex-row items-center gap-1">
-                      {canEditTeam ? (
-                        <Button
-                          label="Remove"
-                          size="sm"
-                          variant="ghost"
-                          loading={updateTryout.isPending && updateTryout.variables?.id === t.id}
-                          onPress={() => confirmRemoveAssessmentFromTeam(t.id, t.name)}
-                        />
-                      ) : null}
-                      <Badge label="Open" variant="brand" />
-                    </View>
+                    <Badge label="Open" variant="brand" />
                   )}
                 </Card>
               </Pressable>
@@ -1545,7 +1517,13 @@ export default function TeamDetailScreen() {
                         `Checking ${saveEventProgress.done} assessment entries so far...`
                       : 'Saving event...'
                     : saveEventProgress.phase === 'roster'
-                      ? `Adding ${saveEventProgress.done} of ${saveEventProgress.total} players to the season...`
+                      ? // This count is every athlete across the team's linked assessments
+                        // being synced onto the season roster for other features (see
+                        // syncSeasonRosterFromTeam) — it is not who the event invites, and on
+                        // a team with large attached assessments it can run well past the
+                        // team's actual headcount. Only the 'invites' phase below reflects
+                        // who actually gets this event.
+                        `Syncing ${saveEventProgress.done} of ${saveEventProgress.total} assessment records...`
                       : `Sending invites to ${saveEventProgress.done} of ${saveEventProgress.total} players...`}
               </Text>
             </View>

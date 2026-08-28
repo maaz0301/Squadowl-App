@@ -40,6 +40,55 @@ export function mixHex(a: string, b: string, amountOfA: number): string {
   ]);
 }
 
+/** RGB triple (0-255 each), or null if `hex` isn't a valid "#RRGGBB"/"RRGGBB". */
+export function hexToRgb(hex: string): [number, number, number] | null {
+  return parseHex(hex);
+}
+
+export function rgbToHsv(r: number, g: number, b: number): [number, number, number] {
+  const rn = r / 255;
+  const gn = g / 255;
+  const bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === rn) h = ((gn - bn) / d) % 6;
+    else if (max === gn) h = (bn - rn) / d + 2;
+    else h = (rn - gn) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  const s = max === 0 ? 0 : d / max;
+  return [h, s, max];
+}
+
+export function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
+  const c = v * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = v - c;
+  let [rp, gp, bp] = [0, 0, 0];
+  if (h < 60) [rp, gp, bp] = [c, x, 0];
+  else if (h < 120) [rp, gp, bp] = [x, c, 0];
+  else if (h < 180) [rp, gp, bp] = [0, c, x];
+  else if (h < 240) [rp, gp, bp] = [0, x, c];
+  else if (h < 300) [rp, gp, bp] = [x, 0, c];
+  else [rp, gp, bp] = [c, 0, x];
+  return [(rp + m) * 255, (gp + m) * 255, (bp + m) * 255];
+}
+
+/** Hue (0-360), saturation and value (0-1 each). Falls back to black for an invalid hex. */
+export function hexToHsv(hex: string): [number, number, number] {
+  const rgb = parseHex(hex);
+  if (!rgb) return [0, 0, 0];
+  return rgbToHsv(...rgb);
+}
+
+export function hsvToHex(h: number, s: number, v: number): string {
+  return toHex(hsvToRgb(h, s, v));
+}
+
 /** WCAG relative luminance, 0 (black) to 1 (white). */
 export function luminance(hex: string): number {
   const c = parseHex(hex);
