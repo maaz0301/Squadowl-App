@@ -237,6 +237,69 @@ function tplSubscriptionCanceled() {
   };
 }
 
+/**
+ * Team/player portal invite, sent by "Send Invites" on a team roster.
+ *
+ * Distinct from tplOrgInvite, which is the generic "you've joined an
+ * organization" note and can say nothing about who the invite is for. A
+ * guardian receiving that had no way to tell which of their children it
+ * concerned, which team, or which club sent it — so this names all three, plus
+ * the address to sign up with, since the invite is bound to that address.
+ */
+function tplPlayerInvite(
+  playerName: string,
+  teamName: string,
+  recipientRole: string,
+  clubName?: string,
+  jersey?: string,
+  position?: string,
+  email?: string,
+) {
+  const safePlayer = escapeHtml(playerName);
+  const safeTeam = escapeHtml(teamName);
+  const isGuardian = recipientRole === 'Guardian';
+  const row = (label: string, value?: string) =>
+    value
+      ? `<tr><td style="color:#9ca3af;padding:8px 0;font-size:14px;width:110px;">${label}</td><td style="color:#fff;font-weight:600;padding:8px 0;font-size:14px;">${escapeHtml(value)}</td></tr>`
+      : '';
+  const rows = [
+    row('👤 Player', playerName),
+    row('🏒 Team', teamName),
+    row('🏛️ Club', clubName),
+    row('🔢 Jersey', jersey ? `#${jersey}` : undefined),
+    row('📍 Position', position),
+  ].join('');
+
+  return {
+    subject: `${safePlayer} has been invited to ${safeTeam} on Athlete Assessment`,
+    html: wrap("You're Invited to the Team Portal 🏒", `
+      <p style="color:#d1d5db;font-size:16px;line-height:1.7;margin:0 0 20px;">
+        ${isGuardian
+          ? `You've been invited as a guardian of <strong style="color:#a78bfa;">${safePlayer}</strong> to the team portal for <strong style="color:#a78bfa;">${safeTeam}</strong>.`
+          : `You've been invited to your team portal for <strong style="color:#a78bfa;">${safeTeam}</strong>.`}
+      </p>
+
+      <div style="background:#0f0f13;border-radius:12px;padding:20px 24px;margin:20px 0;border:1px solid #2a2a4a;">
+        <table width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+      </div>
+
+      <div style="background:#0f0f13;border-radius:12px;padding:20px 24px;margin:20px 0;border-left:4px solid #6366f1;">
+        <p style="color:#9ca3af;font-size:13px;margin:0 0 10px;">What you can do in the portal</p>
+        <p style="color:#fff;font-size:15px;line-height:1.8;margin:0;">
+          📅 See the full schedule and RSVP to games and practices<br/>
+          📊 Follow evaluation results and development history<br/>
+          📝 Keep contact and medical details up to date<br/>
+          💬 Stay in touch with the coaching staff
+        </p>
+      </div>
+
+      <p style="color:#9ca3af;font-size:15px;line-height:1.7;margin:0;">
+        Log in${email ? `, or sign up with <strong style="color:#a78bfa;">${escapeHtml(email)}</strong>,` : ' (or sign up with this email)'} to accept the invite and get started.
+      </p>
+    `),
+  };
+}
+
 // ─── Main handler ────────────────────────────────────────────────────────────
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -252,6 +315,15 @@ serve(async (req: Request) => {
     let html = '<p>You have a new notification.</p>';
 
     if (type === 'org_invite') ({ subject, html } = tplOrgInvite(payload?.role ?? 'Member', payload?.password));
+    else if (type === 'player_invite') ({ subject, html } = tplPlayerInvite(
+      payload?.playerName ?? 'A player',
+      payload?.teamName ?? 'their team',
+      payload?.role ?? 'Guardian',
+      payload?.clubName,
+      payload?.jersey,
+      payload?.position,
+      to,
+    ));
     else if (type === 'team_manager_invite') ({ subject, html } = tplTeamManagerInvite(payload?.teamName ?? 'a team', payload?.role ?? 'manager', payload?.password));
     else if (type === 'tryout_invite') ({ subject, html } = tplTryoutInvite(payload?.tryoutName));
     else if (type === 'schedule_update') ({ subject, html } = tplScheduleUpdate(payload?.eventName ?? 'New Event', payload?.date, payload?.time, payload?.location));

@@ -123,6 +123,17 @@ export function useRemoveTeamRosterPlayerMutation(teamId: string) {
   });
 }
 
+/**
+ * Invite a team's roster to the portal — each player's own email and their
+ * guardian's. No invalidation: nothing the team screen renders is derived from
+ * portal_invites, and the caller reports the per-address outcome it returns.
+ */
+export function useTeamRosterInvitesMutation(teamId: string) {
+  return useMutation({
+    mutationFn: (athleteIds?: string[]) => getDataSource().sendTeamRosterInvites(teamId, athleteIds),
+  });
+}
+
 export function useAcceptAssignmentMutation() {
   const queryClient = useQueryClient();
   return useMutation({

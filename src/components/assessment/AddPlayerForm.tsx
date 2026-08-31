@@ -32,6 +32,7 @@ export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
       shoots: defaultValues?.shoots || '',
       yearOfBirth: defaultValues?.yearOfBirth || '',
       positionTryingOutFor: defaultValues?.positionTryingOutFor || '',
+      playerEmail: defaultValues?.playerEmail || '',
       guardianName: defaultValues?.guardianName || '',
       guardianEmail: defaultValues?.guardianEmail || '',
       guardianPhone: defaultValues?.guardianPhone || '',
@@ -73,6 +74,7 @@ export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
     setValue('first', a.first);
     setValue('last', a.last);
     setValue('yearOfBirth', a.yearOfBirth || '');
+    setValue('playerEmail', a.playerEmail || '');
     setValue('guardianName', a.guardianName || '');
     setValue('guardianEmail', a.guardianEmail || '');
     setValue('guardianPhone', a.guardianPhone || '');
@@ -177,6 +179,13 @@ export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
       />
       <Controller
         control={control}
+        name="playerEmail"
+        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
+          <Input label="Player Email" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} autoCapitalize="none" keyboardType="email-address" />
+        )}
+      />
+      <Controller
+        control={control}
         name="guardianName"
         render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
           <Input label="Guardian Name" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} />
@@ -206,8 +215,9 @@ export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
       <Button
         label="Save Player"
         onPress={handleSubmit(onSubmit, (errors) => {
-          if (errors.guardianEmail) {
-            Alert.alert('Invalid Email', errors.guardianEmail.message || 'Please enter a valid email address');
+          const emailError = errors.guardianEmail ?? errors.playerEmail;
+          if (emailError) {
+            Alert.alert('Invalid Email', emailError.message || 'Please enter a valid email address');
           } else {
             Alert.alert('Validation Error', 'Please check the highlighted fields before saving.');
           }

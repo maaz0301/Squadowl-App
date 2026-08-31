@@ -241,7 +241,7 @@ export interface DataSource {
   addShareComment(shareId: string, body: string): Promise<ShareComment>;
 
   // Extended UI operations
-  sendEmail(type: 'org_invite' | 'team_manager_invite' | 'tryout_invite' | 'schedule_update' | 'reminder' | 'registration_confirmation', to: string, payload: any): Promise<void>;
+  sendEmail(type: 'org_invite' | 'player_invite' | 'team_manager_invite' | 'tryout_invite' | 'schedule_update' | 'reminder' | 'registration_confirmation', to: string, payload: any): Promise<void>;
   copyTryout(id: string): Promise<Tryout>;
   restoreTryout(id: string): Promise<Tryout>;
   importLibraryPlayers(tryoutId: string, entries: { first: string; last: string; jersey?: string; pos?: string }[]): Promise<Player[]>;
@@ -294,6 +294,14 @@ export interface DataSource {
   // Assessments".
   addManualTeamPlayer(teamId: string, form: AddPlayerForm): Promise<{ athleteId: string }>;
   removeTeamRosterPlayer(teamId: string, athleteId: string): Promise<void>;
+  /**
+   * Invite a team's roster to the player/guardian portal — each player's own
+   * email and their guardian's, both when present.
+   *
+   * `athleteIds` narrows it to specific players; omitted, the whole roster is
+   * invited. Never throws for a single bad address: see TeamInviteResult.
+   */
+  sendTeamRosterInvites(teamId: string, athleteIds?: string[]): Promise<import('./types').TeamInviteResult>;
   importScanScores(tryoutId: string, scores: { playerId: string; rubricKey: string; value: number }[]): Promise<void>;
   getGuardianRosters(): Promise<GuardianRosterAthlete[]>;
 

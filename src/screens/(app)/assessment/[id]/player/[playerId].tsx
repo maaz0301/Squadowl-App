@@ -122,6 +122,9 @@ export default function PlayerHubScreen() {
           #{player.jersey ?? '—'} · {player.pos ?? '—'}
         </Text>
         {player.registrationSource === 'qr' ? <Badge label="QR Registered" variant="info" /> : null}
+        {player.playerEmail ? (
+          <Text className="text-sm" style={{ color: colors.inkMuted }}>{player.playerEmail}</Text>
+        ) : null}
       </View>
 
         <View className="flex-row items-center gap-2 mt-4 mb-6">

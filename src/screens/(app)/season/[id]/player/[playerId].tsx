@@ -36,6 +36,7 @@ export default function SeasonPlayerScreen() {
       <Header title={`${player.firstName} ${player.lastName}`} showBack />
       <Card className="mb-4 gap-2">
         <Text style={{ color: colors.inkMuted }}>Jersey #{player.jersey ?? '—'}</Text>
+        <Text style={{ color: colors.ink }}>{player.playerEmail ?? 'No player email'}</Text>
         <Text style={{ color: colors.ink }}>{player.guardianEmail ?? 'No guardian email'}</Text>
         {player.portalInviteSentAt ? (
           <Badge label={`Invited ${new Date(player.portalInviteSentAt).toLocaleDateString()}`} variant="success" />
@@ -49,7 +50,7 @@ export default function SeasonPlayerScreen() {
           </Text>
           <Input
             label="Email"
-            value={email || player.guardianEmail || ''}
+            value={email || player.playerEmail || player.guardianEmail || ''}
             onChangeText={setEmail}
             autoCapitalize="none"
             keyboardType="email-address"
@@ -58,7 +59,10 @@ export default function SeasonPlayerScreen() {
             label="Send Invite"
             loading={portalInvite.isPending}
             onPress={() =>
-              portalInvite.mutate({ playerId: playerId!, email: email || player.guardianEmail || '' })
+              portalInvite.mutate({
+                playerId: playerId!,
+                email: email || player.playerEmail || player.guardianEmail || '',
+              })
             }
           />
         </Card>

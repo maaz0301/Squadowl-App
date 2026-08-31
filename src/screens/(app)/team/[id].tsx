@@ -8,7 +8,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
-import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useSeasonsQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation } from '@/features/queries';
+import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useTeamRosterInvitesMutation, useSeasonsQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit } from '@/data/plans';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
@@ -128,6 +128,7 @@ export default function TeamDetailScreen() {
   const addManualPlayer = useAddManualTeamPlayerMutation(id);
   const uploadTeamPlayerPhoto = useUploadTeamPlayerPhotoMutation(id);
   const removeRosterPlayer = useRemoveTeamRosterPlayerMutation(id);
+  const sendInvites = useTeamRosterInvitesMutation(id);
 
   // A player who never went through an assessment (no tryout roster to pull
   // them from) has no other way onto the team — this is that direct path.
@@ -502,6 +503,44 @@ export default function TeamDetailScreen() {
     else Alert.alert(title, message);
   };
 
+  /**
+   * Invite the roster to the player/guardian portal. Partial success is the
+   * normal outcome — see TeamInviteResult — so the report always names what went
+   * out, what bounced, and who had no address on file.
+   */
+  const sendRosterInvites = async () => {
+    try {
+      const result = await sendInvites.mutateAsync(undefined);
+      const lines: string[] = [];
+      if (result.sent.length > 0) {
+        lines.push(`Invites sent to ${result.sent.length} ${result.sent.length === 1 ? 'address' : 'addresses'}.`);
+      }
+      if (result.skipped.length > 0) lines.push(`No email on file for: ${result.skipped.join(', ')}.`);
+      if (result.failed.length > 0) {
+        lines.push(`Could not send to ${result.failed.map((f) => f.email).join(', ')}.`);
+      }
+      if (lines.length === 0) lines.push('There was nobody to invite.');
+      alertMsg(result.sent.length > 0 ? 'Invites Sent' : 'No Invites Sent', lines.join('\n\n'));
+    } catch (e: any) {
+      alertMsg('Error', e?.message || 'Could not send invites.');
+    }
+  };
+
+  const confirmSendRosterInvites = () => {
+    const count = teamPlayers.length;
+    const message =
+      `Invite all ${count} ${count === 1 ? 'player' : 'players'} on ${team.name} to the portal? ` +
+      "Each invite goes to the player\u2019s own email and their guardian\u2019s, wherever those are on file.";
+    if (Platform.OS === 'web') {
+      if (confirm(`Send Invites\n\n${message}`)) void sendRosterInvites();
+      return;
+    }
+    Alert.alert('Send Invites', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Send', onPress: () => void sendRosterInvites() },
+    ]);
+  };
+
   const submitEvent = eventForm.handleSubmit(
     async (data) => {
       const [y, m, d] = data.date.split('-').map(Number);
@@ -725,6 +764,15 @@ export default function TeamDetailScreen() {
                 variant="secondary"
                 onPress={() => setShowAddManualPlayer(true)}
               />
+              {canEditTeam && teamPlayers.length > 0 ? (
+                <Button
+                  label="Send Invites"
+                  size="sm"
+                  variant="secondary"
+                  loading={sendInvites.isPending}
+                  onPress={confirmSendRosterInvites}
+                />
+              ) : null}
             </View>
             {teamPlayers.length > 0 ? (
               <Input

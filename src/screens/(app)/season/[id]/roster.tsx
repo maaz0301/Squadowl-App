@@ -23,6 +23,7 @@ export default function SeasonRosterScreen() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [jersey, setJersey] = useState('');
+  const [playerEmail, setPlayerEmail] = useState('');
   const [guardianEmail, setGuardianEmail] = useState('');
 
   // Hook, so it runs before the loading/error guards — skipping it on the
@@ -44,12 +45,14 @@ export default function SeasonRosterScreen() {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         jersey: jersey.trim() || undefined,
+        playerEmail: playerEmail.trim() || undefined,
         guardianEmail: guardianEmail.trim() || undefined,
       },
     });
     setFirstName('');
     setLastName('');
     setJersey('');
+    setPlayerEmail('');
     setGuardianEmail('');
     setShowAdd(false);
   };
@@ -105,7 +108,7 @@ export default function SeasonRosterScreen() {
                   {item.firstName} {item.lastName}
                 </Text>
                 <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                  #{item.jersey ?? '—'} · {item.guardianEmail ?? 'No guardian email'}
+                  #{item.jersey ?? '—'} · {item.playerEmail ?? item.guardianEmail ?? 'No email'}
                 </Text>
               </View>
               {item.portalInviteSentAt ? (
@@ -130,7 +133,8 @@ export default function SeasonRosterScreen() {
           <Input label="First name" value={firstName} onChangeText={setFirstName} />
           <Input label="Last name" value={lastName} onChangeText={setLastName} />
           <Input label="Jersey" value={jersey} onChangeText={setJersey} />
-          <Input label="Guardian email" value={guardianEmail} onChangeText={setGuardianEmail} autoCapitalize="none" />
+          <Input label="Player email" value={playerEmail} onChangeText={setPlayerEmail} autoCapitalize="none" keyboardType="email-address" />
+          <Input label="Guardian email" value={guardianEmail} onChangeText={setGuardianEmail} autoCapitalize="none" keyboardType="email-address" />
           <Button label="Add to Roster" onPress={handleAdd} loading={addPlayer.isPending} />
         </View>
       </Modal>

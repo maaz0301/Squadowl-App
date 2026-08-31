@@ -25,6 +25,7 @@ export default function PublicRegistration() {
       lastName: '',
       yearOfBirth: '',
       positionTryingOutFor: '',
+      playerEmail: '',
       guardianName: '',
       guardianEmail: '',
       guardianPhone: '',
@@ -127,6 +128,14 @@ export default function PublicRegistration() {
           )}
         />
         
+        <Controller
+          control={control}
+          name="playerEmail"
+          render={({ field: { onChange, onBlur, value } }) => (
+            <Input label="Player Email" onBlur={onBlur} onChangeText={onChange} value={value} error={errors.playerEmail?.message} autoCapitalize="none" keyboardType="email-address" />
+          )}
+        />
+
         <View className="h-4" />
         <Text className="text-base font-bold" style={{ color: colors.ink }}>Guardian Information</Text>
 

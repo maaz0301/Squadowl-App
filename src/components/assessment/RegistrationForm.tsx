@@ -16,6 +16,7 @@ export function RegistrationForm({ loading, onSubmit }: Props) {
       firstName: '',
       lastName: '',
       yearOfBirth: '',
+      playerEmail: '',
       guardianName: '',
       guardianEmail: '',
     },
@@ -49,6 +50,13 @@ export function RegistrationForm({ loading, onSubmit }: Props) {
         name="positionTryingOutFor"
         render={({ field: { onChange, onBlur, value } }) => (
           <Input label="Position" onBlur={onBlur} onChangeText={onChange} value={value} />
+        )}
+      />
+      <Controller
+        control={control}
+        name="playerEmail"
+        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
+          <Input label="Player Email" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} autoCapitalize="none" keyboardType="email-address" />
         )}
       />
       <Controller

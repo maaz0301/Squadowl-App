@@ -191,6 +191,7 @@ export function generateDummyPlayers(
         yearOfBirth: String(currentYear - age),
         currentTeam: TEST_DATA_TAG,
         currentLevel: pick(LEVELS),
+        playerEmail: dummyPlayerEmail(first, last, i + 1),
         guardianName: guardian.name,
         guardianEmail: guardian.email,
       },
@@ -222,6 +223,16 @@ function dummyGuardian(last: string, unique: string | number): { name: string; e
     name: `${guardianFirst} ${last}`,
     email: `${slug}.${unique}@${DUMMY_EMAIL_DOMAIN}`,
   };
+}
+
+/**
+ * The player's own address, on the same disposable domain as dummyGuardian.
+ * Left blank, a dummy roster exercised only half of "Send Invites" — every
+ * invite went to a guardian and the player-addressed path never ran.
+ */
+function dummyPlayerEmail(first: string, last: string, unique: string | number): string {
+  const slug = `${first}.${last}`.toLowerCase().replace(/[^a-z.]/g, '');
+  return `${slug}.${unique}@${DUMMY_EMAIL_DOMAIN}`;
 }
 
 const ABOUT_SNIPPETS = [
@@ -257,6 +268,7 @@ export function generateDummyRegistration(
     lastName: last,
     yearOfBirth: player.form.yearOfBirth!, // generateDummyPlayers always sets this
     positionTryingOutFor: player.form.pos || pick(positions),
+    playerEmail: dummyPlayerEmail(first, last, index + 1),
     guardianName: guardian.name,
     guardianEmail: guardian.email,
     guardianPhone: `555${String(randInt(1000000, 9999999))}`,
@@ -431,6 +443,7 @@ export function mapAIPlayer(
       currentTeam: TEST_DATA_TAG,
       currentLevel: level,
       aboutChild: typeof raw.bio === 'string' ? raw.bio.slice(0, 200) : undefined,
+      playerEmail: dummyPlayerEmail(first, last, Math.random().toString(36).slice(2, 8)),
       guardianName: guardian.name,
       guardianEmail: guardian.email,
     },
