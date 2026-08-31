@@ -13,7 +13,7 @@ import { useUser, usePermissions } from '@/state/authStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit } from '@/data/plans';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
-import { CreateEventFormSchema, EVENT_KINDS, type AddPlayerForm as AddPlayerFormValues, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
+import { CreateEventFormSchema, type AddPlayerForm as AddPlayerFormValues, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
 import { BottomNav } from '@/components/BottomNav';
 import { ChatIconButton } from '@/components/ChatIconButton';
 import { PlanGate } from '@/components/PlanGate';
@@ -179,7 +179,7 @@ export default function TeamDetailScreen() {
 
   const eventForm = useForm<CreateEventForm>({
     resolver: zodResolver(CreateEventFormSchema),
-    defaultValues: { type: 'Practice', title: '', date: '', startTime: '', location: '', playerIds: [] },
+    defaultValues: { type: 'Event', title: '', date: '', startTime: '', location: '', playerIds: [] },
   });
   const eventType = eventForm.watch('type');
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
@@ -672,7 +672,7 @@ export default function TeamDetailScreen() {
                   title: `${team.name} Chat`,
                   subtitle: team.season || undefined,
                   noSeasonMessage:
-                    "This team doesn't have a season yet. Add a practice or game under Schedule, and the chat opens for everyone on the roster and their guardians.",
+                    "This team doesn't have a season yet. Add an event under Schedule, and the chat opens for everyone on the roster and their guardians.",
                 })
               }
             />
@@ -899,8 +899,7 @@ export default function TeamDetailScreen() {
               Season Hub
             </Text>
             <View className="flex-row flex-wrap gap-2 mb-3">
-              <Button label="+ Practice" size="sm" onPress={() => openEventModal('Practice')} />
-              <Button label="+ Game" size="sm" variant="secondary" onPress={() => openEventModal('Game')} />
+              <Button label="+ Event" size="sm" onPress={() => openEventModal('Event')} />
             </View>
 
             {seasonsQuery.isLoading || (teamSeasonId ? seasonQuery.isLoading : false) ? (
@@ -912,8 +911,8 @@ export default function TeamDetailScreen() {
               <Card className="items-center py-6 gap-1">
                 <Text className="font-bold" style={{ color: colors.ink }}>No upcoming events</Text>
                 <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
-                  Add a practice or game — everyone on the roster is invited and their guardians can
-                  RSVP from the portal.
+                  Add an event — everyone on the roster is invited and their guardians can RSVP from
+                  the portal.
                 </Text>
               </Card>
             ) : (
@@ -1409,11 +1408,6 @@ export default function TeamDetailScreen() {
         }}
       >
         <View className="gap-3">
-          <View className="flex-row flex-wrap">
-            {EVENT_KINDS.map((t) => (
-              <Chip key={t} label={t} active={eventType === t} onPress={() => eventForm.setValue('type', t)} />
-            ))}
-          </View>
           <Controller
             control={eventForm.control}
             name="title"
