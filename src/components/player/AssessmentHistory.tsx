@@ -150,7 +150,7 @@ export function AssessmentHistory({
   assessments,
   colors,
   onPressAssessment,
-  emptyTitle = 'No assessments yet',
+  emptyTitle = 'No evaluations yet',
   emptyMessage = "This player's profile will build up as they're evaluated across tryouts and seasons.",
   exportFileName,
 }: AssessmentHistoryProps) {

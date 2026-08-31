@@ -121,7 +121,7 @@ export function AddToRosterModal({
           </Text>
           <View className="flex-row flex-wrap">
             <Chip
-              label="Assessment"
+              label="Evaluation"
               active={kind === 'assessment'}
               onPress={() => {
                 setKind('assessment');
@@ -153,18 +153,18 @@ export function AddToRosterModal({
         ) : options.length === 0 ? (
           <View className="py-4 gap-1">
             <Text className="text-base font-bold" style={{ color: colors.ink }}>
-              {kind === 'assessment' ? 'No assessments' : 'No teams'}
+              {kind === 'assessment' ? 'No evaluations' : 'No teams'}
             </Text>
             <Text className="text-sm" style={{ color: colors.inkMuted }}>
               {kind === 'assessment'
-                ? 'Create an assessment before adding players to one.'
+                ? 'Create an evaluation before adding players to one.'
                 : 'Create a team before adding players to one.'}
             </Text>
           </View>
         ) : (
           <View>
             <Text className="text-sm font-bold uppercase tracking-wider mb-2" style={{ color: colors.inkMuted }}>
-              {kind === 'assessment' ? 'Available Assessments' : 'Available Teams'}
+              {kind === 'assessment' ? 'Available Evaluations' : 'Available Teams'}
             </Text>
             <View className="gap-2">
               {options.map((o) => {

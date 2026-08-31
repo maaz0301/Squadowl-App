@@ -82,7 +82,7 @@ export default function TeamPlayerScreen() {
         <Card className="mb-4 gap-2">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>Details</Text>
           <Row label="Year of Birth" value={yearOfBirth} colors={colors} />
-          <Row label="Assessment" value={rosterEntry?.sourceTryoutName} colors={colors} />
+          <Row label="Evaluation" value={rosterEntry?.sourceTryoutName} colors={colors} />
           <Row label="Jersey Colour" value={fullPlayer?.jerseyColour} colors={colors} />
         </Card>
 

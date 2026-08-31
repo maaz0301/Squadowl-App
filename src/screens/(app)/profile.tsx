@@ -238,7 +238,7 @@ export default function ProfileScreen() {
               Plan Limits
             </Text>
             <Text style={{ color: colors.inkMuted }}>
-              Assessments: {formatLimit(plan.limits.assessments)} · Players: {formatLimit(plan.limits.players)} · Teams:{' '}
+              Evaluations: {formatLimit(plan.limits.assessments)} · Players: {formatLimit(plan.limits.players)} · Teams:{' '}
               {formatLimit(getTeamAllowance(user?.planTier ?? 'free', user?.extraTeamLicenses ?? 0))}
             </Text>
             {extraTeamLicenses > 0 ? (

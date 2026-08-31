@@ -51,7 +51,7 @@ export default function SearchScreen() {
       <View className="px-4">
         <Header title="Search" showBack />
         <Input
-          label="Search assessments, players, seasons"
+          label="Search evaluations, players, seasons"
           value={query}
           onChangeText={setQuery}
           placeholder="Tryout name, player, team..."
@@ -61,7 +61,7 @@ export default function SearchScreen() {
 
       {!hasQuery ? (
         <View className="px-4">
-          <EmptyState title="Start typing" message="Search across assessments, rosters, and seasons." />
+          <EmptyState title="Start typing" message="Search across evaluations, rosters, and seasons." />
         </View>
       ) : empty ? (
         <View className="px-4">

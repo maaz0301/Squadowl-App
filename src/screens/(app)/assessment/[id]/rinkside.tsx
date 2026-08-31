@@ -263,7 +263,7 @@ export default function RinksideScreen() {
 
   if (tryoutQuery.isLoading) return <LoadingState message="Loading rinkside mode..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
-    return <ErrorState message="Could not load assessment." onRetry={() => tryoutQuery.refetch()} />;
+    return <ErrorState message="Could not load evaluation." onRetry={() => tryoutQuery.refetch()} />;
   }
 
   if (roster.length === 0) {

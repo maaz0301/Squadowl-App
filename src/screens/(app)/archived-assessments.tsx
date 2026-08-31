@@ -16,9 +16,9 @@ export default function ArchivedAssessmentsScreen() {
   if (tryoutsQuery.isError) {
     return (
       <Screen padded>
-        <Header title="Archived Assessments" showBack />
+        <Header title="Archived Evaluations" showBack />
         <ErrorState
-          message="Could not load archived assessments."
+          message="Could not load archived evaluations."
           onRetry={() => tryoutsQuery.refetch()}
         />
       </Screen>
@@ -30,14 +30,14 @@ export default function ArchivedAssessmentsScreen() {
   return (
     <Screen padded={false}>
       <View className="px-4">
-        <Header title="Archived Assessments" showBack />
+        <Header title="Archived Evaluations" showBack />
       </View>
       <FlatList
         data={archived}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: 16, paddingBottom: 32, flexGrow: 1 }}
         ListEmptyComponent={
-          <EmptyState title="No archived assessments" message="Assessments you archive will appear here. You can restore them to active status at any time." />
+          <EmptyState title="No archived evaluations" message="Evaluations you archive will appear here. You can restore them to active status at any time." />
         }
         renderItem={({ item }) => (
           <Card className="mb-3 gap-2">

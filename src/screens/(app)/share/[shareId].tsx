@@ -40,7 +40,7 @@ const STATUS_VARIANT: Record<AthleteShareStatus, 'brand' | 'success' | 'danger' 
 
 const STATUS_MESSAGE: Record<AthleteShareStatus, string> = {
   shared: 'Waiting for a response.',
-  assigned: 'Accepted and placed into an assessment.',
+  assigned: 'Accepted and placed into an evaluation.',
   declined: 'This coach declined the share.',
   withdrawn: 'This athlete was placed with another coach.',
   released: 'The coach has released this player from their roster.',
@@ -271,7 +271,7 @@ export default function ShareDetailScreen() {
         />
       </View>
 
-      <Modal visible={tryoutPickerVisible} title="Assign to Assessment" onClose={() => setTryoutPickerVisible(false)}>
+      <Modal visible={tryoutPickerVisible} title="Assign to Evaluation" onClose={() => setTryoutPickerVisible(false)}>
         <View className="gap-2">
           {(tryoutsQuery.data ?? []).length === 0 ? (
             <Text style={{ color: colors.inkMuted }}>

@@ -51,7 +51,7 @@ export default function AdminScreen() {
             <View className="flex-row flex-wrap gap-2 mt-2">
               <Badge label={`${stats.totalUsers} users`} variant="brand" />
               <Badge label={`${stats.activeUsers} active`} variant="success" />
-              <Badge label={`${stats.totalAssessments} assessments`} />
+              <Badge label={`${stats.totalAssessments} evaluations`} />
               <Badge label={`$${stats.revenueMtd} MTD`} variant="info" />
             </View>
           </Card>
@@ -60,7 +60,7 @@ export default function AdminScreen() {
               Recent Activity (Mock)
             </Text>
             <Text style={{ color: colors.inkMuted }}>12 new registrations today</Text>
-            <Text style={{ color: colors.inkMuted }}>3 assessments exported</Text>
+            <Text style={{ color: colors.inkMuted }}>3 evaluations exported</Text>
             <Text style={{ color: colors.inkMuted }}>1 enterprise org onboarded</Text>
           </Card>
         </ScrollView>
@@ -83,7 +83,7 @@ export default function AdminScreen() {
                 {item.email}
               </Text>
               <Text className="text-sm" style={{ color: colors.inkFaint }}>
-                {item.teamCount} teams · {item.assessmentCount} assessments
+                {item.teamCount} teams · {item.assessmentCount} evaluations
               </Text>
               {item.planTier !== 'club' ? (
                 <Button

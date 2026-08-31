@@ -200,7 +200,7 @@ export default function SettingsScreen() {
   const handleCopy = async () => {
     const count = tryoutsQuery.data?.length ?? 0;
     if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
-      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'assessments', 'assessments'));
+      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'assessments', 'evaluations'));
       return;
     }
     const copy = await copyTryout.mutateAsync(tryout.id);
@@ -214,8 +214,8 @@ export default function SettingsScreen() {
 
   const handleDelete = () => {
     Alert.alert(
-      'Delete Assessment',
-      'Are you sure you want to delete this assessment? This action cannot be undone and will delete all associated data.',
+      'Delete Evaluation',
+      'Are you sure you want to delete this evaluation? This action cannot be undone and will delete all associated data.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -232,7 +232,7 @@ export default function SettingsScreen() {
 
   return (
     <Screen scroll insideTabBar>
-      <Header title="Assessment Settings" showBack />
+      <Header title="Evaluation Settings" showBack />
       <Card accent className="mb-4 gap-2">
         <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
           {tryout.name}
@@ -306,18 +306,18 @@ export default function SettingsScreen() {
         <Text className="text-md font-display font-bold" style={{ color: colors.ink }}>
           Duplicate
         </Text>
-        <Button label="Copy Assessment" variant="secondary" onPress={handleCopy} loading={copyTryout.isPending} />
+        <Button label="Copy Evaluation" variant="secondary" onPress={handleCopy} loading={copyTryout.isPending} />
       </Card>
 
       <Card className="mb-4 gap-2">
         <Text className="text-md font-display font-bold" style={{ color: colors.danger }}>
           Danger Zone
         </Text>
-        <Button label="Archive Assessment" variant="danger" onPress={handleArchive} loading={archiveTryout.isPending} />
-        <Button label="Delete Assessment" variant="danger" onPress={handleDelete} loading={deleteTryout.isPending} />
+        <Button label="Archive Evaluation" variant="danger" onPress={handleArchive} loading={archiveTryout.isPending} />
+        <Button label="Delete Evaluation" variant="danger" onPress={handleDelete} loading={deleteTryout.isPending} />
       </Card>
 
-      <Modal visible={showEdit} title="Edit Assessment" onClose={() => setShowEdit(false)}>
+      <Modal visible={showEdit} title="Edit Evaluation" onClose={() => setShowEdit(false)}>
         <View className="gap-3">
           <Input label="Name" value={name} onChangeText={setName} />
           <DateField label="Date" value={tryoutDate} onChange={setTryoutDate} placeholder="Select a date" />

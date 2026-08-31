@@ -26,7 +26,7 @@ export default function WelcomeScreen() {
 
         <View className="gap-3">
           {[
-            'Create teams & assessments',
+            'Create teams & evaluations',
             'QR athlete registration',
             'Rinkside rubric scoring',
             'Results & leaderboard',

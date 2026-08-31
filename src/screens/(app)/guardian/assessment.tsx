@@ -12,11 +12,11 @@ export default function GuardianAssessmentDetailsScreen() {
   const guardianQuery = useGuardianRostersQuery();
 
   if (guardianQuery.isLoading) {
-    return <LoadingState message="Loading assessment details..." />;
+    return <LoadingState message="Loading evaluation details..." />;
   }
 
   if (guardianQuery.isError) {
-    return <ErrorState message="Failed to load assessment details." onRetry={() => guardianQuery.refetch()} />;
+    return <ErrorState message="Failed to load evaluation details." onRetry={() => guardianQuery.refetch()} />;
   }
 
   const athlete = guardianQuery.data?.find((a: any) => a.id === playerId);
@@ -25,8 +25,8 @@ export default function GuardianAssessmentDetailsScreen() {
   if (!athlete || !tryout) {
     return (
       <Screen>
-        <Header title="Assessment Details" showBack />
-        <EmptyState title="Not found" message="We couldn't find the details for this assessment." />
+        <Header title="Evaluation Details" showBack />
+        <EmptyState title="Not found" message="We couldn't find the details for this evaluation." />
       </Screen>
     );
   }
@@ -36,7 +36,7 @@ export default function GuardianAssessmentDetailsScreen() {
       <View className="px-4 pb-2">
         <Header title={tryout.name} showBack />
         <Text className="text-sm font-medium mb-4" style={{ color: colors.inkMuted }}>
-          Assessment Results · {tryout.sport}
+          Evaluation Results · {tryout.sport}
         </Text>
       </View>
 
@@ -47,7 +47,7 @@ export default function GuardianAssessmentDetailsScreen() {
         ListEmptyComponent={
           <EmptyState
             title="No sessions recorded"
-            message="There are no assessment results available yet for this tryout."
+            message="There are no evaluation results available yet for this tryout."
           />
         }
         renderItem={({ item: session }: { item: any }) => (

@@ -221,7 +221,7 @@ export default function EnterpriseScreen() {
               ) : null}
               <View className="flex-row flex-wrap gap-2 mt-2">
                 <Badge label={`${staffCount ?? org.memberCount} staff`} />
-                <Badge label={`${tryouts.length} assessments`} variant="brand" />
+                <Badge label={`${tryouts.length} evaluations`} variant="brand" />
                 <Badge label={`${metrics.players} players`} variant="info" />
               </View>
             </Card>
@@ -238,7 +238,7 @@ export default function EnterpriseScreen() {
           ) : (
             <>
               <View className="flex-row flex-wrap gap-2 mb-4">
-                <Stat label="Players" value={`${metrics.players}`} hint={`${metrics.avgSize} avg / assessment`} />
+                <Stat label="Players" value={`${metrics.players}`} hint={`${metrics.avgSize} avg / evaluation`} />
                 <Stat label="Evaluations" value={`${metrics.evaluations}`} hint={`${metrics.evalsPerPlayer} per player`} />
                 <Stat
                   label="Scored"
@@ -306,7 +306,7 @@ export default function EnterpriseScreen() {
               {Object.keys(metrics.bySport).length > 0 ? (
                 <Card className="mb-4 gap-2">
                   <Text className="font-display font-bold" style={{ color: colors.ink }}>
-                    Assessments by Sport
+                    Evaluations by Sport
                   </Text>
                   <View className="flex-row flex-wrap gap-2">
                     {Object.entries(metrics.bySport)
@@ -321,7 +321,7 @@ export default function EnterpriseScreen() {
               {metrics.largest.length > 0 ? (
                 <Card className="gap-2">
                   <Text className="font-display font-bold" style={{ color: colors.ink }}>
-                    Largest Assessments
+                    Largest Evaluations
                   </Text>
                   {metrics.largest.map((t) => (
                     <Pressable key={t.id} onPress={() => openAssessment(t.id)} className="py-2">
@@ -379,7 +379,7 @@ export default function EnterpriseScreen() {
                 All clear
               </Text>
               <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                Every assessment is fully scored with no pending registrations.
+                Every evaluation is fully scored with no pending registrations.
               </Text>
             </Card>
           ) : (

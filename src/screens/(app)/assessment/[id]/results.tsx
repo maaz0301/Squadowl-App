@@ -46,7 +46,7 @@ export default function ResultsScreen() {
 
   return (
     <Screen padded={false}>
-      <Header title="Assessment Results" showBack />
+      <Header title="Evaluation Results" showBack />
       <View className="px-4 py-3 gap-3">
         <View className="flex-row flex-wrap gap-2 items-center">
           <Button label="Team Builder" size="sm" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentTeamBuilder', params: { id: id } })} />

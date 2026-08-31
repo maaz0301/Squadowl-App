@@ -150,7 +150,7 @@ export default function FeedbackScreen() {
             }}
           >
             <Text style={{ color: colors.inkMuted }}>
-              Rate your experience with assessments, scoring, and Team Hub.
+              Rate your experience with evaluations, scoring, and Team Hub.
             </Text>
             <RatingRow label="Overall experience" value={overallExperience} onChange={setOverallExperience} />
             <RatingRow label="Ease of use" value={easeOfUse} onChange={setEaseOfUse} />

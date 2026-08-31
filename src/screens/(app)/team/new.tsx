@@ -260,7 +260,7 @@ export default function NewTeamScreen() {
         res.assessments === 0
           ? 'No dummy teams to remove.'
           : `Removed ${res.teams} team${res.teams === 1 ? '' : 's'} and ${res.assessments} ` +
-          `assessment${res.assessments === 1 ? '' : 's'}.`,
+          `evaluation${res.assessments === 1 ? '' : 's'}.`,
       );
     } catch (e: any) {
       showAlert('Error', e?.message || 'Failed to clear dummy teams.');
@@ -367,7 +367,7 @@ export default function NewTeamScreen() {
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
                   Creating this team creates (or reuses) its season and adds everyone on the roster to
                   it — each player's guardian will then be asked to pay this fee, plus TryoutHQ's 0.5%
-                  platform fee, from their portal. QR/link assessment registration always stays free.
+                  platform fee, from their portal. QR/link evaluation registration always stays free.
                 </Text>
                 {connect.chargesEnabled ? (
                   <Badge label="Stripe connected" variant="success" />
@@ -401,7 +401,7 @@ export default function NewTeamScreen() {
             Testing Tools
           </Text>
           <Text className="text-xs" style={{ color: colors.inkMuted }}>
-            Skip the form and generate whole teams — each with a linked assessment, a rubric set,
+            Skip the form and generate whole teams — each with a linked evaluation, a rubric set,
             and a roster of dummy players you can optionally score.
           </Text>
           <View className="flex-row flex-wrap gap-2 mt-1">

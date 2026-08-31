@@ -128,7 +128,7 @@ export default function RubricsScreen() {
 
   return (
     <Screen scroll insideTabBar>
-      <Header title="Assessment Rubrics" showBack />
+      <Header title="Evaluation Rubrics" showBack />
       <Card accent className="mb-4 gap-2">
         <Text className="font-display font-bold" style={{ color: colors.ink }}>
           Custom Rubric Builder

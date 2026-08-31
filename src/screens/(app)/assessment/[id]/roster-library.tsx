@@ -84,7 +84,7 @@ export default function RosterLibraryScreen() {
         keyExtractor={(item) => item.key}
         contentContainerStyle={{ padding: 16, paddingBottom: 32, flexGrow: 1 }}
         ListEmptyComponent={
-          <EmptyState title="Library empty" message="Add players to other assessments first." />
+          <EmptyState title="Library empty" message="Add players to other evaluations first." />
         }
         renderItem={({ item }) => {
           const isSelected = selected.has(item.key);

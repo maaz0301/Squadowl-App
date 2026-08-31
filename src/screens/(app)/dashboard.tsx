@@ -145,14 +145,14 @@ export default function DashboardScreen() {
     acceptAssignment.mutate(id, {
       onSettled: () => setAcceptingId(null),
       onSuccess: () => openAssigned(id),
-      onError: (error: any) => Alert.alert('Accept Failed', error?.message || 'Could not accept this assessment.'),
+      onError: (error: any) => Alert.alert('Accept Failed', error?.message || 'Could not accept this evaluation.'),
     });
   };
 
   const declineAssigned = (id: string, name: string) => {
     Alert.alert(
-      'Decline Assessment',
-      `Are you sure you want to decline "${name}"? You will lose access to score this assessment unless invited again.`,
+      'Decline Evaluation',
+      `Are you sure you want to decline "${name}"? You will lose access to score this evaluation unless invited again.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -162,7 +162,7 @@ export default function DashboardScreen() {
             setDecliningId(id);
             rejectAssignment.mutate(id, {
               onSettled: () => setDecliningId(null),
-              onError: (error: any) => Alert.alert('Decline Failed', error?.message || 'Could not decline this assessment.'),
+              onError: (error: any) => Alert.alert('Decline Failed', error?.message || 'Could not decline this evaluation.'),
             });
           },
         },
@@ -230,14 +230,14 @@ export default function DashboardScreen() {
     } else {
       const count = tryoutsQuery.data?.length ?? 0;
       if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
-        setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'assessments', 'assessments'));
+        setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'assessments', 'evaluations'));
         return;
       }
       navigation.navigate('NewAssessment');
     }
   };
 
-  const fabLabel = tab === 'teams' ? '+ New Team' : '+ New Assessment';
+  const fabLabel = tab === 'teams' ? '+ New Team' : '+ New Evaluation';
 
   const listData = isGuardianOnly ? [] : tab === 'teams' ? teamsQuery.data : tryoutsQuery.data;
 
@@ -354,7 +354,7 @@ export default function DashboardScreen() {
       return (
         <EmptyState
           title="No teams created"
-          message="Create a team to group rosters, schedule practices and games, and manage assessments."
+          message="Create a team to group rosters, schedule practices and games, and manage evaluations."
           actionLabel="Create Team"
           onAction={() => navigation.navigate('NewTeam')}
         />
@@ -362,9 +362,9 @@ export default function DashboardScreen() {
     }
     return (
       <EmptyState
-        title="No assessments yet"
+        title="No evaluations yet"
         message="Create your first tryout or evaluation to begin scoring players."
-        actionLabel="Create Assessment"
+        actionLabel="Create Evaluation"
         onAction={() => navigation.navigate('NewAssessment')}
       />
     );
@@ -500,7 +500,7 @@ export default function DashboardScreen() {
                   tier={user?.planTier ?? 'free'}
                   metric="assessments"
                   count={evalCount}
-                  label="assessments"
+                  label="evaluations"
                 />
               )
             ) : null}
@@ -657,7 +657,7 @@ export default function DashboardScreen() {
               <View className="mb-3">
                 <View className="flex-row justify-between items-center mb-2">
                   <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-                    {tab === 'teams' ? 'Teams' : 'Assessments & Tryouts'}
+                    {tab === 'teams' ? 'Teams' : 'Evaluations & Tryouts'}
                   </Text>
                   <Button
                     label={fabLabel}
@@ -697,7 +697,7 @@ export default function DashboardScreen() {
 
       <Modal
         visible={!!actionTryout}
-        title="Assessment Actions"
+        title="Evaluation Actions"
         onClose={() => setActionTryout(null)}
       >
         <View className="gap-3">
@@ -705,7 +705,7 @@ export default function DashboardScreen() {
             What would you like to do with "{actionTryout?.name}"?
           </Text>
           <Button
-            label="Archive Assessment"
+            label="Archive Evaluation"
             variant="secondary"
             onPress={() => {
               if (actionTryout) {

@@ -245,14 +245,14 @@ export default function NewAssessmentScreen() {
   const onSubmit = handleSubmit(async (data) => {
     const count = tryoutsQuery.data?.length ?? 0;
     if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
-      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'assessments', 'assessments'));
+      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'assessments', 'evaluations'));
       return;
     }
     let tryout;
     try {
       tryout = await createTryout.mutateAsync(data);
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Could not create the assessment.');
+      Alert.alert('Error', e?.message || 'Could not create the evaluation.');
       return;
     }
     setCurrentTryout(tryout.id);
@@ -297,7 +297,7 @@ export default function NewAssessmentScreen() {
   if (teamsQuery.isError || tryoutsQuery.isError) {
     return (
       <Screen scroll>
-        <Header title="New Assessment" showBack />
+        <Header title="New Evaluation" showBack />
         <ErrorState
           message="Could not load required data."
           onRetry={() => {
@@ -329,7 +329,7 @@ export default function NewAssessmentScreen() {
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           showsVerticalScrollIndicator={false}
         >
-          <Header title="New Assessment" showBack />
+          <Header title="New Evaluation" showBack />
           <View
             className="gap-4 mt-2"
             onLayout={(e) => {
@@ -342,7 +342,7 @@ export default function NewAssessmentScreen() {
                 name="name"
                 render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
                   <Input
-                    label="Assessment Name"
+                    label="Evaluation Name"
                     onBlur={onBlur}
                     onChangeText={onChange}
                     value={value}
@@ -448,7 +448,7 @@ export default function NewAssessmentScreen() {
               {pendingRubrics.length === 0 ? (
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
                   Every sport already scores on a default set of skills — add one here only if this
-                  assessment needs something extra.
+                  evaluation needs something extra.
                 </Text>
               ) : (
                 <View className="flex-row flex-wrap gap-2">
@@ -468,7 +468,7 @@ export default function NewAssessmentScreen() {
               </View>
               {pendingAssessors.length === 0 ? (
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                  Invite whoever else is scoring — they get an email once the assessment is created.
+                  Invite whoever else is scoring — they get an email once the evaluation is created.
                 </Text>
               ) : (
                 <View className="gap-2">
@@ -498,7 +498,7 @@ export default function NewAssessmentScreen() {
             paddingBottom: Math.max(12, insets.bottom),
           }}
         >
-          <Button label="Create Assessment" onPress={onSubmit} loading={createTryout.isPending} />
+          <Button label="Create Evaluation" onPress={onSubmit} loading={createTryout.isPending} />
         </View>
       </View>
       <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />

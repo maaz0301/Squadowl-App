@@ -217,7 +217,7 @@ export function DummyDataModal(props: DummyDataModalProps) {
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
                   {canScore
                     ? 'Score every player across every rubric so rankings and reports have data.'
-                    : 'Unavailable until this assessment has at least one rubric.'}
+                    : 'Unavailable until this evaluation has at least one rubric.'}
                 </Text>
               </View>
               <Switch
@@ -230,7 +230,7 @@ export function DummyDataModal(props: DummyDataModalProps) {
 
             {scoring ? (
               <Input
-                label={`Scoring assessments per player (${DUMMY_LIMITS.sessionsPerPlayer.min}–${DUMMY_LIMITS.sessionsPerPlayer.max})`}
+                label={`Scoring evaluations per player (${DUMMY_LIMITS.sessionsPerPlayer.min}–${DUMMY_LIMITS.sessionsPerPlayer.max})`}
                 value={sessions}
                 onChangeText={setSessions}
                 keyboardType="number-pad"

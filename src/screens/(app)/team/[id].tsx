@@ -184,7 +184,7 @@ export default function TeamDetailScreen() {
   const eventType = eventForm.watch('type');
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
-  // Candidates for the "Add Players from Assessments" picker: every athlete on
+  // Candidates for the "Add Players from Evaluations" picker: every athlete on
   // any assessment's roster, from ALL assessments (not just this team's),
   // deduped. Athletes already on the team are kept in the list and flagged
   // rather than hidden, so it's obvious they're accounted for instead of
@@ -685,7 +685,7 @@ export default function TeamDetailScreen() {
         tabs={[
           { key: 'schedule', label: 'Schedule', badge: allTeamEvents.length || undefined },
           { key: 'players', label: 'Players', badge: teamPlayers.length },
-          { key: 'assessments', label: 'Assessments', badge: linkedTryouts.length },
+          { key: 'assessments', label: 'Evaluations', badge: linkedTryouts.length },
           { key: 'settings', label: 'Settings' },
         ]}
         activeKey={tab}
@@ -709,7 +709,7 @@ export default function TeamDetailScreen() {
             {headerBlock}
             <View className="flex-row flex-wrap gap-2 mb-3">
               <Button
-                label="Add Players from Assessments"
+                label="Add Players from Evaluations"
                 size="sm"
                 onPress={() => {
                   addPlayersPressAt.current = performance.now();
@@ -772,7 +772,7 @@ export default function TeamDetailScreen() {
                 <Card className="items-center py-6 gap-1">
                   <Text className="font-bold" style={{ color: colors.ink }}>No players yet</Text>
                   <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
-                    Pull players in from any assessment roster to build this team.
+                    Pull players in from any evaluation roster to build this team.
                   </Text>
                 </Card>
               ) : (
@@ -854,7 +854,7 @@ export default function TeamDetailScreen() {
             extraData={navigatingId}
             ListEmptyComponent={
               <Card className="items-center py-6 gap-1">
-                <Text className="font-bold" style={{ color: colors.ink }}>No assessments linked</Text>
+                <Text className="font-bold" style={{ color: colors.ink }}>No evaluations linked</Text>
                 <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
                   Create a tryout or evaluation for this team, or attach one you already have.
                 </Text>
@@ -1107,7 +1107,7 @@ export default function TeamDetailScreen() {
                   Danger Zone
                 </Text>
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                  Deleting a team removes its roster, schedule, and links to assessments.
+                  Deleting a team removes its roster, schedule, and links to evaluations.
                 </Text>
                 <Button label="Delete Team" variant="danger" size="sm" onPress={handleDelete} loading={deleteTeam.isPending} />
               </Card>
@@ -1174,7 +1174,7 @@ export default function TeamDetailScreen() {
 
       <Modal
         visible={showAttachModal}
-        title="Attach Assessment"
+        title="Attach Evaluation"
         onClose={() => {
           if (updateTryout.isPending) return;
           setShowAttachModal(false);
@@ -1182,7 +1182,7 @@ export default function TeamDetailScreen() {
       >
         <View style={{ gap: 2 }}>
           {unlinkedTryouts.length === 0 ? (
-            <Text style={{ color: colors.inkMuted, padding: 12 }}>No assessments available to link.</Text>
+            <Text style={{ color: colors.inkMuted, padding: 12 }}>No evaluations available to link.</Text>
           ) : (
             unlinkedTryouts.map((t) => {
               const isAttaching = updateTryout.isPending && updateTryout.variables?.id === t.id;
@@ -1195,7 +1195,7 @@ export default function TeamDetailScreen() {
                     await updateTryout.mutateAsync({ id: t.id, updates: { teamId: team.id } });
                     setShowAttachModal(false);
                   } catch (e: any) {
-                    Alert.alert('Error', e.message || 'Could not link assessment.');
+                    Alert.alert('Error', e.message || 'Could not link evaluation.');
                   }
                 }}
                 style={({ pressed }) => [
@@ -1221,7 +1221,7 @@ export default function TeamDetailScreen() {
 
       <Modal
         visible={showAddPlayers}
-        title="Add Players from Assessments"
+        title="Add Players from Evaluations"
         scroll={false}
         onClose={() => {
           if (isAddingPlayers) return;
@@ -1282,7 +1282,7 @@ export default function TeamDetailScreen() {
           </Text>
         ) : candidates.length === 0 ? (
           <Text className="text-sm py-3" style={{ color: colors.inkMuted }}>
-            No assessments have players yet — add players to an assessment roster first.
+            No evaluations have players yet — add players to an evaluation roster first.
           </Text>
         ) : (
           <View className="flex-1">
@@ -1312,7 +1312,7 @@ export default function TeamDetailScreen() {
             ) : null}
             <View className="flex-row items-center justify-between mb-2">
               <Text className="text-xs flex-1 pr-2" style={{ color: colors.inkMuted }}>
-                Athletes from all of your assessments. Tap to select.
+                Athletes from all of your evaluations. Tap to select.
               </Text>
               {availableCount > 0 ? (
                 <Pressable
@@ -1514,7 +1514,7 @@ export default function TeamDetailScreen() {
                         // (they're filtered after it). Calling those players
                         // put a number on screen that was always higher than
                         // the roster the coach ended up with.
-                        `Checking ${saveEventProgress.done} assessment entries so far...`
+                        `Checking ${saveEventProgress.done} evaluation entries so far...`
                       : 'Saving event...'
                     : saveEventProgress.phase === 'roster'
                       ? // This count is every athlete across the team's linked assessments
@@ -1523,7 +1523,7 @@ export default function TeamDetailScreen() {
                         // a team with large attached assessments it can run well past the
                         // team's actual headcount. Only the 'invites' phase below reflects
                         // who actually gets this event.
-                        `Syncing ${saveEventProgress.done} of ${saveEventProgress.total} assessment records...`
+                        `Syncing ${saveEventProgress.done} of ${saveEventProgress.total} evaluation records...`
                       : `Sending invites to ${saveEventProgress.done} of ${saveEventProgress.total} players...`}
               </Text>
             </View>

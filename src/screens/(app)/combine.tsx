@@ -33,9 +33,9 @@ export default function CombineScreen() {
   if (tryoutsQuery.isError) {
     return (
       <Screen scroll>
-        <Header title="Combine Assessments" showBack />
+        <Header title="Combine Evaluations" showBack />
         <ErrorState
-          message="Could not load assessments."
+          message="Could not load evaluations."
           onRetry={() => tryoutsQuery.refetch()}
         />
       </Screen>
@@ -45,10 +45,10 @@ export default function CombineScreen() {
   if (combineIds.length < 2) {
     return (
       <Screen scroll>
-        <Header title="Combine Assessments" showBack />
+        <Header title="Combine Evaluations" showBack />
         <EmptyState
-          title="Select 2+ assessments"
-          message="From the dashboard, tap Combine mode and select assessments to compare side-by-side."
+          title="Select 2+ evaluations"
+          message="From the dashboard, tap Combine mode and select evaluations to compare side-by-side."
           actionLabel="Go to Dashboard"
           onAction={() => navigation.replace('DashboardMain')}
         />
@@ -59,10 +59,10 @@ export default function CombineScreen() {
   return (
     <Screen padded={false}>
       <View className="px-4">
-        <Header title="Combined View" subtitle={`${combineIds.length} assessments`} showBack />
+        <Header title="Combined View" subtitle={`${combineIds.length} evaluations`} showBack />
         <Card accent className="mb-4 gap-2">
           <Text style={{ color: colors.inkMuted }}>
-            Cross-assessment comparison using average overall scores (mock aggregate).
+            Cross-evaluation comparison using average overall scores (mock aggregate).
           </Text>
           <Button label="Clear Selection" variant="ghost" size="sm" onPress={() => setCombineTryoutIds([])} />
         </Card>

@@ -123,7 +123,7 @@ export default function PaymentsScreen() {
         (p) =>
           `${p.playerName},${p.teamName},${p.assessmentName || 'Unknown Event'},${p.amount.toFixed(2)},${p.status}`,
       );
-      const csv = `player,team,assessment,amount,status\n${csvRows.join('\n')}`;
+      const csv = `player,team,evaluation,amount,status\n${csvRows.join('\n')}`;
       await exportCsvFile('payments.csv', csv);
     } finally {
       setExporting(false);
@@ -271,7 +271,7 @@ export default function PaymentsScreen() {
               )}
 
               <Text className="text-md font-display font-bold mb-3 mt-2" style={{ color: colors.ink }}>
-                By Assessment
+                By Evaluation
               </Text>
               {finance.byAssessment.length === 0 ? (
                 <Text className="text-sm mb-4" style={{ color: colors.inkMuted }}>

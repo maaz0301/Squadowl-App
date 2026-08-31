@@ -271,7 +271,7 @@ export default function RosterScreen() {
                 Add your players to get started
               </Text>
               <Text className="text-sm text-center mt-2 mb-6" style={{ color: colors.inkMuted }}>
-                Add players to this assessment, then you can start scoring.
+                Add players to this evaluation, then you can start scoring.
               </Text>
               <Button label="+ Add Player" onPress={openAdd} className="w-full" />
             </View>
@@ -362,7 +362,7 @@ export default function RosterScreen() {
             },
             {
               label: 'Roster Library',
-              desc: 'Import players from past seasons or other assessments.',
+              desc: 'Import players from past seasons or other evaluations.',
               go: () => navigation.navigate('AssessmentFlow', { screen: 'AssessmentRosterLibrary', params: { id: id } }),
             },
             {
