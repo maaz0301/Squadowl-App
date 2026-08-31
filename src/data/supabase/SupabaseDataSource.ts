@@ -16,7 +16,7 @@ import {
   weightedOverallAcrossEvals,
 } from '../rubrics';
 import type { TeamBuilderConfig, TeamBuilderState } from '../teamBuilder';
-import { formatExportCsv } from '../teamBuilder';
+import { buildTeams, formatExportCsv } from '../teamBuilder';
 import { computePlayerResults } from '../scoring';
 import {
   POSITIONS_BY_SPORT,
@@ -4174,85 +4174,94 @@ export class SupabaseDataSource implements DataSource {
     const tryout = await this.getTryout(tryoutId);
     if (!tryout) throw new Error('Tryout not found');
 
-    // Map UUIDs to short IDs to drastically reduce token usage and prevent truncation
-    const idMap = new Map<string, string>(); // shortId -> realId
-    const realToShort = new Map<string, string>(); // realId -> shortId
+    let result: TeamBuilderState;
+    if (config.prompt) {
+      // Map UUIDs to short IDs to drastically reduce token usage and prevent truncation
+      const idMap = new Map<string, string>(); // shortId -> realId
+      const realToShort = new Map<string, string>(); // realId -> shortId
 
-    // Pool every evaluation down to one weighted overall + per-category average
-    // per player (matches the ranking shown in Roster/Export). Sending this instead
-    // of raw eval records (strengths/improve text, dates, evaluator names, one row
-    // per session) keeps the payload flat as roster size and eval count grow —
-    // otherwise a large roster with multiple sessions per player blows past the
-    // model's input token limit.
-    const results = computePlayerResults(tryout);
-    const resultByPlayerId = new Map(results.map(r => [r.player.id, r]));
+      // Pool every evaluation down to one weighted overall + per-category average
+      // per player (matches the ranking shown in Roster/Export). Sending this instead
+      // of raw eval records (strengths/improve text, dates, evaluator names, one row
+      // per session) keeps the payload flat as roster size and eval count grow —
+      // otherwise a large roster with multiple sessions per player blows past the
+      // model's input token limit.
+      const results = computePlayerResults(tryout);
+      const resultByPlayerId = new Map(results.map(r => [r.player.id, r]));
 
-    const shortTryout = {
-      ...tryout,
-      roster: tryout.roster.map((p, i) => {
-        const shortId = `p${i}`;
-        idMap.set(shortId, p.id);
-        realToShort.set(p.id, shortId);
-        return { ...p, id: shortId };
-      }),
-      rankings: tryout.roster.map(p => {
-        const r = resultByPlayerId.get(p.id);
-        return {
-          id: realToShort.get(p.id) || p.id,
-          overall: r?.overall ?? 0,
-          categoryScores: r?.categoryScores ?? {},
-          recommendation: r?.latestRecommendation || undefined,
-        };
-      }),
-    };
-    delete (shortTryout as any).evals;
+      const shortTryout = {
+        ...tryout,
+        roster: tryout.roster.map((p, i) => {
+          const shortId = `p${i}`;
+          idMap.set(shortId, p.id);
+          realToShort.set(p.id, shortId);
+          return { ...p, id: shortId };
+        }),
+        rankings: tryout.roster.map(p => {
+          const r = resultByPlayerId.get(p.id);
+          return {
+            id: realToShort.get(p.id) || p.id,
+            overall: r?.overall ?? 0,
+            categoryScores: r?.categoryScores ?? {},
+            recommendation: r?.latestRecommendation || undefined,
+          };
+        }),
+      };
+      delete (shortTryout as any).evals;
 
-    // Call Claude via edge function
-    const { supabase } = await this.ctx();
-    const { data, error } = await supabase.functions.invoke('generate-ai-insights', {
-      body: { action: 'team_builder', tryout: shortTryout, prompt: config.prompt }
-    });
-    if (error) {
-      throw new Error(error.message);
+      // Call Claude via edge function
+      const { supabase } = await this.ctx();
+      const { data, error } = await supabase.functions.invoke('generate-ai-insights', {
+        body: { action: 'team_builder', tryout: shortTryout, prompt: config.prompt }
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+      if (data?.error) {
+        throw new Error(data.message || data.error);
+      }
+
+      // Restore real UUIDs
+      const restoreIds = (arr: string[] = []) => arr.map(short => idMap.get(short) || short);
+      const posById = new Map(tryout.roster.map((p) => [p.id, p.pos]));
+
+      // Merge Claude's response with local state structure. The model is only asked
+      // for one "players" array per team (not a redundant "skaters"/"goalies" split —
+      // that used to double output size and risk truncation on large rosters); the
+      // skater/goalie split is derived here from the roster's own position data,
+      // which is also guaranteed to be internally consistent with "players".
+      result = {
+        generatedAt: Date.now(),
+        sortMethod: config.sortMethod ?? 'balanced',
+        config: {
+          teamCount: data.teams?.length || config.teamCount,
+          teamNames: data.teams?.map((t: any) => t.name) || [],
+          keepFriendPackages: config.keepFriendPackages ?? true,
+          splitGoalies: config.splitGoalies ?? true,
+        },
+        ranks: [], // We can omit full rankings or compute them locally if needed
+        warnings: data.warnings || [],
+        explanation: data.explanation,
+        teams: (data.teams || []).map((t: any, i: number) => {
+          const players = restoreIds(t.players);
+          return {
+            index: i,
+            id: `ai-team-${i}`,
+            name: t.name || `Team ${i + 1}`,
+            players,
+            skaters: players.filter((id) => !isGoaliePosition(posById.get(id))),
+            goalies: players.filter((id) => isGoaliePosition(posById.get(id))),
+          };
+        }),
+        unassigned: restoreIds(data.unassigned),
+      };
+    } else {
+      // No prompt: skip the AI round-trip entirely and balance teams with a
+      // deterministic algorithm instead — guarantees evenly matched team
+      // averages, which a free-text AI prompt could only approximate. This is
+      // what the Team Builder screen's "Balance Evenly" action uses.
+      result = buildTeams(tryout, config);
     }
-    if (data?.error) {
-      throw new Error(data.message || data.error);
-    }
-
-    // Restore real UUIDs
-    const restoreIds = (arr: string[] = []) => arr.map(short => idMap.get(short) || short);
-    const posById = new Map(tryout.roster.map((p) => [p.id, p.pos]));
-
-    // Merge Claude's response with local state structure. The model is only asked
-    // for one "players" array per team (not a redundant "skaters"/"goalies" split —
-    // that used to double output size and risk truncation on large rosters); the
-    // skater/goalie split is derived here from the roster's own position data,
-    // which is also guaranteed to be internally consistent with "players".
-    const result: TeamBuilderState = {
-      generatedAt: Date.now(),
-      sortMethod: config.sortMethod ?? 'balanced',
-      config: {
-        teamCount: data.teams?.length || config.teamCount,
-        teamNames: data.teams?.map((t: any) => t.name) || [],
-        keepFriendPackages: config.keepFriendPackages ?? true,
-        splitGoalies: config.splitGoalies ?? true,
-      },
-      ranks: [], // We can omit full rankings or compute them locally if needed
-      warnings: data.warnings || [],
-      explanation: data.explanation,
-      teams: (data.teams || []).map((t: any, i: number) => {
-        const players = restoreIds(t.players);
-        return {
-          index: i,
-          id: `ai-team-${i}`,
-          name: t.name || `Team ${i + 1}`,
-          players,
-          skaters: players.filter((id) => !isGoaliePosition(posById.get(id))),
-          goalies: players.filter((id) => isGoaliePosition(posById.get(id))),
-        };
-      }),
-      unassigned: restoreIds(data.unassigned),
-    };
 
     await this.updateTryout(tryoutId, { teamBuilder: result });
     return result;
