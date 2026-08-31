@@ -141,7 +141,7 @@ export function AddToRosterModal({
 
         {kind === null ? (
           <Text className="text-sm" style={{ color: colors.inkMuted }}>
-            Choose whether these players join an assessment roster or a team roster.
+            Choose whether these players join an evaluation roster or a team roster.
           </Text>
         ) : listLoading ? (
           // Deliberately not <LoadingState>/<EmptyState> — both wrap themselves in

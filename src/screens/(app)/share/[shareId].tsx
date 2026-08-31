@@ -275,7 +275,7 @@ export default function ShareDetailScreen() {
         <View className="gap-2">
           {(tryoutsQuery.data ?? []).length === 0 ? (
             <Text style={{ color: colors.inkMuted }}>
-              You don't have any assessments yet. Create one first.
+              You don't have any evaluations yet. Create one first.
             </Text>
           ) : (
             (tryoutsQuery.data ?? []).map((t) => (

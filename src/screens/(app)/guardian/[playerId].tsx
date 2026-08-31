@@ -177,11 +177,11 @@ function TryoutSeasonCard({ item, colors, playerId }: { item: any; colors: any; 
               </Text>
             ) : (
               <Text className="text-sm mb-2" style={{ color: colors.inkMuted }}>
-                Assessment · {item.sport}
+                Evaluation · {item.sport}
               </Text>
             )}
           </View>
-          <Badge label={item._type === 'season' ? 'Team' : 'Assessment'} variant={item._type === 'season' ? 'info' : 'brand'} />
+          <Badge label={item._type === 'season' ? 'Team' : 'Evaluation'} variant={item._type === 'season' ? 'info' : 'brand'} />
         </View>
 
         {item._type === 'season' && item.collectsFees ? (

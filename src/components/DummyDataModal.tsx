@@ -151,7 +151,7 @@ export function DummyDataModal(props: DummyDataModalProps) {
         {isTeam ? (
           <Text className="text-sm" style={{ color: colors.inkMuted }}>
             Teams hold no roster of their own, so each dummy team is created with a linked
-            assessment — seeded with rubrics covering skill, time, distance, and speed — and the
+            evaluation — seeded with rubrics covering skill, time, distance, and speed — and the
             players are added there.
           </Text>
         ) : (
@@ -200,7 +200,7 @@ export function DummyDataModal(props: DummyDataModalProps) {
         {rubricNotice ? (
           <View className="gap-2">
             <Text className="text-sm" style={{ color: colors.ink }}>
-              Players are scored against this assessment's rubrics, but none are defined yet. Add at
+              Players are scored against this evaluation's rubrics, but none are defined yet. Add at
               least one rubric to generate scoring data — or continue to create unscored players.
             </Text>
             <Button label="Add Rubrics" variant="secondary" size="sm" onPress={props.onAddRubrics} />

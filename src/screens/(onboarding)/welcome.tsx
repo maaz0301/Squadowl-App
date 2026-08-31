@@ -19,7 +19,7 @@ export default function WelcomeScreen() {
             Welcome to {APP_CONFIG.appName}
           </Text>
           <Text className="text-base leading-relaxed" style={{ color: colors.inkMuted }}>
-            Run athlete tryouts and assessments from your phone. Score players rinkside, manage
+            Run athlete tryouts and evaluations from your phone. Score players rinkside, manage
             rosters, and share results — all in one place.
           </Text>
         </View>

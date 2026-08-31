@@ -291,7 +291,7 @@ export function AssessmentHistory({
       </Card>
 
       <Text className="text-md font-display font-bold mb-3" style={{ color: colors.ink }}>
-        Assessment History ({assessments.length})
+        Evaluation History ({assessments.length})
       </Text>
       {assessments.map((a) => {
         const card = (

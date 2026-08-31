@@ -378,7 +378,7 @@ export default function PlayerHubScreen() {
           Player Profile
         </Text>
         <Text style={{ color: colors.inkMuted }}>
-          View full assessment history, score trends, and season-over-season comparison.
+          View full evaluation history, score trends, and season-over-season comparison.
         </Text>
         <Button
           label="View Full Profile"
