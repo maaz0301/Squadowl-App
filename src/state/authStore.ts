@@ -5,6 +5,7 @@ import { getDataSource } from '@/data';
 import { zustandStorage } from '@/lib/storage';
 import { queryClient } from '@/lib/queryClient';
 import { useSessionStore } from './sessionStore';
+import { flushPendingReferralCode } from '@/lib/pendingReferral';
 
 /**
  * Set while logout() tears the session down. The SDK fires SIGNED_OUT during
@@ -54,6 +55,10 @@ export const useAuthStore = create<AuthState>()(
       login: async (email, password) => {
         const session = await getDataSource().login(email, password);
         get().setSession(session);
+        // The e-mail-confirmation path lands here: signup couldn't attach the
+        // referral code because it had no session, so this is the first chance
+        // to. No-ops when nothing is pending, and never throws.
+        void flushPendingReferralCode();
       },
       signup: async (displayName, email, password, accountType) => {
         const session = await getDataSource().signup(displayName, email, password, accountType);
@@ -110,6 +115,9 @@ export const useAuthStore = create<AuthState>()(
             queryClient.clear();
           }
           set({ session, isHydrated: true, sessionExpired: hadSession && !session });
+          // Covers the user who verifies their e-mail in a browser and comes
+          // back to an app that already holds a session, so login() never runs.
+          if (session) void flushPendingReferralCode();
         } catch (e) {
           console.error('Failed to restore session:', e);
           set({ session: null, isHydrated: true, sessionExpired: hadSession });

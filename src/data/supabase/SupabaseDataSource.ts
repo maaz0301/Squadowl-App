@@ -66,6 +66,7 @@ import type {
   Org,
   Player,
   Recommendation,
+  ReferralSummary,
   Registration,
   RegistrationSubmit,
   ScoreForm,
@@ -6208,10 +6209,14 @@ export class SupabaseDataSource implements DataSource {
     }
   }
 
-  async createCheckoutSession(planTier: string, interval: 'year' | 'month'): Promise<{ url: string }> {
+  async createCheckoutSession(
+    planTier: string,
+    interval: 'year' | 'month',
+    options?: { applyCredits?: boolean },
+  ): Promise<{ url: string }> {
     const { supabase } = await this.ctx();
     const { data, error } = await supabase.functions.invoke('create-checkout-session', {
-      body: { planTier, interval }
+      body: { planTier, interval, applyCredits: options?.applyCredits === true }
     });
     if (error) {
       let detail = '';
@@ -6225,10 +6230,18 @@ export class SupabaseDataSource implements DataSource {
     return data;
   }
 
-  async createTeamLicenseCheckoutSession(quantity: number): Promise<{ url: string }> {
+  async createTeamLicenseCheckoutSession(
+    quantity: number,
+    options?: { applyCredits?: boolean },
+  ): Promise<{ url: string }> {
     const { supabase } = await this.ctx();
     const { data, error } = await supabase.functions.invoke('create-checkout-session', {
-      body: { addOn: 'team_licenses', quantity: Math.max(1, Math.round(quantity)), interval: 'year' },
+      body: {
+        addOn: 'team_licenses',
+        quantity: Math.max(1, Math.round(quantity)),
+        interval: 'year',
+        applyCredits: options?.applyCredits === true,
+      },
     });
     if (error) {
       let detail = '';
@@ -6255,6 +6268,44 @@ export class SupabaseDataSource implements DataSource {
     }
     if (data?.error) throw new Error(data.error);
     return data;
+  }
+
+  async getReferralSummary(): Promise<ReferralSummary> {
+    const { supabase } = await this.ctx();
+
+    // Minting the code is its own call so the summary can stay `stable` and be
+    // safely re-read on every focus. It's a no-op once a code exists, and a
+    // failure here is not fatal — the screen still shows the balance and just
+    // can't offer a code to share yet.
+    try {
+      await supabase.rpc('ensure_referral_code');
+    } catch (e) {
+      console.warn('Could not mint a referral code:', e);
+    }
+
+    const { data, error } = await supabase.rpc('get_referral_summary');
+    if (error) throw new Error(error.message);
+
+    const raw = (data ?? {}) as Partial<ReferralSummary>;
+    return {
+      code: raw.code ?? null,
+      balanceCents: raw.balanceCents ?? 0,
+      earnedLastYearCents: raw.earnedLastYearCents ?? 0,
+      annualCapCents: raw.annualCapCents ?? 6000,
+      referredCount: raw.referredCount ?? 0,
+      convertedCount: raw.convertedCount ?? 0,
+      redeemedByCode: raw.redeemedByCode ?? null,
+      entries: raw.entries ?? [],
+    };
+  }
+
+  async applyReferralCode(code: string): Promise<void> {
+    const { supabase } = await this.ctx();
+    const { error } = await supabase.rpc('apply_referral_code', { p_code: code });
+    // The RPC raises with customer-facing wording ("You can't refer yourself",
+    // "already been applied"), so pass it straight through rather than
+    // flattening every failure into one generic message.
+    if (error) throw new Error(error.message);
   }
 
   async createConnectAccountLink(): Promise<{ url: string }> {

@@ -275,7 +275,7 @@ export default function ProfileScreen() {
             <Button label="Shared Athletes" variant="ghost" onPress={() => navigation.navigate('SharedAthletes')} />
             <Button label="Archived Assessments" variant="ghost" onPress={() => navigation.navigate('ArchivedAssessments')} />
             <Button label="Send Feedback" variant="ghost" onPress={() => navigation.navigate('Feedback')} />
-            <Button label="Gift a Coach" variant="ghost" onPress={() => navigation.navigate('FriendPackages')} />
+            <Button label="Loyalty Program" variant="ghost" onPress={() => navigation.navigate('Loyalty')} />
           </Card>
 
           <Card className="mb-4 gap-2">
