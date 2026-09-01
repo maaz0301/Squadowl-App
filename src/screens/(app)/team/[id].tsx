@@ -407,14 +407,28 @@ export default function TeamDetailScreen() {
     }
   };
 
+  const removePlayer = async (athleteId: string) => {
+    try {
+      await removeRosterPlayer.mutateAsync(athleteId);
+    } catch (e: any) {
+      // The mutation used to be fired and forgotten, so a delete the database
+      // refused looked exactly like one that worked: the row vanished on the
+      // optimistic update and came back on the refetch, with nothing said.
+      alertMsg('Remove Failed', e?.message || 'Could not remove this player.');
+    }
+  };
+
   const confirmRemovePlayer = (athleteId: string, label: string) => {
-    Alert.alert('Remove Player', `Remove ${label} from ${team.name}?`, [
+    const message = `Remove ${label} from ${team.name}?`;
+    // Alert is a no-op under React Native Web, where this app also runs — the
+    // confirmation never appeared there, so the button did nothing at all.
+    if (Platform.OS === 'web') {
+      if (confirm(`Remove Player\n\n${message}`)) void removePlayer(athleteId);
+      return;
+    }
+    Alert.alert('Remove Player', message, [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () => removeRosterPlayer.mutate(athleteId),
-      },
+      { text: 'Remove', style: 'destructive', onPress: () => void removePlayer(athleteId) },
     ]);
   };
 

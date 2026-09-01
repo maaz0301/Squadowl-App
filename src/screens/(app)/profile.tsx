@@ -46,6 +46,10 @@ export default function ProfileScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loadingPortal, setLoadingPortal] = useState(false);
+  // Signing out waits on a network call before the session is torn down, so
+  // without this the button sat there looking untapped and invited a second
+  // press on top of the first.
+  const [signingOut, setSigningOut] = useState(false);
 
   const plan = getPlanDefinition(user?.planTier ?? 'free');
   const extraTeamLicenses = user?.extraTeamLicenses ?? 0;
@@ -296,7 +300,19 @@ export default function ProfileScreen() {
       <Button
         label="Log Out"
         variant="danger"
-        onPress={() => logout()}
+        loading={signingOut}
+        onPress={async () => {
+          if (signingOut) return;
+          setSigningOut(true);
+          try {
+            await logout();
+          } finally {
+            // The screen unmounts with the session in the normal case; this is
+            // for the one where the teardown failed and the button has to come
+            // back rather than stay stuck mid-press.
+            setSigningOut(false);
+          }
+        }}
       />
     </Screen>
   );

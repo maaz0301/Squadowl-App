@@ -102,6 +102,23 @@ type OrgMemberIdentity = {
   tryoutId?: string;
 };
 
+/** How long the sign-out network call gets before the local teardown proceeds. */
+const SIGN_OUT_TIMEOUT_MS = 4000;
+
+/**
+ * Resolve `promise`, or reject once `ms` has passed. The timer is always
+ * cleared, so a slow call that lands later doesn't keep the app awake.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer)) as Promise<T>;
+}
+
 function unwrap<T>(res: { data: T; error: { message: string; code?: string } | null }): T {
   if (res.error) {
     const err = new Error(res.error.message) as Error & { code?: string };
@@ -1218,7 +1235,15 @@ export class SupabaseDataSource implements DataSource {
     this.accountPromise = null;
     this.userId = null;
     try {
-      await getSupabase().auth.signOut();
+      // Bounded on purpose. signOut() posts to the Auth server to revoke the
+      // refresh token, and RN's fetch has no timeout of its own — on a flaky
+      // connection (or a captive-portal Wi-Fi that swallows the request) that
+      // call can hang indefinitely. Everything that actually signs the user
+      // out on this device runs *after* this await, in the finally below and
+      // in authStore.logout(), so a hung request used to leave the user tapping
+      // "Log Out" and staying exactly where they were. Revoking server-side is
+      // best-effort; clearing the device is not.
+      await withTimeout(getSupabase().auth.signOut(), SIGN_OUT_TIMEOUT_MS, 'signOut');
     } catch (error) {
       console.warn('Supabase signOut failed, force clearing auth storage:', error);
     } finally {
@@ -1904,15 +1929,44 @@ export class SupabaseDataSource implements DataSource {
   }
 
   async removeTeamRosterPlayer(teamId: string, athleteId: string): Promise<void> {
-    const { supabase } = await this.ctx();
-    unwrap(
+    // userCtx(), not ctx(): the delete is scoped by team_id/athlete_id and
+    // authorized by team_roster's policies — the caller's own account never
+    // enters into it. ctx() additionally insists the caller *has* an account
+    // and throws 'No account for user' when they don't, which is exactly the
+    // position a delegated manager can be in on a club's team: they run the
+    // roster through team_roster_manager_rw without holding a membership of
+    // their own, and the removal failed before it ever reached the database.
+    const { supabase } = await this.userCtx();
+    const deleted = unwrap(
       await supabase
         .from('team_roster')
         .delete()
         .eq('team_id', teamId)
         .eq('athlete_id', athleteId)
         .select('id'),
-    );
+    ) as Row[] | null;
+
+    // A DELETE whose rows RLS filters out removes nothing and still answers
+    // without an error, so this used to report a clean success: the player
+    // disappeared from the list on the optimistic update and was back the
+    // moment the refetch landed. `select()` returns the rows actually deleted,
+    // so an empty result is the tell — but only when the row is in fact still
+    // there. Nothing deleted because someone else got there first is a
+    // successful removal from the coach's point of view.
+    if (deleted && deleted.length > 0) return;
+
+    const { data: left } = await supabase
+      .from('team_roster')
+      .select('id')
+      .eq('team_id', teamId)
+      .eq('athlete_id', athleteId)
+      .limit(1);
+    if (left && left.length > 0) {
+      console.log('removeTeamRosterPlayer: the roster row survived the delete — RLS most likely refused it.');
+      throw new Error(
+        'Could not remove this player. You may not have permission to change this team’s roster.',
+      );
+    }
   }
 
   /**

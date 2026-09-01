@@ -10,6 +10,7 @@ import { AppThemeProvider } from './theme/ThemeProvider';
 import SplashScreen from 'react-native-splash-screen';
 import '../global.css';
 import { useAuthStore } from './state/authStore';
+import { getSupabase } from './lib/supabase';
 import { usePushNotifications } from './hooks/usePushNotifications';
 
 // react-native-keyboard-aware-scroll-view (used by every <Screen scroll>
@@ -59,6 +60,25 @@ export default function App() {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', onAppStateChange);
     return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    // The SDK refreshes the access token on its own; when that refresh fails —
+    // the refresh token was revoked, rotated out, or aged past its lifetime —
+    // it signs the client out and fires SIGNED_OUT. Without this the app kept
+    // rendering cached screens against a dead session until some read happened
+    // to fail, so a user could sit on a stale dashboard indefinitely. Watching
+    // the event drops them on the login screen the moment the session dies.
+    let unsubscribe: (() => void) | undefined;
+    try {
+      const { data } = getSupabase().auth.onAuthStateChange((event) => {
+        if (event === 'SIGNED_OUT') void useAuthStore.getState().expireSession();
+      });
+      unsubscribe = () => data.subscription.unsubscribe();
+    } catch {
+      // Supabase isn't configured in this environment — nothing to watch.
+    }
+    return () => unsubscribe?.();
   }, []);
 
   return (

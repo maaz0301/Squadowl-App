@@ -1,18 +1,37 @@
-import { QueryClient, QueryCache } from '@tanstack/react-query';
+import { QueryClient, QueryCache, MutationCache } from '@tanstack/react-query';
+import { isAuthExpiredError } from './authErrors';
+
+/**
+ * A dead session surfaces as a failed read or write like any other error, so
+ * both caches funnel it here: tear the session down and flag it as expired,
+ * which drops RootNavigator back to the auth stack and gets the user told why
+ * rather than silently bounced.
+ *
+ * This used to test `error.message === 'Not authenticated'`, which only
+ * userCtx() raises — and only when it has no cached user id. Once a screen has
+ * loaded, the id is cached, so a revoked session reaches PostgREST instead and
+ * comes back as PGRST301 / "JWT expired", which that check missed: the app sat
+ * on error states until it was relaunched. isAuthExpiredError() matches on the
+ * Auth API's error *code* first.
+ */
+function handleAuthError(error: unknown) {
+  if (!isAuthExpiredError(error)) return;
+  // require() rather than a static import: authStore imports queryClient (to
+  // clear the cache on logout), so a top-level import here would be circular.
+  try {
+    const { useAuthStore } = require('../state/authStore');
+    void useAuthStore.getState().expireSession();
+  } catch (e) {
+    console.error('Failed to sign out after an expired session:', e);
+  }
+}
 
 export const queryClient = new QueryClient({
-  queryCache: new QueryCache({
-    onError: (error) => {
-      if (error.message === 'Not authenticated' || error.message.includes('Auth session missing')) {
-        try {
-          const { useAuthStore } = require('../state/authStore');
-          useAuthStore.getState().logout('expired');
-        } catch (e) {
-          console.error('Failed to auto-logout on auth failure:', e);
-        }
-      }
-    },
-  }),
+  queryCache: new QueryCache({ onError: handleAuthError }),
+  // Mutations had no auth handling at all: a session that died between opening
+  // a screen and hitting Save left the user staring at a failed write with no
+  // hint that signing in again was the fix.
+  mutationCache: new MutationCache({ onError: handleAuthError }),
   defaultOptions: {
     queries: {
       staleTime: 30_000,

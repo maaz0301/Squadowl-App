@@ -42,9 +42,15 @@ export function useCreateTeamMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ name, season }: { name: string; season?: string }) =>
-      getDataSource().createTeam(name, season),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.teams });
+      withTimeout(getDataSource().createTeam(name, season), 15000),
+    // Seeded synchronously so the team is already in the cache the instant
+    // navigation lands on TeamDetail — that screen derives `team` from this
+    // list with `.find()`, and without this the invalidate below is still a
+    // network round trip away, so the screen found nothing and rendered
+    // "Team not found." until the refetch came back.
+    onSuccess: (team) => {
+      qc.setQueryData<Team[]>(queryKeys.teams, (old) => (old ? [...old, team] : [team]));
+      void qc.invalidateQueries({ queryKey: queryKeys.teams });
     },
   });
 }

@@ -12,7 +12,7 @@ import { Button, Card, Chip, ErrorState, Header, Input, LoadingState, Screen, Av
 import { canUseFeature, isAtTeamLimit } from '@/data/plans';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import type { DummyTeamOptions } from '@/data/testDataGenerator';
-import { TEAM_MANAGER_ROLES, type TeamManagerRole } from '@/data/types';
+import { TEAM_MANAGER_ROLES, type Team, type TeamManagerRole } from '@/data/types';
 import { getDataSource } from '@/data';
 import { queryKeys } from '@/lib/queryClient';
 import {
@@ -57,6 +57,11 @@ export default function NewTeamScreen() {
   const [managerEmail, setManagerEmail] = useState('');
   const [managerRole, setManagerRole] = useState<TeamManagerRole>('manager');
   const [connecting, setConnecting] = useState(false);
+  // Covers the whole submit, not just createTeam: the season, the logo, the
+  // branding write and the manager invite all run after it, and the button's
+  // spinner used to stop between them — the form sat there looking finished
+  // while several writes were still in flight.
+  const [submitting, setSubmitting] = useState(false);
   const qc = useQueryClient();
   const restoreSession = useAuthStore((s) => s.restoreSession);
   const connect = useConnectStatus();
@@ -142,84 +147,85 @@ export default function NewTeamScreen() {
       );
       return;
     }
-    let team;
+    setSubmitting(true);
     try {
-      team = await createTeam.mutateAsync({ name: data.name, season: data.season });
-    } catch (e: any) {
-      showAlert('Error', e?.message || 'Failed to create team.');
-      return;
-    }
-    // Events hang off a season, so every team gets one up front — the coach
-    // never sees it, they just add practices and games on the team screen.
-    try {
-      await createSeason.mutateAsync({
-        name: data.season ? `${data.name} ${data.season}` : `${data.name} Season`,
-        teamName: data.name,
-        sport: 'Hockey',
-        year: data.season,
-        teamId: team.id,
-      });
-    } catch {
-      // Non-fatal: the team exists, and its first event will create the season.
-    }
-    
-    // createTeam only takes name/season, so branding is a follow-up write. Logo
-    // and colour go together in one update when both are set, so a team that
-    // picked both doesn't pay for two round trips.
-    let logoUrl: string | undefined;
-    if (logo) {
+      let team;
       try {
-        logoUrl = await uploadLogo.mutateAsync({
-          teamId: team.id,
-          fileUri: logo.uri,
-          fileType: logo.type,
-        });
+        team = await createTeam.mutateAsync({ name: data.name, season: data.season });
       } catch (e: any) {
-        showAlert('Logo Upload Error', 'The team was created, but uploading the logo failed: ' + e.message);
+        showAlert('Error', e?.message || 'Failed to create team.');
+        return;
       }
-    }
-    if (logoUrl || brandColor) {
-      try {
-        await updateTeam.mutateAsync({
-          id: team.id,
-          updates: {
-            ...(logoUrl ? { logoUrl } : {}),
-            ...(brandColor ? { brandColor } : {}),
-          },
-        });
-      } catch (e: any) {
-        showAlert('Branding Error', 'The team was created, but saving its branding failed: ' + e.message);
-      }
-    }
 
-    if (collectsFees && canCollectFees) {
-      const dollars = parseFloat(feeInput);
-      const cents = !feeInput.trim() || isNaN(dollars) || dollars <= 0 ? 0 : Math.round(dollars * 100);
-      try {
-        await updateTeam.mutateAsync({
-          id: team.id,
-          updates: { collectsFees: true, registrationFeeCents: cents },
-        });
-      } catch (e: any) {
-        showAlert('Fee Setup Error', 'The team was created, but saving the fee failed: ' + e.message);
+      // createTeam only takes name/season, so the season, the logo and the rest
+      // of the settings are follow-up writes — but none of them depends on any
+      // of the others, so they go out together. Run one after another they were
+      // the bulk of the wait between hitting Create and landing on the team.
+      const updates: Partial<Team> = {};
+      if (brandColor) updates.brandColor = brandColor;
+      if (collectsFees && canCollectFees) {
+        const dollars = parseFloat(feeInput);
+        updates.collectsFees = true;
+        updates.registrationFeeCents =
+          !feeInput.trim() || isNaN(dollars) || dollars <= 0 ? 0 : Math.round(dollars * 100);
       }
-    }
 
-    // Coach+/Club only: let the same "creating a team" flow hand it straight to
-    // another coach instead of making them find the new team afterward just to
-    // invite someone to it.
-    if (canManageTeamCoaches && managerEmail.trim()) {
-      try {
-        await getDataSource().inviteTeamManager(team.id, managerEmail.trim(), managerRole);
-      } catch (e: any) {
-        showAlert('Invite Error', `The team was created, but inviting ${managerEmail.trim()} failed: ` + e.message);
-      }
-    }
+      await Promise.all([
+        // Events hang off a season, so every team gets one up front — the coach
+        // never sees it, they just add practices and games on the team screen.
+        // Non-fatal: the team exists, and its first event will create the season.
+        createSeason
+          .mutateAsync({
+            name: data.season ? `${data.name} ${data.season}` : `${data.name} Season`,
+            teamName: data.name,
+            sport: 'Hockey',
+            year: data.season,
+            teamId: team.id,
+          })
+          .catch(() => {}),
+        // The upload only puts the file in storage and hands back its URL, so
+        // the logo has to join the same settings write — which is why this one
+        // branch is sequential inside an otherwise parallel batch.
+        (async () => {
+          let logoUrl: string | undefined;
+          if (logo) {
+            try {
+              logoUrl = await uploadLogo.mutateAsync({
+                teamId: team.id,
+                fileUri: logo.uri,
+                fileType: logo.type,
+              });
+            } catch (e: any) {
+              showAlert('Logo Upload Error', 'The team was created, but uploading the logo failed: ' + e.message);
+            }
+          }
+          const patch = { ...updates, ...(logoUrl ? { logoUrl } : {}) };
+          if (Object.keys(patch).length === 0) return;
+          try {
+            await updateTeam.mutateAsync({ id: team.id, updates: patch });
+          } catch (e: any) {
+            showAlert('Settings Error', 'The team was created, but saving its settings failed: ' + e.message);
+          }
+        })(),
+        // Coach+/Club only: let the same "creating a team" flow hand it straight
+        // to another coach instead of making them find the new team afterward
+        // just to invite someone to it.
+        canManageTeamCoaches && managerEmail.trim()
+          ? getDataSource()
+              .inviteTeamManager(team.id, managerEmail.trim(), managerRole)
+              .catch((e: any) =>
+                showAlert('Invite Error', `The team was created, but inviting ${managerEmail.trim()} failed: ` + e.message),
+              )
+          : null,
+      ]);
 
-    // Land straight on the new team's own screen instead of back on the list —
-    // a coach who just filled out this form wants to keep going on the team
-    // they made (add players, set up a season), not re-find it in the list.
-    navigation.replace('TeamDetail', { id: team.id });
+      // Land straight on the new team's own screen instead of back on the list —
+      // a coach who just filled out this form wants to keep going on the team
+      // they made (add players, set up a season), not re-find it in the list.
+      navigation.replace('TeamDetail', { id: team.id });
+    } finally {
+      setSubmitting(false);
+    }
   });
 
   const runDummy = async (options: DummyTeamOptions) => {
@@ -392,7 +398,7 @@ export default function NewTeamScreen() {
           </>
         ) : null}
 
-        <Button label="Create Team" onPress={onSubmit} loading={createTeam.isPending || uploadLogo.isPending || updateTeam.isPending} />
+        <Button label="Create Team" onPress={onSubmit} loading={submitting} />
       </View>
 
       {isAssociation ? (

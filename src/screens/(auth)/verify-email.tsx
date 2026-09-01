@@ -14,6 +14,7 @@ export default function VerifyEmailScreen() {
   const [checking, setChecking] = useState(false);
   const [resending, setResending] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
 
   const handleCheckStatus = async () => {
     setChecking(true);
@@ -90,7 +91,16 @@ export default function VerifyEmailScreen() {
           <Button
             label="Sign Out / Back to Login"
             variant="ghost"
-            onPress={() => logout()}
+            loading={signingOut}
+            onPress={async () => {
+              if (signingOut) return;
+              setSigningOut(true);
+              try {
+                await logout();
+              } finally {
+                setSigningOut(false);
+              }
+            }}
           />
         </View>
       </View>
