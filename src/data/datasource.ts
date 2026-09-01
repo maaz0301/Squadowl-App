@@ -223,7 +223,7 @@ export interface DataSource {
   ): Promise<{ url: string }>;
 
   // Org Members & Permissions
-  listOrgMembers(): Promise<OrgMember[]>;
+  listOrgMembers(includeTeamManagers?: boolean): Promise<OrgMember[]>;
   inviteOrgMember(email: string, role: OrgRole): Promise<OrgMember>;
   updateOrgMemberRole(memberId: string, role: OrgRole): Promise<OrgMember>;
   removeOrgMember(memberId: string): Promise<void>;

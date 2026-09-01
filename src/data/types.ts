@@ -385,6 +385,13 @@ export const TeamRosterPlayerSchema = z.object({
    * column list on the team_roster select.
    */
   medicalInfo: z.string().optional(),
+  /**
+   * The athlete's photo, straight off the athlete row. Read here so the team
+   * player card can paint it from the roster the team screen already has —
+   * sourcing it from the account-wide assessment read meant every player tap
+   * waited on the heaviest query in the app to show a face.
+   */
+  avatarUrl: z.string().optional(),
   /** Assessment the athlete was added from, when known. */
   sourceTryoutId: z.string().optional(),
   sourceTryoutName: z.string().optional(),
@@ -779,6 +786,9 @@ export type Org = z.infer<typeof OrgSchema>;
 export const ORG_ROLES = ['admin', 'coach', 'assessor', 'guardian'] as const;
 export type OrgRole = (typeof ORG_ROLES)[number];
 
+export const ORG_MEMBER_SOURCES = ['membership', 'assessor', 'guardian', 'teamManager'] as const;
+export type OrgMemberSource = (typeof ORG_MEMBER_SOURCES)[number];
+
 export const OrgMemberSchema = z.object({
   id: z.string(),
   orgId: z.string(),
@@ -788,6 +798,15 @@ export const OrgMemberSchema = z.object({
   role: z.enum(ORG_ROLES),
   status: z.enum(['pending', 'active', 'declined']).default('pending'),
   createdAt: z.number(),
+  /**
+   * Which grant put this person on the list. `id` is a row id from whichever
+   * table that was, so it decides what a write against the row can do — a
+   * delegated manager has no membership row, and the role change would have
+   * nothing to update.
+   */
+  source: z.enum(ORG_MEMBER_SOURCES).optional(),
+  /** Names of the teams delegated to them, for the teamManager rows. */
+  teams: z.array(z.string()).optional(),
 });
 
 export type OrgMember = z.infer<typeof OrgMemberSchema>;

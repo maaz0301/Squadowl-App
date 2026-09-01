@@ -1304,11 +1304,11 @@ export function useOrgQuery() {
   });
 }
 
-export function useOrgMembersQuery() {
+export function useOrgMembersQuery(includeTeamManagers = false) {
   const userId = useAuthStore((s) => s.session?.user?.id);
   return useQuery({
-    queryKey: queryKeys.orgMembers(userId),
-    queryFn: () => getDataSource().listOrgMembers(),
+    queryKey: queryKeys.orgMembers(userId, includeTeamManagers),
+    queryFn: () => getDataSource().listOrgMembers(includeTeamManagers),
     enabled: !!userId,
   });
 }
@@ -1379,7 +1379,11 @@ export function useInviteTeamManagerMutation(teamId: string) {
       role: import('@/data/types').TeamManagerRole;
       name?: string;
     }) => getDataSource().inviteTeamManager(teamId, email, role, name),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teamManagers(teamId) }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.teamManagers(teamId) });
+      // Manage Organization lists delegated managers too, so it goes stale here.
+      void qc.invalidateQueries({ queryKey: queryKeys.orgMembers() });
+    },
   });
 }
 
@@ -1387,7 +1391,11 @@ export function useRemoveTeamManagerMutation(teamId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (managerId: string) => getDataSource().removeTeamManager(managerId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teamManagers(teamId) }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.teamManagers(teamId) });
+      void qc.invalidateQueries({ queryKey: queryKeys.teams });
+      void qc.invalidateQueries({ queryKey: queryKeys.orgMembers() });
+    },
   });
 }
 

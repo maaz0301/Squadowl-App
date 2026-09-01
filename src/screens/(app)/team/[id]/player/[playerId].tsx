@@ -28,11 +28,13 @@ export default function TeamPlayerScreen() {
   const rosterQuery = useTeamRosterQuery(teamId);
   const sendInvite = useTeamRosterInvitesMutation(teamId);
   const { canManageTeam } = usePermissions();
-  // The team_roster row carries everything that lives on the athlete itself,
-  // guardian contact included. Only the assessment-scoped extras (medical notes,
-  // avatar, registration source) still need the Player record — looked up by
-  // athleteId across every assessment, since a team's roster can be sourced
-  // from more than one.
+  // The team_roster row carries everything that lives on the athlete itself —
+  // guardian contact, medical notes and the photo included — and the team
+  // screen has already loaded it, so this card paints from cache. Only the
+  // assessment-scoped extra (how the player registered) still needs the Player
+  // record, looked up by athleteId across every assessment since a team's
+  // roster can be sourced from more than one. That read is the heaviest query
+  // in the app, so nothing below waits on it: the badge fills in when it lands.
   const tryoutsQuery = useTryoutsQuery(false);
   // The player card is reached from the team hub, so it keeps the team's
   // branding rather than dropping back to the plain theme mid-flow.
@@ -65,10 +67,14 @@ export default function TeamPlayerScreen() {
     }
   };
 
-  if (rosterQuery.isLoading || tryoutsQuery.isLoading) return <LoadingState />;
+  if (rosterQuery.isLoading) return <LoadingState />;
 
   const rosterEntry = rosterQuery.data?.find((p) => p.athleteId === playerId);
   const fullPlayer = tryoutsQuery.data?.flatMap((t) => t.roster).find((p) => p.athleteId === playerId);
+
+  // Only worth waiting on the assessment read for someone the roster doesn't
+  // know — a player removed from the team, or a stale deep link.
+  if (!rosterEntry && tryoutsQuery.isLoading) return <LoadingState />;
 
   if (!rosterEntry && !fullPlayer) {
     return (
@@ -106,7 +112,13 @@ export default function TeamPlayerScreen() {
         {team ? <TeamBanner team={team} className="mb-3" /> : null}
 
         <View className="items-center py-4 gap-2">
-          <Avatar first={first} last={last} pos={pos} size={72} uri={fullPlayer?.avatarUrl} />
+          <Avatar
+            first={first}
+            last={last}
+            pos={pos}
+            size={72}
+            uri={rosterEntry?.avatarUrl ?? fullPlayer?.avatarUrl}
+          />
           <Text className="text-sm" style={{ color: colors.inkMuted }}>
             #{jersey ?? '—'} · {pos ?? '—'}
           </Text>
