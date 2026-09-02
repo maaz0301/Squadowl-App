@@ -287,7 +287,6 @@ function tplPlayerInvite(
         <p style="color:#9ca3af;font-size:13px;margin:0 0 10px;">What you can do in the portal</p>
         <p style="color:#fff;font-size:15px;line-height:1.8;margin:0;">
           📅 See the full schedule and RSVP to games and practices<br/>
-          📊 Follow evaluation results and development history<br/>
           📝 Keep contact and medical details up to date<br/>
           💬 Stay in touch with the coaching staff
         </p>

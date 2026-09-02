@@ -15,11 +15,12 @@ export default function TeamChatScreen() {
   const { seasonId, title, subtitle, noSeasonMessage } = route.params || {};
 
   return (
-    // Screen's default iOS keyboardOffset (88) assumes a native bottom tab bar
-    // sits below it and compensates for that reserved space — this screen has
-    // no tab bar, so that default leaves a gap between the composer and the
-    // keyboard. 0 is correct here; Android already defaults to 0 regardless.
-    <Screen keyboardOffset={0}>
+    // KeyboardAvoidingView is off because TeamChat handles the keyboard itself,
+    // padding its composer by the measured keyboard height. Letting both run
+    // moved the composer twice; letting only KeyboardAvoidingView run left it
+    // short by about the navigation bar under `adjustNothing`, so the keyboard
+    // covered the bottom of the input. See the keyboardHeight effect there.
+    <Screen keyboardAvoiding={false}>
       <Header title={title || 'Team Chat'} subtitle={subtitle} showBack />
       <TeamChat seasonId={seasonId} noSeasonMessage={noSeasonMessage} />
     </Screen>
