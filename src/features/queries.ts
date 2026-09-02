@@ -81,6 +81,11 @@ export function useTeamRosterQuery(teamId: string | undefined) {
   });
 }
 
+// Adding a player to a team also enrolls them on the team's season (provisioning
+// one if the team hasn't got it yet) — that's what makes them visible to their own
+// guardian, and it's enforced by the team_roster_season_enrollment trigger rather
+// than here, so every writer gets it (see
+// 20260902130000_team_roster_season_enrollment.sql).
 export function useAddTeamRosterPlayersMutation(
   teamId: string,
   onProgress?: (done: number, total: number) => void,
@@ -89,7 +94,11 @@ export function useAddTeamRosterPlayersMutation(
   return useMutation({
     mutationFn: (entries: { athleteId: string; jersey?: string; pos?: string; sourceTryoutId?: string }[]) =>
       getDataSource().addTeamRosterPlayers(teamId, entries, onProgress),
-    onSuccess: () => qc.invalidateQueries({ queryKey: teamRosterKey(teamId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: teamRosterKey(teamId) });
+      // The trigger enrolled them on a season this client may already have cached.
+      qc.invalidateQueries({ queryKey: queryKeys.seasons });
+    },
   });
 }
 
@@ -97,7 +106,10 @@ export function useAddManualTeamPlayerMutation(teamId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (form: AddPlayerForm) => getDataSource().addManualTeamPlayer(teamId, form),
-    onSuccess: () => qc.invalidateQueries({ queryKey: teamRosterKey(teamId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: teamRosterKey(teamId) });
+      qc.invalidateQueries({ queryKey: queryKeys.seasons });
+    },
   });
 }
 
@@ -333,6 +345,14 @@ export function useSeasonRealtimeSync(id: string | undefined) {
         () => triggerInvalidate()
       )
       .on(
+        // Enrollment — including the rows the team_roster_season_enrollment
+        // trigger writes when a coach adds a player to the team, which is not a
+        // write to this season anyone on this screen made.
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'season_roster', filter: `season_id=eq.${id}` },
+        () => triggerInvalidate()
+      )
+      .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'season_events', filter: `season_id=eq.${id}` },
         () => triggerInvalidate()
@@ -374,6 +394,12 @@ export function useGuardianRealtimeSync() {
       // season across every linked athlete, not one id — so this catches a
       // coach deleting ANY season, not just the one currently on screen.
       .on('postgres_changes', { event: '*', schema: 'public', table: 'seasons' }, () => triggerInvalidate())
+      // Enrollment itself — a coach adding the athlete to a team (which enrolls
+      // them on its season via the team_roster_season_enrollment trigger) is what
+      // flips this portal from "not assigned to any seasons yet" to a live
+      // schedule and chat, and nothing else here fires on it. Without this the
+      // guardian sat on the empty state until they reopened the portal.
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'season_roster' }, () => triggerInvalidate())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'season_events' }, () => triggerInvalidate())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'event_availability' }, () => triggerInvalidate())
       .subscribe();
@@ -1461,13 +1487,19 @@ export function useGuardianRostersQuery() {
   });
 }
 
-/** Removes the guardian's athlete from a season's roster (guardian_leave_season RPC). */
+/** Takes the guardian's athlete off the team entirely — see DataSource.leaveSeason. */
 export function useLeaveSeasonMutation() {
   const qc = useQueryClient();
   const userId = useAuthStore((s) => s.session?.user?.id);
   return useMutation({
     mutationFn: (seasonRosterId: string) => getDataSource().leaveSeason(seasonRosterId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.guardianRosters(userId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.guardianRosters(userId) });
+      // The team roster row goes too, so anything showing that team's roster or
+      // season is now a player out of date.
+      qc.invalidateQueries({ queryKey: queryKeys.seasons });
+      qc.invalidateQueries({ queryKey: queryKeys.teams });
+    },
   });
 }
 
