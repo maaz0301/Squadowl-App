@@ -170,7 +170,15 @@ export interface DataSource {
 
   // Phase 3: Seasons
   listSeasons(): Promise<Season[]>;
-  getSeason(id: string): Promise<Season | null>;
+  /** The light season read for screens that only need to find one — see SeasonSummary. */
+  listSeasonSummaries(): Promise<import('./types').SeasonSummary[]>;
+  /**
+   * `onPartial` is called with the season as each stage of the read lands —
+   * the events first, then the roster, then the RSVPs — so the schedule can
+   * draw without waiting for a club-sized roster and every RSVP on every event.
+   * `rosterPending` / `availabilityPending` say which stage a partial is.
+   */
+  getSeason(id: string, onPartial?: (season: Season) => void): Promise<Season | null>;
   createSeason(form: CreateSeasonForm): Promise<Season>;
   updateSeason(id: string, updates: Partial<Season>): Promise<Season>;
   deleteSeason(id: string): Promise<void>;
@@ -291,11 +299,43 @@ export interface DataSource {
    * already on this roster".
    */
   listSeasonRoster(seasonId: string): Promise<import('./types').SeasonPlayer[]>;
+  /**
+   * One page of a season's roster for the list screen — see
+   * listSeasonRosterPage. `after` is the previous page's last id; `nextCursor`
+   * is undefined once there is nothing left.
+   */
+  listSeasonRosterPage(
+    seasonId: string,
+    opts?: { after?: string; limit?: number },
+  ): Promise<{ players: import('./types').SeasonPlayer[]; nextCursor?: string }>;
   emailScheduleToPlayers(seasonId: string): Promise<void>;
   updateTeam(id: string, updates: Partial<Team>): Promise<Team>;
 
   // Team roster: a team's own players, selectable from any assessment's roster.
   listTeamRoster(teamId: string): Promise<import('./types').TeamRosterPlayer[]>;
+  /**
+   * One page of a team's roster for the Players tab — see listTeamRosterPage.
+   * `after` is the previous page's cursor; `nextCursor` is undefined once there
+   * is nothing left. `search` is matched server-side, over the whole roster.
+   */
+  listTeamRosterPage(
+    teamId: string,
+    opts?: {
+      after?: import('./types').TeamRosterCursor;
+      limit?: number;
+      search?: string;
+    },
+  ): Promise<{
+    players: import('./types').TeamRosterPlayer[];
+    nextCursor?: import('./types').TeamRosterCursor;
+  }>;
+  /** One player's team-roster row — see getTeamRosterPlayer(). */
+  getTeamRosterPlayer(
+    teamId: string,
+    athleteId: string,
+  ): Promise<import('./types').TeamRosterPlayer | null>;
+  /** Just the athlete ids on a team's roster — see listTeamRosterAthleteIds(). */
+  listTeamRosterAthleteIds(teamId: string): Promise<string[]>;
   addTeamRosterPlayers(
     teamId: string,
     entries: { athleteId: string; jersey?: string; pos?: string; sourceTryoutId?: string }[],

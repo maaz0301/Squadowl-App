@@ -3,6 +3,7 @@ import { useRoute } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, EmptyState, ErrorState, LoadingState, Screen } from '@/components/ui';
+import { isSeasonPartial } from '@/data/types';
 import { useSeasonQuery, useSetAvailabilityMutation } from '@/features/queries';
 
 const RESPONSE_VARIANT = {
@@ -19,7 +20,10 @@ export default function SeasonAvailabilityScreen() {
   const seasonQuery = useSeasonQuery(id);
   const setAvailability = useSetAvailabilityMutation(id!);
 
-  if (seasonQuery.isLoading) return <LoadingState />;
+  // The season arrives in stages — its events first, then the roster, then the
+  // RSVPs (see getSeason). This grid is all three at once, so it waits for the
+  // whole read rather than drawing a season with nobody in it.
+  if (seasonQuery.isLoading || isSeasonPartial(seasonQuery.data)) return <LoadingState />;
   if (seasonQuery.isError || !seasonQuery.data) {
     return <ErrorState message="Could not load availability." onRetry={() => seasonQuery.refetch()} />;
   }

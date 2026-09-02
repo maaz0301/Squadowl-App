@@ -20,7 +20,9 @@ export default function SeasonPlayerScreen() {
   // against the owning club's tier, not the viewer's own.
   const tier = useEffectivePlanTier(seasonQuery.data?.teamId);
 
-  if (seasonQuery.isLoading) return <LoadingState />;
+  // The roster lands a stage after the events do (see getSeason), and an
+  // absent player on a partial season is "not read yet", not "removed".
+  if (seasonQuery.isLoading || seasonQuery.data?.rosterPending) return <LoadingState />;
   const player = seasonQuery.data?.roster.find((p) => p.id === playerId);
   if (!player) {
     return (

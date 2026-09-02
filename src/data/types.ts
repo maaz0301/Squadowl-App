@@ -641,6 +641,13 @@ export const SeasonPlayerSchema = z.object({
 
 export type SeasonPlayer = z.infer<typeof SeasonPlayerSchema>;
 
+/**
+ * A place in a team roster's (created_at, id) order — see listTeamRosterPage.
+ * Both halves are needed: created_at ties are the norm (a bulk add writes a
+ * whole chunk on one timestamp), so the primary key breaks them.
+ */
+export type TeamRosterCursor = { createdAt: string; id: string };
+
 export const SeasonEventSchema = z.object({
   id: z.string(),
   type: z.enum(EVENT_KINDS),
@@ -657,6 +664,14 @@ export const SeasonEventSchema = z.object({
   // show the schedule and note that RSVPs couldn't be loaded, instead of the
   // whole schedule vanishing. Mirrors the web app's SeasonEvent contract.
   availabilityUnavailable: z.boolean().optional(),
+  /**
+   * Set while the season's RSVP read is still in flight — getSeason() hands
+   * back the events first so the schedule can draw, then replaces them with
+   * the same events carrying their RSVPs. An empty `availability` alongside
+   * this means "still loading", so a view that shows RSVPs can wait rather
+   * than claim nobody was invited. Mirrors the web app's SeasonEvent contract.
+   */
+  availabilityPending: z.boolean().optional(),
   createdAt: z.number(),
   updatedAt: z.number().optional(),
 });
@@ -675,6 +690,12 @@ export const SeasonSchema = z.object({
   orgId: z.string().optional(),
   events: z.array(SeasonEventSchema).default([]),
   roster: z.array(SeasonPlayerSchema).default([]),
+  /**
+   * Set on the first pass getSeason() publishes, where only the events have
+   * loaded. An empty `roster` alongside this means "still loading", not "no
+   * players" — see assembleSeasons. Mirrors the web app's Season contract.
+   */
+  rosterPending: z.boolean().optional(),
   scheduleShareToken: z.string().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
@@ -682,6 +703,39 @@ export const SeasonSchema = z.object({
 });
 
 export type Season = z.infer<typeof SeasonSchema>;
+
+/**
+ * True while getSeason() is still publishing stages — the events have landed
+ * but the roster and/or the RSVPs behind them have not (see
+ * `Season.rosterPending` and `SeasonEvent.availabilityPending`).
+ *
+ * For the views that read the roster and the RSVPs together — the availability
+ * grid, attendance rates. An empty roster on a partial season means "still
+ * loading", and rendering it as data shows a season with nobody in it.
+ */
+export function isSeasonPartial(season: Season | null | undefined): boolean {
+  if (!season) return false;
+  return !!season.rosterPending || season.events.some((e) => e.availabilityPending);
+}
+
+/**
+ * What a screen that only needs to *find* a season renders: an event count and
+ * the team it belongs to. The full `Season` carries every roster entry (each
+ * joined to its full athlete row), every event, RSVP availability and portal
+ * invite in the account — assembling that for every season in the account just
+ * to look up which one belongs to this team is what stood between the coach and
+ * their schedule. `listSeasonSummaries()` fills this shape instead. Mirrors the
+ * web app's SeasonSummary.
+ *
+ * Deliberately no player count. A team's headcount is team membership, which
+ * lives in `team_roster` and is read by `countTeamPlayers()`; a season roster
+ * is a different set that only grows.
+ */
+export interface SeasonSummary {
+  id: string;
+  teamId?: string;
+  eventCount: number;
+}
 
 export const CreateSeasonFormSchema = z.object({
   name: z.string().min(2, 'Season name must be at least 2 characters'),
