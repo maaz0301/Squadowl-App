@@ -3,6 +3,35 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+      Lets an export be opened on the device instead of only sent somewhere.
+
+      exportData.ts asks react-native-share for ACTION_VIEW targets
+      (`showAppsToView`) so the chooser offers the PDF and spreadsheet apps
+      already installed, not just mail and messaging. It finds them with
+      PackageManager.queryIntentActivities, and from targetSdk 30 onwards that
+      returns nothing an app hasn't declared it wants to see — so without these,
+      the option silently resolves to an empty list on every modern device and
+      the chooser falls back to send-only targets.
+
+      One entry per mime type exportData.ts actually writes; a format added there
+      needs its type added here or it will not be viewable.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/pdf" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="text/csv" />
+        </intent>
+    </queries>
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
