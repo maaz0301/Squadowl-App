@@ -318,12 +318,7 @@ export interface DataSource {
   sendTeamRosterInvites(teamId: string, athleteIds?: string[]): Promise<import('./types').TeamInviteResult>;
   importScanScores(tryoutId: string, scores: { playerId: string; rubricKey: string; value: number }[]): Promise<void>;
   getGuardianRosters(): Promise<GuardianRosterAthlete[]>;
-  /**
-   * Takes the guardian's own athlete off a team: the season roster entry, the
-   * team roster row behind it, and any other live season of the same team
-   * (guardian_leave_season RPC). Removing the team roster row is what makes it
-   * stick — anything less and the team's next event save re-enrolls them.
-   */
+  /** Removes the guardian's own athlete from a season's roster (guardian_leave_season RPC). */
   leaveSeason(seasonRosterId: string): Promise<void>;
 
   // Extra family contacts a guardian keeps on their own athlete's profile
