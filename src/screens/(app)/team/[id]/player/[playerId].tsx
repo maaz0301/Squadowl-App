@@ -2,7 +2,7 @@ import { useRoute } from '@react-navigation/native';
 import { Alert, Platform, ScrollView, Text, View } from 'react-native';
 
 import { Avatar, Badge, Button, Card, EmptyState, Header, LoadingState, Screen } from '@/components/ui';
-import { useTeamRosterQuery, useTeamRosterInvitesMutation, useTeamsQuery, useTryoutsQuery } from '@/features/queries';
+import { useTeamRosterPlayerQuery, useTeamRosterInvitesMutation, useTeamsQuery, useTryoutsQuery } from '@/features/queries';
 import { usePermissions } from '@/state/authStore';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { TeamBanner } from '@/components/TeamBanner';
@@ -25,7 +25,7 @@ export default function TeamPlayerScreen() {
   const { id: teamId, playerId } = route.params || {};
   const colors = useThemeColors();
 
-  const rosterQuery = useTeamRosterQuery(teamId);
+  const rosterPlayerQuery = useTeamRosterPlayerQuery(teamId, playerId);
   const sendInvite = useTeamRosterInvitesMutation(teamId);
   const { canManageTeam } = usePermissions();
   // The team_roster row carries everything that lives on the athlete itself —
@@ -67,9 +67,9 @@ export default function TeamPlayerScreen() {
     }
   };
 
-  if (rosterQuery.isLoading) return <LoadingState />;
+  if (rosterPlayerQuery.isLoading) return <LoadingState />;
 
-  const rosterEntry = rosterQuery.data?.find((p) => p.athleteId === playerId);
+  const rosterEntry = rosterPlayerQuery.data ?? undefined;
   const fullPlayer = tryoutsQuery.data?.flatMap((t) => t.roster).find((p) => p.athleteId === playerId);
 
   // Only worth waiting on the assessment read for someone the roster doesn't

@@ -6,6 +6,7 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { TeamBanner } from '@/components/TeamBanner';
 import { useSeasonTeamBrand } from '@/features/useTeamBrand';
 import { Badge, Card, EmptyState, ErrorState, LoadingState, Screen } from '@/components/ui';
+import { isSeasonPartial } from '@/data/types';
 import { useSeasonQuery } from '@/features/queries';
 
 export default function SeasonAttendanceScreen() {
@@ -39,7 +40,12 @@ export default function SeasonAttendanceScreen() {
   // loading render would change hook order. Undefined season -> plain theme.
   const { team, brand } = useSeasonTeamBrand(seasonQuery.data);
 
-  if (seasonQuery.isLoading) return <LoadingState message="Loading attendance..." />;
+  // Attendance rates are the roster crossed with every event's RSVPs, and the
+  // season publishes those in stages (see getSeason) — a partial read would
+  // show every rate as 0%.
+  if (seasonQuery.isLoading || isSeasonPartial(seasonQuery.data)) {
+    return <LoadingState message="Loading attendance..." />;
+  }
   if (seasonQuery.isError || !seasonQuery.data) {
     return <ErrorState message="Could not load attendance." onRetry={() => seasonQuery.refetch()} />;
   }

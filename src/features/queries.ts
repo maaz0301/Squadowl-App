@@ -12,6 +12,7 @@ import type {
   TeamRosterPlayer,
   ScoreForm,
   Team,
+  TeamRosterCursor,
   Tryout,
   UserProfile,
 } from '@/data/types';
@@ -19,7 +20,7 @@ import { queryKeys } from '@/lib/queryClient';
 import { getSupabase } from '@/lib/supabase';
 import { useAuthStore } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 // ---- Auth ----
@@ -67,16 +68,118 @@ export function useUploadTeamLogoMutation() {
 // ---- Team roster ----
 const teamRosterKey = (teamId: string) => ['teams', teamId, 'roster'] as const;
 
-export function useTeamRosterQuery(teamId: string | undefined) {
+type TeamRosterPage = { players: TeamRosterPlayer[]; nextCursor?: TeamRosterCursor };
+/** The shapes cached under a team's roster prefix: the flat read, the paged
+ * one, and the athlete-id list. */
+type TeamRosterCache =
+  | TeamRosterPlayer[]
+  | InfiniteData<TeamRosterPage>
+  | string[]
+  | undefined;
+
+/** Removes an athlete from whichever of those shapes a cache entry holds. */
+function dropRosterPlayer(cache: TeamRosterCache, athleteId: string): TeamRosterCache {
+  if (Array.isArray(cache)) {
+    // Either the flat roster or the athlete-id list, depending on the entry.
+    return (cache as unknown[]).filter((p) =>
+      typeof p === 'string' ? p !== athleteId : (p as TeamRosterPlayer).athleteId !== athleteId,
+    ) as TeamRosterCache;
+  }
+  if (!cache) return cache;
+  return {
+    ...cache,
+    pages: cache.pages.map((page) => ({
+      ...page,
+      players: page.players.filter((p) => p.athleteId !== athleteId),
+    })),
+  };
+}
+
+/**
+ * Every player on a team, in one array — rows and all.
+ *
+ * The expensive read: on a club-sized team it is several 200-row pages, each
+ * paying can_access_athlete() per row through the `athletes` embed. Nothing on
+ * the team screen needs it any more — the Players tab reads
+ * useTeamRosterPagesQuery, membership and headcount come from
+ * useTeamRosterAthleteIdsQuery, and the player card reads its own row — so
+ * reach for it only where a caller genuinely needs every player's full record
+ * at once, and pass `enabled` so it doesn't start until then.
+ */
+export function useTeamRosterQuery(teamId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: teamRosterKey(teamId ?? ''),
     queryFn: () => getDataSource().listTeamRoster(teamId!),
-    enabled: !!teamId,
+    enabled: !!teamId && enabled,
     // Same reasoning as useTryoutQuery's gcTime: a roster read is several
     // round trips plus a per-athlete fee lookup, so dropping the entry after
     // the 5-minute default means stepping out of a team and back in lands on a
     // blocking spinner instead of the list. Held long enough that the return
     // trip renders from cache and refetches quietly underneath.
+    gcTime: 30 * 60 * 1000,
+  });
+}
+
+/**
+ * A team's roster one page at a time — what the Players tab renders.
+ *
+ * Separate from useTeamRosterQuery so the list can paint off a single statement
+ * instead of every player on the team (see listTeamRosterPage). The full read
+ * is still what the flows that need everyone use: the "already on this team"
+ * flags in the player picker, and the plan's per-team limit.
+ *
+ * `search` is part of the key and is matched server-side, so a search covers
+ * the whole roster rather than only the pages already pulled down. Pass it
+ * debounced — every distinct value is its own read.
+ *
+ * Keyed under the team's roster prefix, so the
+ * `invalidateQueries({ queryKey: teamRosterKey(teamId) })` every roster write
+ * already runs refreshes these pages too.
+ */
+export function useTeamRosterPagesQuery(teamId: string | undefined, search = '') {
+  return useInfiniteQuery({
+    queryKey: [...teamRosterKey(teamId ?? ''), 'pages', search.trim()] as const,
+    queryFn: ({ pageParam }) =>
+      getDataSource().listTeamRosterPage(teamId!, { after: pageParam, search }),
+    initialPageParam: undefined as TeamRosterCursor | undefined,
+    getNextPageParam: (last) => last.nextCursor,
+    enabled: !!teamId,
+    // Same reasoning as useTeamRosterQuery's gcTime: stepping out of a team and
+    // back in should land on the list, not a spinner.
+    gcTime: 30 * 60 * 1000,
+  });
+}
+
+/**
+ * One player's team-roster row, for the player card.
+ *
+ * Keyed under the team's roster prefix so roster writes refresh it, but read on
+ * its own: the card used to `.find()` the athlete in the full roster array,
+ * which is a thousand rows to render one now that no screen loads that array
+ * up front.
+ */
+export function useTeamRosterPlayerQuery(teamId: string | undefined, athleteId: string | undefined) {
+  return useQuery({
+    queryKey: [...teamRosterKey(teamId ?? ''), 'player', athleteId ?? ''] as const,
+    queryFn: () => getDataSource().getTeamRosterPlayer(teamId!, athleteId!),
+    enabled: !!teamId && !!athleteId,
+  });
+}
+
+/**
+ * The athlete ids on a team's roster — membership and headcount in one cheap
+ * read.
+ *
+ * The tab badge, the plan's per-team limit and the "already on this team" flags
+ * in the player picker all used to come from the full roster array, which is
+ * what forced that read to happen on a screen that opens on the schedule. This
+ * answers all three without pulling an athlete row per player.
+ */
+export function useTeamRosterAthleteIdsQuery(teamId: string | undefined) {
+  return useQuery({
+    queryKey: [...teamRosterKey(teamId ?? ''), 'athleteIds'] as const,
+    queryFn: () => getDataSource().listTeamRosterAthleteIds(teamId!),
+    enabled: !!teamId,
     gcTime: 30 * 60 * 1000,
   });
 }
@@ -121,8 +224,12 @@ export function useRemoveTeamRosterPlayerMutation(teamId: string) {
     // runs underneath and remains the source of truth; it just no longer gates
     // what the user sees.
     onSuccess: (_data, athleteId) => {
-      qc.setQueryData<TeamRosterPlayer[] | undefined>(teamRosterKey(teamId), (old) =>
-        old?.filter((p) => p.athleteId !== athleteId),
+      // Every cache entry under the team's roster prefix, because the Players
+      // tab reads the paged one (useTeamRosterPagesQuery) and the picker reads
+      // the flat one — dropping the row from only one of them left the coach
+      // watching the player they just removed sit there until the refetch.
+      qc.setQueriesData<TeamRosterCache>({ queryKey: teamRosterKey(teamId) }, (old) =>
+        dropRosterPlayer(old, athleteId),
       );
       qc.invalidateQueries({ queryKey: teamRosterKey(teamId) });
     },
@@ -896,6 +1003,18 @@ export function useShareLinkMutation(tryoutId: string) {
 }
 
 // ---- Phase 3: Seasons ----
+/**
+ * Which season belongs to which team, and how many events each has — without
+ * assembling every season in the account. Use useSeasonsQuery only where a
+ * screen genuinely works with a full season (schedule, roster, RSVPs).
+ */
+export function useSeasonSummariesQuery() {
+  return useQuery({
+    queryKey: queryKeys.seasonSummaries,
+    queryFn: () => getDataSource().listSeasonSummaries(),
+  });
+}
+
 export function useSeasonsQuery() {
   return useQuery({
     queryKey: queryKeys.seasons,
@@ -903,10 +1022,59 @@ export function useSeasonsQuery() {
   });
 }
 
+/**
+ * A season, published to the cache in stages.
+ *
+ * getSeason() calls back with the events as soon as they land, then again with
+ * the roster, and resolves last with the RSVPs and portal invites attached.
+ * Writing that first pass into this query's own cache entry flips it out of
+ * `isLoading` immediately, so the schedule draws off real data while the slow
+ * half is still in flight, instead of holding a spinner for the whole read —
+ * which on a 1000-player roster is seconds of roster and RSVP paging before an
+ * event the coach could have seen from the first round trip.
+ *
+ * Only seeded when the entry is empty. On a background refetch there is
+ * already a complete season cached, and overwriting it with a partial would
+ * blank out a roster and RSVPs that are on screen and correct.
+ */
 export function useSeasonQuery(id: string | undefined) {
+  const qc = useQueryClient();
   return useQuery({
     queryKey: queryKeys.season(id ?? ''),
-    queryFn: () => getDataSource().getSeason(id!),
+    queryFn: () => {
+      const key = queryKeys.season(id!);
+      // Captured before the read starts, not re-checked per callback: on a
+      // background refetch there is already a complete season on screen, and
+      // publishing a partial over it would blank out a roster and RSVPs that
+      // are correct. On a cold read every stage is an improvement on the last.
+      const seedable = !qc.getQueryData(key);
+      return getDataSource().getSeason(id!, (partial) => {
+        if (seedable) qc.setQueryData(key, partial);
+      });
+    },
+    enabled: !!id,
+  });
+}
+
+/**
+ * The Season Roster screen's list, one page at a time.
+ *
+ * Separate from useSeasonQuery so the list can paint off a single statement
+ * instead of the whole enrolled roster — see listSeasonRosterPage. The season
+ * query is still what the rest of that screen reads (team, branding, the
+ * import button), and it now arrives with its events long before the full
+ * roster lands.
+ *
+ * Pages are keyed under the season's own key, so the existing
+ * `invalidateQueries({ queryKey: queryKeys.season(id) })` in every roster write
+ * refreshes them without changes.
+ */
+export function useSeasonRosterPagesQuery(id: string | undefined) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.seasonRosterPages(id ?? ''),
+    queryFn: ({ pageParam }) => getDataSource().listSeasonRosterPage(id!, { after: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextCursor,
     enabled: !!id,
   });
 }

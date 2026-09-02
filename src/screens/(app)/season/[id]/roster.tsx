@@ -8,7 +8,15 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { TeamBanner } from '@/components/TeamBanner';
 import { useSeasonTeamBrand } from '@/features/useTeamBrand';
 import { Badge, Button, Card, EmptyState, ErrorState, Header, Input, LoadingState, Modal, Screen } from '@/components/ui';
-import { useSeasonQuery, useAddSeasonPlayerMutation, useImportSeasonPlayersFromTeamMutation } from '@/features/queries';
+import {
+  useSeasonQuery,
+  useSeasonRosterPagesQuery,
+  useAddSeasonPlayerMutation,
+  useImportSeasonPlayersFromTeamMutation,
+} from '@/features/queries';
+
+/** Matches listSeasonRosterPage's own page size — see SEASON_ROSTER_SCREEN_PAGE. */
+const SEASON_ROSTER_PAGE = 50;
 
 export default function SeasonRosterScreen() {
   const route = useRoute<any>();
@@ -17,6 +25,11 @@ export default function SeasonRosterScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const seasonQuery = useSeasonQuery(id);
+  // The list reads its own paged query rather than season.roster: a season with
+  // a club-sized roster took several round trips to assemble that array, and
+  // this screen shows a screenful at a time. Both live under the same cache
+  // key, so a write that invalidates the season refreshes these pages too.
+  const rosterPages = useSeasonRosterPagesQuery(id);
   const addPlayer = useAddSeasonPlayerMutation();
   const importTeam = useImportSeasonPlayersFromTeamMutation();
   const [showAdd, setShowAdd] = useState(false);
@@ -36,6 +49,7 @@ export default function SeasonRosterScreen() {
   }
 
   const season = seasonQuery.data;
+  const players = rosterPages.data?.pages.flatMap((p) => p.players) ?? [];
 
   const handleAdd = async () => {
     if (!firstName.trim() || !lastName.trim()) return;
@@ -85,20 +99,51 @@ export default function SeasonRosterScreen() {
       />
       {team ? <TeamBanner team={team} className="px-4 mb-2" /> : null}
       <FlatList
-        data={season.roster}
+        data={players}
         keyExtractor={(p) => p.id}
         contentContainerStyle={{
           padding: 16,
           paddingBottom: Math.max(100, insets.bottom + 80),
           flexGrow: 1,
         }}
+        // Cap how much of a large roster is mounted before the first paint.
+        initialNumToRender={12}
+        maxToRenderPerBatch={12}
+        windowSize={7}
+        removeClippedSubviews
+        // Scrolling to the end pulls the next page in on its own; the button
+        // below is for anyone who stops short of the very bottom.
+        onEndReachedThreshold={0.5}
+        onEndReached={() => {
+          if (rosterPages.hasNextPage && !rosterPages.isFetchingNextPage) {
+            void rosterPages.fetchNextPage();
+          }
+        }}
+        ListFooterComponent={
+          rosterPages.hasNextPage ? (
+            <Button
+              label={`Load ${SEASON_ROSTER_PAGE} more players`}
+              variant="secondary"
+              loading={rosterPages.isFetchingNextPage}
+              onPress={() => void rosterPages.fetchNextPage()}
+            />
+          ) : null
+        }
         ListEmptyComponent={
-          <EmptyState
-            title="No roster players"
-            message={season.teamId ? "Import players from the linked team evaluations or add them manually." : "Add players manually to get started."}
-            actionLabel={season.teamId ? "Import from Team" : "Add Player"}
-            onAction={season.teamId ? handleImport : () => setShowAdd(true)}
-          />
+          // An empty first page can mean "still loading", which must not read
+          // as "no players" — least of all with an Import button under it.
+          rosterPages.isLoading ? (
+            <LoadingState message="Loading roster..." />
+          ) : rosterPages.isError ? (
+            <ErrorState message="Could not load the roster." onRetry={() => rosterPages.refetch()} />
+          ) : (
+            <EmptyState
+              title="No roster players"
+              message={season.teamId ? "Import players from the linked team evaluations or add them manually." : "Add players manually to get started."}
+              actionLabel={season.teamId ? "Import from Team" : "Add Player"}
+              onAction={season.teamId ? handleImport : () => setShowAdd(true)}
+            />
+          )
         }
         renderItem={({ item }) => (
           <Pressable onPress={() => navigation.navigate('SeasonPlayer', { id: id, playerId: item.id })}>
