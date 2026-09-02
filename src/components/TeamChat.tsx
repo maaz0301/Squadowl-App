@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import { useTheme } from '@/theme/ThemeProvider';
@@ -185,6 +186,7 @@ export function TeamChat({
   noSeasonMessage?: string;
 }) {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const currentUserId = useAuthStore((s) => s.session?.user?.id);
   const [draft, setDraft] = useState('');
 
@@ -303,8 +305,18 @@ export function TeamChat({
       {/* -mx-4 cancels the screen's own 16px side padding (see the px-4
           wrapper in team/[id].tsx and guardian/[playerId].tsx) so px-2 below
           can re-establish the mockup's 8px inset from the true screen edge,
-          matching how the message wall bleeds full-width above it. */}
-      <View className="flex-row items-end gap-2 -mx-4 px-2 py-2">
+          matching how the message wall bleeds full-width above it.
+          paddingBottom is explicit rather than `py-2` because this composer
+          sits at the true bottom edge (TeamChatScreen's <Screen> only
+          reserves the top/left/right safe-area edges, not bottom — chat is
+          the one screen where that matters, since every other screen scrolls
+          under its own bottom padding instead of pinning content there) — so
+          it has to reserve the home-indicator/nav-bar inset itself, the same
+          way BottomNav.tsx does. */}
+      <View
+        className="flex-row items-end gap-2 -mx-4 px-2 pt-2"
+        style={{ paddingBottom: Math.max(8, insets.bottom) }}
+      >
         <TextInput
           className="flex-1 px-4 py-[11px] text-[15px] max-h-28"
           placeholder="Message"

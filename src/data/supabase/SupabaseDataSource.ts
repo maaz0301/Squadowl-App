@@ -7136,6 +7136,17 @@ export class SupabaseDataSource implements DataSource {
     unwrap(await supabase.from('athlete_family_contacts').delete().eq('id', id));
   }
 
+  async leaveSeason(seasonRosterId: string): Promise<void> {
+    // Not this.ctx() — that resolves a *staff* tenant account via memberships,
+    // which a guardian doesn't have. A plain user-scoped client is enough; the
+    // RPC does its own authorization against the roster row.
+    const supabase = getSupabase();
+    const { error } = await supabase.rpc('guardian_leave_season', { p_season_roster_id: seasonRosterId });
+    // The RPC raises customer-facing wording ("Not authorized to leave this
+    // team", "Could not leave this team"), so pass it straight through.
+    if (error) throw new Error(error.message);
+  }
+
   async getGuardianRosters(): Promise<import('../types').GuardianRosterAthlete[]> {
     const { supabase, userId } = await this.userCtx();
     if (!userId) return [];
