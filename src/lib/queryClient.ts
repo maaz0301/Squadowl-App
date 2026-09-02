@@ -98,4 +98,5 @@ export const queryKeys = {
   athleteShare: (shareId: string) => ['athleteShare', shareId] as const,
   shareComments: (shareId: string) => ['shareComments', shareId] as const,
   teamMessages: (seasonId: string) => ['teamMessages', seasonId] as const,
+  referralSummary: ['referral', 'summary'] as const,
 };

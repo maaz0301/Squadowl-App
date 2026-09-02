@@ -8,13 +8,36 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+/**
+ * What this checkout's single line item comes to, in cents — needed to size a
+ * loyalty-credit coupon against it. Inline `price_data` carries the amount
+ * already; a configured Stripe Dashboard price has to be fetched. Returns 0 when
+ * the amount can't be determined, which suppresses the discount rather than
+ * guessing at one.
+ */
+async function resolveLineItemTotalCents(lineItem: any): Promise<number> {
+  const quantity = Math.max(1, Number(lineItem?.quantity) || 1);
+  if (lineItem?.price_data?.unit_amount != null) {
+    return Number(lineItem.price_data.unit_amount) * quantity;
+  }
+  if (lineItem?.price) {
+    try {
+      const price = await stripe.prices.retrieve(lineItem.price);
+      if (price?.unit_amount != null) return Number(price.unit_amount) * quantity;
+    } catch (err: any) {
+      console.error('Could not retrieve price for credit sizing:', err.message || err);
+    }
+  }
+  return 0;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const { planTier, interval: rawInterval, addOn, quantity: rawQuantity, origin } = await req.json();
+    const { planTier, interval: rawInterval, addOn, quantity: rawQuantity, origin, applyCredits } = await req.json();
     const interval: 'year' | 'month' = rawInterval === 'month' ? 'month' : 'year';
     const webOrigin = resolveWebOrigin(origin);
     // Add-on team licenses (Club: CAD$10/team/year beyond the 6 included) go through
@@ -128,11 +151,50 @@ serve(async (req) => {
       };
     }
 
+    // Loyalty credit. The balance is drawn down as a one-off coupon on this
+    // checkout's first invoice; the ledger is only debited once the webhook sees
+    // the session complete, so abandoning checkout costs the customer nothing.
+    let creditCents = 0;
+    let couponId: string | null = null;
+    if (applyCredits) {
+      const { data: available, error: creditErr } = await supabaseAdmin.rpc(
+        'referral_available_credit',
+        { p_account_id: accountId },
+      );
+      if (creditErr) {
+        // A failure to read the balance must not block the sale — the customer
+        // pays full price and keeps the credit for next time.
+        console.error('Error reading referral credit:', creditErr);
+      } else {
+        // Capped a cent below the line total on purpose. A $60 balance can
+        // exceed a $39.99 Coach plan outright, and a fully-discounted first
+        // invoice is a different checkout shape (nothing charged today) than the
+        // rest of this flow assumes. Leaving one cent keeps it an ordinary paid
+        // checkout; the unspent remainder stays on the ledger for next time.
+        const subtotalCents = await resolveLineItemTotalCents(lineItem);
+        const spendable = subtotalCents > 1 ? subtotalCents - 1 : 0;
+        creditCents = Math.max(0, Math.min(Number(available) || 0, spendable));
+      }
+    }
+
+    if (creditCents > 0) {
+      const coupon = await stripe.coupons.create({
+        amount_off: creditCents,
+        currency: 'cad',
+        duration: 'once',
+        max_redemptions: 1,
+        name: 'TryoutHQ loyalty credit',
+        metadata: { accountId },
+      });
+      couponId = coupon.id;
+    }
+
     let session;
     const createSessionParams = {
       customer: customerId,
       line_items: [lineItem],
       mode: 'subscription' as const,
+      ...(couponId ? { discounts: [{ coupon: couponId }] } : {}),
       success_url: webOrigin ? `${webOrigin}/upgrade?success=true` : `aastryout://upgrade?success=true`,
       cancel_url: webOrigin ? `${webOrigin}/upgrade?canceled=true` : `aastryout://upgrade?canceled=true`,
       // A team-license purchase deliberately carries no planTier: the webhook keys off
@@ -143,11 +205,15 @@ serve(async (req) => {
             type: 'team_license',
             quantity: String(licenseQuantity),
             interval: 'year',
+            // Tells the webhook how much loyalty credit to debit once this
+            // session completes. Absent/'0' means nothing to debit.
+            referralCreditsCents: String(creditCents),
           }
         : {
             accountId: accountId,
             planTier: planTier,
             interval: interval,
+            referralCreditsCents: String(creditCents),
           },
     };
 

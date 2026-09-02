@@ -27,6 +27,7 @@ import {
   useFamilyContactsQuery,
   useAddFamilyContactMutation,
   useRemoveFamilyContactMutation,
+  useLeaveSeasonMutation,
 } from '@/features/queries';
 import { queryKeys } from '@/lib/queryClient';
 import { useAuthStore } from '@/state/authStore';
@@ -124,7 +125,28 @@ function TryoutSeasonCard({ item, colors, playerId }: { item: any; colors: any; 
   const qc = useQueryClient();
   const userId = useAuthStore((s) => s.session?.user?.id);
   const payFeeMutation = useCreateTeamFeePaymentMutation();
+  const leaveSeasonMutation = useLeaveSeasonMutation();
   const [paying, setPaying] = useState(false);
+
+  const confirmLeave = () => {
+    Alert.alert(
+      'Leave Team',
+      `Remove this athlete from ${item.teamName ?? 'this team'} (${item.name})? You'll need a new invite to rejoin.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Leave',
+          style: 'destructive',
+          onPress: () => {
+            leaveSeasonMutation.mutate(item.seasonRosterId, {
+              onError: (e: any) =>
+                Alert.alert('Could Not Leave', e?.message || 'Something went wrong.'),
+            });
+          },
+        },
+      ]
+    );
+  };
 
   const payFee = async () => {
     try {
@@ -194,6 +216,22 @@ function TryoutSeasonCard({ item, colors, playerId }: { item: any; colors: any; 
             ) : (
               <Badge label={item.feeStatus === 'waived' ? 'Waived' : 'Paid'} variant="success" />
             )}
+          </View>
+        ) : null}
+
+        {item._type === 'season' ? (
+          <View
+            className="mt-3 pt-3 border-t items-end"
+            style={{ borderTopColor: colors.border }}
+          >
+            <Button
+              label="Leave Team"
+              size="sm"
+              variant="ghost"
+              textClassName="text-danger"
+              loading={leaveSeasonMutation.isPending}
+              onPress={confirmLeave}
+            />
           </View>
         ) : null}
       </Card>

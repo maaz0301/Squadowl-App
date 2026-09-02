@@ -34,6 +34,31 @@ serve(async (req: Request) => {
         const planTier = session.metadata?.planTier?.toLowerCase();
         console.log('Extracted accountId:', accountId, 'planTier:', planTier);
 
+        // Loyalty credit spent on this checkout. Debited here rather than when
+        // the session was created so an abandoned checkout doesn't burn it.
+        // Runs before the team-license branch below, which returns early.
+        const referralCreditsCents = Math.round(Number(session.metadata?.referralCreditsCents) || 0);
+        if (accountId && referralCreditsCents > 0) {
+          const { data: debited, error: redeemError } = await supabaseAdmin.rpc(
+            'record_referral_redemption',
+            {
+              p_account_id: accountId,
+              p_session_id: session.id,
+              p_amount_cents: referralCreditsCents,
+            },
+          );
+          if (redeemError) {
+            // The customer already got the discount from Stripe, so failing the
+            // webhook would only re-run the rest of this handler. Log it and let
+            // the ledger be reconciled by hand instead.
+            console.error('Error recording referral redemption:', redeemError);
+          } else if (debited === null) {
+            console.log('Referral redemption already recorded for session:', session.id);
+          } else {
+            console.log(`Debited ${debited} cents of loyalty credit from account ${accountId}.`);
+          }
+        }
+
         // Add-on team licenses (Club: CAD$10/team/year beyond the 6 included) carry no
         // planTier — they raise the team cap and must leave the subscription tier alone.
         if (accountId && session.metadata?.type === 'team_license') {
@@ -74,7 +99,21 @@ serve(async (req: Request) => {
             console.error('Error updating account plan tier:', error);
           } else {
             console.log('Successfully updated account to tier:', planTier);
-            
+
+            // This account just became a paid subscriber, so whoever referred
+            // them earns CAD$1 (capped at CAD$60/year). A null result means
+            // there was no referrer, they were already paid out, or the cap is
+            // reached — all normal, none of them an error.
+            const { data: awarded, error: awardError } = await supabaseAdmin.rpc(
+              'award_referral_credit',
+              { p_referred_account_id: accountId, p_session_id: session.id },
+            );
+            if (awardError) {
+              console.error('Error awarding referral credit:', awardError);
+            } else if (awarded !== null) {
+              console.log(`Awarded ${awarded} cents of referral credit for account ${accountId}.`);
+            }
+
             // Trigger send-email for upgrade
             const { data: owners } = await supabaseAdmin
               .from('memberships')

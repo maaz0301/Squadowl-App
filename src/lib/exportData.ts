@@ -11,6 +11,21 @@ import * as XLSX from 'xlsx';
  * Shared tail of every export: hand the generated file to the OS. On native
  * this writes to the cache dir and opens the share sheet; on web it triggers
  * a blob download via a hidden anchor.
+ *
+ * `showAppsToView` is what makes "open it here" possible on Android. A plain
+ * chooser is built from ACTION_SEND alone, so the only things it can offer are
+ * apps that *send* a file — mail and messaging — which is why exporting read as
+ * "the button sends you to email" with no way to just look at the results. This
+ * seeds the chooser with ACTION_VIEW targets as well (EXTRA_INITIAL_INTENTS, so
+ * they sit at the top): the PDF reader and spreadsheet apps already on the
+ * device, opening the file in place. Send targets stay where they were, so
+ * emailing a copy still works exactly as before. No-op on iOS, whose share sheet
+ * already carries Quick Look, Books, Files and "open in" for a file URL.
+ *
+ * The file stays in the cache dir deliberately: react-native-share's
+ * FileProvider only publishes `cache-path` and external `Download/`
+ * (share_download_paths.xml), so writing anywhere else — Documents included —
+ * leaves it unable to mint a content:// URI and breaks both viewing and sharing.
  */
 async function writeAndDeliverFile(
   fileName: string,
@@ -48,7 +63,12 @@ async function writeAndDeliverFile(
         url: `file://${path}`,
         type: mimeType,
         filename: fileName,
-        title: `Export ${format.toUpperCase()}`,
+        title: `Open or share ${format.toUpperCase()}`,
+        showAppsToView: true,
+        // Dismissing the chooser is a normal outcome, not an error. This used to
+        // be caught below by string-matching the message, which silently turns
+        // into a thrown "export failed" the day that wording changes.
+        failOnCancel: false,
       });
     } catch (e: any) {
       if (e.message !== 'User did not share') {

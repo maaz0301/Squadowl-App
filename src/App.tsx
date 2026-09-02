@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { AppState, type AppStateStatus, LogBox, Platform } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, type LinkingOptions } from '@react-navigation/native';
 import RootNavigator from './navigation/RootNavigator';
 import { QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { queryClient } from './lib/queryClient';
@@ -24,6 +24,32 @@ import { usePushNotifications } from './hooks/usePushNotifications';
 // error still surfaces normally. Revisit if the library (0.9.5, stale
 // relative to RN 0.85's Fabric default) is ever upgraded or replaced.
 LogBox.ignoreLogs(['viewIsDescendantOf() noop']);
+
+/**
+ * Only the loyalty referral link (`aastryout://signup?ref=CODE`) is wired up
+ * here — everything else that opens `aastryout://...` today (Stripe Checkout's
+ * openAuth return URL, e.g.) is intercepted directly by InAppBrowser before it
+ * ever reaches this linking config, so adding more screens here has no effect
+ * on those. RootNavigator only mounts the Auth stack while signed out, so a
+ * referral link opened by an already-logged-in user simply doesn't match
+ * anything — which is correct, since a code can only be attached at signup or
+ * once on the Upgrade screen anyway.
+ */
+const linking: LinkingOptions<any> = {
+  prefixes: ['aastryout://'],
+  config: {
+    screens: {
+      Auth: {
+        screens: {
+          Signup: {
+            path: 'signup',
+            parse: { ref: (ref: string) => ref },
+          },
+        },
+      },
+    },
+  },
+};
 
 // React Query's "refetch on focus" only listens for browser window-focus
 // events out of the box — on native it has to be told when the app itself
@@ -86,7 +112,7 @@ export default function App() {
       <SafeAreaProvider>
         <AppThemeProvider>
           <QueryClientProvider client={queryClient}>
-            <NavigationContainer>
+            <NavigationContainer linking={linking}>
               <RootNavigator />
             </NavigationContainer>
           </QueryClientProvider>

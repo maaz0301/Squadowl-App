@@ -1,11 +1,12 @@
-import { Text, View, Alert, Pressable } from 'react-native';
+import { Text, View, Alert, Pressable, Switch } from 'react-native';
 import { InAppBrowser } from 'react-native-inappbrowser-reborn';
 import { useState, useCallback } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/queryClient';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, Header, Screen } from '@/components/ui';
+import { Badge, Button, Card, Header, Input, Screen } from '@/components/ui';
+import { useApplyReferralCodeMutation, useReferralSummaryQuery } from '@/features/queries';
 import {
   PLAN_DEFINITIONS,
   formatCad,
@@ -37,12 +38,41 @@ export default function UpgradeScreen() {
   // Monthly billing is temporarily hidden — every checkout goes through yearly for now.
   const billingInterval = 'year' as const;
 
+  // Loyalty program: spend existing credit, and enter someone else's code.
+  const referralQuery = useReferralSummaryQuery();
+  const applyCodeMut = useApplyReferralCodeMutation();
+  const [referralCode, setReferralCode] = useState('');
+  const [applyCredits, setApplyCredits] = useState(true);
+
+  const creditCents = referralQuery.data?.balanceCents ?? 0;
+  const hasCredit = creditCents > 0;
+  // The discount is sized server-side against the real line total; this is only
+  // whether to ask for it at all.
+  const useCredits = hasCredit && applyCredits;
+
   useFocusEffect(
     useCallback(() => {
       restoreSession(true);
       qc.invalidateQueries({ queryKey: queryKeys.profile });
+      qc.invalidateQueries({ queryKey: queryKeys.referralSummary });
     }, [restoreSession, qc])
   );
+
+  const submitReferralCode = async () => {
+    const code = referralCode.trim();
+    if (!code) return;
+    try {
+      await applyCodeMut.mutateAsync(code);
+      setReferralCode('');
+      Alert.alert(
+        'Code Applied',
+        'Thanks! The coach who referred you earns credit once your subscription is paid.'
+      );
+    } catch (e: any) {
+      // apply_referral_code raises customer-facing wording, so show it as-is.
+      Alert.alert('Referral Code', e?.message ?? 'That code could not be applied.');
+    }
+  };
 
   const openPortal = async () => {
     try {
@@ -70,7 +100,9 @@ export default function UpgradeScreen() {
   const upgrade = async (tier: typeof PLAN_DEFINITIONS[number]['tier']) => {
     try {
       setLoadingTier(tier);
-      const res = await getDataSource().createCheckoutSession(tier, billingInterval);
+      const res = await getDataSource().createCheckoutSession(tier, billingInterval, {
+        applyCredits: useCredits,
+      });
       if (res?.url) {
         if (await InAppBrowser.isAvailable()) {
           const result = await InAppBrowser.openAuth(res.url, 'aastryout://upgrade', {
@@ -127,6 +159,9 @@ export default function UpgradeScreen() {
       Alert.alert('Checkout Error', err.message || 'Something went wrong.');
     } finally {
       setLoadingTier(null);
+      // Any credit spent was debited by the webhook, so the balance shown here
+      // is stale the moment checkout completes.
+      qc.invalidateQueries({ queryKey: queryKeys.referralSummary });
     }
   };
 
@@ -141,7 +176,9 @@ export default function UpgradeScreen() {
   const buyTeams = async () => {
     try {
       setBuyingTeams(true);
-      const res = await getDataSource().createTeamLicenseCheckoutSession(extraTeams);
+      const res = await getDataSource().createTeamLicenseCheckoutSession(extraTeams, {
+        applyCredits: useCredits,
+      });
       if (!res?.url) return;
       if (await InAppBrowser.isAvailable()) {
         await InAppBrowser.openAuth(res.url, 'aastryout://upgrade', {
@@ -168,6 +205,7 @@ export default function UpgradeScreen() {
       Alert.alert('Checkout Error', err.message || 'Something went wrong.');
     } finally {
       setBuyingTeams(false);
+      qc.invalidateQueries({ queryKey: queryKeys.referralSummary });
     }
   };
 
@@ -175,6 +213,62 @@ export default function UpgradeScreen() {
     <Screen scroll padded={false}>
       <View className="px-4 pb-8">
         <Header title="Upgrade Plan" subtitle={`Current: ${user?.planTier ?? 'free'}`} showBack />
+
+        {/* Loyalty credit — applied to whichever checkout is started below. */}
+        {hasCredit ? (
+          <Card accent className="mb-4 gap-2">
+            <View className="flex-row justify-between items-center">
+              <View className="flex-1 pr-3">
+                <Text className="font-display font-bold text-lg" style={{ color: colors.ink }}>
+                  {formatCad(creditCents)} loyalty credit
+                </Text>
+                <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                  {applyCredits
+                    ? 'Will be applied to your next payment below.'
+                    : 'Saved for a later payment.'}
+                </Text>
+              </View>
+              <Switch
+                value={applyCredits}
+                onValueChange={setApplyCredits}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor="#ffffff"
+              />
+            </View>
+          </Card>
+        ) : null}
+
+        {/* Referral code entry — only meaningful before the first paid plan, and
+            only once, so it disappears as soon as one has been attached. */}
+        {referralQuery.data &&
+        !referralQuery.data.redeemedByCode &&
+        user?.subscriptionStatus !== 'active' &&
+        user?.subscriptionStatus !== 'trialing' ? (
+          <Card className="mb-4 gap-2">
+            <Text className="font-display font-bold" style={{ color: colors.ink }}>
+              Have a referral code?
+            </Text>
+            <Text className="text-xs" style={{ color: colors.inkMuted }}>
+              Enter the 9-character code a coach shared with you. They earn credit once your
+              subscription is paid.
+            </Text>
+            <Input
+              placeholder="e.g. K7M2QX9BD"
+              value={referralCode}
+              onChangeText={(t) => setReferralCode(t.toUpperCase())}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={11}
+            />
+            <Button
+              label="Apply Code"
+              variant="secondary"
+              onPress={submitReferralCode}
+              loading={applyCodeMut.isPending}
+              disabled={!referralCode.trim()}
+            />
+          </Card>
+        ) : null}
 
         {canBuyTeams ? (
           <Card className="mb-4 gap-2">
