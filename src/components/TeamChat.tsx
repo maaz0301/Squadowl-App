@@ -1,5 +1,16 @@
-import { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Keyboard,
+  Platform,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+  type KeyboardEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
@@ -186,9 +197,50 @@ export function TeamChat({
   noSeasonMessage?: string;
 }) {
   const { colors, isDark } = useTheme();
+
+  // Screen's safe-area edges deliberately omit 'bottom' (see components/ui/Screen.tsx),
+  // so nothing above pays this inset. Android 15+ forces edge-to-edge for targetSdk 35+,
+  // which is every build of this app (targetSdk 36) — without it the system navigation
+  // bar is drawn straight over the composer. Applied here rather than on the Screen so
+  // the message wall still bleeds to the true bottom edge behind it.
+
   const insets = useSafeAreaInsets();
   const currentUserId = useAuthStore((s) => s.session?.user?.id);
   const [draft, setDraft] = useState('');
+
+  /**
+   * Distance from the bottom of the window to the top of the keyboard, or 0
+   * when it is down.
+   *
+   * The chat screen turns Screen's KeyboardAvoidingView off and lets this drive
+   * the composer instead. KeyboardAvoidingView infers a lift from the keyboard
+   * frame, and under `adjustNothing` (AndroidManifest.xml) that inference was
+   * short by roughly the navigation bar, leaving the composer half-buried under
+   * the keyboard. The activity never resizes, so the window is always the full
+   * screen and `endCoordinates.height` is unambiguous: padding the composer by
+   * exactly that height puts its bottom edge exactly on the keyboard's top
+   * edge, on both platforms, with no guesswork about which system bars the
+   * measurement includes.
+   */
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    // iOS gets the `will` pair so the composer travels with the keyboard
+    // animation rather than snapping after it lands. Android only emits `did`.
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvent, (e: KeyboardEvent) =>
+      setKeyboardHeight(e.endCoordinates?.height ?? 0),
+    );
+    const hide = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  // With the keyboard up its own frame already spans everything below the
+  // composer, so the safe-area inset would only add a gap on top of it.
+  const composerBottomInset = keyboardHeight > 0 ? keyboardHeight : insets.bottom;
 
   const messagesQuery = useTeamMessagesQuery(seasonId);
   const sendMessage = useSendTeamMessageMutation();
@@ -305,17 +357,10 @@ export function TeamChat({
       {/* -mx-4 cancels the screen's own 16px side padding (see the px-4
           wrapper in team/[id].tsx and guardian/[playerId].tsx) so px-2 below
           can re-establish the mockup's 8px inset from the true screen edge,
-          matching how the message wall bleeds full-width above it.
-          paddingBottom is explicit rather than `py-2` because this composer
-          sits at the true bottom edge (TeamChatScreen's <Screen> only
-          reserves the top/left/right safe-area edges, not bottom — chat is
-          the one screen where that matters, since every other screen scrolls
-          under its own bottom padding instead of pinning content there) — so
-          it has to reserve the home-indicator/nav-bar inset itself, the same
-          way BottomNav.tsx does. */}
+          matching how the message wall bleeds full-width above it. */}
       <View
-        className="flex-row items-end gap-2 -mx-4 px-2 pt-2"
-        style={{ paddingBottom: Math.max(8, insets.bottom) }}
+        className="flex-row items-end gap-2 -mx-4 px-2"
+        style={{ paddingTop: 8, paddingBottom: 8 + composerBottomInset }}
       >
         <TextInput
           className="flex-1 px-4 py-[11px] text-[15px] max-h-28"
