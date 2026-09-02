@@ -76,7 +76,11 @@ export default function SeasonHubScreen() {
 
       <View className="flex-row gap-2 mb-4">
         <Pressable onPress={() => navigation.navigate('SeasonRoster', { id: id })}>
-          <Badge label={`${season.roster.length} players`} variant="brand" />
+          {/* The roster lands a stage after the events do — see getSeason. */}
+          <Badge
+            label={season.rosterPending ? 'Players...' : `${season.roster.length} players`}
+            variant="brand"
+          />
         </Pressable>
         <Pressable onPress={() => navigation.navigate('SeasonSchedule', { id: id })}>
           <Badge label={`${season.events.length} events`} />

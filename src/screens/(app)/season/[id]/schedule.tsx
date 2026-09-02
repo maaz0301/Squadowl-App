@@ -297,8 +297,17 @@ export default function SeasonScheduleScreen() {
             {editingEventId ? null : (
               <>
                 <Text className="font-bold text-xs uppercase tracking-wider mt-2" style={{ color: colors.inkMuted }}>
-                  Roster Assignment ({selectedPlayerIds.length}/{season.roster.length})
+                  Roster Assignment
+                  {season.rosterPending ? '' : ` (${selectedPlayerIds.length}/${season.roster.length})`}
                 </Text>
+                {/* The season's events arrive before its roster (see
+                    getSeason), so the picker can open on a roster that hasn't
+                    loaded. Saying so beats an empty list that looks like a team
+                    with no players — and the save is blocked below, since an
+                    event saved here invites exactly who is selected. */}
+                {season.rosterPending ? (
+                  <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading roster...</Text>
+                ) : null}
                 <ScrollView style={{ maxHeight: 150 }} nestedScrollEnabled>
                   {season.roster.map((player) => {
                     const isSelected = selectedPlayerIds.includes(player.id);
@@ -347,7 +356,12 @@ export default function SeasonScheduleScreen() {
             </View>
           ) : null}
 
-          <Button label={editingEventId ? 'Update Event' : 'Save Event'} onPress={onSubmit} loading={formBusy} />
+          <Button
+            label={editingEventId ? 'Update Event' : 'Save Event'}
+            onPress={onSubmit}
+            loading={formBusy}
+            disabled={!editingEventId && !!season.rosterPending}
+          />
         </View>
       </Modal>
     </Screen>

@@ -72,7 +72,20 @@ export const queryKeys = {
   registrations: (tryoutId: string) => ['registrations', tryoutId] as const,
   results: (tryoutId: string) => ['results', tryoutId] as const,
   seasons: ['seasons'] as const,
+  /**
+   * The light seasons read (listSeasonSummaries). Keyed as a *child* of
+   * `seasons` on purpose: react-query matches by prefix, so every existing
+   * `invalidateQueries({ queryKey: seasons })` refreshes the summaries too and
+   * no write path had to learn a second key.
+   */
+  seasonSummaries: ['seasons', 'summary'] as const,
   season: (id: string) => ['season', id] as const,
+  /**
+   * The Season Roster screen's paged list. Deliberately under the season's own
+   * prefix, so the `invalidateQueries({ queryKey: season(id) })` every roster
+   * write already runs refreshes these pages too.
+   */
+  seasonRosterPages: (id: string) => ['season', id, 'roster'] as const,
   org: ['org'] as const,
   /**
    * `includeTeamManagers` is a suffix rather than a separate key so the plain

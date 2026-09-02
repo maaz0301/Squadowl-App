@@ -6,9 +6,10 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQueryClient } from '@tanstack/react-query';
 
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
-import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useTeamRosterQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useTeamRosterInvitesMutation, useSeasonsQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation } from '@/features/queries';
+import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit } from '@/data/plans';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
@@ -54,6 +55,8 @@ const EMPTY_RSVP: RsvpSummary = { counts: { yes: 0, maybe: 0, no: 0, pending: 0 
 // A season roster can run to four figures; mounting every RSVP row at once is
 // what made the expander feel like it hung, so the list grows on demand.
 const RSVP_PAGE = 25;
+/** Matches listTeamRosterPage's own page size — see TEAM_ROSTER_SCREEN_PAGE. */
+const TEAM_ROSTER_PAGE = 50;
 
 export default function TeamDetailScreen() {
   const route = useRoute<any>();
@@ -122,7 +125,19 @@ export default function TeamDetailScreen() {
     setNavigatingId(null);
   });
 
-  const rosterQuery = useTeamRosterQuery(id);
+  // Server-side, so it searches the whole roster rather than only the pages
+  // already pulled down — debounced because every distinct term is a read.
+  const debouncedPlayerSearch = useDebouncedValue(playerSearch);
+  // The Players tab's list: one page (50) per read, the rest on demand. On a
+  // 1000-player team the full roster read below is several 200-row pages, each
+  // paying can_access_athlete() per row, and this screen opens on the schedule
+  // — so it is no longer on the path to anything the coach sees first.
+  const rosterPages = useTeamRosterPagesQuery(id, debouncedPlayerSearch);
+  // Team membership and headcount, without an athlete row per player: what the
+  // tab badge, the plan's player limit and the picker's "already on this team"
+  // flags actually need. One column over one statement, so it stays cheap on a
+  // roster the Players tab only ever shows 50 of at a time.
+  const rosterAthleteIdsQuery = useTeamRosterAthleteIdsQuery(id);
   const [addPlayersProgress, setAddPlayersProgress] = useState<{ done: number; total: number } | null>(null);
   const addRosterPlayers = useAddTeamRosterPlayersMutation(id, (done, total) => setAddPlayersProgress({ done, total }));
   const addManualPlayer = useAddManualTeamPlayerMutation(id);
@@ -159,7 +174,12 @@ export default function TeamDetailScreen() {
   // Events live on the season attached to this team, but that's an implementation
   // detail — the team screen is the only place a coach touches them, and the
   // season is provisioned for them.
-  const seasonsQuery = useSeasonsQuery();
+  // Summaries, not the full seasons: all this needs is which season is attached
+  // to this team, and listSeasons() assembles every season in the account —
+  // every event and every roster entry joined to its athlete row — to answer
+  // it. That read used to stand in front of the schedule before the season's
+  // own read had even started.
+  const seasonsQuery = useSeasonSummariesQuery();
   const teamSeasonId = (seasonsQuery.data ?? []).find((s) => s.teamId === id)?.id;
   const seasonQuery = useSeasonQuery(teamSeasonId);
   // Keeps RSVPs/event edits in sync with a guardian's portal without the coach
@@ -197,7 +217,7 @@ export default function TeamDetailScreen() {
   // with dummy data counts up to 1000, redoing it on every keystroke/render
   // while the picker modal is open was visibly laggy.
   const candidates = useMemo(() => {
-    const onRosterIds = new Set((rosterQuery.data ?? []).map((p) => p.athleteId));
+    const onRosterIds = new Set(rosterAthleteIdsQuery.data ?? []);
     const candidatesByAthlete = new Map<
       string,
       {
@@ -243,17 +263,16 @@ export default function TeamDetailScreen() {
     // Already-on-team entries sink to the bottom so the actionable ones lead.
     list.sort((a, b) => Number(a.alreadyOnTeam) - Number(b.alreadyOnTeam));
     return list;
-  }, [assessmentAthletesQuery.data, rosterQuery.data]);
+  }, [assessmentAthletesQuery.data, rosterAthleteIdsQuery.data]);
 
-  // Same reasoning as `candidates` above: these are recomputed on every render
-  // of the screen (RSVP taps, unrelated form edits, etc.), not just when their
-  // own inputs change, so with hundreds of players that was wasted work on
-  // every keystroke elsewhere on the page.
-  const filteredTeamPlayers = useMemo(() => {
-    const players = rosterQuery.data ?? [];
-    const q = playerSearch.trim().toLowerCase();
-    return q ? players.filter((p) => `${p.first} ${p.last}`.toLowerCase().includes(q)) : players;
-  }, [rosterQuery.data, playerSearch]);
+  // The rows on screen, flattened out of however many pages have been pulled
+  // down. The search that used to filter this array is now part of the read
+  // itself (see useTeamRosterPagesQuery), so a name that lives on page 12
+  // is found without page 12 having been loaded.
+  const listedPlayers = useMemo(
+    () => rosterPages.data?.pages.flatMap((page) => page.players) ?? [],
+    [rosterPages.data],
+  );
 
   // "Select all" and its available-count must track the ACTIVE assessment
   // filter, not the full cross-assessment candidate pool — otherwise picking
@@ -320,7 +339,11 @@ export default function TeamDetailScreen() {
   const unlinkedTryouts = (tryoutsQuery.data ?? []).filter((t) => !t.teamId);
   const canCollectFees = canUseFeature(effectiveTier, 'payments');
 
-  const teamPlayers = rosterQuery.data ?? [];
+  const rosterAthleteIds = rosterAthleteIdsQuery.data;
+  // Falls back to what is on screen while that read is in flight, so the badge
+  // and the empty-state checks never read as "no players" on a team that has
+  // them.
+  const playerCount = rosterAthleteIds?.length ?? listedPlayers.length;
 
   const isAddingPlayers = addRosterPlayers.isPending || enrollingAssessments;
 
@@ -330,7 +353,7 @@ export default function TeamDetailScreen() {
     // The roster lives on the owning club's account for a delegated team, so
     // its player cap is the club's, not the delegate's own — same reasoning
     // as effectiveTier everywhere else on this screen.
-    if (isAtPlayerLimit(effectiveTier, teamPlayers.length + picked.length - 1)) {
+    if (isAtPlayerLimit(effectiveTier, playerCount + picked.length - 1)) {
       setLimitMsg(buildLimitReachedMessage(effectiveTier, 'players', 'players'));
       return;
     }
@@ -541,7 +564,7 @@ export default function TeamDetailScreen() {
   };
 
   const confirmSendRosterInvites = () => {
-    const count = teamPlayers.length;
+    const count = playerCount;
     const message =
       `Invite all ${count} ${count === 1 ? 'player' : 'players'} on ${team.name} to the portal? ` +
       "Each invite goes to the player\u2019s own email and their guardian\u2019s, wherever those are on file.";
@@ -737,7 +760,7 @@ export default function TeamDetailScreen() {
       <Tabs
         tabs={[
           { key: 'schedule', label: 'Schedule', badge: allTeamEvents.length || undefined },
-          { key: 'players', label: 'Players', badge: teamPlayers.length },
+          { key: 'players', label: 'Players', badge: playerCount },
           { key: 'assessments', label: 'Evaluations', badge: linkedTryouts.length },
           { key: 'settings', label: 'Settings' },
         ]}
@@ -778,7 +801,7 @@ export default function TeamDetailScreen() {
                 variant="secondary"
                 onPress={() => setShowAddManualPlayer(true)}
               />
-              {canEditTeam && teamPlayers.length > 0 ? (
+              {canEditTeam && playerCount > 0 ? (
                 <Button
                   label="Send Invites"
                   size="sm"
@@ -788,7 +811,7 @@ export default function TeamDetailScreen() {
                 />
               ) : null}
             </View>
-            {teamPlayers.length > 0 ? (
+            {playerCount > 0 ? (
               <Input
                 value={playerSearch}
                 onChangeText={setPlayerSearch}
@@ -802,7 +825,7 @@ export default function TeamDetailScreen() {
             className="flex-1 px-4"
             contentContainerStyle={{ paddingBottom: 24 }}
             keyboardShouldPersistTaps="handled"
-            data={rosterQuery.isLoading ? [] : filteredTeamPlayers}
+            data={rosterPages.isLoading ? [] : listedPlayers}
             keyExtractor={(p) => p.id}
             extraData={navigatingId}
             // See the assessment roster's list: cap how much of a large roster
@@ -811,13 +834,34 @@ export default function TeamDetailScreen() {
             maxToRenderPerBatch={12}
             windowSize={7}
             removeClippedSubviews
+            // Scrolling to the end pulls the next 50 in on its own; the footer
+            // button below is for anyone who stops short of the very bottom.
+            onEndReachedThreshold={0.5}
+            onEndReached={() => {
+              if (rosterPages.hasNextPage && !rosterPages.isFetchingNextPage) {
+                void rosterPages.fetchNextPage();
+              }
+            }}
+            ListFooterComponent={
+              rosterPages.hasNextPage ? (
+                <View className="pt-1 pb-3">
+                  <Button
+                    label={`Load ${TEAM_ROSTER_PAGE} more players`}
+                    variant="secondary"
+                    size="sm"
+                    loading={rosterPages.isFetchingNextPage}
+                    onPress={() => void rosterPages.fetchNextPage()}
+                  />
+                </View>
+              ) : null
+            }
             ListEmptyComponent={
-              rosterQuery.isLoading ? (
+              rosterPages.isLoading ? (
                 <View className="items-center py-6 gap-2">
                   <ActivityIndicator size="small" color={colors.primary} />
                   <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading roster...</Text>
                 </View>
-              ) : rosterQuery.isError ? (
+              ) : rosterPages.isError ? (
                 // Distinct from "No players yet" below: an errored fetch was
                 // silently rendering as a genuinely empty roster, which reads as
                 // "this team has no players" when it may well have hundreds —
@@ -828,9 +872,9 @@ export default function TeamDetailScreen() {
                   <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
                     This team's players couldn't be loaded. They're still on the roster — reload to try again.
                   </Text>
-                  <Button label="Retry" variant="secondary" size="sm" onPress={() => rosterQuery.refetch()} />
+                  <Button label="Retry" variant="secondary" size="sm" onPress={() => rosterPages.refetch()} />
                 </Card>
-              ) : teamPlayers.length === 0 ? (
+              ) : !playerSearch.trim() ? (
                 <Card className="items-center py-6 gap-1">
                   <Text className="font-bold" style={{ color: colors.ink }}>No players yet</Text>
                   <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
@@ -1006,14 +1050,24 @@ export default function TeamDetailScreen() {
                       <Badge label={ev.type} variant={ev.type === 'Game' ? 'brand' : 'info'} />
                     </View>
 
-                    <View className="flex-row items-center gap-2 py-1 flex-wrap">
-                      <Badge label={`${rsvp.counts.yes} yes`} variant="success" size="lg" />
-                      <Badge label={`${rsvp.counts.maybe} maybe`} variant="warning" size="lg" />
-                      <Badge label={`${rsvp.counts.no} no`} variant="danger" size="lg" />
-                      {rsvp.counts.pending > 0 ? (
-                        <Badge label={`${rsvp.counts.pending} pending`} variant="info" size="lg" />
-                      ) : null}
-                    </View>
+                    {/* The event lands a round trip or two before its RSVPs do
+                        (see getSeason's staged read) — a tally of zeroes in the
+                        meantime would read as "nobody answered". */}
+                    {ev.availabilityPending ? (
+                      <View className="flex-row items-center gap-2 py-1">
+                        <ActivityIndicator size="small" color={colors.primary} />
+                        <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading RSVPs...</Text>
+                      </View>
+                    ) : (
+                      <View className="flex-row items-center gap-2 py-1 flex-wrap">
+                        <Badge label={`${rsvp.counts.yes} yes`} variant="success" size="lg" />
+                        <Badge label={`${rsvp.counts.maybe} maybe`} variant="warning" size="lg" />
+                        <Badge label={`${rsvp.counts.no} no`} variant="danger" size="lg" />
+                        {rsvp.counts.pending > 0 ? (
+                          <Badge label={`${rsvp.counts.pending} pending`} variant="info" size="lg" />
+                        ) : null}
+                      </View>
+                    )}
 
                     <Pressable
                       onPress={() => toggleRsvp(ev.id)}
@@ -1036,7 +1090,7 @@ export default function TeamDetailScreen() {
 
                     {expanded ? (
                       <View className="rounded-md border overflow-hidden" style={{ borderColor: colors.border }}>
-                        {rsvpPending ? (
+                        {rsvpPending || ev.availabilityPending ? (
                           <View className="items-center py-6 gap-2">
                             <ActivityIndicator size="small" color={colors.primary} />
                             <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading RSVPs...</Text>
@@ -1332,10 +1386,14 @@ export default function TeamDetailScreen() {
                 : 'Adding players...'
             }
           />
-        ) : assessmentAthletesQuery.isLoading ? (
+        ) : assessmentAthletesQuery.isLoading || rosterAthleteIdsQuery.isLoading ? (
           // The candidate list's read only starts when this panel opens, so it
           // has its own wait — without this the picker would flash "no
           // assessments have players yet" every time before the rosters land.
+          // The team's own membership is read alongside it, and waiting for
+          // that is what keeps the "already on this team" flags (and the
+          // plan-limit check behind the Add button) from being computed
+          // against nobody.
           <LoadingState message="Loading players..." />
         ) : assessmentAthletesQuery.isError ? (
           <Text className="text-sm py-3" style={{ color: colors.inkMuted }}>
