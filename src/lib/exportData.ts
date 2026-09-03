@@ -2,10 +2,253 @@ import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
 import { Platform } from 'react-native';
 import { Tryout, ExportFormat } from '@/data/types';
-import { computePlayerResults } from '@/data/scoring';
 import { buildTeamBuilderExportRows, type TeamBuilderState } from '@/data/teamBuilder';
-import { PDFDocument, StandardFonts } from 'pdf-lib';
+import { buildFullResultsCsvRows, buildPlayerDetailSheets, buildPlayerFullResults, buildReportDocInfo, buildResultsSummary } from '@/data/resultsExport';
+import { csvCell } from '@/lib/exportCsv';
+import { PDFDocument, PDFFont, StandardFonts, rgb } from 'pdf-lib';
 import * as XLSX from 'xlsx';
+
+/** Excel sheet names: no \ / ? * [ ] : , max 31 chars, unique (case-insensitive). */
+function uniqueSheetName(base: string, used: Set<string>): string {
+  const cleaned = base.replace(/[\\/?*[\]:]/g, ' ').trim().slice(0, 31) || 'Player';
+  let candidate = cleaned;
+  let n = 2;
+  while (used.has(candidate.toLowerCase())) {
+    const suffix = ` (${n++})`;
+    candidate = cleaned.slice(0, 31 - suffix.length) + suffix;
+  }
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
+const PAGE_WIDTH = 612;
+const PAGE_HEIGHT = 792;
+const MARGIN = 50;
+const PAGE_BORDER_INSET = 24;
+const GRAY = rgb(0.45, 0.45, 0.45);
+const BLACK = rgb(0, 0, 0);
+const RULE = rgb(0.8, 0.8, 0.8);
+const BLUE = rgb(0.1, 0.32, 0.6);
+
+/** Breaks `text` into lines no wider than `maxWidth` at `size` in font `f`. */
+function wrapText(text: string, f: PDFFont, size: number, maxWidth: number): string[] {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (current && f.widthOfTextAtSize(candidate, size) > maxWidth) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length ? lines : [''];
+}
+
+interface TextSegment {
+  text: string;
+  color?: ReturnType<typeof rgb>;
+}
+
+/** Wraps mixed-color `segments` (e.g. a black label followed by a colored value) into lines no wider than `maxWidth`, one word per entry so color survives the wrap. */
+function wrapSegments(segments: TextSegment[], f: PDFFont, size: number, maxWidth: number): TextSegment[][] {
+  const spaceWidth = f.widthOfTextAtSize(' ', size);
+  const words: TextSegment[] = [];
+  for (const seg of segments) {
+    for (const w of seg.text.split(' ')) {
+      if (w) words.push({ text: w, color: seg.color });
+    }
+  }
+  const lines: TextSegment[][] = [];
+  let current: TextSegment[] = [];
+  let width = 0;
+  for (const w of words) {
+    const wWidth = f.widthOfTextAtSize(w.text, size);
+    const addWidth = current.length ? spaceWidth + wWidth : wWidth;
+    if (current.length && width + addWidth > maxWidth) {
+      lines.push(current);
+      current = [w];
+      width = wWidth;
+    } else {
+      current.push(w);
+      width += addWidth;
+    }
+  }
+  if (current.length) lines.push(current);
+  return lines.length ? lines : [[]];
+}
+
+/**
+ * Full printable results report: one page per roster player with a
+ * metric/score/rank table (ranked against the whole roster) and every
+ * evaluation's raw scores condensed onto a couple of dense lines.
+ */
+async function renderFullResultsPdf(tryout: Tryout): Promise<string> {
+  const docInfo = buildReportDocInfo(tryout);
+  const cards = buildPlayerFullResults(tryout);
+
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  /** Adds a page and frames it with the report's border. */
+  const newPage = () => {
+    const p = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    p.drawRectangle({
+      x: PAGE_BORDER_INSET,
+      y: PAGE_BORDER_INSET,
+      width: PAGE_WIDTH - PAGE_BORDER_INSET * 2,
+      height: PAGE_HEIGHT - PAGE_BORDER_INSET * 2,
+      borderColor: BLACK,
+      borderWidth: 1,
+    });
+    return p;
+  };
+
+  let page = newPage();
+  let y = PAGE_HEIGHT - MARGIN;
+
+  const ensureSpace = (needed: number) => {
+    if (y - needed < MARGIN) {
+      page = newPage();
+      y = PAGE_HEIGHT - MARGIN;
+    }
+  };
+
+  const drawLine = (
+    text: string,
+    opts: { size?: number; f?: PDFFont; color?: ReturnType<typeof rgb>; x?: number; gap?: number } = {},
+  ) => {
+    const size = opts.size ?? 9;
+    const f = opts.f ?? font;
+    ensureSpace(size + 4);
+    page.drawText(text, { x: opts.x ?? MARGIN, y, size, font: f, color: opts.color ?? BLACK });
+    y -= opts.gap ?? size + 4;
+  };
+
+  const drawWrapped = (
+    text: string,
+    opts: { size?: number; f?: PDFFont; color?: ReturnType<typeof rgb>; x?: number; maxWidth?: number; gap?: number } = {},
+  ) => {
+    const size = opts.size ?? 9;
+    const f = opts.f ?? font;
+    const x = opts.x ?? MARGIN;
+    const maxWidth = opts.maxWidth ?? PAGE_WIDTH - MARGIN - x;
+    for (const line of wrapText(text, f, size, maxWidth)) {
+      drawLine(line, { size, f, color: opts.color, x, gap: opts.gap ?? size + 3 });
+    }
+  };
+
+  const drawSegments = (
+    segments: TextSegment[],
+    opts: { size?: number; f?: PDFFont; x?: number; maxWidth?: number; gap?: number } = {},
+  ) => {
+    const size = opts.size ?? 9;
+    const f = opts.f ?? font;
+    const x = opts.x ?? MARGIN;
+    const maxWidth = opts.maxWidth ?? PAGE_WIDTH - MARGIN - x;
+    const spaceWidth = f.widthOfTextAtSize(' ', size);
+    for (const line of wrapSegments(segments, f, size, maxWidth)) {
+      ensureSpace(size + 4);
+      let cx = x;
+      for (const word of line) {
+        page.drawText(word.text, { x: cx, y, size, font: f, color: word.color ?? BLACK });
+        cx += f.widthOfTextAtSize(word.text, size) + spaceWidth;
+      }
+      y -= opts.gap ?? size + 3;
+    }
+  };
+
+  drawLine(docInfo.title, { size: 18, f: fontBold, gap: 24 });
+  drawWrapped(docInfo.subtitle, { size: 9, color: GRAY, gap: 13 });
+  y -= 10;
+
+  const scoreX = MARGIN + 260;
+  const rankX = MARGIN + 380;
+
+  cards.forEach((card, idx) => {
+    if (idx > 0) {
+      page = newPage();
+      y = PAGE_HEIGHT - MARGIN;
+    }
+
+    const meta = `#${card.jersey || '—'} • ${card.pos || '—'} • Shoots ${card.shoots || '—'} • Evals ${card.evalCount}`;
+    page.drawText(card.name, { x: MARGIN, y, size: 15, font: fontBold, color: BLACK });
+    const metaWidth = font.widthOfTextAtSize(meta, 9);
+    page.drawText(meta, { x: PAGE_WIDTH - MARGIN - metaWidth, y: y + 3, size: 9, font, color: GRAY });
+    y -= 26;
+
+    drawLine('Scoring and Ranking', { size: 11, f: fontBold, gap: 16 });
+
+    const metricRows = [{ label: 'Overall Score', score: card.overallScore, rank: card.overallRank }, ...card.metrics];
+
+    const tableLeft = MARGIN;
+    const tableRight = PAGE_WIDTH - MARGIN;
+    const col2X = scoreX - 10;
+    const col3X = rankX - 10;
+    const headerHeight = 20;
+    const rowHeight = 16;
+    const tableHeight = headerHeight + rowHeight * metricRows.length;
+
+    ensureSpace(tableHeight + 8);
+    const tableTop = y + 9;
+    const tableBottom = tableTop - tableHeight;
+
+    page.drawRectangle({ x: tableLeft, y: tableBottom, width: tableRight - tableLeft, height: tableHeight, borderColor: BLACK, borderWidth: 1 });
+    page.drawLine({ start: { x: col2X, y: tableTop }, end: { x: col2X, y: tableBottom }, thickness: 0.75, color: BLACK });
+    page.drawLine({ start: { x: col3X, y: tableTop }, end: { x: col3X, y: tableBottom }, thickness: 0.75, color: BLACK });
+    page.drawLine({ start: { x: tableLeft, y: tableTop - headerHeight }, end: { x: tableRight, y: tableTop - headerHeight }, thickness: 1, color: BLACK });
+
+    const headerTextY = tableTop - headerHeight + 6;
+    page.drawText('METRIC', { x: MARGIN + 6, y: headerTextY, size: 9, font: fontBold, color: GRAY });
+    page.drawText('SCORE', { x: scoreX, y: headerTextY, size: 9, font: fontBold, color: GRAY });
+    page.drawText('RANK', { x: rankX, y: headerTextY, size: 9, font: fontBold, color: GRAY });
+
+    let rowTop = tableTop - headerHeight;
+    metricRows.forEach((m, i) => {
+      const rowTextY = rowTop - rowHeight + 5;
+      page.drawText(m.label, { x: MARGIN + 6, y: rowTextY, size: 9, font, color: BLACK });
+      page.drawText(m.score, { x: scoreX, y: rowTextY, size: 9, font, color: BLACK });
+      page.drawText(m.rank, { x: rankX, y: rowTextY, size: 9, font, color: BLACK });
+      rowTop -= rowHeight;
+      if (i < metricRows.length - 1) {
+        page.drawLine({ start: { x: tableLeft, y: rowTop }, end: { x: tableRight, y: rowTop }, thickness: 0.5, color: RULE });
+      }
+    });
+
+    y = tableBottom - 12;
+
+    drawSegments(
+      [{ text: 'Recommendation: ' }, { text: card.recommendation || '—', color: BLUE }],
+      { size: 9.5, gap: 13 },
+    );
+    drawWrapped(`Strengths: ${card.strengths || '—'}`, { size: 9.5, gap: 13 });
+    drawWrapped(`Improve: ${card.improve || '—'}`, { size: 9.5, gap: 13 });
+    y -= 10;
+
+    for (const ev of card.evals) {
+      ensureSpace(36);
+      const header = `Eval ${ev.index} • ${ev.date} • ${ev.evaluator} • ${ev.session}`;
+      const scoreLine = ev.values.map((v) => `${v.abbr}:${v.text || '—'}`).join(' • ');
+      drawWrapped(header, { size: 9, f: fontBold, color: BLUE, gap: 13 });
+      drawWrapped(scoreLine, { size: 8, color: BLUE, gap: 11 });
+      drawSegments(
+        [
+          { text: 'Rec: ' },
+          { text: `${ev.recommendation || '—'} |`, color: BLUE },
+          { text: `Str: ${ev.strengths || '—'} | Imp: ${ev.improve || '—'}` },
+        ],
+        { size: 8.5, gap: 11 },
+      );
+      y -= 6;
+    }
+  });
+
+  return pdfDoc.saveAsBase64();
+}
 
 /**
  * Shared tail of every export: hand the generated file to the OS. On native
@@ -79,65 +322,48 @@ async function writeAndDeliverFile(
 }
 
 export async function exportTryoutData(tryout: Tryout, format: ExportFormat): Promise<void> {
-  const results = computePlayerResults(tryout);
-  const headers = ['Rank', 'First', 'Last', 'Jersey', 'Pos', 'Overall', 'Recommendation'];
-  const rows = results
-    .sort((a: any, b: any) => b.overall - a.overall)
-    .map((r: any, i: number) => [
-      String(i + 1),
-      r.player.first,
-      r.player.last,
-      r.player.jersey ?? '',
-      r.player.pos ?? '',
-      r.overall.toFixed(2),
-      r.latestRecommendation,
-    ]);
-
   const safeName = tryout.name.replace(/\s+/g, '_');
-  let fileName = `${safeName}_results.${format}`;
+  const fileName = `${safeName}_results.${format}`;
   let fileContent = '';
   let encoding: 'utf8' | 'base64' = 'utf8';
   let mimeType = 'text/plain';
 
   if (format === 'csv') {
-    const csvString = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    fileContent = csvString;
+    const { infoLines, playerBlocks } = buildFullResultsCsvRows(tryout);
+    const blocks = playerBlocks.map((rows) => rows.map((r) => r.map(csvCell).join(',')).join('\n'));
+    fileContent = [
+      infoLines.map((r) => r.map(csvCell).join(',')).join('\n'),
+      '',
+      blocks.join('\n\n'),
+    ].join('\n');
     mimeType = 'text/csv';
   } else if (format === 'xlsx') {
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const summary = buildResultsSummary(tryout);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Tryout Results");
+    const summarySheet = XLSX.utils.aoa_to_sheet([
+      ...summary.infoLines,
+      [],
+      summary.headers,
+      ...summary.rows,
+    ]);
+    XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
+
+    const usedSheetNames = new Set<string>(['summary']);
+    for (const detail of buildPlayerDetailSheets(tryout)) {
+      const sheet = XLSX.utils.aoa_to_sheet([
+        ...detail.infoLines,
+        [],
+        detail.headers,
+        ...detail.rows,
+      ]);
+      XLSX.utils.book_append_sheet(wb, sheet, uniqueSheetName(detail.sheetTitle, usedSheetNames));
+    }
+
     fileContent = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
     encoding = 'base64';
     mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   } else if (format === 'pdf') {
-    const pdfDoc = await PDFDocument.create();
-    let page = pdfDoc.addPage([600, 800]);
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    
-    page.drawText(`Tryout Results: ${tryout.name}`, { x: 50, y: 750, size: 20, font: fontBold });
-    
-    let y = 700;
-    const xOffsets = [50, 90, 180, 280, 330, 380, 440];
-    
-    headers.forEach((h, i) => {
-      page.drawText(h, { x: xOffsets[i], y, size: 10, font: fontBold });
-    });
-    y -= 20;
-    
-    for (const row of rows) {
-      if (y < 50) {
-        page = pdfDoc.addPage([600, 800]);
-        y = 750;
-      }
-      row.forEach((cell: string, i: number) => {
-        page.drawText(cell, { x: xOffsets[i], y, size: 10, font });
-      });
-      y -= 15;
-    }
-    
-    fileContent = await pdfDoc.saveAsBase64();
+    fileContent = await renderFullResultsPdf(tryout);
     encoding = 'base64';
     mimeType = 'application/pdf';
   }

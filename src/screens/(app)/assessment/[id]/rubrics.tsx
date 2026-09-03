@@ -17,6 +17,7 @@ export default function RubricsScreen() {
   const updateTryout = useUpdateTryoutMutation();
 
   const [label, setLabel] = useState('');
+  const [category, setCategory] = useState('');
   const [scoringType, setScoringType] = useState<ScoringType>('skill');
   const [scale, setScale] = useState<'1-5' | '1-10'>('1-5');
   const [unit, setUnit] = useState('');
@@ -55,6 +56,7 @@ export default function RubricsScreen() {
 
   const tryout = tryoutQuery.data;
   const custom = tryout.settings.customRubrics ?? [];
+  const existingCategories = Array.from(new Set(custom.map((r) => r.category).filter((c): c is string => !!c)));
   const plan = getPlanDefinition(tier);
   const customLimit = plan.limits.customRubrics;
   const atCustomLimit =
@@ -75,6 +77,7 @@ export default function RubricsScreen() {
     const nextItem = {
       key,
       label: label.trim(),
+      category: category.trim() || undefined,
       scoringType,
       scale: scoringType === 'skill' ? scale : '1-5',
       unit: scoringType !== 'skill' ? defaultUnit : undefined,
@@ -95,6 +98,9 @@ export default function RubricsScreen() {
       },
     });
 
+    // Category is deliberately not cleared — a coach usually adds several
+    // drills to the same category back to back (e.g. five Skating drills),
+    // so keeping it selected saves re-picking it each time.
     setLabel('');
     setUnit('');
     setMinValStr('');
@@ -172,6 +178,7 @@ export default function RubricsScreen() {
                     {r.label}
                   </Text>
                   <Badge label={typeLabel.toUpperCase()} variant="brand" />
+                  {r.category ? <Badge label={r.category} /> : null}
                 </View>
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
                   {details}
@@ -205,14 +212,28 @@ export default function RubricsScreen() {
           </Text>
 
           <Input
-            label="1. Drill / Category Name"
+            label="1. Drill Name"
             value={label}
             onChangeText={setLabel}
             placeholder="e.g. 40-Yard Dash, Long Throw, Shot Speed"
           />
 
+          <Input
+            label="2. Category (optional)"
+            value={category}
+            onChangeText={setCategory}
+            placeholder="e.g. Skating — groups several drills under one heading"
+          />
+          {existingCategories.length > 0 ? (
+            <View className="flex-row flex-wrap gap-2">
+              {existingCategories.map((c) => (
+                <Chip key={c} label={c} active={category === c} onPress={() => setCategory(c)} />
+              ))}
+            </View>
+          ) : null}
+
           <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-            2. Scoring Type
+            3. Scoring Type
           </Text>
           <View className="flex-row flex-wrap gap-2">
             <Chip label="Subjective (1-5/1-10 Scale)" active={scoringType === 'skill'} onPress={() => handleScoringTypeChange('skill')} />
@@ -222,7 +243,7 @@ export default function RubricsScreen() {
           {scoringType === 'skill' ? (
             <View className="gap-2">
               <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-                3. Scale Choice
+                4. Scale Choice
               </Text>
               <View className="flex-row flex-wrap gap-2">
                 <Chip label="1-5 Scale" active={scale === '1-5'} onPress={() => setScale('1-5')} />
@@ -235,7 +256,7 @@ export default function RubricsScreen() {
           ) : (
             <View className="gap-3">
               <Input
-                label="3. Unit Label (Free-form)"
+                label="4. Unit Label (Free-form)"
                 value={unit}
                 onChangeText={setUnit}
                 placeholder="e.g. sec, mph, ft, meters"
