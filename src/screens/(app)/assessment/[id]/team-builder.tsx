@@ -26,6 +26,7 @@ import { getPlayerNameMap, type TeamBuilderState } from '@/data/teamBuilder';
 import { computePlayerResults } from '@/data/scoring';
 import { canUseFeature, getPlanDefinition } from '@/data/plans';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
+import { nextFrame } from '@/lib/nextFrame';
 
 export default function TeamBuilderScreen() {
   const id = useAssessmentId();
@@ -138,10 +139,12 @@ export default function TeamBuilderScreen() {
     if (!teamBuilder) return;
     setIsExporting(format);
     try {
+      await nextFrame();
       const { exportTeamBuilderData } = await import('@/lib/exportData');
       await exportTeamBuilderData(tryout, teamBuilder, format);
     } catch (e: any) {
       console.error(e);
+      Alert.alert('Export Failed', e?.message || `Could not export the ${format.toUpperCase()}.`);
     } finally {
       setIsExporting(null);
     }

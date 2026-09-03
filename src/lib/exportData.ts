@@ -21,6 +21,58 @@ function uniqueSheetName(base: string, used: Set<string>): string {
   return candidate;
 }
 
+/**
+ * The standard PDF fonts encode WinAnsi (cp1252) only, and pdf-lib *throws*
+ * the moment it is asked to draw a character outside it — so a single accented
+ * or emoji character anywhere in a roster name or a coach's notes killed the
+ * whole PDF export. Fold what we can (accents -> base letter), replace the rest.
+ */
+const WIN_ANSI_HIGH = '\u20ac\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u017d\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u017e\u0178';
+
+function isWinAnsi(ch: string): boolean {
+  const c = ch.codePointAt(0)!;
+  return c === 10 || c === 13 || (c >= 32 && c <= 126) || (c >= 160 && c <= 255) || WIN_ANSI_HIGH.includes(ch);
+}
+
+/** Characters NFD can't fold, because the stroke is part of the glyph. */
+const TRANSLITERATE: Record<string, string> = {
+  '\u0141': 'L', // L with stroke
+  '\u0142': 'l',
+  '\u0110': 'D', // D with stroke
+  '\u0111': 'd',
+  '\u0126': 'H',
+  '\u0127': 'h',
+  '\u0166': 'T',
+  '\u0167': 't',
+  '\u0131': 'i', // dotless i
+  '\u0132': 'IJ',
+  '\u0133': 'ij',
+  '\u014a': 'N',
+  '\u014b': 'n',
+  '\u2032': "'", // prime / double prime (feet & inches in heights)
+  '\u2033': '"',
+};
+
+function pdfSafe(text: string): string {
+  if (!text) return text ?? '';
+  let out = '';
+  for (const ch of text) {
+    if (ch === '\t') {
+      out += ' ';
+    } else if (TRANSLITERATE[ch] !== undefined) {
+      out += TRANSLITERATE[ch];
+    } else if (isWinAnsi(ch)) {
+      out += ch;
+    } else {
+      const folded =
+        typeof ch.normalize === 'function' ? ch.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : '';
+      const kept = Array.from(folded).filter(isWinAnsi).join('');
+      out += kept || '?';
+    }
+  }
+  return out;
+}
+
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
 const MARGIN = 50;
@@ -125,7 +177,7 @@ async function renderFullResultsPdf(tryout: Tryout): Promise<string> {
     const size = opts.size ?? 9;
     const f = opts.f ?? font;
     ensureSpace(size + 4);
-    page.drawText(text, { x: opts.x ?? MARGIN, y, size, font: f, color: opts.color ?? BLACK });
+    page.drawText(pdfSafe(text), { x: opts.x ?? MARGIN, y, size, font: f, color: opts.color ?? BLACK });
     y -= opts.gap ?? size + 4;
   };
 
@@ -137,7 +189,7 @@ async function renderFullResultsPdf(tryout: Tryout): Promise<string> {
     const f = opts.f ?? font;
     const x = opts.x ?? MARGIN;
     const maxWidth = opts.maxWidth ?? PAGE_WIDTH - MARGIN - x;
-    for (const line of wrapText(text, f, size, maxWidth)) {
+    for (const line of wrapText(pdfSafe(text), f, size, maxWidth)) {
       drawLine(line, { size, f, color: opts.color, x, gap: opts.gap ?? size + 3 });
     }
   };
@@ -151,7 +203,8 @@ async function renderFullResultsPdf(tryout: Tryout): Promise<string> {
     const x = opts.x ?? MARGIN;
     const maxWidth = opts.maxWidth ?? PAGE_WIDTH - MARGIN - x;
     const spaceWidth = f.widthOfTextAtSize(' ', size);
-    for (const line of wrapSegments(segments, f, size, maxWidth)) {
+    const safe = segments.map((seg) => ({ ...seg, text: pdfSafe(seg.text) }));
+    for (const line of wrapSegments(safe, f, size, maxWidth)) {
       ensureSpace(size + 4);
       let cx = x;
       for (const word of line) {
@@ -175,8 +228,10 @@ async function renderFullResultsPdf(tryout: Tryout): Promise<string> {
       y = PAGE_HEIGHT - MARGIN;
     }
 
-    const meta = `#${card.jersey || '—'} • ${card.pos || '—'} • Shoots ${card.shoots || '—'} • Evals ${card.evalCount}`;
-    page.drawText(card.name, { x: MARGIN, y, size: 15, font: fontBold, color: BLACK });
+    const meta = pdfSafe(
+      `#${card.jersey || '—'} • ${card.pos || '—'} • Shoots ${card.shoots || '—'} • Evals ${card.evalCount}`,
+    );
+    page.drawText(pdfSafe(card.name), { x: MARGIN, y, size: 15, font: fontBold, color: BLACK });
     const metaWidth = font.widthOfTextAtSize(meta, 9);
     page.drawText(meta, { x: PAGE_WIDTH - MARGIN - metaWidth, y: y + 3, size: 9, font, color: GRAY });
     y -= 26;
@@ -210,9 +265,9 @@ async function renderFullResultsPdf(tryout: Tryout): Promise<string> {
     let rowTop = tableTop - headerHeight;
     metricRows.forEach((m, i) => {
       const rowTextY = rowTop - rowHeight + 5;
-      page.drawText(m.label, { x: MARGIN + 6, y: rowTextY, size: 9, font, color: BLACK });
-      page.drawText(m.score, { x: scoreX, y: rowTextY, size: 9, font, color: BLACK });
-      page.drawText(m.rank, { x: rankX, y: rowTextY, size: 9, font, color: BLACK });
+      page.drawText(pdfSafe(m.label), { x: MARGIN + 6, y: rowTextY, size: 9, font, color: BLACK });
+      page.drawText(pdfSafe(m.score), { x: scoreX, y: rowTextY, size: 9, font, color: BLACK });
+      page.drawText(pdfSafe(m.rank), { x: rankX, y: rowTextY, size: 9, font, color: BLACK });
       rowTop -= rowHeight;
       if (i < metricRows.length - 1) {
         page.drawLine({ start: { x: tableLeft, y: rowTop }, end: { x: tableRight, y: rowTop }, thickness: 0.5, color: RULE });
@@ -405,13 +460,13 @@ export async function exportTeamBuilderData(
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
     const title = singleTeam ? `${tryout.name}: ${singleTeam.name}` : `${tryout.name}: Team Builder`;
-    page.drawText(title, { x: 50, y: 750, size: 20, font: fontBold });
+    page.drawText(pdfSafe(title), { x: 50, y: 750, size: 20, font: fontBold });
 
     let y = 700;
     const xOffsets = [50, 170, 320, 380, 430, 500];
 
     headers.forEach((h, i) => {
-      page.drawText(h, { x: xOffsets[i], y, size: 10, font: fontBold });
+      page.drawText(pdfSafe(h), { x: xOffsets[i], y, size: 10, font: fontBold });
     });
     y -= 20;
 
@@ -421,7 +476,7 @@ export async function exportTeamBuilderData(
         y = 750;
       }
       row.forEach((cell, i) => {
-        page.drawText(cell, { x: xOffsets[i], y, size: 10, font });
+        page.drawText(pdfSafe(cell), { x: xOffsets[i], y, size: 10, font });
       });
       y -= 15;
     }

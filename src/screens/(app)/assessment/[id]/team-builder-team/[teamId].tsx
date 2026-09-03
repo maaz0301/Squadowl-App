@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Text, View, Pressable } from 'react-native';
+import { Alert, Text, View, Pressable } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
@@ -25,6 +25,7 @@ import { type TeamBuilderState } from '@/data/teamBuilder';
 import { computePlayerResults } from '@/data/scoring';
 import { useUser } from '@/state/authStore';
 import { canUseFeature, getPlanDefinition } from '@/data/plans';
+import { nextFrame } from '@/lib/nextFrame';
 
 export default function TeamBuilderTeamScreen() {
   const id = useAssessmentId();
@@ -89,10 +90,12 @@ export default function TeamBuilderTeamScreen() {
   const handleExport = async (format: 'xlsx' | 'pdf') => {
     setIsExporting(format);
     try {
+      await nextFrame();
       const { exportTeamBuilderData } = await import('@/lib/exportData');
       await exportTeamBuilderData(tryout, state, format, { teamId: team.id });
     } catch (e: any) {
       console.error(e);
+      Alert.alert('Export Failed', e?.message || `Could not export the ${format.toUpperCase()}.`);
     } finally {
       setIsExporting(null);
     }

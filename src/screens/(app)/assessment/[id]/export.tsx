@@ -19,6 +19,7 @@ import { useAssessmentId } from '@/features/useAssessmentId';
 import { canUseFeature, getPlanDefinition } from '@/data/plans';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import type { ExportFormat } from '@/data/types';
+import { nextFrame } from '@/lib/nextFrame';
 
 export default function ExportScreen() {
   const id = useAssessmentId();
@@ -45,11 +46,12 @@ export default function ExportScreen() {
   const handleExport = async (format: ExportFormat) => {
     setIsExporting(format);
     try {
+      await nextFrame();
       const { exportTryoutData } = await import('@/lib/exportData');
       await exportTryoutData(tryout, format);
     } catch (e: any) {
       console.error(e);
-      // Optional: show error alert
+      Alert.alert('Export Failed', e?.message || `Could not export the ${format.toUpperCase()}.`);
     } finally {
       setIsExporting(null);
     }
