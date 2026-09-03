@@ -86,8 +86,11 @@ export const fontSize = {
 
 export const fontFamily = {
   sans: 'Inter',
-  display: 'SpaceGrotesk',
-  mono: 'SpaceMono',
+  // Always paired with `font-bold` in usage, so it's linked as the single
+  // Bold-weight font file (see assets/fonts/SpaceGrotesk-Bold.ttf) rather
+  // than a family with separate weight variants.
+  display: 'SpaceGrotesk-Bold',
+  mono: 'SpaceMono-Regular',
 } as const;
 
 export const shadows = {

@@ -41,5 +41,5 @@ module.exports = {
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32, 12: 48, 16: 64 },
   radius: { xs: 6, sm: 8, md: 12, DEFAULT: 14, lg: 16, xl: 22, '2xl': 30, full: 9999 },
   fontSize: { xs: 10, sm: 12, base: 15, md: 17, lg: 20, xl: 24, '2xl': 30, '3xl': 38, display: 52 },
-  fontFamily: { sans: 'Inter', display: 'SpaceGrotesk', mono: 'SpaceMono' },
+  fontFamily: { sans: 'Inter', display: 'SpaceGrotesk-Bold', mono: 'SpaceMono-Regular' },
 };
