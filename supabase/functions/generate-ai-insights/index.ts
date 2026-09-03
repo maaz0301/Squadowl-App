@@ -37,7 +37,19 @@ function repairTruncatedJson(str: string): string {
 // paragraph and hold onto it through a long roster/rankings payload.
 function detectTeamConstraints(text: string, totalPlayers?: number): { teamCount?: number; teamSize?: number } {
   const lower = (text || '').toLowerCase();
-  const countMatch = lower.match(/(\d+)\s*teams?\b/);
+  // Words are allowed between the number and "teams" — "build 10 evenly ranked
+  // teams" is what actually gets typed, and anchoring straight to the noun
+  // misses it entirely. Filler that makes the number a per-team *size* instead
+  // ("11 players per team") is rejected below; "teams of 11" can't match here at
+  // all, since the number follows the noun there and is read by sizeMatch.
+  const countCandidate = lower.match(/(\d+)\s+((?:[a-z]+\s+){0,3})teams?\b/);
+  const countMatch =
+    countCandidate &&
+    !/\b(player|players|athlete|athletes|kid|kids|skater|skaters|people|person|per|of|each|apiece)\b/.test(
+      countCandidate[2],
+    )
+      ? countCandidate
+      : null;
   const sizeMatch =
     lower.match(/(\d+)\s*(?:players?|athletes?|kids?|skaters?|people)\b(?:\s+\w+){0,2}?\s*team/) ||
     lower.match(/teams?\s*of\s*(\d+)/) ||
@@ -190,6 +202,106 @@ function positionCapWarnings(teams: any[], players: any[], cap: number | undefin
     );
   }
   return warnings;
+}
+
+/**
+ * Turns the model's constraint JSON into values the client's `buildTeams()` can
+ * be handed without further checking.
+ *
+ * Every number is clamped and every position is matched against the labels this
+ * roster actually uses, so an imaginative or malformed response degrades to "no
+ * constraint" rather than producing a broken split. Anything the model omits
+ * falls back to the regex detectors above, which already read the common
+ * phrasings deterministically.
+ */
+function normalizeExtractedConstraints(
+  raw: any,
+  fallback: {
+    teamCount?: number;
+    teamSize?: number;
+    positionCap?: number;
+    quotas: Map<string, number>;
+    unmatched: string[];
+  },
+  rosterPositions: string[],
+  playerCount: number,
+): any {
+  const known = new Set(rosterPositions.map((p) => normalizePos(p)));
+  const intOrNull = (v: any, min: number, max: number): number | null => {
+    const n = Math.floor(Number(v));
+    return Number.isFinite(n) && n >= min && n <= max ? n : null;
+  };
+
+  const teamSize = intOrNull(raw?.teamSize, 1, Math.max(1, playerCount)) ?? fallback.teamSize ?? null;
+  let teamCount =
+    intOrNull(raw?.teamCount, 2, Math.max(2, playerCount)) ??
+    (fallback.teamCount !== undefined ? intOrNull(fallback.teamCount, 2, Math.max(2, playerCount)) : null);
+  // "teams of 11" with no count given still says how many teams the roster makes.
+  if (teamCount === null && teamSize !== null && playerCount > 0) {
+    teamCount = Math.max(2, Math.floor(playerCount / teamSize));
+  }
+
+  const quotas: Record<string, number> = {};
+  const unmatched: string[] = [...(fallback.unmatched ?? [])];
+  const rawQuotas =
+    raw?.positionQuotas && typeof raw.positionQuotas === 'object' ? raw.positionQuotas : {};
+  for (const [pos, n] of Object.entries(rawQuotas)) {
+    const key = normalizePos(pos);
+    const count = intOrNull(n, 0, Math.max(1, playerCount));
+    if (count === null) continue;
+    if (!known.has(key)) {
+      unmatched.push(String(pos));
+      continue;
+    }
+    quotas[key] = count;
+  }
+  // The regex detector only fills in when the model found no quota at all.
+  if (Object.keys(quotas).length === 0) {
+    for (const [pos, n] of fallback.quotas) if (known.has(pos)) quotas[pos] = n;
+  }
+
+  const names =
+    Array.isArray(raw?.teamNames) && raw.teamNames.every((n: any) => typeof n === 'string' && n.trim())
+      ? raw.teamNames.map((n: string) => n.trim())
+      : null;
+
+  // Skill bands. Kept only when there are at least two of them with a usable
+  // team count — a single band is just an ordinary split, and a malformed entry
+  // would otherwise silently drop players out of the roster.
+  const rawTiers = Array.isArray(raw?.tiers) ? raw.tiers : [];
+  const tiers = rawTiers
+    .map((t: any) => ({
+      teamCount: intOrNull(t?.teamCount, 1, Math.max(1, playerCount)),
+      targetRating: intOrNull(t?.targetRating, 1, 5),
+    }))
+    .filter((t: any) => t.teamCount !== null);
+  const usableTiers = tiers.length >= 2 ? tiers : null;
+  // The bands are the source of truth for how many teams there are, so a model
+  // that gave a total inconsistent with its own bands can't produce a split with
+  // the wrong number of teams.
+  if (usableTiers) {
+    teamCount = usableTiers.reduce((sum: number, t: any) => sum + t.teamCount, 0);
+  }
+
+  const modelUnmatched = Array.isArray(raw?.unmatchedPositions)
+    ? raw.unmatchedPositions.filter((s: any) => typeof s === 'string')
+    : [];
+
+  return {
+    teamCount,
+    teamSize,
+    // Names are only usable when there is one per team; anything else would
+    // leave teams unnamed or drop some entirely.
+    teamNames: names && teamCount && names.length === teamCount ? names : null,
+    positionQuotas: Object.keys(quotas).length ? quotas : null,
+    positionCap:
+      intOrNull(raw?.positionCap, 1, Math.max(1, playerCount)) ?? fallback.positionCap ?? null,
+    tiers: usableTiers,
+    keepFriendPackages: raw?.keepFriendPackages !== false,
+    splitGoalies: raw?.splitGoalies !== false,
+    unmatchedPositions: [...new Set([...unmatched, ...modelUnmatched])],
+    rosterPositions,
+  };
 }
 
 // Sanity-checks Claude's team_builder response against the roster and any
@@ -672,7 +784,15 @@ serve(async (req: Request) => {
       throw new Error('ANTHROPIC_API_KEY is not set');
     }
 
-    const { action, tryout, playerIds, prompt: userPrompt, comparisonProfiles } = await req.json();
+    const {
+      action,
+      tryout,
+      playerIds,
+      prompt: userPrompt,
+      comparisonProfiles,
+      positions,
+      playerCount,
+    } = await req.json();
 
     if (!action || !tryout) {
       throw new Error('Missing required fields: action or tryout');
@@ -690,6 +810,15 @@ serve(async (req: Request) => {
     let teamBuilderQuotas = new Map<string, number>();
     let teamBuilderUnmatchedQuotas: string[] = [];
     let teamBuilderRosterPositions: string[] = [];
+    let constraintFallback: {
+      teamCount?: number;
+      teamSize?: number;
+      positionCap?: number;
+      quotas: Map<string, number>;
+      unmatched: string[];
+    } = { quotas: new Map(), unmatched: [] };
+    let constraintPositions: string[] = [];
+    let constraintPlayerCount = 0;
     let systemPrompt = `You are a professional sports scout AI. Your ONLY job is to analyze the numeric evaluation data provided to you from an athlete assessment app database.
 RULES:
 - Analyze ONLY the evaluation scores and fields in the JSON data provided. Do not make assumptions based on athlete names.
@@ -917,11 +1046,92 @@ Return exactly this JSON format:
 }
 Do NOT include "skaters" or "goalies" fields — list every player once in "players" only; positions are looked up separately.
 Every player ID in the roster must appear exactly once total — either in exactly one team's "players" array, or in the top-level "unassigned" array, never in both and never omitted.`;
+    } else if (action === 'team_builder_constraints') {
+      // Constraint extraction only — the model reads the coach's sentence and
+      // returns the rules; it never assigns a single player.
+      //
+      // Splitting a roster so every team's average rating matches is arithmetic
+      // over every score at once, which is what a language model is worst at and
+      // what `buildTeams()` (src/data/teamBuilder.ts) does exactly. Asking the
+      // model for the split is what produced team averages from 1.5 to 4.9 on a
+      // 142-player roster whose instruction was literally "build 10 evenly
+      // ranked teams". Reading that sentence is the part it is genuinely good
+      // at, so that is the only part left to it.
+      //
+      // The payload is a few position labels and two counts rather than the
+      // roster, so this call stays small and fast and cannot be truncated by
+      // roster size the way the old one could.
+      constraintPositions = (Array.isArray(positions) ? positions : [])
+        .filter((p: any) => typeof p === 'string' && p.trim())
+        .map((p: string) => p.trim());
+      constraintPlayerCount = Number(playerCount) || 0;
+      const sportLabel = tryout.sport === 'Other' ? tryout.sportOther || 'Other' : tryout.sport;
+      maxTokens = 1024;
+
+      const quotaSpec = detectPositionQuotas(
+        userPrompt || '',
+        constraintPositions.map((p) => normalizePos(p)),
+      );
+      const rawConstraints = detectTeamConstraints(userPrompt || '', constraintPlayerCount);
+      constraintFallback = {
+        teamCount: rawConstraints.teamCount,
+        teamSize: rawConstraints.teamSize,
+        positionCap: detectPositionCap(userPrompt || ''),
+        quotas: quotaSpec.quotas,
+        unmatched: quotaSpec.unmatched,
+      };
+
+      systemPrompt = `You extract structured team-building rules from a coach's instructions. You never assign players to teams and never invent players or positions.
+RULES:
+- Return ONLY the requested JSON. No markdown, no code fences, no commentary.
+- Use null for anything the coach did not ask for. Never guess a number that isn't stated or clearly implied.
+- Positions must be copied EXACTLY from the provided list, or reported as unmatched.
+- Interpret the request in the context of the sport given.`;
+
+      prompt = `Sport: ${sportLabel || 'unspecified'}
+Roster size: ${constraintPlayerCount} players
+Positions used on this roster: ${constraintPositions.length ? constraintPositions.join(', ') : '(none recorded)'}
+
+Coach's instructions:
+"${userPrompt || ''}"
+
+Extract the rules into exactly this JSON shape:
+{
+  "teamCount": <how many teams to build, or null>,
+  "teamSize": <exact players per team if requested, or null>,
+  "teamNames": <array of team names if the coach named them, or null>,
+  "positionQuotas": <object mapping a position from the list above to the exact number required on EVERY team, e.g. {"GTL": 1}, or null>,
+  "positionCap": <maximum players of any one position per team if a ceiling was asked for, or null>,
+  "tiers": <array of skill bands if the coach asked for teams at different levels, else null; each entry {"teamCount": <number>, "targetRating": <the 1-5 rating that band is aimed at, or null>}>,
+  "keepFriendPackages": <false only if the coach explicitly said to ignore friend requests, otherwise true>,
+  "splitGoalies": <false only if the coach explicitly said to group goalies together, otherwise true>,
+  "unmatchedPositions": <array of position words the coach used that are NOT in the list above, or []>
+}
+
+Guidance:
+- "build 10 evenly ranked teams" -> teamCount 10, tiers null. Balancing by rating is automatic and is NOT a rule to extract.
+- "4 teams of 11 with 1 goalie each" -> teamCount 4, teamSize 11, positionQuotas {"<the goalie label from the list>": 1}.
+- "no more than one goalie per team" is a positionCap of 1, NOT a quota — a cap is a ceiling, a quota is an exact count every team must hit.
+- TIERS mean teams at DIFFERENT levels, e.g. an A group and a B group. "build 5 teams for 3 ranking and 5 teams for 4 ranking" -> teamCount 10 and tiers [{"teamCount":5,"targetRating":3},{"teamCount":5,"targetRating":4}]. So does "3 A teams and 3 B teams" (targetRating null for each). Set teamCount to the TOTAL across all bands.
+- Only use tiers when different levels are actually asked for. One level for everyone — "even", "balanced", "equal" — is teamCount alone with tiers null.`;
     } else {
-      throw new Error('Invalid action. Must be "summary", "compare", or "team_builder"');
+      throw new Error(
+        'Invalid action. Must be "summary", "compare", "team_builder", or "team_builder_constraints"',
+      );
     }
 
     let parsedResult = await callClaudeForJson(systemPrompt, prompt, maxTokens);
+
+    if (action === 'team_builder_constraints') {
+      // Clamped and matched against this roster's own position labels before it
+      // leaves here, so the client can feed it straight into buildTeams().
+      parsedResult = normalizeExtractedConstraints(
+        parsedResult,
+        constraintFallback,
+        constraintPositions,
+        constraintPlayerCount,
+      );
+    }
 
     if (action === 'team_builder') {
       // Repair small mistakes (duplicate/hallucinated/dropped IDs, uneven team

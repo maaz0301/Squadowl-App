@@ -293,7 +293,15 @@ export default function TeamBuilderScreen() {
         )}
 
         {teamBuilder?.teams.map((team) => {
-          const teamPlayerResults = results.filter((r: any) => team.players.includes(r.player.id) && r.evalCount > 0);
+          // `overall > 0` as well as having evaluations: a player scored only
+          // against rubrics that no longer exist comes back with evaluations and
+          // an overall of 0, and 0 is the absence of a rating rather than a very
+          // low one. Counting those zeros pulled a team's average toward nothing
+          // and made this number disagree with the split buildTeams() produced.
+          // Matches the web app's Team Builder page.
+          const teamPlayerResults = results.filter(
+            (r: any) => team.players.includes(r.player.id) && r.evalCount > 0 && r.overall > 0,
+          );
           const avgScore = teamPlayerResults.length > 0
             ? (teamPlayerResults.reduce((sum: number, r: any) => sum + r.overall, 0) / teamPlayerResults.length).toFixed(1)
             : null;
