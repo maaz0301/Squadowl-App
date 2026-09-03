@@ -1,13 +1,10 @@
 // @ts-nocheck
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
-import nodemailer from 'npm:nodemailer';
 import { corsHeaders } from '../_shared/cors.ts';
 
-const SMTP_HOST = Deno.env.get('SMTP_HOST') || 'smtp.gmail.com';
-const SMTP_PORT = parseInt(Deno.env.get('SMTP_PORT') || '587');
-const SMTP_PASS = Deno.env.get('SMTP_PASS') || '';
-const FROM_EMAIL = Deno.env.get('SMTP_FROM_EMAIL') || 'reachraza1@gmail.com';
-const FROM_NAME = Deno.env.get('SMTP_FROM_NAME') || 'Athlete Assessment';
+const SENDGRID_API_KEY = Deno.env.get('SENDGRID_API_KEY') || '';
+const FROM_EMAIL = Deno.env.get('SENDGRID_FROM_EMAIL') || 'noreply@tryouthq.ca';
+const FROM_NAME = Deno.env.get('SENDGRID_FROM_NAME') || 'TryoutHQ';
 
 // ─── Shared dark-theme HTML wrapper ─────────────────────────────────────────
 /** Minimal HTML escaping for user-controlled strings (team/role names) dropped into template markup. */
@@ -332,24 +329,31 @@ serve(async (req: Request) => {
     else if (type === 'subscription_upgraded') ({ subject, html } = tplSubscriptionUpgraded(payload?.planTier ?? 'Pro'));
     else if (type === 'subscription_canceled') ({ subject, html } = tplSubscriptionCanceled());
 
-    // Send via Gmail SMTP using nodemailer
-    const transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_PORT === 465,
-      auth: {
-        user: FROM_EMAIL,
-        pass: SMTP_PASS,
+    // Send via SendGrid's v3 API. tryouthq.ca is DKIM/SPF-authenticated there,
+    // so mail from noreply@tryouthq.ca is signed for the domain. Content parts
+    // are ordered plain-then-html: SendGrid requires increasing preference.
+    const sgRes = await fetch('https://api.sendgrid.com/v3/mail/send', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${SENDGRID_API_KEY}`,
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email: to }] }],
+        from: { email: FROM_EMAIL, name: FROM_NAME },
+        subject,
+        content: [
+          { type: 'text/plain', value: 'Please view this in an HTML email client.' },
+          { type: 'text/html', value: html },
+        ],
+      }),
     });
 
-    await transporter.sendMail({
-      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
-      to,
-      subject,
-      text: 'Please view this in an HTML email client.',
-      html,
-    });
+    // A send succeeds with 202 and an empty body; failures carry a JSON error
+    // list, which the catch below reports back to the caller unchanged.
+    if (!sgRes.ok) {
+      throw new Error(`SendGrid ${sgRes.status}: ${await sgRes.text()}`);
+    }
 
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
