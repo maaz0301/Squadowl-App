@@ -36,6 +36,7 @@ import { isAtAssessmentLimit } from '@/data/plans';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { getDataSource } from '@/data';
+import { ASSESSOR_INVITE_URL } from '@/config/app';
 
 const SCORING_TYPE_LABEL: Record<ScoringType, string> = {
   skill: 'Skill / Technique',
@@ -69,7 +70,6 @@ export default function NewAssessmentScreen() {
   const [showAssessorForm, setShowAssessorForm] = useState(false);
   const [assessorName, setAssessorName] = useState('');
   const [assessorEmail, setAssessorEmail] = useState('');
-  const [checkingAssessor, setCheckingAssessor] = useState(false);
 
   const [pendingRubrics, setPendingRubrics] = useState<CustomRubric[]>([]);
   const [showRubricForm, setShowRubricForm] = useState(false);
@@ -93,25 +93,19 @@ export default function NewAssessmentScreen() {
       Alert.alert('Missing Info', 'An assessor needs both a name and an email address.');
       return;
     }
-    setCheckingAssessor(true);
-    try {
-      const exists = await getDataSource().checkUserExistsByEmail(email);
-      if (!exists) {
-        Alert.alert(
-          'Email Not Registered',
-          'This email is not registered in the system. Assessors must create an account before they can be invited.',
-        );
-        return;
-      }
-      setPendingAssessors((prev) => [...prev, { name, email, role: 'assessor', status: 'pending' }]);
-      setAssessorName('');
-      setAssessorEmail('');
-      setShowAssessorForm(false);
-    } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Could not verify this assessor.');
-    } finally {
-      setCheckingAssessor(false);
+    // One row per address per tryout — the same constraint the settings screen
+    // guards, caught here before the list is even submitted.
+    if (pendingAssessors.some((a: any) => a.email?.toLowerCase() === email.toLowerCase())) {
+      Alert.alert('Already Added', `${email} is already on this evaluation's assessor list.`);
+      return;
     }
+    // No account-exists check: the invite is claimed by email address whenever
+    // that person signs up (handle_new_user in 0002_assessor_linking.sql), so
+    // an assessor who isn't registered yet is invited, not rejected.
+    setPendingAssessors((prev) => [...prev, { name, email, role: 'assessor', status: 'pending' }]);
+    setAssessorName('');
+    setAssessorEmail('');
+    setShowAssessorForm(false);
   };
 
   const removeAssessorFromList = (index: number) => {
@@ -272,9 +266,16 @@ export default function NewAssessmentScreen() {
         // so a failed invite email shouldn't block the coach from moving on —
         // they can still resend from the settings screen.
         for (const a of updated.assessors) {
-          if (!a.email) continue;
+          // `role !== 'lead'` skips the creator's own seeded row — otherwise
+          // every coach mailed themselves an "you've been assigned as an
+          // assessor" note for the assessment they had just made.
+          if (!a.email || a.role === 'lead') continue;
           try {
-            await getDataSource().sendEmail('tryout_invite', a.email, { role: 'assessor' });
+            await getDataSource().sendEmail('tryout_invite', a.email, {
+              role: 'assessor',
+              tryoutName: updated.name,
+              inviteUrl: ASSESSOR_INVITE_URL,
+            });
           } catch (err) {
             // console.warn, not console.error: this is the best-effort path above —
             // a failed invite email must stay silent in the background, not hijack
@@ -623,7 +624,7 @@ export default function NewAssessmentScreen() {
         onClose={() => setShowAssessorForm(false)}
         footer={
           <View className="mt-4 gap-2">
-            <Button label="Add" onPress={addAssessorToList} loading={checkingAssessor} disabled={!assessorName.trim() || !assessorEmail.trim()} />
+            <Button label="Add" onPress={addAssessorToList} disabled={!assessorName.trim() || !assessorEmail.trim()} />
           </View>
         }
       >
@@ -631,7 +632,8 @@ export default function NewAssessmentScreen() {
           <Input label="Name" value={assessorName} onChangeText={setAssessorName} />
           <Input label="Email" value={assessorEmail} onChangeText={setAssessorEmail} autoCapitalize="none" keyboardType="email-address" />
           <Text className="text-xs" style={{ color: colors.inkMuted }}>
-            They must already have a TryoutHQ account — this checks their email before adding them.
+            They'll be emailed an invitation when the evaluation is created. If they don't have a TryoutHQ account
+            yet, they can create one with this address and the invitation will be waiting for them.
           </Text>
         </View>
       </Modal>

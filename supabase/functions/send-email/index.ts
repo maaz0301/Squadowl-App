@@ -5,6 +5,11 @@ import { corsHeaders } from '../_shared/cors.ts';
 const SENDGRID_API_KEY = Deno.env.get('SENDGRID_API_KEY') || '';
 const FROM_EMAIL = Deno.env.get('SENDGRID_FROM_EMAIL') || 'noreply@tryouthq.ca';
 const FROM_NAME = Deno.env.get('SENDGRID_FROM_NAME') || 'TryoutHQ';
+// The shield mark, served from the web app's /public. Every email header
+// points at it, so it lives in one place and can be repointed with an env var
+// if the app ever moves domains.
+const LOGO_URL =
+  Deno.env.get('EMAIL_LOGO_URL') || 'https://tryouthq.ca/images/tryouthq_t_logo_v2.png';
 
 // ─── Shared dark-theme HTML wrapper ─────────────────────────────────────────
 /** Minimal HTML escaping for user-controlled strings (team/role names) dropped into template markup. */
@@ -27,8 +32,14 @@ function wrap(title: string, body: string): string {
 
       <!-- Header -->
       <tr><td style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);border-radius:16px 16px 0 0;padding:40px 40px 32px;text-align:center;">
-        <div style="display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:12px;padding:10px 20px;margin-bottom:18px;">
-          <span style="color:#fff;font-size:20px;font-weight:700;letter-spacing:1px;">⚡ Athlete Assessment</span>
+        <!-- The brand lockup, matching the app's own header: shield mark beside
+             the TryoutHQ wordmark. The wordmark is live text rather than part
+             of the image so the brand still reads in the many clients that
+             block remote images by default (the alt text covers the mark). -->
+        <div style="margin-bottom:18px;">
+          <img src="${LOGO_URL}" alt="TryoutHQ" width="48" height="48"
+               style="display:inline-block;vertical-align:middle;width:48px;height:48px;border:0;outline:none;text-decoration:none;"/>
+          <span style="display:inline-block;vertical-align:middle;margin-left:12px;color:#fff;font-size:26px;font-weight:700;letter-spacing:-0.5px;">TryoutHQ</span>
         </div>
         <h1 style="margin:0;color:#fff;font-size:24px;font-weight:700;letter-spacing:-0.5px;">${title}</h1>
       </td></tr>
@@ -40,8 +51,8 @@ function wrap(title: string, body: string): string {
 
       <!-- Footer -->
       <tr><td style="background:#111128;border-radius:0 0 16px 16px;padding:24px 40px;text-align:center;border:1px solid #2a2a4a;border-top:none;">
-        <p style="margin:0 0 6px;color:#6366f1;font-size:14px;font-weight:600;">Athlete Assessment Platform</p>
-        <p style="margin:0;color:#4b5563;font-size:12px;">© ${new Date().getFullYear()} Athlete Assessment. All rights reserved.</p>
+        <p style="margin:0 0 6px;color:#6366f1;font-size:14px;font-weight:600;">TryoutHQ</p>
+        <p style="margin:0;color:#4b5563;font-size:12px;">© ${new Date().getFullYear()} TryoutHQ. All rights reserved.</p>
         <p style="margin:6px 0 0;color:#374151;font-size:11px;">If you did not expect this email, you can safely ignore it.</p>
       </td></tr>
 
@@ -62,10 +73,10 @@ function tplOrgInvite(role: string, password?: string) {
       ⚠️ Please change this password after your first login for security.
     </p>` : '';
   return {
-    subject: `You've been invited to join an Organization on Athlete Assessment`,
+    subject: `You've been invited to join an Organization on TryoutHQ`,
     html: wrap("You're Invited! 🎉", `
       <p style="color:#d1d5db;font-size:16px;line-height:1.7;margin:0 0 20px;">
-        You've been invited to join an organization on <strong style="color:#a78bfa;">Athlete Assessment</strong> as a
+        You've been invited to join an organization on <strong style="color:#a78bfa;">TryoutHQ</strong> as a
         <span style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;padding:2px 14px;border-radius:20px;font-size:14px;font-weight:600;">${role}</span>.
       </p>
       ${pwBlock}
@@ -88,11 +99,11 @@ function tplTeamManagerInvite(teamName: string, role: string, password?: string)
       ⚠️ Please change this password after your first login for security.
     </p>` : '';
   return {
-    subject: `You've been added to ${safeTeam} on Athlete Assessment`,
+    subject: `You've been added to ${safeTeam} on TryoutHQ`,
     html: wrap("You've Been Added to a Team! 🏒", `
       <p style="color:#d1d5db;font-size:16px;line-height:1.7;margin:0 0 20px;">
         You've been given access to manage <strong style="color:#a78bfa;">${safeTeam}</strong> on
-        <strong style="color:#a78bfa;">Athlete Assessment</strong> as its
+        <strong style="color:#a78bfa;">TryoutHQ</strong> as its
         <span style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;padding:2px 14px;border-radius:20px;font-size:14px;font-weight:600;">${roleLabel}</span>.
       </p>
       ${pwBlock}
@@ -109,19 +120,36 @@ function tplTeamManagerInvite(teamName: string, role: string, password?: string)
   };
 }
 
-function tplTryoutInvite(tryoutName?: string) {
+function tplTryoutInvite(tryoutName?: string, inviteUrl?: string, email?: string) {
+  const safeName = tryoutName ? escapeHtml(tryoutName) : '';
+  // The invite is claimed by email address the moment an account with that
+  // address exists (link_assessor_to_user / handle_new_user), so this link
+  // carries no token and no identifying data — it only has to land them on the
+  // sign-in screen, which explains the rest.
+  const cta = inviteUrl ? `
+      <p style="margin:28px 0 8px;">
+        <a href="${inviteUrl}" style="display:inline-block;padding:14px 28px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;text-decoration:none;border-radius:10px;font-size:16px;font-weight:700;">
+          Accept Invitation
+        </a>
+      </p>` : '';
   return {
-    subject: `You've been assigned as an Assessor`,
-    html: wrap('Assessor Assignment 📋', `
+    subject: safeName ? `You've been invited to assess ${safeName}` : `You've been invited as an Assessor`,
+    html: wrap('You&#39;re Invited to Assess 📋', `
       <p style="color:#d1d5db;font-size:16px;line-height:1.7;margin:0 0 20px;">
-        You've been assigned to assess players for an upcoming tryout${tryoutName ? ` — <strong style="color:#a78bfa;">${tryoutName}</strong>` : ''}.
+        You've been invited to assess players${safeName ? ` for <strong style="color:#a78bfa;">${safeName}</strong>` : ' for an upcoming tryout'}.
       </p>
       <div style="background:#0f0f13;border-radius:12px;padding:20px 24px;margin:20px 0;border-left:4px solid #6366f1;">
         <p style="color:#9ca3af;font-size:13px;margin:0 0 4px;">Your role</p>
         <p style="color:#fff;font-size:17px;font-weight:600;margin:0;">⚡ Assessor</p>
       </div>
       <p style="color:#9ca3af;font-size:15px;line-height:1.7;margin:0;">
-        Log in to view player rosters, submit scores, and complete evaluations.
+        No account yet? Creating one takes a minute — sign up with
+        ${email ? `<strong style="color:#a78bfa;">${escapeHtml(email)}</strong>` : 'this email address'}
+        and this invitation will be waiting for you. Already have one? Just sign in with that address.
+      </p>
+      ${cta}
+      <p style="color:#6b7280;font-size:13px;line-height:1.7;margin:16px 0 0;">
+        Once you accept, you can view player rosters, submit scores and complete evaluations.
       </p>
     `),
   };
@@ -181,7 +209,7 @@ function tplRegistrationConfirm(playerName: string) {
 
 function tplPasswordReset(code: string) {
   return {
-    subject: `Reset Your Password — Athlete Assessment`,
+    subject: `Reset Your Password — TryoutHQ`,
     html: wrap('Reset Your Password 🔐', `
       <p style="color:#d1d5db;font-size:16px;line-height:1.7;margin:0 0 24px;">
         We received a request to reset your password. Use the verification code below — it expires shortly.
@@ -200,7 +228,7 @@ function tplPasswordReset(code: string) {
 function tplSubscriptionUpgraded(planTier: string) {
   const planName = planTier.charAt(0).toUpperCase() + planTier.slice(1);
   return {
-    subject: `Welcome to ${planName} — Athlete Assessment`,
+    subject: `Welcome to ${planName} — TryoutHQ`,
     html: wrap('Subscription Upgraded 🚀', `
       <div style="background:#0f0f13;border:1px solid #10b981;border-radius:16px;padding:24px;margin-bottom:32px;text-align:center;">
         <p style="margin:0;color:#10b981;font-size:18px;font-weight:700;">✅ Successfully Upgraded to ${planName}</p>
@@ -217,7 +245,7 @@ function tplSubscriptionUpgraded(planTier: string) {
 
 function tplSubscriptionCanceled() {
   return {
-    subject: `Subscription Canceled — Athlete Assessment`,
+    subject: `Subscription Canceled — TryoutHQ`,
     html: wrap('Subscription Canceled 😔', `
       <p style="color:#d1d5db;font-size:16px;line-height:1.7;margin:0 0 24px;">
         We've successfully processed your subscription cancellation. Your account has been downgraded to the Free plan.
@@ -268,7 +296,7 @@ function tplPlayerInvite(
   ].join('');
 
   return {
-    subject: `${safePlayer} has been invited to ${safeTeam} on Athlete Assessment`,
+    subject: `${safePlayer} has been invited to ${safeTeam} on TryoutHQ`,
     html: wrap("You're Invited to the Team Portal 🏒", `
       <p style="color:#d1d5db;font-size:16px;line-height:1.7;margin:0 0 20px;">
         ${isGuardian
@@ -307,7 +335,7 @@ serve(async (req: Request) => {
 
     if (!to || !type) throw new Error('Missing required fields (to, type)');
 
-    let subject = 'Notification from Athlete Assessment';
+    let subject = 'Notification from TryoutHQ';
     let html = '<p>You have a new notification.</p>';
 
     if (type === 'org_invite') ({ subject, html } = tplOrgInvite(payload?.role ?? 'Member', payload?.password));
@@ -321,7 +349,7 @@ serve(async (req: Request) => {
       to,
     ));
     else if (type === 'team_manager_invite') ({ subject, html } = tplTeamManagerInvite(payload?.teamName ?? 'a team', payload?.role ?? 'manager', payload?.password));
-    else if (type === 'tryout_invite') ({ subject, html } = tplTryoutInvite(payload?.tryoutName));
+    else if (type === 'tryout_invite') ({ subject, html } = tplTryoutInvite(payload?.tryoutName, payload?.inviteUrl, to));
     else if (type === 'schedule_update') ({ subject, html } = tplScheduleUpdate(payload?.eventName ?? 'New Event', payload?.date, payload?.time, payload?.location));
     else if (type === 'reminder') ({ subject, html } = tplReminder(payload?.title ?? 'Upcoming Event', payload?.message ?? 'This is a reminder for an upcoming event.'));
     else if (type === 'registration_confirmation') ({ subject, html } = tplRegistrationConfirm(payload?.playerName ?? 'Athlete'));

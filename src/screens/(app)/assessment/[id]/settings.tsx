@@ -32,6 +32,22 @@ import { getDefaultRubrics } from '@/data/rubrics';
 import { useUser } from '@/state/authStore';
 import { isAtAssessmentLimit } from '@/data/plans';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
+import { ASSESSOR_INVITE_URL } from '@/config/app';
+
+/**
+ * How an invitation is reading right now, from the inviting coach's side.
+ * Spelled out rather than echoing the raw status word: "pending" on its own
+ * left the coach unsure whether it meant the email hadn't gone out or the
+ * assessor hadn't answered yet.
+ */
+const INVITE_STATUS: Record<'pending' | 'accepted' | 'declined', {
+  label: string;
+  variant: 'warning' | 'success' | 'danger';
+}> = {
+  pending: { label: 'Invite pending', variant: 'warning' },
+  accepted: { label: 'Invite accepted', variant: 'success' },
+  declined: { label: 'Invite declined', variant: 'danger' },
+};
 
 export default function SettingsScreen() {
   const id = useAssessmentId();
@@ -100,15 +116,25 @@ export default function SettingsScreen() {
     setShowEdit(false);
   };
 
+  // The invite is claimed by email address, not by a token in the URL: the
+  // database links a tryout_assessors row to whoever signs in with the address
+  // it was addressed to (link_assessor_to_user on insert, handle_new_user on
+  // signup). So the link only has to land the invitee on the sign-in screen —
+  // it deliberately carries no identifying details.
   const shareAssessorInvite = async (assessor: { name: string; email?: string }) => {
-    const link = `https://aas-tryout.app/assess?event=${tryout.cloud?.id ?? tryout.id}&assessor=${encodeURIComponent(assessor.name)}`;
-    
+    const link = `${ASSESSOR_INVITE_URL}`;
+
     if (assessor.email) {
       try {
         await getDataSource().sendEmail('tryout_invite', assessor.email, {
           role: 'assessor',
+          tryoutName: tryout.name,
+          inviteUrl: link,
         });
-        Alert.alert('Invitation Sent', `An invitation email has been successfully sent to ${assessor.email}.`);
+        Alert.alert(
+          'Invitation Sent',
+          `An invitation email has been sent to ${assessor.email}. They can accept it after signing in — or after creating an account with that address if they don't have one yet.`,
+        );
         return;
       } catch (err: any) {
         console.error('Error sending email via Supabase', err);
@@ -117,7 +143,7 @@ export default function SettingsScreen() {
     }
 
     await Share.share({
-      message: `${assessor.name}, you've been invited to score ${tryout.name}.\nOpen: ${link}`,
+      message: `${assessor.name}, you've been invited to score ${tryout.name}. Sign in (or create an account) with this email address to accept.\nOpen: ${link}`,
     });
   };
 
@@ -131,22 +157,25 @@ export default function SettingsScreen() {
       return;
     }
 
-    // Wrapped because none of this was: a failing checkUserExistsByEmail or
-    // updateTryout threw straight past setShowAssessor(false) as an unhandled
-    // rejection, so the modal just sat there with no error and no visible
-    // reason — which reads as "the modal won't close". It deliberately stays
-    // open on failure so the entry can be corrected and retried; what was
-    // missing was saying why.
-    try {
-      const exists = await getDataSource().checkUserExistsByEmail(emailToInvite);
-      if (!exists) {
-        Alert.alert(
-          'Email Not Registered',
-          'This email is not registered in the system. Assessors must create an account before they can be invited.'
-        );
-        return;
-      }
+    // One row per address per tryout is a database constraint
+    // (unique (tryout_id, email)), so catch the repeat here and say so rather
+    // than letting the insert fail with a Postgres message.
+    if (tryout.assessors.some((a: any) => a.email?.toLowerCase() === emailToInvite.toLowerCase())) {
+      Alert.alert('Already Invited', `${emailToInvite} is already on this evaluation's assessor list.`);
+      return;
+    }
 
+    // Wrapped because none of this was: a failing updateTryout threw straight
+    // past setShowAssessor(false) as an unhandled rejection, so the modal just
+    // sat there with no error and no visible reason — which reads as "the modal
+    // won't close". It deliberately stays open on failure so the entry can be
+    // corrected and retried; what was missing was saying why.
+    try {
+      // No "do they already have an account?" gate. An invite is addressed to
+      // an email, and the database claims it for whoever signs up with that
+      // address (handle_new_user in 0002_assessor_linking.sql), so requiring
+      // the assessor to go and register first — with no prompt telling them to
+      // — was a dead end the coach had no way past.
       const newAssessor = { name: assessorName.trim(), email: emailToInvite, role: 'assessor' as const, status: 'pending' as const };
 
       await updateTryout.mutateAsync({
@@ -268,8 +297,8 @@ export default function SettingsScreen() {
                 <View className="flex-row gap-1 mt-2">
                   {a.role !== 'lead' ? (
                     <Badge
-                    label={a.status || 'pending'}
-                    variant={a.status === 'accepted' ? 'brand' : a.status === 'declined' ? 'danger' : 'default'}
+                    label={INVITE_STATUS[a.status ?? 'pending'].label}
+                    variant={INVITE_STATUS[a.status ?? 'pending'].variant}
                   />
                   ) : null}
                   <Badge label={a.role} />
@@ -278,7 +307,7 @@ export default function SettingsScreen() {
               
               {a.role !== 'lead' ? (
                 <View className="flex-col gap-2 items-end">
-                  <Button label={a.status === 'pending' ? 'Send Invite' : 'Send Reminder'} size="sm" variant="secondary" onPress={() => {
+                  <Button label={a.status === 'pending' ? 'Resend Invite' : 'Send Reminder'} size="sm" variant="secondary" onPress={() => {
                     if (a.status === 'pending') shareAssessorInvite(a);
                     else sendReminder(a);
                   }} />
@@ -368,7 +397,8 @@ export default function SettingsScreen() {
       <Modal visible={showAssessor} title="Add Assessor" onClose={() => setShowAssessor(false)}>
         <View className="gap-3">
           <Text className="text-sm" style={{ color: colors.inkMuted }}>
-            Assessors must have a registered account in the app before they can be invited.
+            They'll get an email invitation. If they don't have a TryoutHQ account yet, they can create one with this
+            address and the invitation will be waiting for them.
           </Text>
           <Input label="Name" value={assessorName} onChangeText={setAssessorName} />
           <Input label="Email (Required)" value={assessorEmail} onChangeText={setAssessorEmail} autoCapitalize="none" />
