@@ -14,6 +14,8 @@ import {
   Modal,
 } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
+import { FriendPackagesCard } from '@/components/teamBuilder/FriendPackagesCard';
+import { TeamAdjuster, UNASSIGNED } from '@/components/teamBuilder/TeamAdjuster';
 import {
   useTryoutQuery,
   useGenerateTeamBuilderMutation,
@@ -22,11 +24,34 @@ import {
   useDeleteTeamBuilderResultMutation,
 } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
-import { getPlayerNameMap, type TeamBuilderState } from '@/data/teamBuilder';
+import {
+  getPlayerNameMap,
+  movePlayerToTeam,
+  type TeamBuilderState,
+  type TeamBuilderTeam,
+} from '@/data/teamBuilder';
 import { computePlayerResults } from '@/data/scoring';
 import { canUseFeature, getPlanDefinition } from '@/data/plans';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { nextFrame } from '@/lib/nextFrame';
+
+/** Deepest undo history kept for manual adjustments. */
+const MAX_HISTORY = 50;
+
+/** One point in the undo history: the whole assignment, teams and leftovers. */
+interface RosterSnapshot {
+  teams: TeamBuilderTeam[];
+  unassigned: string[];
+}
+
+/** Membership-only fingerprint, so manual adjustments count as unsaved changes too. */
+function rosterSnapshot(state: TeamBuilderState) {
+  return JSON.stringify({
+    generatedAt: state.generatedAt,
+    teams: state.teams.map((t) => [t.id, [...t.players].sort()]),
+    unassigned: [...state.unassigned].sort(),
+  });
+}
 
 export default function TeamBuilderScreen() {
   const id = useAssessmentId();
@@ -45,7 +70,17 @@ export default function TeamBuilderScreen() {
   // Set by "New" to hide the current live draft without touching the DB record —
   // the next successful Generate produces a fresh generatedAt that un-hides it.
   const [hiddenGeneratedAt, setHiddenGeneratedAt] = useState<number | null>(null);
-  const [lastSavedGeneratedAt, setLastSavedGeneratedAt] = useState<number | null>(null);
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null);
+  // Manual adjustments layered over whichever split is on screen. Null means
+  // "untouched", so the generated split shows through unchanged.
+  const [editedTeams, setEditedTeams] = useState<TeamBuilderTeam[] | null>(null);
+  const [editedUnassigned, setEditedUnassigned] = useState<string[] | null>(null);
+  // Undo/redo over manual adjustments only — each entry is the roster as it was
+  // *before* one move, so a mis-drop is one tap to take back instead of a hunt
+  // for which player came from where.
+  const [undoStack, setUndoStack] = useState<RosterSnapshot[]>([]);
+  const [redoStack, setRedoStack] = useState<RosterSnapshot[]>([]);
+  const [adjusting, setAdjusting] = useState(false);
   const [saveModalVisible, setSaveModalVisible] = useState(false);
   const [saveLabel, setSaveLabel] = useState('');
   const [isExporting, setIsExporting] = useState<'xlsx' | 'pdf' | null>(null);
@@ -72,6 +107,41 @@ export default function TeamBuilderScreen() {
   // gates against the owning club's tier, not the viewer's own.
   const tier = useEffectivePlanTier(tryoutQuery.data?.teamId);
 
+  // Rebuilding these from a large roster on every keystroke in the prompt box
+  // is what made typing there stutter on the web app; memoized for the same
+  // reason here, and shared by the adjuster and the team cards.
+  const playerById = useMemo(
+    () => new Map((tryoutQuery.data?.roster ?? []).map((p) => [p.id, p])),
+    [tryoutQuery.data],
+  );
+  const overallByPlayerId = useMemo(
+    () => new Map(results.map((r: any) => [r.player.id, r.overall as number])),
+    [results],
+  );
+
+  // Identifies *which* split the manual edits belong to. Regenerating, or
+  // switching to a saved set, produces a different key — and the edits, which
+  // were made against the old split, are dropped rather than reapplied to a
+  // roster they no longer describe.
+  const liveForKey = tryoutQuery.data?.teamBuilder as TeamBuilderState | undefined;
+  const savedForKey = viewingResultId
+    ? (resultsQuery.data ?? []).find((r) => r.id === viewingResultId)
+    : undefined;
+  const splitKey = savedForKey
+    ? `saved:${savedForKey.id}`
+    : liveForKey && liveForKey.generatedAt !== hiddenGeneratedAt
+      ? `live:${liveForKey.generatedAt}`
+      : 'none';
+  const [lastSplitKey, setLastSplitKey] = useState(splitKey);
+  if (splitKey !== lastSplitKey) {
+    setLastSplitKey(splitKey);
+    setEditedTeams(null);
+    setEditedUnassigned(null);
+    setUndoStack([]);
+    setRedoStack([]);
+    setAdjusting(false);
+  }
+
   if (tryoutQuery.isLoading) return <LoadingState message="Loading..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
     return (
@@ -90,8 +160,54 @@ export default function TeamBuilderScreen() {
   const teamBuilder: TeamBuilderState | undefined = viewingResult
     ? (viewingResult.state as TeamBuilderState)
     : liveHidden ? undefined : liveTeamBuilder;
-  const isUnsaved = !viewingResult && !!teamBuilder && teamBuilder.generatedAt !== lastSavedGeneratedAt;
+  // What the screen actually shows, saves and exports: the generated split with
+  // any manual adjustments laid over it.
+  const effectiveTeams = editedTeams ?? teamBuilder?.teams ?? [];
+  const effectiveUnassigned = editedUnassigned ?? teamBuilder?.unassigned ?? [];
+  const editedTeamBuilder: TeamBuilderState | undefined = teamBuilder
+    ? { ...teamBuilder, teams: effectiveTeams, unassigned: effectiveUnassigned }
+    : undefined;
+  // Called on demand rather than derived per render — fingerprinting a large
+  // split on every keystroke in the prompt box isn't free.
+  const isUnsaved = () =>
+    !viewingResult && !!editedTeamBuilder && rosterSnapshot(editedTeamBuilder) !== lastSavedSnapshot;
   const nameMap = getPlayerNameMap(tryout);
+
+  const canReorder = !!editedTeamBuilder;
+
+  const movePlayer = (playerId: string, from: string, to: string) => {
+    if (from === to || !editedTeamBuilder) return;
+    const isGoalie = playerById.get(playerId)?.pos?.toUpperCase() === 'GTL';
+    const next = movePlayerToTeam(editedTeamBuilder, playerId, to === UNASSIGNED ? null : to, isGoalie);
+    setUndoStack((stack) =>
+      [...stack, { teams: effectiveTeams, unassigned: effectiveUnassigned }].slice(-MAX_HISTORY),
+    );
+    // A fresh move forks the history, so anything undone past this point is gone.
+    setRedoStack([]);
+    setEditedTeams(next.teams);
+    setEditedUnassigned(next.unassigned);
+  };
+
+  const canUndo = canReorder && undoStack.length > 0;
+  const canRedo = canReorder && redoStack.length > 0;
+
+  const handleUndo = () => {
+    if (!canUndo) return;
+    const prev = undoStack[undoStack.length - 1];
+    setUndoStack(undoStack.slice(0, -1));
+    setRedoStack([...redoStack, { teams: effectiveTeams, unassigned: effectiveUnassigned }]);
+    setEditedTeams(prev.teams);
+    setEditedUnassigned(prev.unassigned);
+  };
+
+  const handleRedo = () => {
+    if (!canRedo) return;
+    const next = redoStack[redoStack.length - 1];
+    setRedoStack(redoStack.slice(0, -1));
+    setUndoStack([...undoStack, { teams: effectiveTeams, unassigned: effectiveUnassigned }]);
+    setEditedTeams(next.teams);
+    setEditedUnassigned(next.unassigned);
+  };
 
   const exportsAllowed = canUseFeature(tier, 'exports') || tier !== 'free';
   const allowedFormats = getPlanDefinition(tier).limits.exports;
@@ -113,7 +229,7 @@ export default function TeamBuilderScreen() {
       setViewingResultId(null);
       if (liveTeamBuilder) setHiddenGeneratedAt(liveTeamBuilder.generatedAt);
     };
-    if (isUnsaved) {
+    if (isUnsaved()) {
       Alert.alert(
         'Discard this team split?',
         "This team split hasn't been saved. Starting a new one will discard it unless you save it first.",
@@ -128,20 +244,21 @@ export default function TeamBuilderScreen() {
   };
 
   const handleSaveConfirm = async () => {
-    if (!teamBuilder || !saveLabel.trim()) return;
-    await saveMut.mutateAsync({ label: saveLabel.trim(), state: teamBuilder });
-    setLastSavedGeneratedAt(teamBuilder.generatedAt);
+    if (!editedTeamBuilder || !saveLabel.trim()) return;
+    const snapshot = rosterSnapshot(editedTeamBuilder);
+    await saveMut.mutateAsync({ label: saveLabel.trim(), state: editedTeamBuilder });
+    setLastSavedSnapshot(snapshot);
     setSaveModalVisible(false);
     setSaveLabel('');
   };
 
   const handleExport = async (format: 'xlsx' | 'pdf') => {
-    if (!teamBuilder) return;
+    if (!editedTeamBuilder) return;
     setIsExporting(format);
     try {
       await nextFrame();
       const { exportTeamBuilderData } = await import('@/lib/exportData');
-      await exportTeamBuilderData(tryout, teamBuilder, format);
+      await exportTeamBuilderData(tryout, editedTeamBuilder, format);
     } catch (e: any) {
       console.error(e);
       Alert.alert('Export Failed', e?.message || `Could not export the ${format.toUpperCase()}.`);
@@ -163,6 +280,28 @@ export default function TeamBuilderScreen() {
       },
     ]);
   };
+
+  // Not scrolling, and not a Modal: the adjuster owns its own layout, and its
+  // drag has to claim the touch without an outer scroll view fighting it for
+  // the gesture.
+  if (adjusting && editedTeamBuilder) {
+    return (
+      <Screen insideTabBar>
+        <TeamAdjuster
+          teams={effectiveTeams}
+          unassigned={effectiveUnassigned}
+          playerById={playerById}
+          overallByPlayerId={overallByPlayerId}
+          onMove={movePlayer}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          onDone={() => setAdjusting(false)}
+        />
+      </Screen>
+    );
+  }
 
   return (
     <Screen scroll insideTabBar>
@@ -215,6 +354,8 @@ export default function TeamBuilderScreen() {
           )}
         </Card>
 
+        <FriendPackagesCard tryout={tryout} disabled={generate.isPending} />
+
         {savedResults.length > 0 && (
           <Pressable onPress={() => setDraftsModalVisible(true)}>
             <Card className="mb-4 flex-row items-center justify-between">
@@ -229,6 +370,20 @@ export default function TeamBuilderScreen() {
               <Badge label={String(savedResults.length)} />
             </Card>
           </Pressable>
+        )}
+
+        {teamBuilder && (
+          <View className="flex-row flex-wrap gap-2 mb-2">
+            <Button
+              label="Adjust"
+              size="sm"
+              className="flex-1"
+              disabled={!canReorder}
+              onPress={() => setAdjusting(true)}
+            />
+            <Button label="↶ Undo" variant="secondary" size="sm" disabled={!canUndo} onPress={handleUndo} />
+            <Button label="↷ Redo" variant="secondary" size="sm" disabled={!canRedo} onPress={handleRedo} />
+          </View>
         )}
 
         {teamBuilder && (
@@ -295,7 +450,7 @@ export default function TeamBuilderScreen() {
           </View>
         )}
 
-        {teamBuilder?.teams.map((team) => {
+        {effectiveTeams.map((team) => {
           // `overall > 0` as well as having evaluations: a player scored only
           // against rubrics that no longer exist comes back with evaluations and
           // an overall of 0, and 0 is the absence of a rating rather than a very
@@ -317,6 +472,10 @@ export default function TeamBuilderScreen() {
                 id,
                 teamId: team.id,
                 resultId: viewingResult?.id,
+                // Manual adjustments live only in this screen's state, so the
+                // detail screen would otherwise re-read the pre-edit split out
+                // of the query and show the wrong roster.
+                editedState: editedTeams || editedUnassigned ? editedTeamBuilder : undefined,
               })
             }
           >
@@ -344,19 +503,19 @@ export default function TeamBuilderScreen() {
           </Pressable>
         )})}
 
-        {teamBuilder?.unassigned && teamBuilder.unassigned.length > 0 && (
+        {effectiveUnassigned.length > 0 && (
           <Card className="mb-3 gap-2">
             <View className="flex-row justify-between">
               <Text className="text-lg font-display font-bold" style={{ color: colors.inkMuted }}>
                 Unassigned
               </Text>
-              <Badge label={`${teamBuilder.unassigned.length} players`} />
+              <Badge label={`${effectiveUnassigned.length} players`} />
             </View>
             <Text className="text-sm" style={{ color: colors.inkMuted }}>
               These players didn't fit within the requested team count and size, so they were left out instead of being added to a team.
             </Text>
             <Text className="text-sm" style={{ color: colors.ink }}>
-              {teamBuilder.unassigned.map((pid) => nameMap[pid] ?? pid).join(', ')}
+              {effectiveUnassigned.map((pid) => nameMap[pid] ?? pid).join(', ')}
             </Text>
           </Card>
         )}

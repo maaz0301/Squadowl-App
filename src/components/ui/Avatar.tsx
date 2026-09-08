@@ -16,9 +16,18 @@ const posColors: Record<string, string> = {
   GTL: '#f59e0b',
 };
 
+/**
+ * The colour a position is drawn in — the avatar ring here, and the position
+ * pill on a roster row. Shared so the two can never drift apart, since it is
+ * the pairing that makes a position readable at a glance.
+ */
+export function positionColor(pos: string | undefined, fallback: string): string {
+  return pos ? (posColors[pos.toUpperCase()] ?? fallback) : fallback;
+}
+
 export function Avatar({ first, last, size = 44, pos, uri }: AvatarProps) {
   const colors = useThemeColors();
-  const accent = pos ? (posColors[pos.toUpperCase()] ?? colors.primary) : colors.primary;
+  const accent = positionColor(pos, colors.primary);
   return (
     <View
       className="rounded-full items-center justify-center border-2 overflow-hidden"

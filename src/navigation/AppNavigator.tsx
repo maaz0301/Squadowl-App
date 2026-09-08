@@ -48,6 +48,7 @@ export default function AppNavigator() {
       <Stack.Screen name="Payments" component={require('../screens/(app)/payments').default} />
       <Stack.Screen name="ArchivedAssessments" component={require('../screens/(app)/archived-assessments').default} />
       <Stack.Screen name="Feedback" component={require('../screens/(app)/feedback').default} />
+      <Stack.Screen name="FeedbackReports" component={require('../screens/(app)/feedback-reports').default} />
       <Stack.Screen name="Loyalty" component={require('../screens/(app)/loyalty').default} />
       <Stack.Screen name="Enterprise" component={require('../screens/(app)/enterprise').default} />
       <Stack.Screen name="OrganizationMembers" component={require('../screens/(app)/organization/members').default} />

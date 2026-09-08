@@ -2,7 +2,7 @@
 import { getSupabase } from '@/lib/supabase';
 import { type Session, type SupabaseClient } from '@supabase/supabase-js';
 import type { DataSource } from '../datasource';
-import type { FeedbackSubmission } from '../extras';
+import type { FeedbackAttachment, FeedbackReport, FeedbackSubmission } from '../extras';
 import {
   categoryAveragesAcrossEvals,
   generateCloudCode,
@@ -70,6 +70,7 @@ import type {
   FamilyContact,
   Org,
   Player,
+  PlayerImportResult,
   Recommendation,
   ReferralSummary,
   Registration,
@@ -146,6 +147,66 @@ function isStaleAccountError(err: unknown): boolean {
 
 function toMs(iso: string | null | undefined): number {
   return iso ? new Date(iso).getTime() : 0;
+}
+
+/**
+ * Base64 → ArrayBuffer, hand-rolled.
+ *
+ * React Native has no `atob`, and `Buffer` is not present without a polyfill, so
+ * the file the picker hands back has to be decoded here before Supabase Storage
+ * will take it.
+ */
+function decodeBase64(base64Str: string): ArrayBuffer {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const lookup = new Uint8Array(256);
+  for (let i = 0; i < chars.length; i++) {
+    lookup[chars.charCodeAt(i)] = i;
+  }
+  let bufferLength = base64Str.length * 0.75;
+  const len = base64Str.length;
+  let p = 0;
+
+  if (base64Str[len - 1] === '=') {
+    bufferLength--;
+    if (base64Str[len - 2] === '=') {
+      bufferLength--;
+    }
+  }
+
+  const arrayBuffer = new ArrayBuffer(bufferLength);
+  const bytes = new Uint8Array(arrayBuffer);
+
+  for (let i = 0; i < len; i += 4) {
+    const encoded1 = lookup[base64Str.charCodeAt(i)];
+    const encoded2 = lookup[base64Str.charCodeAt(i + 1)];
+    const encoded3 = lookup[base64Str.charCodeAt(i + 2)];
+    const encoded4 = lookup[base64Str.charCodeAt(i + 3)];
+
+    bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
+    bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
+    bytes[p++] = ((encoded3 & 3) << 6) | (encoded4 & 63);
+  }
+
+  return arrayBuffer;
+}
+
+/**
+ * Reads a local `file://` URI (what the image picker returns) into an
+ * ArrayBuffer for Supabase Storage.
+ *
+ * Was inlined in uploadCoachPhoto until the feedback attachments needed the
+ * same thing; the path cleaning matters on both platforms — RNFS wants a plain
+ * filesystem path, and Android's picker percent-encodes the filename.
+ */
+async function readLocalFileAsArrayBuffer(fileUri: string): Promise<ArrayBuffer> {
+  const RNFS = require('react-native-fs');
+  let cleanPath = fileUri;
+  if (cleanPath.startsWith('file://')) {
+    cleanPath = cleanPath.slice(7);
+  }
+  cleanPath = decodeURIComponent(cleanPath);
+  const base64 = await RNFS.readFile(cleanPath, 'base64');
+  return decodeBase64(base64);
 }
 
 /**
@@ -470,6 +531,12 @@ const GUARDIAN_EMAIL_CONCURRENCY = 10;
  * statement is exactly what risks a `statement_timeout` under load.
  */
 const GUARDIAN_RESOLVE_BATCH = 50;
+
+/** Private bucket holding feedback screenshots — reachable only via signed URLs. */
+const FEEDBACK_BUCKET = 'feedback-attachments';
+
+/** Long enough to open an attachment and look at it; short enough that a copied link goes stale. */
+const FEEDBACK_SIGNED_URL_TTL_SECONDS = 60 * 10;
 
 /** Players per `generate-test-players` call — sized so one Claude response stays
  * within a comfortable output length rather than risking a truncated batch. */
@@ -1105,7 +1172,11 @@ export class SupabaseDataSource implements DataSource {
     return tryoutRows.map((t) => {
       const settings = t.settings ?? { skaterWeights: {}, goalieWeights: {}, customRubrics: [] };
       const ai = t.ai_assessments ?? {};
-      const { teamBuilder, ...aiAssessments } = ai;
+      // `friendPackages` shares the ai_assessments JSON blob with `teamBuilder`
+      // rather than getting a column of its own — same reason: both are
+      // assessment-scoped documents the app owns end to end, and neither is
+      // ever queried by the database.
+      const { teamBuilder, friendPackages, ...aiAssessments } = ai;
       const roster = (pByT[t.id] ?? []).map((p) => this.rowToPlayer(p, assessorNameById));
       return {
         id: t.id,
@@ -1135,6 +1206,7 @@ export class SupabaseDataSource implements DataSource {
         archived: t.archived,
         registrationFeeCents: t.registration_fee_cents ?? undefined,
         teamBuilder,
+        friendPackages,
         aiAssessments: Object.keys(aiAssessments).length ? aiAssessments : undefined,
       } as Tryout;
     });
@@ -1451,51 +1523,8 @@ export class SupabaseDataSource implements DataSource {
 
   async uploadCoachPhoto(userId: string, fileUri: string, fileType: string): Promise<string> {
     const { supabase } = await this.ctx();
-    const RNFS = require('react-native-fs');
 
-    const decodeBase64 = (base64Str: string): ArrayBuffer => {
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-      const lookup = new Uint8Array(256);
-      for (let i = 0; i < chars.length; i++) {
-        lookup[chars.charCodeAt(i)] = i;
-      }
-      let bufferLength = base64Str.length * 0.75;
-      const len = base64Str.length;
-      let p = 0;
-
-      if (base64Str[len - 1] === '=') {
-        bufferLength--;
-        if (base64Str[len - 2] === '=') {
-          bufferLength--;
-        }
-      }
-
-      const arrayBuffer = new ArrayBuffer(bufferLength);
-      const bytes = new Uint8Array(arrayBuffer);
-
-      for (let i = 0; i < len; i += 4) {
-        const encoded1 = lookup[base64Str.charCodeAt(i)];
-        const encoded2 = lookup[base64Str.charCodeAt(i + 1)];
-        const encoded3 = lookup[base64Str.charCodeAt(i + 2)];
-        const encoded4 = lookup[base64Str.charCodeAt(i + 3)];
-
-        bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
-        bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
-        bytes[p++] = ((encoded3 & 3) << 6) | (encoded4 & 63);
-      }
-
-      return arrayBuffer;
-    };
-
-    let cleanPath = fileUri;
-    if (cleanPath.startsWith('file://')) {
-      cleanPath = cleanPath.slice(7);
-    }
-    cleanPath = decodeURIComponent(cleanPath);
-
-    const base64 = await RNFS.readFile(cleanPath, 'base64');
-    const buffer = decodeBase64(base64);
-
+    const buffer = await readLocalFileAsArrayBuffer(fileUri);
     const fileExtension = fileType.split('/')[1] || 'jpg';
     const filePath = `coaches/${userId}.${fileExtension}`;
 
@@ -2119,6 +2148,54 @@ export class SupabaseDataSource implements DataSource {
     }
     await this.addTeamRosterPlayers(teamId, [{ athleteId, jersey: form.jersey, pos: form.pos }]);
     return { athleteId };
+  }
+
+  /**
+   * Add each parsed row in turn, reporting rather than throwing on the ones
+   * that fail.
+   *
+   * Sequential on purpose: these run through addPlayer/addManualTeamPlayer,
+   * which each do several round trips, and firing thirty of those at once is
+   * how a phone on club wifi ends up with a half-written roster. A row that
+   * fails is collected and the run carries on — a spreadsheet with one bad
+   * line should still import the other twenty-nine.
+   */
+  private async importPlayers(
+    rows: { line: number; form: AddPlayerForm }[],
+    add: (form: AddPlayerForm) => Promise<unknown>,
+    onProgress?: (done: number) => void,
+  ): Promise<PlayerImportResult> {
+    const result: PlayerImportResult = { added: 0, failed: [] };
+    for (const [i, { line, form }] of rows.entries()) {
+      try {
+        await add(form);
+        result.added++;
+      } catch (e) {
+        result.failed.push({
+          line,
+          name: `${form.first} ${form.last}`.trim() || 'Unnamed player',
+          message: e instanceof Error ? e.message : 'Could not add this player.',
+        });
+      }
+      onProgress?.(i + 1);
+    }
+    return result;
+  }
+
+  async importTryoutPlayers(
+    tryoutId: string,
+    rows: { line: number; form: AddPlayerForm }[],
+    onProgress?: (done: number) => void,
+  ): Promise<PlayerImportResult> {
+    return this.importPlayers(rows, (form) => this.addPlayer(tryoutId, form), onProgress);
+  }
+
+  async importTeamRosterPlayers(
+    teamId: string,
+    rows: { line: number; form: AddPlayerForm }[],
+    onProgress?: (done: number) => void,
+  ): Promise<PlayerImportResult> {
+    return this.importPlayers(rows, (form) => this.addManualTeamPlayer(teamId, form), onProgress);
   }
 
   async removeTeamRosterPlayer(teamId: string, athleteId: string): Promise<void> {
@@ -2842,12 +2919,17 @@ export class SupabaseDataSource implements DataSource {
     if (updates.archived !== undefined) patch.archived = updates.archived;
     if (updates.registrationFeeCents !== undefined) patch.registration_fee_cents = updates.registrationFeeCents || null;
 
-    if (updates.teamBuilder !== undefined || updates.aiAssessments !== undefined) {
+    if (
+      updates.teamBuilder !== undefined ||
+      updates.friendPackages !== undefined ||
+      updates.aiAssessments !== undefined
+    ) {
       const current = (await supabase.from('tryouts').select('ai_assessments').eq('id', id).single())
         .data?.ai_assessments ?? {};
       const next = { ...current };
       if (updates.aiAssessments !== undefined) Object.assign(next, updates.aiAssessments);
       if (updates.teamBuilder !== undefined) next.teamBuilder = updates.teamBuilder;
+      if (updates.friendPackages !== undefined) next.friendPackages = updates.friendPackages;
       patch.ai_assessments = next;
     }
 
@@ -2874,7 +2956,7 @@ export class SupabaseDataSource implements DataSource {
     ) as Row[];
     const settings = row.settings ?? { skaterWeights: {}, goalieWeights: {}, customRubrics: [] };
     const ai = row.ai_assessments ?? {};
-    const { teamBuilder, ...aiAssessments } = ai;
+    const { teamBuilder, friendPackages, ...aiAssessments } = ai;
 
     return {
       id: row.id,
@@ -2904,6 +2986,7 @@ export class SupabaseDataSource implements DataSource {
       archived: row.archived,
       registrationFeeCents: row.registration_fee_cents ?? undefined,
       teamBuilder,
+      friendPackages,
       aiAssessments: Object.keys(aiAssessments).length ? aiAssessments : undefined,
     } as Tryout;
   }
@@ -4648,7 +4731,14 @@ export class SupabaseDataSource implements DataSource {
         );
       }
       if (parsed?.positionCap) applied.push(`at most ${parsed.positionCap} of any one position per team`);
-      if (result.config.keepFriendPackages) applied.push('friend groups kept together');
+      if (result.config.keepFriendPackages) {
+        const kept = result.friendPackages?.length ?? 0;
+        // Naming the count is what tells a coach their hand-built packages were
+        // actually picked up, rather than the instruction just being echoed back.
+        applied.push(
+          kept > 0 ? `${kept} friend group${kept === 1 ? '' : 's'} kept together` : 'friend groups kept together',
+        );
+      }
       result.explanation = `${applied.join('; ')}.`;
     } else {
       result = buildTeams(tryout, config);
@@ -6123,6 +6213,22 @@ export class SupabaseDataSource implements DataSource {
     return (rows ?? []).reverse().map((row) => this.mapTeamMessage(row));
   }
 
+  async countUnreadTeamMessages(seasonId: string, sinceMs: number): Promise<number> {
+    const { supabase, userId } = await this.userCtx();
+    // head:true — the rows are never read, only counted, so none come back.
+    // The caller's own messages are excluded: posting to a chat is not a
+    // notification to yourself, and every send would otherwise badge the entry
+    // point it was sent from.
+    const { count, error } = await supabase
+      .from('season_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('season_id', seasonId)
+      .gt('created_at', new Date(sinceMs).toISOString())
+      .neq('author_user_id', userId);
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  }
+
   async sendTeamMessage(seasonId: string, body: string): Promise<TeamMessage> {
     const { supabase } = await this.userCtx();
     // author_name/author_role are derived inside the function — see the
@@ -6811,9 +6917,145 @@ export class SupabaseDataSource implements DataSource {
   }
 
   // ─── Misc ──────────────────────────────────────────────────────────────────────
+  // ─── Feedback ────────────────────────────────────────────────────────────────
+
+  /**
+   * The submitter's identity, without requiring a tenant account.
+   *
+   * ctx() resolves an account and raises when there isn't one, which is the
+   * ordinary state for a guardian — and a guardian's feedback is worth as much
+   * as a coach's, so the account is looked up separately and allowed to come
+   * back null rather than failing the submission.
+   */
+  private async feedbackIdentity(): Promise<{
+    supabase: SupabaseClient;
+    userId: string;
+    accountId: string | null;
+    email?: string;
+    displayName?: string;
+  }> {
+    const { supabase, userId } = await this.userCtx();
+
+    let accountId: string | null = null;
+    try {
+      accountId = (await this.ctx()).accountId;
+    } catch {
+      // No membership — a guardian, or an account still being provisioned.
+    }
+
+    const { data } = await supabase.auth.getSession();
+    const user = data.session?.user;
+
+    return {
+      supabase,
+      userId,
+      accountId,
+      email: user?.email ?? undefined,
+      displayName: (user?.user_metadata?.display_name as string | undefined) ?? undefined,
+    };
+  }
+
+  async uploadFeedbackAttachment(file: {
+    uri: string;
+    name: string;
+    type: string;
+    size: number;
+  }): Promise<FeedbackAttachment> {
+    const { supabase, userId } = await this.feedbackIdentity();
+
+    const buffer = await readLocalFileAsArrayBuffer(file.uri);
+    const contentType = file.type || 'application/octet-stream';
+    // The first path segment is what the storage policies check, so it has to
+    // be the uploader's id. The middle segment groups one form's files together
+    // and keeps two uploads of the same filename apart.
+    const safeName = file.name.replace(/[^\w.\-]+/g, '_').slice(-120) || 'attachment';
+    const path = `${userId}/${generateId('fb')}/${safeName}`;
+
+    const { error } = await supabase.storage
+      .from(FEEDBACK_BUCKET)
+      .upload(path, buffer, { contentType, upsert: false });
+    if (error) throw new Error(`Could not upload ${file.name}: ${error.message}`);
+
+    return { path, name: file.name, size: file.size, contentType };
+  }
+
+  async deleteFeedbackAttachment(path: string): Promise<void> {
+    const supabase = getSupabase();
+    const { error } = await supabase.storage.from(FEEDBACK_BUCKET).remove([path]);
+    if (error) throw new Error(error.message);
+  }
+
   async submitFeedback(submission: FeedbackSubmission): Promise<void> {
-    // No feedback table yet; log + accept so the UI flow completes.
-    console.log('[feedback]', JSON.stringify(submission));
+    const { supabase, userId, accountId, email, displayName } = await this.feedbackIdentity();
+
+    unwrap(
+      await supabase
+        .from('feedback_submissions')
+        .insert({
+          user_id: userId,
+          account_id: accountId,
+          email,
+          display_name: displayName,
+          overall_experience: submission.overallExperience,
+          ease_of_use: submission.easeOfUse,
+          team_hub_scheduling: submission.teamHubScheduling,
+          value_for_money: submission.valueForMoney,
+          what_is_working_well: submission.whatIsWorkingWell,
+          what_can_be_improved: submission.whatCanBeImproved,
+          attachments: submission.attachments ?? [],
+        })
+        .select('id')
+        .single(),
+    );
+  }
+
+  async isFeedbackReviewer(): Promise<boolean> {
+    const supabase = getSupabase();
+    const { data, error } = await supabase.rpc('is_feedback_reviewer');
+    // A missing function (the migration not yet applied) is a "no", not a
+    // broken screen — the portal simply stays hidden until it is deployed.
+    if (error) {
+      console.warn('Could not check feedback reviewer access:', error.message);
+      return false;
+    }
+    return data === true;
+  }
+
+  async listFeedbackSubmissions(): Promise<FeedbackReport[]> {
+    const supabase = getSupabase();
+    // No reviewer check here: the select policy already narrows a non-reviewer
+    // to their own rows, so this is safe to call from anywhere and can't be
+    // widened by lying to the client.
+    const rows = unwrap(
+      await supabase
+        .from('feedback_submissions')
+        .select('*')
+        .order('created_at', { ascending: false }),
+    ) as Row[];
+
+    return rows.map((r) => ({
+      id: r.id,
+      userId: r.user_id,
+      email: r.email ?? undefined,
+      displayName: r.display_name ?? undefined,
+      overallExperience: r.overall_experience,
+      easeOfUse: r.ease_of_use,
+      teamHubScheduling: r.team_hub_scheduling,
+      valueForMoney: r.value_for_money,
+      whatIsWorkingWell: r.what_is_working_well ?? '',
+      whatCanBeImproved: r.what_can_be_improved ?? '',
+      attachments: Array.isArray(r.attachments) ? (r.attachments as FeedbackAttachment[]) : [],
+      createdAt: toMs(r.created_at),
+    }));
+  }
+
+  async getFeedbackAttachmentUrl(path: string): Promise<string> {
+    const supabase = getSupabase();
+    const { data, error } = await supabase.storage
+      .from(FEEDBACK_BUCKET)
+      .createSignedUrl(path, FEEDBACK_SIGNED_URL_TTL_SECONDS);
+    if (error || !data?.signedUrl) throw new Error(error?.message ?? 'Could not open that attachment.');
+    return data.signedUrl;
   }
 
   // ─── Org Members ─────────────────────────────────────────────────────────────

@@ -30,7 +30,7 @@ import { nextFrame } from '@/lib/nextFrame';
 export default function TeamBuilderTeamScreen() {
   const id = useAssessmentId();
   const route = useRoute<any>();
-  const { teamId, resultId } = route.params || {};
+  const { teamId, resultId, editedState } = route.params || {};
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const user = useUser();
@@ -55,9 +55,12 @@ export default function TeamBuilderTeamScreen() {
 
   const tryout = tryoutQuery.data;
   const savedResult = resultId ? (resultsQuery.data ?? []).find((r) => r.id === resultId) : undefined;
-  const state: TeamBuilderState | undefined = savedResult
-    ? (savedResult.state as TeamBuilderState)
-    : (tryout.teamBuilder as TeamBuilderState | undefined);
+  // The adjusted split wins when one was handed over: it is the same split the
+  // coach was just looking at, with moves the query doesn't know about yet.
+  const state: TeamBuilderState | undefined = (editedState as TeamBuilderState | undefined)
+    ?? (savedResult
+      ? (savedResult.state as TeamBuilderState)
+      : (tryout.teamBuilder as TeamBuilderState | undefined));
   const team = state?.teams.find((t) => t.id === teamId);
 
   if (!state || !team) {

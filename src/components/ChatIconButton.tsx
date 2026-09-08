@@ -1,9 +1,16 @@
-import { Pressable } from 'react-native';
+import { Pressable, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
-/** Header entry point into a team's chat — same visual weight as Header's own back button. */
-export function ChatIconButton({ onPress }: { onPress: () => void }) {
+/**
+ * Header entry point into a team's chat — same visual weight as Header's own
+ * back button.
+ *
+ * `badge` is passed in rather than derived from a season id here, because the
+ * guardian portal's icon opens a picker across several teams and so counts a
+ * total this component has no way to subscribe to on its own.
+ */
+export function ChatIconButton({ onPress, badge }: { onPress: () => void; badge?: React.ReactNode }) {
   const colors = useThemeColors();
   return (
     <Pressable
@@ -22,6 +29,13 @@ export function ChatIconButton({ onPress }: { onPress: () => void }) {
           strokeLinejoin="round"
         />
       </Svg>
+      {/* Overhangs the circle's top-right corner, the way an app-icon badge
+          does — inside it, the pill would sit on the speech bubble itself. */}
+      {badge ? (
+        <View className="absolute" style={{ top: -2, right: -2 }} pointerEvents="none">
+          {badge}
+        </View>
+      ) : null}
     </Pressable>
   );
 }

@@ -7,7 +7,7 @@ export { Badge } from './Badge';
 export { Chip } from './Chip';
 export { Tabs } from './Tabs';
 export { ScorePad, ScoreButton } from './ScorePad';
-export { Avatar } from './Avatar';
+export { Avatar, positionColor } from './Avatar';
 export { EmptyState } from './EmptyState';
 export { LoadingState } from './LoadingState';
 export { ErrorState } from './ErrorState';

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { FlatList, View, Text, Pressable, Alert, ActivityIndicator } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 import { InAppBrowser } from 'react-native-inappbrowser-reborn';
@@ -18,6 +18,7 @@ import {
   Input,
 } from '@/components/ui';
 import { ChatIconButton } from '@/components/ChatIconButton';
+import { ChatUnreadProbe, UnreadPill } from '@/components/ChatUnreadBadge';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
   useGuardianRostersQuery,
@@ -262,6 +263,14 @@ export default function GuardianPortalScreen() {
   const [contactRelationship, setContactRelationship] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
+  // Unread counts per season, collected from the probes rendered at the end of
+  // this screen. The header icon shows the total because it may open any of
+  // these chats; the picker rows show their own, which is what tells the
+  // guardian which team to tap. One map, so each season is subscribed once.
+  const [unreadBySeason, setUnreadBySeason] = useState<Record<string, number>>({});
+  const reportUnread = useCallback((seasonId: string, count: number) => {
+    setUnreadBySeason((prev) => (prev[seasonId] === count ? prev : { ...prev, [seasonId]: count }));
+  }, []);
 
   const submitFamilyContact = async () => {
     if (!contactName.trim()) {
@@ -339,6 +348,8 @@ export default function GuardianPortalScreen() {
     });
   }
 
+  const totalUnread = athlete.seasons.reduce((sum, se) => sum + (unreadBySeason[se.id] ?? 0), 0);
+
   // Shared by the header icon and the multi-team picker below.
   const openTeamChat = (season: (typeof athlete.seasons)[number]) => {
     setChatPickerOpen(false);
@@ -366,7 +377,7 @@ export default function GuardianPortalScreen() {
           showBack
           right={
             <View className="flex-row items-center gap-2">
-              <ChatIconButton onPress={openChat} />
+              <ChatIconButton onPress={openChat} badge={<UnreadPill count={totalUnread} />} />
               <Button
                 label="Share"
                 size="sm"
@@ -512,12 +523,24 @@ export default function GuardianPortalScreen() {
                 },
               ]}
             >
-              <Text className="font-bold" style={{ color: colors.ink }}>{s.teamName}</Text>
-              <Text className="text-xs mt-1" style={{ color: colors.inkMuted }}>{s.name}</Text>
+              <View className="flex-row items-center justify-between">
+                <View className="flex-1">
+                  <Text className="font-bold" style={{ color: colors.ink }}>{s.teamName}</Text>
+                  <Text className="text-xs mt-1" style={{ color: colors.inkMuted }}>{s.name}</Text>
+                </View>
+                <UnreadPill count={unreadBySeason[s.id] ?? 0} />
+              </View>
             </Pressable>
           ))}
         </View>
       </Modal>
+
+      {/* Draw nothing; they exist to subscribe each season's chat and feed
+          `unreadBySeason` above. Outside the picker Modal so the counts are
+          live whether or not it has ever been opened. */}
+      {athlete.seasons.map((s) => (
+        <ChatUnreadProbe key={s.id} seasonId={s.id} onCount={reportUnread} />
+      ))}
 
       <Modal
         visible={showAddContact}

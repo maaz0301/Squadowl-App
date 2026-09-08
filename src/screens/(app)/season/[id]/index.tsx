@@ -5,6 +5,7 @@ import { useRoute } from '@react-navigation/native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { TeamBanner } from '@/components/TeamBanner';
 import { ChatIconButton } from '@/components/ChatIconButton';
+import { ChatUnreadBadge } from '@/components/ChatUnreadBadge';
 import { useSeasonTeamBrand } from '@/features/useTeamBrand';
 import { Badge, Button, Card, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
 import { useSeasonQuery } from '@/features/queries';
@@ -44,6 +45,7 @@ export default function SeasonHubScreen() {
         right={
           <View className="flex-row items-center gap-1">
             <ChatIconButton
+              badge={<ChatUnreadBadge seasonId={id} />}
               onPress={() =>
                 navigation.navigate('TeamChat', {
                   seasonId: id,

@@ -420,6 +420,12 @@ export interface TeamInviteResult {
 }
 
 /** A permanently-saved snapshot of a Team Builder generation, so regenerating doesn't lose it. */
+/** Outcome of a bulk spreadsheet import: how many landed, and why the rest didn't. */
+export interface PlayerImportResult {
+  added: number;
+  failed: { line: number; name: string; message: string }[];
+}
+
 export const TeamBuilderResultSchema = z.object({
   id: z.string(),
   tryoutId: z.string(),

@@ -9,7 +9,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
-import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation } from '@/features/queries';
+import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit } from '@/data/plans';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
@@ -17,6 +17,8 @@ import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { CreateEventFormSchema, type AddPlayerForm as AddPlayerFormValues, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
 import { BottomNav } from '@/components/BottomNav';
 import { ChatIconButton } from '@/components/ChatIconButton';
+import { ImportPlayersModal } from '@/components/roster/ImportPlayersModal';
+import { ChatUnreadBadge } from '@/components/ChatUnreadBadge';
 import { PlanGate } from '@/components/PlanGate';
 import { TeamBanner } from '@/components/TeamBanner';
 import { teamBrandSurfaces } from '@/lib/teamBrand';
@@ -141,6 +143,7 @@ export default function TeamDetailScreen() {
   const [addPlayersProgress, setAddPlayersProgress] = useState<{ done: number; total: number } | null>(null);
   const addRosterPlayers = useAddTeamRosterPlayersMutation(id, (done, total) => setAddPlayersProgress({ done, total }));
   const addManualPlayer = useAddManualTeamPlayerMutation(id);
+  const importPlayers = useImportTeamRosterPlayersMutation(id);
   const uploadTeamPlayerPhoto = useUploadTeamPlayerPhotoMutation(id);
   const removeRosterPlayer = useRemoveTeamRosterPlayerMutation(id);
   const sendInvites = useTeamRosterInvitesMutation(id);
@@ -150,6 +153,7 @@ export default function TeamDetailScreen() {
   // Same AddPlayerForm the assessment roster uses, just attached to the team
   // roster instead of a tryout's participants.
   const [showAddManualPlayer, setShowAddManualPlayer] = useState(false);
+  const [showImportPlayers, setShowImportPlayers] = useState(false);
 
   const submitManualPlayer = async (data: AddPlayerFormValues) => {
     try {
@@ -742,6 +746,7 @@ export default function TeamDetailScreen() {
         right={
           <View className="flex-row items-center gap-1">
             <ChatIconButton
+              badge={<ChatUnreadBadge seasonId={teamSeasonId} />}
               onPress={() =>
                 navigation.navigate('TeamChat', {
                   seasonId: teamSeasonId,
@@ -800,6 +805,12 @@ export default function TeamDetailScreen() {
                 size="sm"
                 variant="secondary"
                 onPress={() => setShowAddManualPlayer(true)}
+              />
+              <Button
+                label="Import Spreadsheet"
+                size="sm"
+                variant="secondary"
+                onPress={() => setShowImportPlayers(true)}
               />
               {canEditTeam && playerCount > 0 ? (
                 <Button
@@ -1504,6 +1515,13 @@ export default function TeamDetailScreen() {
           </View>
         )}
       </Modal>
+
+      <ImportPlayersModal
+        visible={showImportPlayers}
+        onClose={() => setShowImportPlayers(false)}
+        target={team.name}
+        onImport={(rows, onProgress) => importPlayers.mutateAsync({ rows, onProgress })}
+      />
 
       <Modal
         visible={showAddManualPlayer}

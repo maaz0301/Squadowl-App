@@ -21,6 +21,7 @@ import type {
   ReferralSummary,
   OrgRole,
   Player,
+  PlayerImportResult,
   Registration,
   RegistrationSubmit,
   ScoreForm,
@@ -198,6 +199,8 @@ export interface DataSource {
   sendTeamAnnouncement(seasonId: string, title: string, message: string): Promise<void>;
   setEventAvailability(seasonId: string, eventId: string, playerId: string, response: 'yes' | 'maybe' | 'no'): Promise<void>;
   listTeamMessages(seasonId: string): Promise<TeamMessage[]>;
+  /** Messages posted to this season since `sinceMs`, excluding the caller's own. */
+  countUnreadTeamMessages(seasonId: string, sinceMs: number): Promise<number>;
   sendTeamMessage(seasonId: string, body: string): Promise<TeamMessage>;
   deleteTeamMessage(messageId: string): Promise<void>;
   getAthleteHistory(athleteId: string): Promise<AthleteHistory>;
@@ -268,6 +271,32 @@ export interface DataSource {
   restoreTryout(id: string): Promise<Tryout>;
   importLibraryPlayers(tryoutId: string, entries: { first: string; last: string; jersey?: string; pos?: string }[]): Promise<Player[]>;
   submitFeedback(submission: import('./extras').FeedbackSubmission): Promise<void>;
+  /**
+   * Uploads one screenshot into the private feedback bucket and returns the
+   * stored file, to be handed back in `submitFeedback`'s `attachments`.
+   *
+   * Takes the picker's own fields rather than a File: there is no File in React
+   * Native, and the local `file://` URI is what react-native-image-picker gives
+   * back.
+   *
+   * Uploading before the submission exists means an abandoned form can leave a
+   * file behind; that is the trade for letting the coach see their screenshot
+   * attached, and removed again, before they commit to sending anything.
+   */
+  uploadFeedbackAttachment(file: {
+    uri: string;
+    name: string;
+    type: string;
+    size: number;
+  }): Promise<import('./extras').FeedbackAttachment>;
+  /** Removes an attachment the user uploaded but then took off the form. */
+  deleteFeedbackAttachment(path: string): Promise<void>;
+  /** Whether the signed-in user may read everyone's feedback — see the `feedback_reviewers` allowlist. */
+  isFeedbackReviewer(): Promise<boolean>;
+  /** Every submission, newest first. RLS narrows this to the caller's own unless they are a reviewer. */
+  listFeedbackSubmissions(): Promise<import('./extras').FeedbackReport[]>;
+  /** A short-lived signed URL for one attachment in the private bucket. */
+  getFeedbackAttachmentUrl(path: string): Promise<string>;
   addSeasonPlayer(seasonId: string, player: Omit<import('./types').SeasonPlayer, 'id'>): Promise<import('./types').SeasonPlayer>;
   /**
    * Bulk twin of addSeasonPlayer for players that already have an athlete row
@@ -346,6 +375,18 @@ export interface DataSource {
   // for a player who never went through an assessment (no tryout to pull
   // them from), rather than only being reachable via "Add Players from
   // Assessments".
+  /** Bulk-create players on an assessment roster from parsed spreadsheet rows. */
+  importTryoutPlayers(
+    tryoutId: string,
+    rows: { line: number; form: AddPlayerForm }[],
+    onProgress?: (done: number) => void,
+  ): Promise<PlayerImportResult>;
+  /** The team-roster counterpart of importTryoutPlayers. */
+  importTeamRosterPlayers(
+    teamId: string,
+    rows: { line: number; form: AddPlayerForm }[],
+    onProgress?: (done: number) => void,
+  ): Promise<PlayerImportResult>;
   addManualTeamPlayer(teamId: string, form: AddPlayerForm): Promise<{ athleteId: string }>;
   removeTeamRosterPlayer(teamId: string, athleteId: string): Promise<void>;
   /**

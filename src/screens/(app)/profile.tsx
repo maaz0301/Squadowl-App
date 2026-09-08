@@ -15,6 +15,7 @@ import {
   useTeamsQuery,
   useSeasonsQuery,
   useUploadCoachPhotoMutation,
+  useIsFeedbackReviewerQuery,
 } from '@/features/queries';
 import { getDataSource } from '@/data';
 import { launchImageLibrary } from 'react-native-image-picker';
@@ -32,6 +33,7 @@ export default function ProfileScreen() {
   const updatePasswordMut = useUpdatePasswordMutation();
   const uploadPhoto = useUploadCoachPhotoMutation();
   const { role, isGuardian } = usePermissions();
+  const { data: isFeedbackReviewer } = useIsFeedbackReviewerQuery(!isGuardian);
   const guardianQuery = useGuardianRostersQuery();
   const teamsQuery = useTeamsQuery();
   const seasonsQuery = useSeasonsQuery();
@@ -275,6 +277,16 @@ export default function ProfileScreen() {
             <Button label="Shared Athletes" variant="ghost" onPress={() => navigation.navigate('SharedAthletes')} />
             <Button label="Archived Assessments" variant="ghost" onPress={() => navigation.navigate('ArchivedAssessments')} />
             <Button label="Send Feedback" variant="ghost" onPress={() => navigation.navigate('Feedback')} />
+            {/* The portal is limited to an email allowlist held in the database
+                (`feedback_reviewers`), not to a plan or a role — so whether to
+                offer it is a question only the server can answer. */}
+            {isFeedbackReviewer ? (
+              <Button
+                label="Feedback Portal"
+                variant="ghost"
+                onPress={() => navigation.navigate('FeedbackReports')}
+              />
+            ) : null}
             <Button label="Loyalty Program" variant="ghost" onPress={() => navigation.navigate('Loyalty')} />
           </Card>
 

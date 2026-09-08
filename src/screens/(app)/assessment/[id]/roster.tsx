@@ -1,31 +1,32 @@
 import { useNavigation } from '@react-navigation/native';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Platform, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { DummyDataModal } from '@/components/DummyDataModal';
+import { ImportPlayersModal } from '@/components/roster/ImportPlayersModal';
+import { PlayerRow } from '@/components/roster/PlayerRow';
+import { ChevronIcon, PlusIcon } from '@/components/roster/icons';
+import { RosterActions, RosterFilters, RosterSearch, ScoreCta } from '@/components/roster/RosterControls';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { UsageNudgeBanner } from '@/components/UsageNudgeBanner';
 import {
-  Avatar,
-  Badge,
   Button,
   Chip,
   EmptyState,
   ErrorState,
   Header,
-  Input,
   LoadingState,
   Modal,
   Screen,
 } from '@/components/ui';
 import { canUseFeature, isAtPlayerLimit } from '@/data/plans';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
-import { playerDisplayName } from '@/data/rubrics';
 import {
   useAddPlayerMutation,
   useClearTestDataMutation,
   useGenerateTestDataMutation,
+  useImportTryoutPlayersMutation,
   useTryoutQuery,
   useUploadPlayerPhotoMutation,
   tryoutBulkWriteKey,
@@ -33,7 +34,7 @@ import {
 import { useIsMutating } from '@tanstack/react-query';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { useUser } from '@/state/authStore';
-import { useSessionStore } from '@/state/sessionStore';
+import { useSessionStore, type RosterFilter } from '@/state/sessionStore';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 export default function RosterScreen() {
@@ -43,6 +44,7 @@ export default function RosterScreen() {
   const tryoutQuery = useTryoutQuery(id);
   const addPlayer = useAddPlayerMutation(id!);
   const uploadPhoto = useUploadPlayerPhotoMutation(id!);
+  const importPlayers = useImportTryoutPlayersMutation(id!);
   const [dummyProgress, setDummyProgress] = useState<{ done: number; total: number } | null>(null);
   const genTest = useGenerateTestDataMutation(id!, (done, total) => setDummyProgress({ done, total }));
   // genTest.isPending flips false the instant generateTestData resolves —
@@ -59,6 +61,7 @@ export default function RosterScreen() {
   const user = useUser();
   const [showAdd, setShowAdd] = useState(false);
   const [showTools, setShowTools] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [showTestGen, setShowTestGen] = useState(false);
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
   // A bulk add started from another screen (the Registrations tab's dummy-data
@@ -120,6 +123,22 @@ export default function RosterScreen() {
     return result;
   }, [tryoutQuery.data, rosterFilter, playerSearch, evalCountByPlayerId]);
 
+  // Every filter's count, whichever one is showing: a chip that says how many
+  // players it would leave answers "how much is left to score?" without the
+  // coach having to select it and read the list length.
+  const filterCounts = useMemo((): Record<RosterFilter, number> => {
+    const roster = tryoutQuery.data?.roster ?? [];
+    const scored = roster.filter((p) => evalCountByPlayerId.has(p.id)).length;
+    const goalies = roster.filter((p) => p.pos?.toUpperCase() === 'GTL').length;
+    return {
+      all: roster.length,
+      scored,
+      unscored: roster.length - scored,
+      goalies,
+      skaters: roster.length - goalies,
+    };
+  }, [tryoutQuery.data, evalCountByPlayerId]);
+
   if (tryoutQuery.isLoading) return <LoadingState message="Loading roster..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
     return <ErrorState message="Could not load roster." onRetry={() => tryoutQuery.refetch()} />;
@@ -133,6 +152,11 @@ export default function RosterScreen() {
       return;
     }
     setShowAdd(true);
+  };
+
+  const openPlayer = (playerId: string) => {
+    setCurrentPlayer(playerId);
+    navigation.navigate('AssessmentFlow', { screen: 'AssessmentPlayer', params: { id: id, playerId } });
   };
 
   const hasPlayers = tryout.roster.length > 0;
@@ -154,29 +178,42 @@ export default function RosterScreen() {
         onBack={() => navigation.navigate('DashboardMain')}
       />
       {hasPlayers ? (
-        <View className="px-4 pt-2 pb-3 gap-3">
+        <View className="gap-2 px-4 pb-3">
           <UsageNudgeBanner
             tier={user?.planTier ?? 'free'}
             metric="players"
             count={tryout.roster.length}
             label="players in this roster"
           />
-          <View className="flex-row gap-2">
-            <Button
-              label="Score Players"
-              onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentRinkside', params: { id: id } })}
-              className="flex-1"
-            />
-            <Button label="+ Add" variant="secondary" onPress={openAdd} />
-            <Button label="Tools" variant="ghost" onPress={() => setShowTools(true)} />
-          </View>
+
+          <ScoreCta
+            total={tryout.roster.length}
+            scored={scoredCount}
+            onPress={() =>
+              navigation.navigate('AssessmentFlow', { screen: 'AssessmentRinkside', params: { id: id } })
+            }
+          />
+
+          <RosterActions
+            onAdd={openAdd}
+            onImport={() => setShowImport(true)}
+            onTools={() => setShowTools(true)}
+          />
 
           {tryout.assessors.length > 0 ? (
-            <View>
-              <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>
+            <View className="gap-1.5">
+              <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
                 Scoring as
               </Text>
-              <View className="flex-row flex-wrap">
+              {/* One scrolling row: an association tryout can have a dozen
+                  assessors, and wrapping them pushed the players themselves
+                  off the bottom of the screen. */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingRight: 8 }}
+              >
                 {tryout.assessors.map((a, i) => {
                   const isMe = !!((user?.email && a.email === user.email) || (user?.displayName && a.name === user.displayName));
                   const tags = [];
@@ -193,39 +230,17 @@ export default function RosterScreen() {
                       active={isActive}
                       highlight={isMe}
                       onPress={() => setActiveAssessor(isActive ? null : a)}
+                      className="mb-0"
                     />
                   );
                 })}
-              </View>
+              </ScrollView>
             </View>
           ) : null}
 
-          <Input
-            value={playerSearch}
-            onChangeText={setPlayerSearch}
-            placeholder="Search players by name"
-            autoCapitalize="none"
-          />
+          <RosterSearch value={playerSearch} onChange={setPlayerSearch} />
 
-          <View>
-            <Text className="text-xs font-bold uppercase mb-1" style={{ color: colors.inkMuted }}>
-              Show
-            </Text>
-            <View className="flex-row flex-wrap">
-              {(['all', 'scored', 'unscored', 'skaters', 'goalies'] as const).map((f) => (
-                <Chip
-                  key={f}
-                  label={f}
-                  active={rosterFilter === f}
-                  onPress={() => setRosterFilter(f)}
-                />
-              ))}
-            </View>
-          </View>
-
-          <Text className="text-sm" style={{ color: colors.inkMuted }}>
-            {tryout.roster.length} player{tryout.roster.length === 1 ? '' : 's'} · {scoredCount} scored
-          </Text>
+          <RosterFilters active={rosterFilter} counts={filterCounts} onSelect={setRosterFilter} />
         </View>
       ) : null}
 
@@ -263,54 +278,39 @@ export default function RosterScreen() {
               }}
             />
           ) : (
-            <View className="flex-1 items-center justify-center px-6">
+            <View className="flex-1 items-center justify-center px-2">
+              <View
+                className="h-16 w-16 items-center justify-center rounded-full"
+                style={{ backgroundColor: 'rgba(255,107,43,0.12)' }}
+              >
+                <PlusIcon color={colors.primary} size={26} />
+              </View>
               <Text
-                className="text-xl font-display font-bold text-center"
+                className="mt-4 text-center font-display text-xl font-bold"
                 style={{ color: colors.ink }}
               >
                 Add your players to get started
               </Text>
-              <Text className="text-sm text-center mt-2 mb-6" style={{ color: colors.inkMuted }}>
+              <Text className="mb-6 mt-2 text-center text-sm" style={{ color: colors.inkMuted }}>
                 Add players to this evaluation, then you can start scoring.
               </Text>
               <Button label="+ Add Player" onPress={openAdd} className="w-full" />
+              <Button
+                label="Import from a spreadsheet"
+                variant="secondary"
+                onPress={() => setShowImport(true)}
+                className="mt-2 w-full"
+              />
             </View>
           )
         }
-        renderItem={({ item }) => {
-          const evalCount = evalCountByPlayerId.get(item.id) ?? 0;
-          return (
-            <Pressable
-              onPress={() => {
-                setCurrentPlayer(item.id);
-                navigation.navigate('AssessmentFlow', { screen: 'AssessmentPlayer', params: { id: id, playerId: item.id } });
-              }}
-            >
-              <View
-                className="flex-row items-center gap-3 p-4 mb-2 rounded-lg border"
-                style={{ backgroundColor: colors.card, borderColor: colors.border }}
-              >
-                <Avatar first={item.first} last={item.last} pos={item.pos} uri={item.avatarUrl} />
-                <View className="flex-1">
-                  <Text className="text-base font-bold" style={{ color: colors.ink }}>
-                    {playerDisplayName(item)}
-                  </Text>
-                  <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                    #{item.jersey ?? '—'} · {item.pos ?? '—'}
-                  </Text>
-                </View>
-                <View className="flex-row items-center justify-end gap-1">
-                  {evalCount > 0 ? (
-                    <Badge label={`${evalCount} eval${evalCount > 1 ? 's' : ''}`} variant="success" />
-                  ) : (
-                    <Badge label="Unscored" variant="warning" />
-                  )}
-                  {item.registrationSource === 'qr' ? <Badge label="QR" variant="info" /> : null}
-                </View>
-              </View>
-            </Pressable>
-          );
-        }}
+        renderItem={({ item }) => (
+          <PlayerRow
+            player={item}
+            evalCount={evalCountByPlayerId.get(item.id) ?? 0}
+            onPress={openPlayer}
+          />
+        )}
       />
 
       <Modal
@@ -399,18 +399,28 @@ export default function RosterScreen() {
               setShowTools(false);
               t.go();
             }}
-            className="py-3 border-b"
-            style={{ borderColor: colors.border }}
+            className="mb-2 flex-row items-center gap-3 rounded-xl border px-3 py-3 active:opacity-70"
+            style={{ backgroundColor: colors.tile, borderColor: colors.border }}
           >
-            <Text className="text-base font-bold" style={{ color: colors.ink }}>
-              {t.label}
-            </Text>
-            <Text className="text-sm mt-0.5" style={{ color: colors.inkMuted }}>
-              {t.desc}
-            </Text>
+            <View className="flex-1">
+              <Text className="text-base font-bold" style={{ color: colors.ink }}>
+                {t.label}
+              </Text>
+              <Text className="mt-0.5 text-sm" style={{ color: colors.inkMuted }}>
+                {t.desc}
+              </Text>
+            </View>
+            <ChevronIcon color={colors.inkFaint} size={16} />
           </Pressable>
         ))}
       </Modal>
+
+      <ImportPlayersModal
+        visible={showImport}
+        onClose={() => setShowImport(false)}
+        target={tryout.name}
+        onImport={(rows, onProgress) => importPlayers.mutateAsync({ rows, onProgress })}
+      />
 
       <DummyDataModal
         variant="assessment"

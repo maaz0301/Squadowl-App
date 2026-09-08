@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
@@ -12,6 +12,7 @@ import {
   useTeamMessagesQuery,
 } from '@/features/queries';
 import { useAuthStore } from '@/state/authStore';
+import { useChatReadStore } from '@/state/chatReadStore';
 import type { TeamMessage } from '@/data/types';
 
 /** Messages closer together than this stay in one visual run. */
@@ -194,6 +195,18 @@ export function TeamChat({
   const sendMessage = useSendTeamMessageMutation();
   const deleteMessage = useDeleteTeamMessageMutation(seasonId ?? '');
   useTeamChatRealtimeSync(seasonId);
+
+  // Having the conversation on screen is what counts as reading it, so the
+  // cursor follows the newest loaded message rather than waiting for a scroll
+  // to the bottom — the list mounts pinned to the newest message anyway. Runs
+  // on every load, not just the first, so messages arriving while the screen
+  // is open don't re-badge it the moment the user backs out.
+  const markChatRead = useChatReadStore((s) => s.markChatRead);
+  useEffect(() => {
+    const loaded = messagesQuery.data;
+    if (!seasonId || !loaded?.length) return;
+    markChatRead(seasonId, loaded[loaded.length - 1].createdAt);
+  }, [seasonId, messagesQuery.data, markChatRead]);
 
   // The list renders inverted so it pins to the newest message and grows
   // upward, which needs newest-first data. Each row also carries the grouping

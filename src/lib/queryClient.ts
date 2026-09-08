@@ -111,5 +111,13 @@ export const queryKeys = {
   athleteShare: (shareId: string) => ['athleteShare', shareId] as const,
   shareComments: (shareId: string) => ['shareComments', shareId] as const,
   teamMessages: (seasonId: string) => ['teamMessages', seasonId] as const,
+  // The read cursor is part of the key so opening the chat (which moves the
+  // cursor) invalidates the badge's count by construction, rather than needing
+  // the chat screen to know the badge exists.
+  teamMessagesUnread: (seasonId: string, sinceMs: number) =>
+    ['teamMessages', seasonId, 'unread', sinceMs] as const,
   referralSummary: ['referral', 'summary'] as const,
+  /** Reviewer allowlist check behind the feedback portal's menu item and screen guard. */
+  feedbackReviewer: ['feedback', 'reviewer'] as const,
+  feedbackSubmissions: ['feedback', 'submissions'] as const,
 };

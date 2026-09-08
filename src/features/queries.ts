@@ -19,6 +19,7 @@ import type {
 import { queryKeys } from '@/lib/queryClient';
 import { getSupabase } from '@/lib/supabase';
 import { useAuthStore } from '@/state/authStore';
+import { useChatReadStore } from '@/state/chatReadStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useEffect } from 'react';
@@ -193,6 +194,26 @@ export function useAddTeamRosterPlayersMutation(
     mutationFn: (entries: { athleteId: string; jersey?: string; pos?: string; sourceTryoutId?: string }[]) =>
       getDataSource().addTeamRosterPlayers(teamId, entries, onProgress),
     onSuccess: () => qc.invalidateQueries({ queryKey: teamRosterKey(teamId) }),
+  });
+}
+
+/**
+ * Bulk-add players read out of a spreadsheet. `onProgress` is threaded through
+ * rather than inferred from the mutation's pending flag: an import of thirty
+ * players is slow enough that "working…" on its own reads as a hang.
+ */
+export function useImportTeamRosterPlayersMutation(teamId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      rows,
+      onProgress,
+    }: {
+      rows: { line: number; form: AddPlayerForm }[];
+      onProgress?: (done: number) => void;
+    }) => getDataSource().importTeamRosterPlayers(teamId, rows, onProgress),
+    // Invalidate whatever the outcome: a partial import still changed the roster.
+    onSettled: () => qc.invalidateQueries({ queryKey: teamRosterKey(teamId) }),
   });
 }
 
@@ -558,6 +579,26 @@ export function useAddPlayerMutation(tryoutId: string) {
     mutationFn: (form: AddPlayerForm) => withTimeout(getDataSource().addPlayer(tryoutId, form), 15000, 'Adding player timed out. Please check your connection.'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
+      qc.invalidateQueries({ queryKey: queryKeys.profile });
+    },
+  });
+}
+
+/** The assessment-roster counterpart of useImportTeamRosterPlayersMutation. */
+export function useImportTryoutPlayersMutation(tryoutId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      rows,
+      onProgress,
+    }: {
+      rows: { line: number; form: AddPlayerForm }[];
+      onProgress?: (done: number) => void;
+    }) => getDataSource().importTryoutPlayers(tryoutId, rows, onProgress),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
+      qc.invalidateQueries({ queryKey: queryKeys.tryouts(false) });
+      qc.invalidateQueries({ queryKey: queryKeys.tryouts(true) });
       qc.invalidateQueries({ queryKey: queryKeys.profile });
     },
   });
@@ -1821,6 +1862,28 @@ export function useTeamChatRealtimeSync(seasonId: string | undefined) {
   }, [seasonId, qc]);
 }
 
+/**
+ * How many chat messages have arrived in this season since the user last had
+ * the conversation open — what the Chat entry points badge.
+ *
+ * Never having opened it counts everything, which is the honest answer: the
+ * badge then clears the first time they look. Subscribes to the same realtime
+ * channel the chat itself uses, so the badge appears as the message lands.
+ */
+export function useChatUnreadCount(seasonId: string | undefined): number {
+  const lastReadAt = useChatReadStore((s) => (seasonId ? (s.lastReadAt[seasonId] ?? 0) : 0));
+  useTeamChatRealtimeSync(seasonId);
+  const query = useQuery({
+    queryKey: queryKeys.teamMessagesUnread(seasonId ?? '', lastReadAt),
+    queryFn: () => getDataSource().countUnreadTeamMessages(seasonId!, lastReadAt),
+    enabled: !!seasonId,
+    // A stale badge is worse than a slightly chatty query: this is the number
+    // the user is watching to decide whether to open the chat.
+    staleTime: 30_000,
+  });
+  return query.data ?? 0;
+}
+
 export function useEnterprisePaymentsQuery() {
   return useQuery({
     queryKey: queryKeys.enterprisePayments,
@@ -1905,9 +1968,38 @@ export function useImportLibraryPlayersMutation() {
 }
 
 export function useSubmitFeedbackMutation() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (submission: import('../data/extras').FeedbackSubmission) =>
       getDataSource().submitFeedback(submission),
+    // A reviewer who submits their own feedback should see it in the portal
+    // without a reload; for everyone else this invalidates a query nobody has.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.feedbackSubmissions });
+    },
+  });
+}
+
+/**
+ * Whether the signed-in user may read everyone's feedback.
+ *
+ * `staleTime: Infinity` — the allowlist is edited in the database by hand, so
+ * it cannot change mid-session, and this gates a menu item.
+ */
+export function useIsFeedbackReviewerQuery(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.feedbackReviewer,
+    queryFn: () => getDataSource().isFeedbackReviewer(),
+    enabled,
+    staleTime: Infinity,
+  });
+}
+
+export function useFeedbackSubmissionsQuery(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.feedbackSubmissions,
+    queryFn: () => getDataSource().listFeedbackSubmissions(),
+    enabled,
   });
 }
 

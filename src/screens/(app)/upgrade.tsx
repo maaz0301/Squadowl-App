@@ -13,17 +13,33 @@ import {
   formatPlanPrice,
   getPlanDefinition,
   getTeamAllowance,
+  getTierRank,
   sellsExtraTeams,
 } from '@/data/plans';
+import type { PlanTier } from '@/data/types';
+import {
+  buildDowngradeImpact,
+  downgradeRoute,
+  hasLiveSubscription,
+  planChangeDirection,
+} from '@/lib/planChange';
 import { useUser, useAuthStore } from '@/state/authStore';
 import { getDataSource } from '@/data';
+import { useTeamsQuery, useTryoutSummariesQuery } from '@/features/queries';
 
-const TIER_RANKS: Record<string, number> = {
-  free: 0,
-  coach: 1,
-  coach_plus: 2,
-  club: 3,
-};
+/** Alert.alert as a promise, so the downgrade flow can await the coach's answer. */
+function confirmAsync(options: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+}): Promise<boolean> {
+  return new Promise((resolve) => {
+    Alert.alert(options.title, options.message, [
+      { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+      { text: options.confirmLabel, style: 'destructive', onPress: () => resolve(true) },
+    ]);
+  });
+}
 
 export default function UpgradeScreen() {
   const colors = useThemeColors();
@@ -41,6 +57,13 @@ export default function UpgradeScreen() {
   // Loyalty program: spend existing credit, and enter someone else's code.
   const referralQuery = useReferralSummaryQuery();
   const applyCodeMut = useApplyReferralCodeMutation();
+
+  // Usage behind the downgrade warning: what the account has today, measured
+  // against the lower plan's caps. The dashboard already holds both of these
+  // lists, so on the ordinary path here they come from cache; the summaries
+  // read is the light one, without rosters or scores.
+  const teamsQuery = useTeamsQuery();
+  const tryoutsQuery = useTryoutSummariesQuery();
   const [referralCode, setReferralCode] = useState('');
   const [applyCredits, setApplyCredits] = useState(true);
 
@@ -97,7 +120,7 @@ export default function UpgradeScreen() {
     }
   };
 
-  const upgrade = async (tier: typeof PLAN_DEFINITIONS[number]['tier']) => {
+  const startCheckout = async (tier: PlanTier) => {
     try {
       setLoadingTier(tier);
       const res = await getDataSource().createCheckoutSession(tier, billingInterval, {
@@ -171,8 +194,48 @@ export default function UpgradeScreen() {
   const canBuyTeams = sellsExtraTeams(currentTier);
   const extraTeamPrice = currentPlan.extraTeamPriceCents ?? 0;
 
+  /**
+   * Switches to any tier, in either direction.
+   *
+   * A downgrade is confirmed first — with what it actually costs the account,
+   * built from the two plans and the current usage — and then routed by
+   * downgradeRoute(): the Stripe Customer Portal while a subscription is live,
+   * because swapping the plan there replaces the existing subscription instead
+   * of starting a second one alongside it, and an ordinary Checkout only when
+   * there is no live subscription for the portal to manage.
+   */
+  const switchPlan = async (tier: PlanTier) => {
+    if (planChangeDirection(currentTier, tier) !== 'downgrade') {
+      await startCheckout(tier);
+      return;
+    }
+
+    const impact = buildDowngradeImpact({
+      from: currentTier,
+      to: tier,
+      teamCount: teamsQuery.data?.length,
+      assessmentCount: tryoutsQuery.data?.length,
+      extraTeamLicenses: currentLicenses,
+    });
+    const target = getPlanDefinition(tier);
+    const ok = await confirmAsync({
+      title: `Switch down to ${target.name}?`,
+      message: impact.length
+        ? `${impact.join('\n\n')}\n\nYou'll finish the change in Stripe, where the new price and any credit for the rest of this term are shown before you confirm.`
+        : `${target.name} covers everything you're using today. You'll finish the change in Stripe, where the new price and any credit for the rest of this term are shown before you confirm.`,
+      confirmLabel: `Switch to ${target.name}`,
+    });
+    if (!ok) return;
+
+    if (downgradeRoute(tier, user?.subscriptionStatus) === 'portal') {
+      await openPortal();
+      return;
+    }
+    await startCheckout(tier);
+  };
+
   // Extra teams are an add-on subscription on top of the current plan (Club only), so
-  // this checkout must not go through `upgrade` — that one switches the plan tier.
+  // this checkout must not go through `switchPlan` — that one switches the plan tier.
   const buyTeams = async () => {
     try {
       setBuyingTeams(true);
@@ -325,13 +388,35 @@ export default function UpgradeScreen() {
 
         {PLAN_DEFINITIONS.map((item) => {
           const isCurrent = user?.planTier === item.tier;
-          // Legacy tiers ('pro'/'association') retired from TIER_RANKS still exist on
-          // un-migrated accounts. Treat any unrecognized current tier as rank -1 so
-          // upgrade buttons still render instead of silently disappearing for everyone.
-          const currentRank = TIER_RANKS[user?.planTier ?? 'free'] ?? -1;
+          // Legacy tiers ('pro'/'association') retired from the hierarchy still
+          // exist on un-migrated accounts; getTierRank() ranks anything it
+          // doesn't recognise as Free, so every real tier still reads as a step
+          // up rather than the buttons silently disappearing.
+          const currentRank = getTierRank(currentTier);
+          const targetRank = getTierRank(item.tier);
+          const isUpgrade = !isCurrent && targetRank > currentRank;
+          const isDowngrade = !isCurrent && targetRank < currentRank;
           const yearly = formatPlanPrice(item, 'year');
+          // List-price difference against the plan in force, so the direction of
+          // the change is legible before reading any feature list. Stripe still
+          // shows what is actually owed today — proration is settled there.
+          const priceDelta =
+            item.pricing && currentPlan.pricing
+              ? item.pricing.year.amountCents - currentPlan.pricing.year.amountCents
+              : item.pricing
+                ? item.pricing.year.amountCents
+                : currentPlan.pricing
+                  ? -currentPlan.pricing.year.amountCents
+                  : 0;
           return (
-            <Card key={item.tier} accent={item.highlight} className="mb-4 gap-3">
+            <Card
+              key={item.tier}
+              accent={item.highlight || isCurrent}
+              className="mb-4 gap-3"
+              // The plan you're on should be findable at a glance while
+              // scrolling a stack of four near-identical cards.
+              style={isCurrent ? { borderColor: colors.primary, borderWidth: 2 } : undefined}
+            >
               <View className="flex-row justify-between items-start">
                 <View>
                   <Text className="text-xl font-display font-bold" style={{ color: colors.ink }}>
@@ -350,7 +435,7 @@ export default function UpgradeScreen() {
                   </View>
                 </View>
                 {isCurrent ? <Badge label="Current" variant="brand" /> : null}
-                {item.highlight ? <Badge label="Popular" variant="success" /> : null}
+                {item.highlight && !isCurrent ? <Badge label="Popular" variant="success" /> : null}
               </View>
               {item.features.map((f) => {
                 const markColor = !f.included
@@ -383,14 +468,50 @@ export default function UpgradeScreen() {
                 <Text style={{ color: colors.warning }}>orange</Text> fees applied to this tier
               </Text>
 
-              {TIER_RANKS[item.tier] > currentRank ? (
+              {isCurrent ? (
                 <Button
-                  label={`Switch to ${item.name}`}
-                  variant={item.highlight ? 'primary' : 'secondary'}
-                  onPress={() => upgrade(item.tier)}
-                  loading={loadingTier === item.tier}
+                  label="✓ Your Plan"
+                  variant="secondary"
+                  disabled
+                  style={{ borderColor: colors.primary, backgroundColor: 'rgba(255,107,43,0.10)', opacity: 1 }}
                 />
-              ) : null}
+              ) : (
+                <View className="gap-2">
+                  {/* Direction and price change read together, above the button:
+                      the one thing every card needs to answer is "is this a step
+                      up or down, and by how much". */}
+                  <View className="flex-row items-center justify-between">
+                    <Badge
+                      label={isUpgrade ? '↑ Upgrade' : '↓ Move down'}
+                      variant={isUpgrade ? 'brand' : 'info'}
+                    />
+                    {priceDelta !== 0 ? (
+                      <Text
+                        className="text-xs font-bold"
+                        style={{ color: priceDelta > 0 ? colors.inkMuted : colors.success }}
+                      >
+                        {priceDelta > 0 ? '+' : '−'}
+                        {formatCad(Math.abs(priceDelta))}/yr
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Button
+                    label={isUpgrade ? `Switch to ${item.name}` : `Move down to ${item.name}`}
+                    // Both directions get a real, visible button — a downgrade
+                    // people can't find is the gap this screen started with.
+                    variant={isUpgrade && item.highlight ? 'primary' : 'secondary'}
+                    onPress={() => switchPlan(item.tier)}
+                    loading={loadingTier === item.tier || (isDowngrade && loadingPortal)}
+                  />
+                  {isDowngrade ? (
+                    <Text className="text-xs text-center" style={{ color: colors.inkFaint }}>
+                      {downgradeRoute(item.tier, user?.subscriptionStatus) === 'portal'
+                        ? 'Confirmed in Stripe, with any credit for the rest of your term.'
+                        : 'Starts a new subscription at the lower price.'}
+                    </Text>
+                  ) : null}
+                </View>
+              )}
             </Card>
           );
         })}

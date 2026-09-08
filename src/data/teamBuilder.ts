@@ -28,6 +28,15 @@ export interface TeamBuilderState {
     splitGoalies: boolean;
   };
   ranks: { playerId: string; overall: number; rank: number }[];
+  /**
+   * The friend groups this split actually kept together — coach-built and
+   * detected alike; empty when `config.keepFriendPackages` is off.
+   *
+   * Optional because splits saved to `team_builder_results` before this field
+   * existed are read back as-is and would otherwise claim an array they don't
+   * have.
+   */
+  friendPackages?: FriendPackage[];
   warnings: string[];
   explanation?: string;
   teams: TeamBuilderTeam[];
@@ -98,6 +107,39 @@ function detectFriendPackages(roster: Player[]): FriendPackage[] {
     });
   }
   return packages;
+}
+
+/**
+ * Every friend group the split has to keep together: the ones the coach built
+ * by hand on the assessment first, then the ones inferred from the friend
+ * names on the registration forms.
+ *
+ * Order matters. `buildTeams` maps each player to the first package that
+ * claims them, so an explicit package wins whenever the two disagree — a coach
+ * who put three players in a package by hand has said something more definite
+ * than a name typed into a registration field, and the two must not tear the
+ * same player in different directions.
+ *
+ * Explicit packages are filtered against the current roster (a player removed
+ * from the assessment leaves the package behind, and a package that drops below
+ * two present members stops being a group at all), so a stale saved package
+ * can't reserve a slot for someone who isn't there.
+ */
+export function resolveFriendPackages(tryout: Tryout): FriendPackage[] {
+  const onRoster = new Set(tryout.roster.map((p) => p.id));
+  const explicit = (tryout.friendPackages ?? [])
+    .map((pkg) => ({ ...pkg, playerIds: pkg.playerIds.filter((id) => onRoster.has(id)) }))
+    .filter((pkg) => pkg.playerIds.length >= 2);
+
+  const claimed = new Set(explicit.flatMap((pkg) => pkg.playerIds));
+  // A detected group that overlaps a hand-built one is dropped rather than
+  // trimmed: what's left of it after removing the claimed players is no longer
+  // the group the registration form described.
+  const detected = detectFriendPackages(tryout.roster).filter(
+    (pkg) => !pkg.playerIds.some((id) => claimed.has(id)),
+  );
+
+  return [...explicit, ...detected];
 }
 
 /**
@@ -329,7 +371,7 @@ export function buildTeams(tryout: Tryout, config: TeamBuilderConfig): TeamBuild
   // Friend groups travel as one unit so a band boundary can't cut through them;
   // the group rides with its highest-ranked member.
   const friendPackages =
-    config.keepFriendPackages !== false ? detectFriendPackages(tryout.roster) : [];
+    config.keepFriendPackages !== false ? resolveFriendPackages(tryout) : [];
   const packageByPlayer = new Map<string, FriendPackage>();
   for (const pkg of friendPackages) {
     for (const id of pkg.playerIds) if (!packageByPlayer.has(id)) packageByPlayer.set(id, pkg);
@@ -598,6 +640,7 @@ export function buildTeams(tryout: Tryout, config: TeamBuilderConfig): TeamBuild
       splitGoalies: config.splitGoalies ?? true,
     },
     ranks: ranked,
+    friendPackages,
     warnings,
     teams: allTeams,
     unassigned,
@@ -675,6 +718,44 @@ function refineBalance(
     // Sizes, scored counts and position counts are all unchanged: the pair share
     // a position and both are evaluated.
   }
+}
+
+/**
+ * Move one player between teams, or out to the unassigned pile with a null
+ * `toTeamId`.
+ *
+ * Written as a whole-state transform rather than a splice on the source and
+ * target lists: a player carried in `players` but missing from `skaters`/
+ * `goalies` (or listed on two teams after an earlier bad edit) is repaired by
+ * being stripped from every list first, so a manual adjustment can't compound
+ * an inconsistency the generator left behind. An unknown `toTeamId` returns the
+ * state untouched instead of dropping the player on the floor.
+ */
+export function movePlayerToTeam(
+  state: TeamBuilderState,
+  playerId: string,
+  toTeamId: string | null,
+  isGoalie: boolean,
+): TeamBuilderState {
+  const teams = state.teams.map((t) => ({
+    ...t,
+    players: t.players.filter((id) => id !== playerId),
+    skaters: t.skaters.filter((id) => id !== playerId),
+    goalies: t.goalies.filter((id) => id !== playerId),
+  }));
+  const unassigned = state.unassigned.filter((id) => id !== playerId);
+
+  if (toTeamId === null) {
+    unassigned.push(playerId);
+  } else {
+    const target = teams.find((t) => t.id === toTeamId);
+    if (!target) return state;
+    target.players.push(playerId);
+    if (isGoalie) target.goalies.push(playerId);
+    else target.skaters.push(playerId);
+  }
+
+  return { ...state, teams, unassigned };
 }
 
 export function getPlayerNameMap(tryout: Tryout): Record<string, string> {
