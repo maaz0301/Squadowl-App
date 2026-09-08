@@ -4,6 +4,82 @@ import { stripe, cryptoProvider } from '../_shared/stripe.ts';
 import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
 // Email sending temporarily removed
 
+/**
+ * Maps a Stripe price back to a plan tier, for reconciling `accounts.plan_tier`
+ * after a subscription's price changes outside `checkout.session.completed` —
+ * a Customer Portal plan switch (upgrade or downgrade) fires only
+ * `customer.subscription.updated`, which used to leave `plan_tier` untouched
+ * entirely, so a Club account that switched down to Coach+ in the portal kept
+ * showing (and enforcing) Club limits forever while Stripe billed them at the
+ * Coach+ rate.
+ *
+ * Same two-step resolution as create-checkout-session's own price lookup:
+ * a configured `STRIPE_PRICE_ID_*` first, then a fallback match on the
+ * hardcoded CAD amount for tiers whose checkout used inline `price_data`
+ * (no Dashboard price ID configured) — see TIER_PRICES_CAD below, which
+ * mirrors PLAN_DEFINITIONS in src/data/plans.ts.
+ */
+function buildPriceIdToTier(): Record<string, string> {
+  const map: Record<string, string> = {};
+  const envKeys: [string, string][] = [
+    ['STRIPE_PRICE_ID_COACH_MONTHLY', 'coach'],
+    ['STRIPE_PRICE_ID_COACH_YEARLY', 'coach'],
+    ['STRIPE_PRICE_ID_COACH_PLUS_MONTHLY', 'coach_plus'],
+    ['STRIPE_PRICE_ID_COACH_PLUS_YEARLY', 'coach_plus'],
+    ['STRIPE_PRICE_ID_CLUB_MONTHLY', 'club'],
+    ['STRIPE_PRICE_ID_CLUB_YEARLY', 'club'],
+  ];
+  for (const [envKey, tier] of envKeys) {
+    // @ts-ignore: Deno global
+    const id = Deno.env.get(envKey);
+    if (id && id.trim() !== '' && id !== 'undefined' && id !== 'null') map[id.trim()] = tier;
+  }
+  return map;
+}
+
+/** Mirrors TIER_PRICES_CAD in create-checkout-session and PLAN_DEFINITIONS in src/data/plans.ts. */
+const TIER_PRICES_CAD: Record<string, { year: number; month: number }> = {
+  coach: { year: 3999, month: 400 },
+  coach_plus: { year: 6999, month: 700 },
+  club: { year: 9999, month: 1000 },
+};
+
+function resolveTierFromAmount(unitAmount: number | null | undefined, interval: string | undefined, currency: string | undefined): string | null {
+  if (unitAmount == null || currency?.toLowerCase() !== 'cad') return null;
+  const key = interval === 'month' ? 'month' : interval === 'year' ? 'year' : null;
+  if (!key) return null;
+  for (const [tier, prices] of Object.entries(TIER_PRICES_CAD)) {
+    if (prices[key as 'year' | 'month'] === unitAmount) return tier;
+  }
+  return null;
+}
+
+/**
+ * The plan tier `subscription`'s current price corresponds to, or null when it
+ * can't be resolved (a legacy/retired price, or one this mapping doesn't know
+ * about) — callers must leave `plan_tier` alone rather than guess wrong.
+ */
+async function resolvePlanTierFromSubscription(
+  subscription: any,
+  priceIdToTier: Record<string, string>,
+): Promise<string | null> {
+  const item = subscription.items?.data?.[0];
+  let price = item?.price;
+  if (!price) return null;
+  // Webhook payloads normally carry the full Price object on a subscription
+  // item, but fetch it if a leaner payload ever hands back just the id.
+  if (typeof price === 'string') {
+    try {
+      price = await stripe.prices.retrieve(price);
+    } catch (err: any) {
+      console.error('Could not retrieve price for tier resolution:', err.message || err);
+      return null;
+    }
+  }
+  if (price.id && priceIdToTier[price.id]) return priceIdToTier[price.id];
+  return resolveTierFromAmount(price.unit_amount, price.recurring?.interval, price.currency);
+}
+
 serve(async (req: Request) => {
   const signature = req.headers.get('Stripe-Signature');
   
@@ -167,20 +243,45 @@ serve(async (req: Request) => {
           .select('id')
           .eq('stripe_subscription_id', subscription.id)
           .single();
-          
+
         if (account) {
+          const isEnding = subscription.status === 'canceled' || subscription.status === 'unpaid';
+          const updates: Record<string, unknown> = { subscription_status: subscription.status };
+
+          if (isEnding) {
+            // Optionally handle plan downgrades if deleted
+            updates.plan_tier = 'free';
+          } else {
+            // A Customer Portal plan switch (upgrade or downgrade) changes the
+            // subscription's price and fires exactly this event —
+            // checkout.session.completed, the only other place plan_tier is
+            // written, never fires for a portal-initiated change. Without this,
+            // an account that switched plans in the portal keeps whatever tier
+            // it had before, forever, while Stripe bills it at the new rate.
+            const priceIdToTier = buildPriceIdToTier();
+            const resolvedTier = await resolvePlanTierFromSubscription(subscription, priceIdToTier);
+            if (resolvedTier) {
+              updates.plan_tier = resolvedTier;
+            } else {
+              console.warn(
+                `customer.subscription.updated: could not resolve a plan tier from subscription ${subscription.id}'s current price. ` +
+                  'Leaving plan_tier unchanged — check that STRIPE_PRICE_ID_* secrets match the Dashboard prices, or that the price is one of the hardcoded CAD amounts.',
+              );
+            }
+          }
+
           const { error } = await supabaseAdmin
             .from('accounts')
-            .update({
-              subscription_status: subscription.status,
-              // Optionally handle plan downgrades if deleted
-              ...((subscription.status === 'canceled' || subscription.status === 'unpaid') ? { plan_tier: 'free' } : {})
-            })
+            .update(updates)
             .eq('id', account.id);
-            
+
           if (error) {
             console.error('Error updating account subscription status:', error);
-          } else if (subscription.status === 'canceled' || subscription.status === 'unpaid') {
+          } else if (updates.plan_tier && !isEnding) {
+            console.log(`Reconciled account ${account.id} to plan tier "${updates.plan_tier}" from subscription ${subscription.id}.`);
+          }
+
+          if (!error && (subscription.status === 'canceled' || subscription.status === 'unpaid')) {
             // Trigger send-email for cancellation
             const { data: owners } = await supabaseAdmin
               .from('memberships')
