@@ -1,5 +1,5 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
-import { stripe } from '../_shared/stripe.ts';
+import Stripe from 'npm:stripe@18.5.0';
 import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
 import { resolveWebOrigin } from '../_shared/webOrigin.ts';
 
@@ -7,6 +7,27 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+/**
+ * This function's own Stripe client, deliberately *not* the shared one from
+ * `_shared/stripe.ts`.
+ *
+ * `features.subscription_update.schedule_at_period_end` — the field that keeps
+ * a downgrade from taking effect the instant it is chosen — does not exist on
+ * the 2023-10-16 API version the shared client is pinned to. Bumping that
+ * shared pin would change event and response shapes under every other function
+ * (the webhooks, Connect, registration payments), so the newer SDK is scoped to
+ * this file alone. Importing both here instead would collide: two copies of the
+ * Stripe types in one module graph, and the shared client's pinned apiVersion
+ * stops typechecking against the newer package.
+ *
+ * Portal sessions are created with this client too, for the same reason — the
+ * only parameters used (`customer`, `return_url`) and the only field read back
+ * (`url`) are identical across both versions.
+ */
+const stripePortal = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') as string, {
+  httpClient: Stripe.createFetchHttpClient(),
+});
 
 /** The three paid tiers' price env vars, same names create-checkout-session and the webhook read. */
 const PRICE_ENV_KEYS = [
@@ -32,15 +53,27 @@ const PRICE_ENV_KEYS = [
  * there — Move down to Coach+ opens the portal to a page with no plan-switch
  * option at all, silently short of what the confirm dialog just told them.
  *
- * `create_prorations` matches that promised copy exactly: Stripe shows the
- * prorated difference and lets the customer confirm it, rather than an
- * unreviewed silent charge (`always_invoice`) or no proration at all (`none`).
+ * The two settings below split plan changes by direction:
+ *
+ * `always_invoice` — an upgrade is charged and applied *now*. Under the
+ * previous `create_prorations` the new tier was granted immediately but the
+ * prorated difference was only parked on the next invoice, so upgrading in
+ * September produced "your next payment will be CA$159.99" a full year out and
+ * nothing charged today. Always invoicing settles the difference at the moment
+ * the customer asks for it, which is what an upgrade is expected to do.
+ *
+ * `schedule_at_period_end` on `decreasing_item_amount` — a downgrade is
+ * scheduled rather than applied. Stripe keeps the customer on the plan they
+ * have already paid for until the term ends and swaps the price at renewal,
+ * instead of dropping their features mid-term and leaving a credit behind.
+ * The condition is evaluated by Stripe per update, so the same configuration
+ * gives immediate upgrades and deferred downgrades with no branching here.
  *
  * Downgrading to Free has no Stripe price to switch to — it only exists as
- * cancelling the subscription outright, which is why downgradeRoute() sends
+ * cancelling the subscription outright, which is why planChangeRoute() sends
  * Free here too. `subscription_cancel` is turned on for that, `at_period_end`
  * so the account keeps what it already paid for through the current term,
- * consistent with every other plan change here settling at term end/renewal.
+ * consistent with the downgrade behaviour above.
  *
  * Idempotent and cheap to call on every portal open: one list + at most one
  * update, and the update is skipped once Stripe already reports both features
@@ -60,22 +93,28 @@ async function ensurePortalConfigured(): Promise<void> {
     return;
   }
 
-  const prices = await Promise.all(priceIds.map((id) => stripe.prices.retrieve(id)));
+  const prices = await Promise.all(priceIds.map((id) => stripePortal.prices.retrieve(id)));
   const productIds = Array.from(new Set(prices.map((p) => (typeof p.product === 'string' ? p.product : p.product.id))));
   const products = productIds.map((product) => ({
     product,
     prices: prices.filter((p) => (typeof p.product === 'string' ? p.product : p.product.id) === product).map((p) => p.id),
   }));
 
-  const configs = await stripe.billingPortal.configurations.list({ is_default: true, limit: 1 });
+  const configs = await stripePortal.billingPortal.configurations.list({ is_default: true, limit: 1 });
   const current = configs.data[0];
 
+  const update = current?.features?.subscription_update;
   const alreadyConfigured =
-    current?.features?.subscription_update?.enabled === true &&
-    current.features.subscription_update.proration_behavior === 'create_prorations' &&
+    update?.enabled === true &&
+    update.proration_behavior === 'always_invoice' &&
+    // Deferred downgrades are the whole point of the split, so a configuration
+    // missing the condition has to be rewritten even if everything else matches.
+    (update.schedule_at_period_end?.conditions ?? []).some(
+      (c) => c.type === 'decreasing_item_amount',
+    ) &&
     current.features.subscription_cancel?.enabled === true &&
     JSON.stringify(
-      (current.features.subscription_update.products ?? [])
+      (update.products ?? [])
         .map((p) => ({ product: p.product, prices: [...p.prices].sort() }))
         .sort((a, b) => a.product.localeCompare(b.product)),
     ) ===
@@ -90,7 +129,12 @@ async function ensurePortalConfigured(): Promise<void> {
     subscription_update: {
       enabled: true,
       default_allowed_updates: ['price'] as Array<'price'>,
-      proration_behavior: 'create_prorations' as const,
+      // Upgrades: charged and applied immediately.
+      proration_behavior: 'always_invoice' as const,
+      // Downgrades: deferred to renewal instead of applied mid-term.
+      schedule_at_period_end: {
+        conditions: [{ type: 'decreasing_item_amount' as const }],
+      },
       products,
     },
     subscription_cancel: {
@@ -101,9 +145,9 @@ async function ensurePortalConfigured(): Promise<void> {
   };
 
   if (current) {
-    await stripe.billingPortal.configurations.update(current.id, { features });
+    await stripePortal.billingPortal.configurations.update(current.id, { features });
   } else {
-    await stripe.billingPortal.configurations.create({
+    await stripePortal.billingPortal.configurations.create({
       business_profile: {},
       features,
     });
@@ -158,7 +202,7 @@ serve(async (req) => {
       console.error('Could not verify/update billing portal configuration:', configErr.message || configErr);
     }
 
-    const session = await stripe.billingPortal.sessions.create({
+    const session = await stripePortal.billingPortal.sessions.create({
       customer: customerId,
       return_url: webOrigin ? `${webOrigin}/profile` : `aastryout://profile`,
     });

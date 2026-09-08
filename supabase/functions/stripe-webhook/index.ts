@@ -37,6 +37,9 @@ function buildPriceIdToTier(): Record<string, string> {
   return map;
 }
 
+/** free < coach < coach_plus < club, mirroring TIER_ORDER/getTierRank in src/data/plans.ts. */
+const TIER_ORDER = ['free', 'coach', 'coach_plus', 'club'];
+
 /** Mirrors TIER_PRICES_CAD in create-checkout-session and PLAN_DEFINITIONS in src/data/plans.ts. */
 const TIER_PRICES_CAD: Record<string, { year: number; month: number }> = {
   coach: { year: 3999, month: 400 },
@@ -78,6 +81,107 @@ async function resolvePlanTierFromSubscription(
   }
   if (price.id && priceIdToTier[price.id]) return priceIdToTier[price.id];
   return resolveTierFromAmount(price.unit_amount, price.recurring?.interval, price.currency);
+}
+
+/**
+ * Cancels every *other* plan subscription on the customer once a checkout has
+ * created a new one.
+ *
+ * Cancelled immediately and with `prorate: false`, matching the upgrade's own
+ * billing model: the customer has just paid a full year for the new tier, and
+ * the time left on the old one is deliberately neither credited nor refunded.
+ * A proration credit here would quietly hand back exactly what that model is
+ * meant to forfeit.
+ *
+ * Add-on team licenses are left strictly alone. They are a second subscription
+ * by design, they carry no plan price, and resolvePlanTierFromSubscription
+ * returns null for them — so anything unrecognised is skipped rather than
+ * cancelled. That also protects a subscription on a retired or hand-made price
+ * from being torn down on a guess.
+ *
+ * Failures are logged, never thrown: the account is already on the new tier by
+ * this point, and failing the webhook would only make Stripe redeliver an
+ * event whose database work is done.
+ */
+async function cancelSupersededSubscriptions(session: any, newTier: string): Promise<void> {
+  const newSubId = typeof session.subscription === 'string'
+    ? session.subscription
+    : session.subscription?.id;
+  const customerId = typeof session.customer === 'string'
+    ? session.customer
+    : session.customer?.id;
+  if (!newSubId || !customerId) return;
+
+  try {
+    const all = await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 100 });
+    const priceIdToTier = buildPriceIdToTier();
+    const LIVE = ['active', 'trialing', 'past_due', 'unpaid'];
+
+    for (const sub of all.data) {
+      if (sub.id === newSubId) continue;
+      if (!LIVE.includes(sub.status)) continue;
+
+      const tier = await resolvePlanTierFromSubscription(sub, priceIdToTier);
+      if (!tier) continue;
+
+      try {
+        await stripe.subscriptions.cancel(sub.id, { prorate: false });
+        console.log(
+          `Cancelled superseded ${tier} subscription ${sub.id} after upgrading to ${newTier} ` +
+            `via checkout session ${session.id}.`,
+        );
+      } catch (err: any) {
+        console.error(`Could not cancel superseded subscription ${sub.id}:`, err.message || err);
+      }
+    }
+  } catch (err: any) {
+    console.error('Could not list subscriptions to cancel superseded ones:', err.message || err);
+  }
+}
+
+/**
+ * The plan change already scheduled against `subscription`, if any — the tier
+ * it moves to and when.
+ *
+ * Only a *different* tier counts. A subscription schedule is also created for
+ * ordinary reasons (Stripe attaches one whenever a phase list is needed at
+ * all), and a next phase carrying the price the account is already on is not a
+ * pending change worth telling anyone about.
+ *
+ * Returns null on anything it cannot read cleanly: an unresolvable price, a
+ * schedule that has been released, a retrieve that fails. A missing banner is
+ * a much smaller problem than a wrong one.
+ */
+async function resolvePendingPlanChange(
+  subscription: any,
+  currentTier: string,
+  priceIdToTier: Record<string, string>,
+): Promise<{ tier: string; at: number } | null> {
+  const scheduleRef = subscription?.schedule;
+  if (!scheduleRef) return null;
+  const scheduleId = typeof scheduleRef === 'string' ? scheduleRef : scheduleRef.id;
+  if (!scheduleId) return null;
+
+  try {
+    const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId);
+    if (schedule.status === 'released' || schedule.status === 'canceled') return null;
+
+    const now = Math.floor(Date.now() / 1000);
+    const nextPhase = (schedule.phases ?? []).find((p: any) => p.start_date > now);
+    if (!nextPhase) return null;
+
+    const priceRef = nextPhase.items?.[0]?.price;
+    const priceId = typeof priceRef === 'string' ? priceRef : priceRef?.id;
+    if (!priceId) return null;
+
+    const tier = priceIdToTier[priceId];
+    if (!tier || tier === currentTier) return null;
+
+    return { tier, at: nextPhase.start_date };
+  } catch (err: any) {
+    console.warn('Could not read subscription schedule for a pending plan change:', err.message || err);
+    return null;
+  }
 }
 
 serve(async (req: Request) => {
@@ -168,6 +272,12 @@ serve(async (req: Request) => {
               stripe_subscription_id: session.subscription as string,
               plan_tier: planTier,
               subscription_status: 'active',
+              // A brand-new subscription is neither scheduled to end nor
+              // scheduled to change tier; clear anything left over from a
+              // previously cancelled or downgraded one.
+              subscription_cancel_at: null,
+              pending_plan_tier: null,
+              pending_plan_change_at: null,
             })
             .eq('id', accountId);
             
@@ -175,6 +285,16 @@ serve(async (req: Request) => {
             console.error('Error updating account plan tier:', error);
           } else {
             console.log('Successfully updated account to tier:', planTier);
+
+            // The subscription this checkout just created supersedes whatever
+            // plan subscription was already running. Upgrades are deliberately
+            // routed through Checkout so they bill a full year up front rather
+            // than the prorated difference, and Checkout in subscription mode
+            // always *adds* a subscription — so without this the customer goes
+            // on paying for the tier they just left. That is exactly how one
+            // account ended up billed for Coach, Coach+, Coach and Club at the
+            // same time.
+            await cancelSupersededSubscriptions(session, planTier);
 
             // This account just became a paid subscriber, so whoever referred
             // them earns CAD$1 (capped at CAD$60/year). A null result means
@@ -237,38 +357,136 @@ serve(async (req: Request) => {
           }
         }
 
-        // Find the account by stripe_subscription_id
-        const { data: account } = await supabaseAdmin
-          .from('accounts')
-          .select('id')
-          .eq('stripe_subscription_id', subscription.id)
-          .single();
+        const customerId = typeof subscription.customer === 'string'
+          ? subscription.customer
+          : subscription.customer?.id;
+
+        // Keyed on the customer, not the subscription. An account can carry
+        // more than one subscription at once — an upgrade taken through
+        // Checkout rather than the portal leaves the old one running alongside
+        // the new, and add-on team licenses are always a second subscription —
+        // but only ever one of them is stored in stripe_subscription_id, so
+        // events for all the others matched nothing here and were dropped
+        // silently. Cancelling one of three subscriptions did nothing at all.
+        let account: { id: string; plan_tier: string } | null = null;
+        if (customerId) {
+          const { data } = await supabaseAdmin
+            .from('accounts')
+            .select('id, plan_tier')
+            .eq('stripe_customer_id', customerId)
+            .maybeSingle();
+          account = data;
+        }
+        if (!account) {
+          const { data } = await supabaseAdmin
+            .from('accounts')
+            .select('id, plan_tier')
+            .eq('stripe_subscription_id', subscription.id)
+            .maybeSingle();
+          account = data;
+        }
 
         if (account) {
-          const isEnding = subscription.status === 'canceled' || subscription.status === 'unpaid';
-          const updates: Record<string, unknown> = { subscription_status: subscription.status };
+          const updates: Record<string, unknown> = {};
 
-          if (isEnding) {
-            // Optionally handle plan downgrades if deleted
-            updates.plan_tier = 'free';
-          } else {
-            // A Customer Portal plan switch (upgrade or downgrade) changes the
-            // subscription's price and fires exactly this event —
-            // checkout.session.completed, the only other place plan_tier is
-            // written, never fires for a portal-initiated change. Without this,
-            // an account that switched plans in the portal keeps whatever tier
-            // it had before, forever, while Stripe bills it at the new rate.
+          if (customerId) {
+            // Recompute entitlement from every subscription this customer has,
+            // rather than trusting the one that happened to fire this event:
+            // with several live subscriptions the account is entitled to the
+            // best of them, and only drops to Free once none of them entitle
+            // anything any more. This is also what makes a cancellation
+            // actually land — the previous code demoted on a single
+            // subscription's status while the customer's others kept billing.
+            const all = await stripe.subscriptions.list({
+              customer: customerId,
+              status: 'all',
+              limit: 100,
+            });
             const priceIdToTier = buildPriceIdToTier();
-            const resolvedTier = await resolvePlanTierFromSubscription(subscription, priceIdToTier);
-            if (resolvedTier) {
-              updates.plan_tier = resolvedTier;
-            } else {
+            // past_due keeps access, matching the old behaviour of only ever
+            // demoting on 'canceled'/'unpaid'.
+            const ENTITLING = ['active', 'trialing', 'past_due'];
+
+            let bestTier = 'free';
+            let bestRank = 0;
+            let bestSubId: string | null = null;
+            let bestStatus: string | null = null;
+            let bestCancelAt: number | null = null;
+            let bestSub: any = null;
+            let entitlingCount = 0;
+            let unresolvedCount = 0;
+
+            for (const sub of all.data) {
+              if (!ENTITLING.includes(sub.status)) continue;
+              entitlingCount++;
+              // Team-license subscriptions resolve to no tier and are skipped.
+              const tier = await resolvePlanTierFromSubscription(sub, priceIdToTier);
+              if (!tier) {
+                unresolvedCount++;
+                continue;
+              }
+              const rank = TIER_ORDER.indexOf(tier);
+              if (rank > bestRank) {
+                bestRank = rank;
+                bestTier = tier;
+                bestSubId = sub.id;
+                bestStatus = sub.status;
+                bestSub = sub;
+                // Portal cancellations are taken at period end, so the
+                // subscription stays active and only this says it is ending.
+                bestCancelAt = sub.cancel_at_period_end
+                  ? (sub.cancel_at ?? sub.current_period_end ?? null)
+                  : null;
+              }
+            }
+
+            updates.subscription_status = bestStatus ?? subscription.status;
+            updates.subscription_cancel_at = bestCancelAt
+              ? new Date(bestCancelAt * 1000).toISOString()
+              : null;
+
+            // A downgrade chosen in the portal is scheduled, not applied: the
+            // portal config defers `decreasing_item_amount` updates to period
+            // end, so the subscription keeps its current price and Stripe
+            // attaches a subscription schedule whose next phase carries the
+            // lower one. Nothing about the subscription itself changes, so
+            // without reading that schedule the app would show no trace of the
+            // downgrade until it silently took effect a year later.
+            const pending = await resolvePendingPlanChange(bestSub, bestTier, priceIdToTier);
+            updates.pending_plan_tier = pending?.tier ?? null;
+            updates.pending_plan_change_at = pending
+              ? new Date(pending.at * 1000).toISOString()
+              : null;
+
+            // Only ever demote to Free when every live subscription was
+            // positively identified. A price this mapping doesn't know — one
+            // created through create-checkout-session's inline `price_data`
+            // fallback, or a retired Dashboard price — resolves to no tier,
+            // and treating that as "not entitled" would cut off an account
+            // that is still paying. Leave the tier alone and say so instead.
+            if (bestSubId) {
+              updates.plan_tier = bestTier;
+              // Point the account at the subscription actually backing its
+              // tier, so anything still reading this single id follows it.
+              updates.stripe_subscription_id = bestSubId;
+            } else if (unresolvedCount > 0) {
               console.warn(
-                `customer.subscription.updated: could not resolve a plan tier from subscription ${subscription.id}'s current price. ` +
-                  'Leaving plan_tier unchanged — check that STRIPE_PRICE_ID_* secrets match the Dashboard prices, or that the price is one of the hardcoded CAD amounts.',
+                `Account ${account.id} has ${unresolvedCount} live subscription(s) whose price could not be mapped to a plan tier. ` +
+                  'Leaving plan_tier unchanged rather than demoting a paying account — check the STRIPE_PRICE_ID_* secrets against the Dashboard prices.',
               );
+            } else if (entitlingCount === 0) {
+              updates.plan_tier = 'free';
+            }
+          } else {
+            // No customer on the event: fall back to the single-subscription
+            // reading rather than guessing at the account's entitlement.
+            updates.subscription_status = subscription.status;
+            if (subscription.status === 'canceled' || subscription.status === 'unpaid') {
+              updates.plan_tier = 'free';
             }
           }
+
+          const droppedToFree = account.plan_tier !== 'free' && updates.plan_tier === 'free';
 
           const { error } = await supabaseAdmin
             .from('accounts')
@@ -277,11 +495,14 @@ serve(async (req: Request) => {
 
           if (error) {
             console.error('Error updating account subscription status:', error);
-          } else if (updates.plan_tier && !isEnding) {
-            console.log(`Reconciled account ${account.id} to plan tier "${updates.plan_tier}" from subscription ${subscription.id}.`);
+          } else {
+            console.log(
+              `Reconciled account ${account.id} to plan tier "${updates.plan_tier}" ` +
+                `(status "${updates.subscription_status}") from customer ${customerId ?? 'unknown'}'s subscriptions.`,
+            );
           }
 
-          if (!error && (subscription.status === 'canceled' || subscription.status === 'unpaid')) {
+          if (!error && droppedToFree) {
             // Trigger send-email for cancellation
             const { data: owners } = await supabaseAdmin
               .from('memberships')

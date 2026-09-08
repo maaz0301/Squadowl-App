@@ -17,7 +17,7 @@ export function planChangeDirection(from: PlanTier, to: PlanTier): PlanChangeDir
 }
 
 /**
- * How a downgrade is carried out.
+ * How a plan change is carried out.
  *
  * `portal` — the Stripe Customer Portal, which is the only safe route while a
  * subscription is live: the plan swap has to replace the existing subscription
@@ -25,7 +25,7 @@ export function planChangeDirection(from: PlanTier, to: PlanTier): PlanChangeDir
  * Checkout would leave the account paying for two. Cancelling down to Free is
  * the same story.
  *
- * `checkout` — an ordinary Checkout for the lower tier, used when there is no
+ * `checkout` — an ordinary Checkout for the target tier, used when there is no
  * live subscription to replace (a lapsed or cancelled account whose profile
  * still carries the old tier). There is nothing for the portal to manage there.
  */
@@ -36,7 +36,18 @@ export function hasLiveSubscription(subscriptionStatus: string | undefined): boo
   return subscriptionStatus === 'active' || subscriptionStatus === 'trialing';
 }
 
-export function downgradeRoute(
+/**
+ * The route for a switch to `target`, in *either* direction.
+ *
+ * Deliberately direction-agnostic. This started life as `downgradeRoute` and
+ * was only consulted for downgrades, which left every upgrade opening a fresh
+ * Checkout — and a Checkout in subscription mode always creates a *new*
+ * subscription rather than replacing the live one, so upgrading twice left the
+ * account genuinely paying for two plans at once (and a third, and so on).
+ * The "starting a second Checkout would leave the account paying for two"
+ * reasoning above was always true of upgrades too; only the wiring disagreed.
+ */
+export function planChangeRoute(
   target: PlanTier,
   subscriptionStatus: string | undefined,
 ): PlanChangeRoute {

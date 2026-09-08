@@ -19,7 +19,7 @@ import {
 import type { PlanTier } from '@/data/types';
 import {
   buildDowngradeImpact,
-  downgradeRoute,
+  planChangeRoute,
   hasLiveSubscription,
   planChangeDirection,
 } from '@/lib/planChange';
@@ -195,21 +195,64 @@ export default function UpgradeScreen() {
   const extraTeamPrice = currentPlan.extraTeamPriceCents ?? 0;
 
   /**
-   * Switches to any tier, in either direction.
+   * Switches to any tier, in either direction. The two directions take
+   * deliberately different routes.
    *
-   * A downgrade is confirmed first — with what it actually costs the account,
-   * built from the two plans and the current usage — and then routed by
-   * downgradeRoute(): the Stripe Customer Portal while a subscription is live,
-   * because swapping the plan there replaces the existing subscription instead
-   * of starting a second one alongside it, and an ordinary Checkout only when
-   * there is no live subscription for the portal to manage.
+   * An **upgrade** always goes through Checkout, and is charged in full for a
+   * billing year that restarts today — the remaining time on the plan being
+   * left behind is not credited. That is a product decision, not Stripe's
+   * default: the portal's own switch flow only ever bills the prorated
+   * difference, and no portal setting charges full price while forfeiting
+   * prepaid time. Checkout is the only route that does. stripe-webhook cancels
+   * the superseded subscription once the checkout completes — without that
+   * half, this is a double-billing bug.
+   *
+   * A **downgrade** stays with the portal, where it is scheduled rather than
+   * applied: the account keeps the tier it has paid for until the term ends.
    */
   const switchPlan = async (tier: PlanTier) => {
-    if (planChangeDirection(currentTier, tier) !== 'downgrade') {
+    const direction = planChangeDirection(currentTier, tier);
+    if (direction === 'current') return;
+
+    if (direction === 'upgrade') {
+      const confirmedUpgrade = await confirmUpgrade(tier);
+      if (!confirmedUpgrade) return;
       await startCheckout(tier);
       return;
     }
 
+    const confirmed = await confirmDowngrade(tier);
+    if (!confirmed) return;
+
+    if (planChangeRoute(tier, user?.subscriptionStatus) === 'portal') {
+      await openPortal();
+      return;
+    }
+    await startCheckout(tier);
+  };
+
+  /**
+   * Says out loud what an upgrade costs before sending anyone to Stripe.
+   *
+   * Only shown when there is a subscription to lose — a first-time subscriber
+   * forfeits nothing and goes straight to Checkout.
+   */
+  const confirmUpgrade = async (tier: PlanTier) => {
+    if (!hasLiveSubscription(user?.subscriptionStatus)) return true;
+    const target = getPlanDefinition(tier);
+    const price = target.pricing ? formatCad(target.pricing.year.amountCents) : '';
+    return confirmAsync({
+      title: `Upgrade to ${target.name}?`,
+      message:
+        `You'll be charged ${price} today for a full year of ${target.name}, starting now.\n\n` +
+        `The time left on your ${currentPlan.name} plan isn't credited or refunded, and that ` +
+        `subscription is cancelled once the payment goes through.`,
+      confirmLabel: 'Continue to payment',
+    });
+  };
+
+  /** The "here's what this costs you" gate in front of a downgrade. */
+  const confirmDowngrade = async (tier: PlanTier) => {
     const impact = buildDowngradeImpact({
       from: currentTier,
       to: tier,
@@ -225,13 +268,7 @@ export default function UpgradeScreen() {
         : `${target.name} covers everything you're using today. You'll finish the change in Stripe, where the new price and any credit for the rest of this term are shown before you confirm.`,
       confirmLabel: `Switch to ${target.name}`,
     });
-    if (!ok) return;
-
-    if (downgradeRoute(tier, user?.subscriptionStatus) === 'portal') {
-      await openPortal();
-      return;
-    }
-    await startCheckout(tier);
+    return ok;
   };
 
   // Extra teams are an add-on subscription on top of the current plan (Club only), so
@@ -501,15 +538,20 @@ export default function UpgradeScreen() {
                     // people can't find is the gap this screen started with.
                     variant={isUpgrade && item.highlight ? 'primary' : 'secondary'}
                     onPress={() => switchPlan(item.tier)}
-                    loading={loadingTier === item.tier || (isDowngrade && loadingPortal)}
+                    loading={loadingTier === item.tier || loadingPortal}
                   />
-                  {isDowngrade ? (
-                    <Text className="text-xs text-center" style={{ color: colors.inkFaint }}>
-                      {downgradeRoute(item.tier, user?.subscriptionStatus) === 'portal'
-                        ? 'Confirmed in Stripe, with any credit for the rest of your term.'
+                  {/* The two directions bill so differently that the button
+                      alone would mislead: one charges a full year today, the
+                      other charges nothing until the current term runs out. */}
+                  <Text className="text-xs text-center" style={{ color: colors.inkFaint }}>
+                    {isUpgrade
+                      ? hasLiveSubscription(user?.subscriptionStatus)
+                        ? 'Full price today, billed for a new year. Time left on your current plan isn’t credited.'
+                        : 'Full price today, billed for a new year.'
+                      : planChangeRoute(item.tier, user?.subscriptionStatus) === 'portal'
+                        ? 'Takes effect when your current term ends. Nothing changes today.'
                         : 'Starts a new subscription at the lower price.'}
-                    </Text>
-                  ) : null}
+                  </Text>
                 </View>
               )}
             </Card>
