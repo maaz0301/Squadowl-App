@@ -44,6 +44,7 @@ export default function DashboardScreen() {
   const navigation = useNavigation<any>();
   const user = useUser();
   const setCurrentTryout = useSessionStore((s) => s.setCurrentTryout);
+  const setAssessorOnlyTryout = useSessionStore((s) => s.setAssessorOnlyTryout);
   const setActiveAssessor = useSessionStore((s) => s.setActiveAssessor);
   const combineIds = useSessionStore((s) => s.combineTryoutIds);
   const toggleCombineTryout = useSessionStore((s) => s.toggleCombineTryout);
@@ -136,6 +137,7 @@ export default function DashboardScreen() {
     // rather than after the roster has already mounted empty.
     prefetchTryout(id);
     setCurrentTryout(id);
+    setAssessorOnlyTryout(id);
     setActiveAssessor(user?.displayName ? { name: user.displayName, email: user.email, role: 'assessor', status: 'accepted' } : null);
     navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: id, isAssessorOnly: true } });
   };
@@ -208,6 +210,7 @@ export default function DashboardScreen() {
     }
     prefetchTryout(id);
     setCurrentTryout(id);
+    setAssessorOnlyTryout(null);
     setNavigatingId(id);
     navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: id } });
   };

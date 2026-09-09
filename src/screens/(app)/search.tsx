@@ -15,6 +15,7 @@ export default function SearchScreen() {
   const tryoutsQuery = useTryoutsQuery(true);
   const seasonsQuery = useSeasonsQuery();
   const setCurrentTryout = useSessionStore((s) => s.setCurrentTryout);
+  const setAssessorOnlyTryout = useSessionStore((s) => s.setAssessorOnlyTryout);
   const prefetchTryout = usePrefetchTryout();
 
   const results = useMemo(() => {
@@ -82,10 +83,12 @@ export default function SearchScreen() {
                 if (item.type === 'assessment') {
                   prefetchTryout(item.id);
                   setCurrentTryout(item.id);
+                  setAssessorOnlyTryout(null);
                   navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: item.id } });
                 } else if (item.type === 'player') {
                   prefetchTryout(item.tryoutId);
                   setCurrentTryout(item.tryoutId);
+                  setAssessorOnlyTryout(null);
                   navigation.navigate('AssessmentFlow', { screen: 'AssessmentPlayer', params: { id: item.tryoutId, playerId: item.id } });
                 } else {
                   navigation.navigate('SeasonDetail', { id: item.id });

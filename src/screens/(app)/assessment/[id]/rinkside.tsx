@@ -395,13 +395,12 @@ export default function RinksideScreen() {
 
               return SESSIONS.map((s, idx) => {
                 const isScored = scoredSessionsMap.has(s);
-                // A session the server counts but this viewer can't read is an
-                // assessor looking at the coach's work: opening it would start a
-                // second evaluation beside one they never see.
+                // Assessor-only: prior sessions from session progress stay
+                // disabled. Managers/owners open them from loaded evals.
                 const sessionNum = Number(s.match(/^Session (\d+)$/)?.[1]);
                 const isServerScored =
                   Number.isFinite(sessionNum) && sessionNum <= (sessionProgress?.[player?.id || ''] ?? 0);
-                let disabled = isServerScored && !isScored;
+                let disabled = isAssessorOnly && isServerScored && !isScored;
                 if (!isScored && idx > nextSessionIdx) {
                   disabled = true;
                 }
@@ -568,7 +567,12 @@ export default function RinksideScreen() {
         <Button
           label="Full Score Form"
           variant="ghost"
-          onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentScore', params: { id, playerId: player?.id } })}
+          onPress={() =>
+            navigation.navigate('AssessmentFlow', {
+              screen: 'AssessmentScore',
+              params: { id, playerId: player?.id, isAssessorOnly },
+            })
+          }
         />
       </View>
     </Screen>

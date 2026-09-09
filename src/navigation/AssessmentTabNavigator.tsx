@@ -6,6 +6,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { useTryoutQuery, useRegistrationsQuery, useTryoutRealtimeSync } from '@/features/queries';
+import { useSessionStore } from '@/state/sessionStore';
 
 import AssessmentRosterScreen from '../screens/(app)/assessment/[id]/roster';
 import AssessmentRegistrationsScreen from '../screens/(app)/assessment/[id]/registrations';
@@ -56,22 +57,25 @@ export default function AssessmentTabNavigator() {
   
   // Extract ID from the nested params or directly
   const id = route.params?.params?.id || route.params?.id;
+  const assessorOnlyTryoutId = useSessionStore((s) => s.assessorOnlyTryoutId);
+  const setAssessorOnlyTryout = useSessionStore((s) => s.setAssessorOnlyTryout);
   
   // Enable Real-Time Sync across all assessment screens
   useTryoutRealtimeSync(id);
-  
-  const [assessorState, setAssessorState] = React.useState(() => {
-    return route.params?.params?.isAssessorOnly || route.params?.isAssessorOnly || false;
-  });
 
+  // Nested Score/Player navigates replace flow params and drop isAssessorOnly.
+  // Persist the flag in the session store when the route still carries it;
+  // otherwise trust the store for this tryout id.
   React.useEffect(() => {
-    const incoming = route.params?.params?.isAssessorOnly || route.params?.isAssessorOnly;
-    if (incoming !== undefined) {
-      setAssessorState(incoming);
+    const incoming = route.params?.params?.isAssessorOnly ?? route.params?.isAssessorOnly;
+    if (incoming === true && id) {
+      setAssessorOnlyTryout(id);
+    } else if (incoming === false) {
+      setAssessorOnlyTryout(null);
     }
-  }, [route.params]);
+  }, [route.params, id, setAssessorOnlyTryout]);
 
-  const isAssessorOnly = assessorState;
+  const isAssessorOnly = !!(id && assessorOnlyTryoutId === id);
   
   const tryoutQuery = useTryoutQuery(id);
   const tryout = tryoutQuery.data;
@@ -167,7 +171,7 @@ export default function AssessmentTabNavigator() {
       <Tab.Screen
         name="AssessmentRoster"
         component={AssessmentRosterScreen}
-        initialParams={{ id }}
+        initialParams={{ id, isAssessorOnly }}
         options={{
           title: tryout?.name || 'Loading...',
           tabBarLabel: 'Roster',
@@ -187,6 +191,7 @@ export default function AssessmentTabNavigator() {
           }}
         />
       )}
+       {!isAssessorOnly && (
       <Tab.Screen
         name="AssessmentResults"
         component={AssessmentResultsScreen}
@@ -197,6 +202,7 @@ export default function AssessmentTabNavigator() {
           tabBarIcon: ({ color, focused }) => <TabIcon label="∑" color={color} focused={focused} />,
         }}
       />
+      )}
       {!isAssessorOnly && (
         <Tab.Screen
           name="AssessmentSettings"
@@ -235,9 +241,9 @@ export default function AssessmentTabNavigator() {
       )}
 
       {/* Hidden Screens (still in the tab context but no tab button) */}
-      <Tab.Screen name="AssessmentPlayer" component={AssessmentPlayerScreen} initialParams={{ id }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
-      <Tab.Screen name="AssessmentScore" component={AssessmentScoreScreen} initialParams={{ id }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
-      <Tab.Screen name="AssessmentRinkside" component={AssessmentRinksideScreen} initialParams={{ id }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
+      <Tab.Screen name="AssessmentPlayer" component={AssessmentPlayerScreen} initialParams={{ id, isAssessorOnly }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
+      <Tab.Screen name="AssessmentScore" component={AssessmentScoreScreen} initialParams={{ id, isAssessorOnly }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
+      <Tab.Screen name="AssessmentRinkside" component={AssessmentRinksideScreen} initialParams={{ id, isAssessorOnly }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
       <Tab.Screen name="AssessmentTeamBuilder" component={AssessmentTeamBuilderScreen} initialParams={{ id }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
       <Tab.Screen name="AssessmentTeamBuilderTeam" component={AssessmentTeamBuilderTeamScreen} initialParams={{ id }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
       <Tab.Screen name="AssessmentCompare" component={AssessmentCompareScreen} initialParams={{ id }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />

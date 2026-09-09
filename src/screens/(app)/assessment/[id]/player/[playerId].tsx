@@ -211,7 +211,12 @@ export default function PlayerHubScreen() {
           <Button
             label="Score Player"
             className="flex-1"
-            onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentScore', params: { id: id, playerId: playerId } })}
+            onPress={() =>
+              navigation.navigate('AssessmentFlow', {
+                screen: 'AssessmentScore',
+                params: { id: id, playerId: playerId, isAssessorOnly },
+              })
+            }
           />
           {canManageTeam && <Button label="Edit" variant="secondary" className="flex-1" onPress={() => setShowEdit(true)} />}
         </View>
@@ -523,46 +528,57 @@ export default function PlayerHubScreen() {
         </Card>
       )}
 
-      <Text className="text-md font-display font-bold mb-3" style={{ color: colors.ink }}>
-        Evaluations ({evals.length})
-      </Text>
-      {evals.length === 0 ? (
-        <EmptyState title="No evaluations yet" message="Tap Score Player to add the first evaluation." />
-      ) : (
-        evals.map((ev) => {
-          const overall = weightedOverall(ev.scores ?? {}, categories, weights);
-          return (
-            <Card key={ev.id} className="mb-2 gap-1">
-              <View className="flex-row justify-between">
-                <Text className="font-bold" style={{ color: colors.ink }}>
-                  {ev.session} · {ev.date} {overall > 0 ? `· Score: ${overall.toFixed(1)}` : ''}
-                </Text>
-                {ev.recommendation ? <Badge label={ev.recommendation} variant="brand" /> : null}
-              </View>
-            <Text className="text-sm" style={{ color: colors.inkMuted }}>
-              {ev.evaluator}
-            </Text>
-            {ev.strengths ? (
-              <Text className="text-sm mt-1" style={{ color: colors.ink }}>
-                + {ev.strengths}
-              </Text>
-            ) : null}
-            {ev.improve ? (
-              <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                → {ev.improve}
-              </Text>
-            ) : null}
-            <Button
-              label="Edit Score"
-              size="sm"
-              variant="ghost"
-              onPress={() =>
-                navigation.navigate('AssessmentFlow', { screen: 'AssessmentScore', params: { id: id, playerId: playerId, evalId: ev.id } })
-              }
-            />
-          </Card>
-        );
-      })
+      {/* Evaluations (session scores) are for managers/owners. An assessor
+          already gets session numbering on Score via session progress, and
+          those prior sessions stay disabled there — they must not read others'
+          scores here. */}
+      {isAssessorOnly ? null : (
+        <>
+          <Text className="text-md font-display font-bold mb-3" style={{ color: colors.ink }}>
+            Evaluations ({evals.length})
+          </Text>
+          {evals.length === 0 ? (
+            <EmptyState title="No evaluations yet" message="Tap Score Player to add the first evaluation." />
+          ) : (
+            evals.map((ev) => {
+              const overall = weightedOverall(ev.scores ?? {}, categories, weights);
+              return (
+                <Card key={ev.id} className="mb-2 gap-1">
+                  <View className="flex-row justify-between">
+                    <Text className="font-bold" style={{ color: colors.ink }}>
+                      {ev.session} · {ev.date} {overall > 0 ? `· Score: ${overall.toFixed(1)}` : ''}
+                    </Text>
+                    {ev.recommendation ? <Badge label={ev.recommendation} variant="brand" /> : null}
+                  </View>
+                  <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                    {ev.evaluator}
+                  </Text>
+                  {ev.strengths ? (
+                    <Text className="text-sm mt-1" style={{ color: colors.ink }}>
+                      + {ev.strengths}
+                    </Text>
+                  ) : null}
+                  {ev.improve ? (
+                    <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                      → {ev.improve}
+                    </Text>
+                  ) : null}
+                  <Button
+                    label="Edit Score"
+                    size="sm"
+                    variant="ghost"
+                    onPress={() =>
+                      navigation.navigate('AssessmentFlow', {
+                        screen: 'AssessmentScore',
+                        params: { id, playerId, evalId: ev.id },
+                      })
+                    }
+                  />
+                </Card>
+              );
+            })
+          )}
+        </>
       )}
 
       {isCoachHere ? (

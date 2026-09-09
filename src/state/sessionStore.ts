@@ -7,6 +7,8 @@ export type RosterFilter = 'all' | 'scored' | 'unscored' | 'goalies' | 'skaters'
 
 interface SessionState {
   currentTryoutId: string | null;
+  /** Tryout id opened from the assigned-assessor entry; survives nested navigates that drop route params. */
+  assessorOnlyTryoutId: string | null;
   currentPlayerId: string | null;
   currentEvalId: string | null;
   workingScores: Record<string, number>;
@@ -16,6 +18,7 @@ interface SessionState {
   combineTryoutIds: string[];
   completedSessions: Record<string, string[]>;
   setCurrentTryout: (id: string | null) => void;
+  setAssessorOnlyTryout: (id: string | null) => void;
   setCurrentPlayer: (id: string | null) => void;
   setCurrentEval: (id: string | null) => void;
   setWorkingScores: (scores: Record<string, number>) => void;
@@ -34,6 +37,7 @@ export const useSessionStore = create<SessionState>()(
   persist(
     (set) => ({
       currentTryoutId: null,
+      assessorOnlyTryoutId: null,
       currentPlayerId: null,
       currentEvalId: null,
       workingScores: {},
@@ -43,6 +47,7 @@ export const useSessionStore = create<SessionState>()(
       combineTryoutIds: [],
       completedSessions: {},
       setCurrentTryout: (id) => set({ currentTryoutId: id }),
+      setAssessorOnlyTryout: (id) => set({ assessorOnlyTryoutId: id }),
       setCurrentPlayer: (id) => set({ currentPlayerId: id }),
       setCurrentEval: (id) => set({ currentEvalId: id }),
       setWorkingScores: (scores) => set({ workingScores: scores }),

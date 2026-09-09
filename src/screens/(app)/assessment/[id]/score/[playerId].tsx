@@ -129,8 +129,11 @@ export default function ScoreScreen() {
   // `scoredSessions` is empty for them and every player looked untouched from
   // Session 1 — next to the coach's Sessions 1-5. The server answers with the
   // numbering alone, no scores.
-  const sessionProgress = useSessionProgressQuery(id, isAssessorOnly).data;
+  const sessionProgressQuery = useSessionProgressQuery(id, isAssessorOnly);
+  const sessionProgress = sessionProgressQuery.data;
   const serverHighestSession = sessionProgress?.[playerId || ''] ?? 0;
+  // Don't lock Session 1 before the RPC returns for an assessor.
+  const sessionNumberingReady = !isAssessorOnly || !sessionProgressQuery.isLoading;
 
   const isServerScored = (s: string) => {
     const num = Number(s.match(/^Session (\d+)$/)?.[1]);
@@ -173,7 +176,7 @@ export default function ScoreScreen() {
       (s) =>
         !completedSessionsForPlayer.includes(s) &&
         !scoredSessions.has(s) &&
-        !isServerScored(s) &&
+        !(isAssessorOnly && isServerScored(s)) &&
         s !== 'Extra View',
     ) ??
     'Session 1';
@@ -371,7 +374,9 @@ export default function ScoreScreen() {
     };
   }, [formData, evalId, playerId]);
 
-  if (tryoutQuery.isLoading) return <LoadingState message="Loading..." />;
+  if (tryoutQuery.isLoading || !sessionNumberingReady) {
+    return <LoadingState message="Loading..." />;
+  }
   if (tryoutQuery.isError) {
     return (
       <Screen scroll insideTabBar>
@@ -445,7 +450,9 @@ export default function ScoreScreen() {
   });
 
   const isEditing = !!evalId;
-  const firstUnscoredIdx = SESSIONS.findIndex(s => !scoredSessions.has(s) && !isServerScored(s));
+  const firstUnscoredIdx = SESSIONS.findIndex(
+    (s) => !scoredSessions.has(s) && !(isAssessorOnly && isServerScored(s)),
+  );
 
   return (
     <Screen scroll={false} keyboardAvoiding={false} padded={false}>
@@ -508,10 +515,11 @@ export default function ScoreScreen() {
             const isScored = scoredSessions.has(s);
             const isCurrentOfEval = isEditing && existingEval?.session === s;
 
-            // A session the server counts but this viewer can't read is an
-            // assessor looking at the coach's work: opening it would start a
-            // second evaluation beside one they never see.
-            let disabled = isServerScored(s) && !isScored;
+            // Assessor-only: sessions the server already counts (coach/manager
+            // work this viewer cannot read) stay disabled so opening one does
+            // not start a parallel eval. Managers/owners load real evals and
+            // can open those chips normally.
+            let disabled = isAssessorOnly && isServerScored(s) && !isScored;
             if (isScored) {
               disabled = false; // allow editing
             } else if (firstUnscoredIdx !== -1 && idx > firstUnscoredIdx) {

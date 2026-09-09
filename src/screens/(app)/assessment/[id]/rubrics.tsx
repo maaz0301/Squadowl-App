@@ -8,7 +8,20 @@ import { useTryoutQuery, useUpdateTryoutMutation } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { getPlanDefinition } from '@/data/plans';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
-import type { ScoringType, RankingDirection } from '@/data/types';
+import {
+  SCORING_TYPE_LABELS,
+  binaryLabels,
+  isBinaryScoringType,
+  isMetricScoringType,
+  resolveWeights,
+} from '@/data/rubrics';
+import { SCORING_TYPES, type ScoringType, type RankingDirection } from '@/data/types';
+
+/** Weights print as whole percentages where they are whole, e.g. "25%" / "16.7%". */
+function formatPct(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}%`;
+}
 
 export default function RubricsScreen() {
   const id = useAssessmentId();
@@ -24,6 +37,7 @@ export default function RubricsScreen() {
   const [minValStr, setMinValStr] = useState('');
   const [maxValStr, setMaxValStr] = useState('');
   const [rankingDirection, setRankingDirection] = useState<RankingDirection>('higher_is_better');
+  const [weightStr, setWeightStr] = useState('');
 
   const handleScoringTypeChange = (type: ScoringType) => {
     setScoringType(type);
@@ -47,6 +61,9 @@ export default function RubricsScreen() {
   // gates against the owning club's tier, not the viewer's own.
   const tier = useEffectivePlanTier(tryoutQuery.data?.teamId);
 
+  const weightNum = weightStr.trim() !== '' ? parseFloat(weightStr) : undefined;
+  const weightValid = weightNum == null || (!isNaN(weightNum) && weightNum >= 1 && weightNum <= 100);
+
   if (tryoutQuery.isLoading || !id) return <LoadingState message="Loading rubrics..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
     return (
@@ -63,7 +80,7 @@ export default function RubricsScreen() {
     customLimit !== 'unlimited' && custom.length >= (customLimit as number);
 
   const addCustom = async () => {
-    if (!label.trim() || atCustomLimit) return;
+    if (!label.trim() || atCustomLimit || !weightValid) return;
     const key = label.trim().toLowerCase().replace(/\s+/g, '_');
 
     let defaultUnit = unit.trim();
@@ -74,16 +91,19 @@ export default function RubricsScreen() {
     const minNum = minValStr.trim() !== '' ? parseFloat(minValStr) : undefined;
     const maxNum = maxValStr.trim() !== '' ? parseFloat(maxValStr) : undefined;
 
+    const isMetric = isMetricScoringType(scoringType);
+
     const nextItem = {
       key,
       label: label.trim(),
       category: category.trim() || undefined,
       scoringType,
-      scale: scoringType === 'skill' ? scale : '1-5',
-      unit: scoringType !== 'skill' ? defaultUnit : undefined,
-      minVal: !isNaN(minNum as number) ? minNum : undefined,
-      maxVal: !isNaN(maxNum as number) ? maxNum : undefined,
+      scale: scoringType === 'skill' ? scale : ('1-5' as const),
+      unit: isMetric ? defaultUnit : undefined,
+      minVal: isMetric && minNum != null && !isNaN(minNum) ? minNum : undefined,
+      maxVal: isMetric && maxNum != null && !isNaN(maxNum) ? maxNum : undefined,
       rankingDirection,
+      weight: weightNum != null && !isNaN(weightNum) ? weightNum : undefined,
     };
 
     const next = [...custom, nextItem];
@@ -105,6 +125,7 @@ export default function RubricsScreen() {
     setUnit('');
     setMinValStr('');
     setMaxValStr('');
+    setWeightStr('');
   };
 
   const removeCustom = async (keyToRemove: string) => {
@@ -131,6 +152,13 @@ export default function RubricsScreen() {
       showAlert('Error', err.message || 'Failed to remove custom rubric.');
     }
   };
+
+  // What each rubric actually contributes: its own weight, or an even share of
+  // whatever the weighted rubrics leave over.
+  const effectiveWeights = resolveWeights(custom.map((r) => r.weight));
+  const weightedCount = custom.filter((r) => r.weight != null).length;
+  const unweightedCount = custom.length - weightedCount;
+  const explicitTotal = custom.reduce((sum, r) => sum + (r.weight ?? 0), 0);
 
   return (
     <Screen scroll insideTabBar>
@@ -159,26 +187,46 @@ export default function RubricsScreen() {
           </Text>
         </View>
 
-        {custom.map((r) => {
-          const typeLabel = r.scoringType ?? 'skill';
-          const ruleText = r.rankingDirection === 'lower_is_better' ? 'Shortest wins' : 'Highest wins';
-          let details = r.scoringType === 'skill' || !r.scoringType
-            ? `${r.scale ?? '1-5'} scale`
-            : `${r.unit ?? ''} (${ruleText})`;
+        {custom.length > 0 ? (
+          <Text className="text-xs" style={{ color: explicitTotal > 100 ? colors.danger : colors.inkMuted }}>
+            Weights: {formatPct(explicitTotal)} assigned across {weightedCount}{' '}
+            {weightedCount === 1 ? 'rubric' : 'rubrics'}
+            {unweightedCount > 0
+              ? ` · the remaining ${unweightedCount} split ${formatPct(Math.max(0, 100 - explicitTotal))} evenly`
+              : ''}
+            {explicitTotal > 100 ? ' · over 100% — weights are scaled to their share of the total.' : ''}
+          </Text>
+        ) : null}
 
+        {custom.map((r, i) => {
+          const type = r.scoringType ?? 'skill';
+          const ruleText = r.rankingDirection === 'lower_is_better' ? 'Shortest wins' : 'Highest wins';
+          let details: string;
+          if (isBinaryScoringType(type)) {
+            const [positive, negative] = binaryLabels(type);
+            details = `${positive} / ${negative} · ${positive} scores 5.0`;
+          } else if (type === 'observation') {
+            details = `1-100 observation (${ruleText})`;
+          } else if (type === 'skill') {
+            details = `${r.scale ?? '1-5'} scale`;
+          } else {
+            details = `${r.unit ?? ''} (${ruleText})`;
+          }
           if (r.minVal != null && r.maxVal != null) {
             details += ` · Range: ${r.minVal} to ${r.maxVal}`;
           }
+          details += ` · Weight: ${formatPct(effectiveWeights[i])}${r.weight == null ? ' (auto)' : ''}`;
 
           return (
             <View key={r.key} className="flex-row items-center justify-between py-2 border-b" style={{ borderColor: colors.border }}>
               <View className="flex-1 mr-2 gap-1">
-                <View className="flex-row items-center gap-2">
+                <View className="flex-row items-center flex-wrap gap-2">
                   <Text className="font-bold text-base" style={{ color: colors.ink }}>
                     {r.label}
                   </Text>
-                  <Badge label={typeLabel.toUpperCase()} variant="brand" />
+                  <Badge label={SCORING_TYPE_LABELS[type]} variant="brand" />
                   {r.category ? <Badge label={r.category} /> : null}
+                  <Badge label={formatPct(effectiveWeights[i])} />
                 </View>
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
                   {details}
@@ -236,11 +284,54 @@ export default function RubricsScreen() {
             3. Scoring Type
           </Text>
           <View className="flex-row flex-wrap gap-2">
-            <Chip label="Subjective (1-5/1-10 Scale)" active={scoringType === 'skill'} onPress={() => handleScoringTypeChange('skill')} />
-            <Chip label="Objective (Measurable)" active={scoringType === 'time' || scoringType === 'distance' || scoringType === 'speed'} onPress={() => handleScoringTypeChange('time')} />
+            {SCORING_TYPES.map((t) => (
+              <Chip key={t} label={SCORING_TYPE_LABELS[t]} active={scoringType === t} onPress={() => handleScoringTypeChange(t)} />
+            ))}
           </View>
 
-          {scoringType === 'skill' ? (
+          {isBinaryScoringType(scoringType) ? (
+            <View className="gap-2">
+              <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                4. Answer Buttons
+              </Text>
+              <View className="flex-row flex-wrap gap-2">
+                <Badge label={binaryLabels(scoringType)[0]} variant="brand" />
+                <Badge label={binaryLabels(scoringType)[1]} />
+              </View>
+              <Text className="text-xs italic" style={{ color: colors.inkMuted }}>
+                Assessors tap {binaryLabels(scoringType)[0]} / {binaryLabels(scoringType)[1]} — or flip the switch.{' '}
+                {binaryLabels(scoringType)[0]} scores 5.0, {binaryLabels(scoringType)[1]} scores 1.0.
+              </Text>
+            </View>
+          ) : scoringType === 'observation' ? (
+            <View className="gap-2">
+              <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                4. Ranking Rule
+              </Text>
+              <Pressable
+                onPress={() => setRankingDirection(rankingDirection === 'lower_is_better' ? 'higher_is_better' : 'lower_is_better')}
+                className="flex-row items-center justify-between rounded-lg border px-4 py-4 mt-1"
+                style={{ borderColor: colors.border, backgroundColor: colors.field }}
+              >
+                <View className="flex-1 pr-3">
+                  <Text className="font-bold text-sm" style={{ color: colors.ink }}>
+                    Lowest number is highest ranked: {rankingDirection === 'lower_is_better' ? 'Yes' : 'No'}
+                  </Text>
+                  <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
+                    {rankingDirection === 'lower_is_better'
+                      ? 'Scored 1-100 · 1 = best (5.0), 100 = worst (1.0)'
+                      : 'Scored 1-100 · 100 = best (5.0), 1 = worst (1.0)'}
+                  </Text>
+                </View>
+                <Switch
+                  value={rankingDirection === 'lower_is_better'}
+                  onValueChange={(val) => setRankingDirection(val ? 'lower_is_better' : 'higher_is_better')}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#fff"
+                />
+              </Pressable>
+            </View>
+          ) : scoringType === 'skill' ? (
             <View className="gap-2">
               <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
                 4. Scale Choice
@@ -259,17 +350,27 @@ export default function RubricsScreen() {
                 label="4. Unit Label (Free-form)"
                 value={unit}
                 onChangeText={setUnit}
-                placeholder="e.g. sec, mph, ft, meters"
+                placeholder={
+                  scoringType === 'time' ? 'e.g. sec, s, min' : scoringType === 'speed' ? 'e.g. mph, km/h' : 'e.g. ft, m, inches'
+                }
               />
 
+              <Text className="text-xs font-bold uppercase tracking-wider mt-1" style={{ color: colors.inkMuted }}>
+                5. Ranking Rule
+              </Text>
               <Pressable
                 onPress={() => setRankingDirection(rankingDirection === 'lower_is_better' ? 'higher_is_better' : 'lower_is_better')}
-                className="flex-row items-center justify-between rounded-lg border px-4 py-4 mt-1"
+                className="flex-row items-center justify-between rounded-lg border px-4 py-4"
                 style={{ borderColor: colors.border, backgroundColor: colors.field }}
               >
                 <View className="flex-1 pr-3">
                   <Text className="font-bold text-sm" style={{ color: colors.ink }}>
-                    Shortest time / lowest number is highest ranked?
+                    {rankingDirection === 'lower_is_better' ? 'Lowest / Shortest wins' : 'Highest / Farthest wins'}
+                  </Text>
+                  <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
+                    {rankingDirection === 'lower_is_better'
+                      ? 'Best performance = lowest value (e.g. fastest sprint)'
+                      : 'Best performance = highest value (e.g. longest throw)'}
                   </Text>
                 </View>
                 <Switch
@@ -281,7 +382,7 @@ export default function RubricsScreen() {
               </Pressable>
 
               <Text className="text-xs font-bold uppercase tracking-wider mt-1" style={{ color: colors.inkMuted }}>
-                Optional: Score Benchmarks (Min & Max)
+                6. Score Range Benchmarks (Min &amp; Max)
               </Text>
               <View className="flex-row gap-2">
                 <View className="flex-1">
@@ -290,7 +391,7 @@ export default function RubricsScreen() {
                     value={minValStr}
                     onChangeText={setMinValStr}
                     keyboardType="numeric"
-                    placeholder={rankingDirection === 'lower_is_better' ? 'e.g. 10.5 (Best)' : 'e.g. 5.0 (Worst)'}
+                    placeholder={scoringType === 'time' ? '12 (Best)' : '5 (Worst)'}
                   />
                 </View>
                 <View className="flex-1">
@@ -299,18 +400,46 @@ export default function RubricsScreen() {
                     value={maxValStr}
                     onChangeText={setMaxValStr}
                     keyboardType="numeric"
-                    placeholder={rankingDirection === 'lower_is_better' ? 'e.g. 25.0 (Worst)' : 'e.g. 25.0 (Best)'}
+                    placeholder={scoringType === 'time' ? '25 (Worst)' : '25 (Best)'}
                   />
                 </View>
               </View>
+
+              <Text className="text-xs font-bold italic" style={{ color: colors.primary }}>
+                Score Benchmark Rule:{' '}
+                {rankingDirection === 'lower_is_better'
+                  ? `Min value (${minValStr || '10'}) = 5.0 points (Best)  ·  Max value (${maxValStr || '25'}) = 1.0 points (Worst)`
+                  : `Min value (${minValStr || '5'}) = 1.0 points (Worst)  ·  Max value (${maxValStr || '25'}) = 5.0 points (Best)`}
+              </Text>
             </View>
           )}
+
+          <View className="gap-1">
+            <Input
+              label="Weight (% of the overall score)"
+              value={weightStr}
+              onChangeText={setWeightStr}
+              keyboardType="numeric"
+              placeholder="e.g. 25 — leave blank for an even share"
+            />
+            {!weightValid ? (
+              <Text className="text-xs font-bold" style={{ color: colors.danger }}>
+                Weight must be a number between 1 and 100.
+              </Text>
+            ) : (
+              <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                {weightNum != null
+                  ? `This rubric carries ${weightNum}% of the overall score.`
+                  : 'Left blank, this rubric shares whatever percentage the weighted rubrics leave over.'}
+              </Text>
+            )}
+          </View>
 
           <Button
             label="Add Rubric Category"
             onPress={addCustom}
             loading={updateTryout.isPending}
-            disabled={atCustomLimit || !label.trim()}
+            disabled={atCustomLimit || !label.trim() || !weightValid}
           />
         </Card>
       </PlanGate>

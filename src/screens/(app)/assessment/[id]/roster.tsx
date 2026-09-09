@@ -163,7 +163,10 @@ export default function RosterScreen() {
 
   const openPlayer = (playerId: string) => {
     setCurrentPlayer(playerId);
-    navigation.navigate('AssessmentFlow', { screen: 'AssessmentPlayer', params: { id: id, playerId } });
+    navigation.navigate('AssessmentFlow', {
+      screen: 'AssessmentPlayer',
+      params: { id: id, playerId, isAssessorOnly },
+    });
   };
 
   const toggleSelected = (playerId: string) => {
@@ -237,7 +240,10 @@ export default function RosterScreen() {
             total={tryout.roster.length}
             scored={scoredCount}
             onPress={() =>
-              navigation.navigate('AssessmentFlow', { screen: 'AssessmentRinkside', params: { id: id } })
+              navigation.navigate('AssessmentFlow', {
+                screen: 'AssessmentRinkside',
+                params: { id: id, isAssessorOnly },
+              })
             }
           />
 

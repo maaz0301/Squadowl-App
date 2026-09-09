@@ -1,20 +1,21 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Card, ErrorState, Header, LoadingState, Screen, Tabs } from '@/components/ui';
+import { Badge, Button, Card, ErrorState, Header, LoadingState, Screen, Tabs } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
 import {
   useOrgQuery,
   useEnterprisePaymentsQuery,
   useOrgMembersQuery,
+  useRemoveMemberMutation,
   useTryoutsQuery,
   useTeamsQuery,
   useSeasonsQuery,
   usePrefetchTryout,
 } from '@/features/queries';
-import type { Tryout } from '@/data/types';
-
+import type { OrgMember, Tryout } from '@/data/types';
+import { usePermissions } from '@/state/authStore';
 const ENT_TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'actions', label: 'Actions' },
@@ -84,17 +85,64 @@ function ShareBar({ parts }: { parts: { label: string; value: number; color: str
 export default function EnterpriseScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
+  const { canManageOrganization } = usePermissions();
   const [tab, setTab] = useState<EntTab>('overview');
   const orgQuery = useOrgQuery();
   const prefetchTryout = usePrefetchTryout();
   const paymentsQuery = useEnterprisePaymentsQuery();
   const membersQuery = useOrgMembersQuery();
+  const removeMut = useRemoveMemberMutation();
   const tryoutsQuery = useTryoutsQuery(false);
   const teamsQuery = useTeamsQuery();
   const seasonsQuery = useSeasonsQuery();
 
   const tryouts = tryoutsQuery.data ?? [];
 
+  const showAlert = (title: string, message: string) => {
+    if (Platform.OS === 'web') (globalThis as any).alert?.(`${title}\n\n${message}`);
+    else Alert.alert(title, message);
+  };
+
+  /**
+   * Same removal path as Manage Organization — assessors are tryout_assessors
+   * rows (often several per person), coaches are memberships. Confirm first.
+   */
+  const handleRemoveMember = (member: OrgMember) => {
+    const who = member.name || member.email;
+    const isAssessor = member.role === 'assessor' || member.source === 'assessor';
+    const isGuardian = member.role === 'guardian';
+    const title = isAssessor ? 'Remove Assessor' : isGuardian ? 'Revoke Access' : 'Remove Member';
+    const message = isAssessor
+      ? `Remove ${who} as an assessor? They will lose access to every evaluation they were invited to score in this organization.`
+      : isGuardian
+        ? `Revoke ${who}'s access to this organization? They will no longer see their players here.`
+        : `Remove ${who} from this organization? They will lose access to its teams and evaluations.`;
+
+    const remove = async () => {
+      try {
+        await removeMut.mutateAsync(member.id);
+      } catch (error: any) {
+        showAlert(
+          isAssessor ? 'Remove Assessor Failed' : isGuardian ? 'Revoke Failed' : 'Remove Failed',
+          error?.message || 'Could not remove this member.',
+        );
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if ((globalThis as any).confirm?.(`${title}\n\n${message}`)) void remove();
+      return;
+    }
+
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: isAssessor ? 'Remove Assessor' : isGuardian ? 'Revoke' : 'Remove',
+        style: 'destructive',
+        onPress: () => void remove(),
+      },
+    ]);
+  };
   /**
    * Every headline number here is derived from the assessments the org actually
    * owns, so the dashboard moves with the data instead of showing fixed sample
@@ -419,7 +467,7 @@ export default function EnterpriseScreen() {
                 })}
               </View>
               {(membersQuery.data ?? []).map((m) => (
-                <Card key={m.id} className="mb-2 flex-row justify-between items-center">
+                <Card key={m.id} className="mb-2 flex-row justify-between items-center gap-2">
                   <View className="flex-1 pr-2">
                     <Text className="font-bold" style={{ color: colors.ink }}>
                       {m.name || m.email}
@@ -434,6 +482,22 @@ export default function EnterpriseScreen() {
                       label={m.status}
                       variant={m.status === 'active' ? 'success' : m.status === 'pending' ? 'warning' : 'default'}
                     />
+                    {canManageOrganization && m.role !== 'admin' ? (
+                      <Button
+                        label={
+                          m.role === 'assessor' || m.source === 'assessor'
+                            ? 'Remove Assessor'
+                            : m.role === 'guardian'
+                              ? 'Revoke'
+                              : 'Remove'
+                        }
+                        variant="danger"
+                        size="sm"
+                        className="mt-1"
+                        onPress={() => handleRemoveMember(m)}
+                        loading={removeMut.isPending && removeMut.variables === m.id}
+                      />
+                    ) : null}
                   </View>
                 </Card>
               ))}

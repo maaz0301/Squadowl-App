@@ -701,6 +701,7 @@ export function useSaveEvaluationMutation(tryoutId: string) {
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId), refetchType: 'none' });
       qc.invalidateQueries({ queryKey: queryKeys.results(tryoutId), refetchType: 'none' });
       qc.invalidateQueries({ queryKey: queryKeys.profile, refetchType: 'none' });
+      qc.invalidateQueries({ queryKey: ['sessionProgress', tryoutId] });
     },
   });
 }

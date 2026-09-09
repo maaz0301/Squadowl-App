@@ -18,13 +18,22 @@ export function useAssessmentId(): string | undefined {
 /**
  * Whether the current screen was reached through the assessor-only entry
  * point (dashboard's "assigned evaluations" list, which navigates in with
- * `isAssessorOnly: true`). Checked on the route's own params first, then the
- * parent `AssessmentFlow` navigator's params — a tab screen nested under it
- * doesn't always inherit params the way a stack screen does.
+ * `isAssessorOnly: true`).
+ *
+ * Nested navigates to Score / Player / Rinkside often replace AssessmentFlow
+ * params and drop the flag — so we also keep `assessorOnlyTryoutId` in the
+ * session store for the open assessment.
  */
 export function useAssessorMode(): boolean {
   const route = useRoute();
   const navigation = useNavigation();
+  const id = useAssessmentId();
+  const assessorOnlyTryoutId = useSessionStore((s) => s.assessorOnlyTryoutId);
+
+  if (assessorOnlyTryoutId && id && assessorOnlyTryoutId === id) {
+    return true;
+  }
+
   const parentState = navigation.getParent()?.getState();
   const flowRoute = parentState?.routes?.find((r: any) => r.name === 'AssessmentFlow');
   return Boolean(

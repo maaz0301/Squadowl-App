@@ -22,6 +22,7 @@ import {
   CreateAssessmentFormSchema,
   SPORTS,
   EVENT_TYPES,
+  SCORING_TYPES,
   type CreateAssessmentForm,
   type Assessor,
   type CustomRubric,
@@ -29,7 +30,7 @@ import {
   type RankingDirection,
 } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Button, Chip, DateField, TimeField, Input, Modal, Screen, Header, ErrorState, LoadingState } from '@/components/ui';
+import { Button, Chip, DateField, TimeField, Input, Modal, Screen, Header, ErrorState, LoadingState, Badge } from '@/components/ui';
 import { useCreateTryoutMutation, useTeamsQuery, useTryoutSummariesQuery, useUpdateTryoutMutation } from '@/features/queries';
 import { useSessionStore } from '@/state/sessionStore';
 import { useUser } from '@/state/authStore';
@@ -38,13 +39,7 @@ import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { getDataSource } from '@/data';
 import { ASSESSOR_INVITE_URL } from '@/config/app';
-
-const SCORING_TYPE_LABEL: Record<ScoringType, string> = {
-  skill: 'Skill / Technique',
-  time: 'Time-based',
-  distance: 'Distance-based',
-  speed: 'Speed-based',
-};
+import { SCORING_TYPE_LABELS, binaryLabels, isBinaryScoringType, isMetricScoringType } from '@/data/rubrics';
 
 export default function NewAssessmentScreen() {
   const colors = useThemeColors();
@@ -53,6 +48,7 @@ export default function NewAssessmentScreen() {
   const insets = useSafeAreaInsets();
   const createTryout = useCreateTryoutMutation();
   const setCurrentTryout = useSessionStore((s) => s.setCurrentTryout);
+  const setAssessorOnlyTryout = useSessionStore((s) => s.setAssessorOnlyTryout);
   const teamsQuery = useTeamsQuery();
   // Only `.length` is read from this, for the plan-limit check — the full
   // read pulled every roster, evaluation and registration in the account to
@@ -61,6 +57,7 @@ export default function NewAssessmentScreen() {
   const user = useUser();
   const updateTryout = useUpdateTryoutMutation();
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
+  const [rubricError, setRubricError] = useState<string | null>(null);
 
   // Rubrics and assessors used to only be reachable on the settings screen
   // after creation — a second step for something coaches expect to finish in
@@ -81,6 +78,7 @@ export default function NewAssessmentScreen() {
   const [rubricMinStr, setRubricMinStr] = useState('');
   const [rubricMaxStr, setRubricMaxStr] = useState('');
   const [rubricRankingDirection, setRubricRankingDirection] = useState<RankingDirection>('higher_is_better');
+  const [rubricWeightStr, setRubricWeightStr] = useState('');
 
   const handleRubricTypeChange = (type: ScoringType) => {
     setRubricType(type);
@@ -117,12 +115,20 @@ export default function NewAssessmentScreen() {
     setPendingAssessors((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const rubricWeightNum = rubricWeightStr.trim() !== '' ? parseFloat(rubricWeightStr) : undefined;
+  const rubricWeightValid =
+    rubricWeightNum == null || (!isNaN(rubricWeightNum) && rubricWeightNum >= 1 && rubricWeightNum <= 100);
+
   const addRubricToList = () => {
     const label = rubricLabel.trim();
     if (!label) return;
     const key = label.toLowerCase().replace(/\s+/g, '_');
     if (pendingRubrics.some((r) => r.key === key)) {
       Alert.alert('Duplicate Rubric', 'A rubric with this name has already been added.');
+      return;
+    }
+    if (!rubricWeightValid) {
+      Alert.alert('Invalid Weight', 'Weight must be a number between 1 and 100 percent.');
       return;
     }
 
@@ -136,6 +142,7 @@ export default function NewAssessmentScreen() {
     }
     const minNum = rubricMinStr.trim() !== '' ? parseFloat(rubricMinStr) : undefined;
     const maxNum = rubricMaxStr.trim() !== '' ? parseFloat(rubricMaxStr) : undefined;
+    const isMetric = isMetricScoringType(rubricType);
 
     setPendingRubrics((prev) => [
       ...prev,
@@ -144,12 +151,14 @@ export default function NewAssessmentScreen() {
         label,
         scoringType: rubricType,
         scale: rubricType === 'skill' ? rubricScale : '1-5',
-        unit: rubricType !== 'skill' ? defaultUnit : undefined,
-        minVal: minNum != null && !isNaN(minNum) ? minNum : undefined,
-        maxVal: maxNum != null && !isNaN(maxNum) ? maxNum : undefined,
+        unit: isMetric ? defaultUnit : undefined,
+        minVal: isMetric && minNum != null && !isNaN(minNum) ? minNum : undefined,
+        maxVal: isMetric && maxNum != null && !isNaN(maxNum) ? maxNum : undefined,
         rankingDirection: rubricRankingDirection,
+        weight: rubricWeightNum != null && !isNaN(rubricWeightNum) ? rubricWeightNum : undefined,
       },
     ]);
+    setRubricError(null);
     setRubricLabel('');
     setRubricType('skill');
     setRubricScale('1-5');
@@ -157,6 +166,7 @@ export default function NewAssessmentScreen() {
     setRubricMinStr('');
     setRubricMaxStr('');
     setRubricRankingDirection('higher_is_better');
+    setRubricWeightStr('');
     setShowRubricForm(false);
   };
 
@@ -242,6 +252,10 @@ export default function NewAssessmentScreen() {
   const teamId = watch('teamId');
 
   const onSubmit = handleSubmit(async (data) => {
+    if (pendingRubrics.length === 0) {
+      setRubricError('Add at least one rubric before creating the evaluation.');
+      return;
+    }
     const count = tryoutsQuery.data?.length ?? 0;
     if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
       setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'assessments', 'evaluations'));
@@ -255,6 +269,7 @@ export default function NewAssessmentScreen() {
       return;
     }
     setCurrentTryout(tryout.id);
+    setAssessorOnlyTryout(null);
 
     if (pendingAssessors.length || pendingRubrics.length) {
       try {
@@ -447,19 +462,28 @@ export default function NewAssessmentScreen() {
             <View>
               <View className="flex-row items-center justify-between mb-2">
                 <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-                  Custom Rubrics (optional)
+                  Rubrics *
                 </Text>
                 <Button label="+ Add Rubric" variant="ghost" size="sm" onPress={() => setShowRubricForm(true)} />
               </View>
+              {rubricError ? (
+                <Text className="text-xs font-medium mb-1" style={{ color: colors.danger }}>
+                  {rubricError}
+                </Text>
+              ) : null}
               {pendingRubrics.length === 0 ? (
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                  Every sport already scores on a default set of skills — add one here only if this
-                  evaluation needs something extra.
+                  Add at least one rubric to define how players will be scored in this evaluation.
                 </Text>
               ) : (
                 <View className="flex-row flex-wrap gap-2">
                   {pendingRubrics.map((r) => (
-                    <Chip key={r.key} label={`${r.label} ✕`} active onPress={() => removeRubricFromList(r.key)} />
+                    <Chip
+                      key={r.key}
+                      label={`${r.label}${r.weight != null ? ` · ${r.weight}%` : ''} ✕`}
+                      active
+                      onPress={() => removeRubricFromList(r.key)}
+                    />
                   ))}
                 </View>
               )}
@@ -515,7 +539,11 @@ export default function NewAssessmentScreen() {
         onClose={() => setShowRubricForm(false)}
         footer={
           <View className="mt-4 gap-2">
-            <Button label="Add Rubric Category" onPress={addRubricToList} disabled={!rubricLabel.trim()} />
+            <Button
+              label="Add Rubric Category"
+              onPress={addRubricToList}
+              disabled={!rubricLabel.trim() || !rubricWeightValid}
+            />
           </View>
         }
       >
@@ -531,12 +559,56 @@ export default function NewAssessmentScreen() {
             2. Scoring Type
           </Text>
           <View className="flex-row flex-wrap gap-2">
-            {(Object.keys(SCORING_TYPE_LABEL) as ScoringType[]).map((t) => (
-              <Chip key={t} label={SCORING_TYPE_LABEL[t]} active={rubricType === t} onPress={() => handleRubricTypeChange(t)} />
+            {SCORING_TYPES.map((t) => (
+              <Chip key={t} label={SCORING_TYPE_LABELS[t]} active={rubricType === t} onPress={() => handleRubricTypeChange(t)} />
             ))}
           </View>
 
-          {rubricType === 'skill' ? (
+          {isBinaryScoringType(rubricType) ? (
+            <View className="gap-2">
+              <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                3. Answer Buttons
+              </Text>
+              <View className="flex-row flex-wrap gap-2">
+                <Badge label={binaryLabels(rubricType)[0]} variant="brand" />
+                <Badge label={binaryLabels(rubricType)[1]} />
+              </View>
+              <Text className="text-xs italic" style={{ color: colors.inkMuted }}>
+                Assessors tap {binaryLabels(rubricType)[0]} / {binaryLabels(rubricType)[1]} — or flip the switch.{' '}
+                {binaryLabels(rubricType)[0]} scores 5.0, {binaryLabels(rubricType)[1]} scores 1.0.
+              </Text>
+            </View>
+          ) : rubricType === 'observation' ? (
+            <View className="gap-2">
+              <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                3. Ranking Rule
+              </Text>
+              <Pressable
+                onPress={() =>
+                  setRubricRankingDirection(rubricRankingDirection === 'lower_is_better' ? 'higher_is_better' : 'lower_is_better')
+                }
+                className="flex-row items-center justify-between rounded-lg border px-4 py-3"
+                style={{ borderColor: colors.border, backgroundColor: colors.field }}
+              >
+                <View className="flex-1 pr-3">
+                  <Text className="font-bold text-sm" style={{ color: colors.ink }}>
+                    Lowest number is highest ranked: {rubricRankingDirection === 'lower_is_better' ? 'Yes' : 'No'}
+                  </Text>
+                  <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
+                    {rubricRankingDirection === 'lower_is_better'
+                      ? 'Scored 1-100 · 1 = best (5.0), 100 = worst (1.0)'
+                      : 'Scored 1-100 · 100 = best (5.0), 1 = worst (1.0)'}
+                  </Text>
+                </View>
+                <Switch
+                  value={rubricRankingDirection === 'lower_is_better'}
+                  onValueChange={(val) => setRubricRankingDirection(val ? 'lower_is_better' : 'higher_is_better')}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#fff"
+                />
+              </Pressable>
+            </View>
+          ) : rubricType === 'skill' ? (
             <View className="gap-2">
               <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
                 3. Scale Choice
@@ -620,6 +692,21 @@ export default function NewAssessmentScreen() {
               </Text>
             </View>
           )}
+
+          <View className="gap-1">
+            <Input
+              label="Weight (% of the overall score)"
+              value={rubricWeightStr}
+              onChangeText={setRubricWeightStr}
+              keyboardType="numeric"
+              placeholder="e.g. 25 — leave blank for an even share"
+            />
+            <Text className="text-xs" style={{ color: rubricWeightValid ? colors.inkMuted : colors.danger }}>
+              {rubricWeightValid
+                ? 'Weighted rubrics take their percentage of the overall; the rest split what is left over evenly.'
+                : 'Weight must be a number between 1 and 100.'}
+            </Text>
+          </View>
         </View>
       </Modal>
 

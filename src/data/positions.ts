@@ -89,5 +89,23 @@ export const POSITION_OPTIONS_BY_SPORT: Record<Sport, PositionOption[]> = {
     { code: 'RF', label: 'Right Field (RF)' },
     { code: 'DH', label: 'Designated Hitter (DH)' },
   ],
+  Ringette: [
+    { code: 'G', label: 'Goaltender (G)' },
+    { code: 'LD', label: 'Left Defense (LD)' },
+    { code: 'RD', label: 'Right Defense (RD)' },
+    { code: 'C', label: 'Centre (C)' },
+    { code: 'LF', label: 'Left Forward (LF)' },
+    { code: 'RF', label: 'Right Forward (RF)' },
+  ],
+  Cricket: [
+    { code: 'OB', label: 'Opening Batsman' },
+    { code: 'MOB', label: 'Middle-Order Batsman' },
+    { code: 'FIN', label: 'Finisher / Lower-Order Batsman' },
+    { code: 'FB', label: 'Fast/Pace Bowler' },
+    { code: 'SB', label: 'Spin Bowler' },
+    { code: 'AR', label: 'All-Rounder' },
+    { code: 'WK', label: 'Wicket-Keeper (WK)' },
+    { code: 'CAP', label: 'Captain' },
+  ],
   Other: [],
 };
