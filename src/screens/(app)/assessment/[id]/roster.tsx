@@ -241,11 +241,29 @@ export default function RosterScreen() {
             }
           />
 
-          <RosterActions
-            onAdd={openAdd}
-            onImport={() => setShowImport(true)}
-            onTools={() => setShowTools(true)}
-          />
+          {selectMode ? (
+            <RosterSelectToolbar
+              allSelected={selectedIds.size > 0 && selectedIds.size === filteredRoster.length}
+              count={selectedIds.size}
+              deleting={deletingSelected}
+              onBack={exitSelectMode}
+              onToggleAll={() =>
+                setSelectedIds(
+                  selectedIds.size === filteredRoster.length
+                    ? new Set()
+                    : new Set(filteredRoster.map((p) => p.id)),
+                )
+              }
+              onDeleteSelected={deleteSelected}
+            />
+          ) : (
+            <RosterActions
+              onAdd={openAdd}
+              onImport={() => setShowImport(true)}
+              onSelect={() => setSelectMode(true)}
+              onTools={() => setShowTools(true)}
+            />
+          )}
 
           {tryout.assessors.length > 0 ? (
             <View className="gap-1.5">
@@ -356,6 +374,9 @@ export default function RosterScreen() {
             player={item}
             evalCount={evalCountByPlayerId.get(item.id) ?? 0}
             hideUnscored={isAssessorOnly}
+            selectable={selectMode}
+            selected={selectedIds.has(item.id)}
+            onToggleSelect={toggleSelected}
             onPress={openPlayer}
           />
         )}
@@ -370,6 +391,7 @@ export default function RosterScreen() {
         }
       >
         <AddPlayerForm
+          sport={tryout.sport}
           loading={addPlayer.isPending || uploadPhoto.isPending}
           onSubmit={async (data) => {
             try {
@@ -418,6 +440,16 @@ export default function RosterScreen() {
               desc: 'Import scores from printed OCR scanning sheets.',
               go: () => navigation.navigate('AssessmentFlow', { screen: 'AssessmentScanSheet', params: { id: id } }),
             },
+            // Letters is a coach decision (who made the team), not a scoring
+            // one — hidden from the Tools menu for an invited assessor the
+            // same way it's gated on its own screen.
+            ...(isAssessorOnly ? [] : [
+              {
+                label: 'Player Selection Letters',
+                desc: 'Create and send offer or roster decision letters, with a copy attached to each player.',
+                go: () => navigation.navigate('AssessmentFlow', { screen: 'AssessmentLetters', params: { id: id, isAssessorOnly } }),
+              },
+            ]),
             ...(isAssociation ? [
               {
                 label: 'Dummy Data Generator',

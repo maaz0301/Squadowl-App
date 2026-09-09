@@ -23,6 +23,7 @@ import {
   parseTiersFromPrompt,
 } from '../teamBuilder';
 import { computePlayerResults } from '../scoring';
+import type { LetterKind } from '../letters';
 import {
   POSITIONS_BY_SPORT,
   TEST_DATA_TAG,
@@ -68,9 +69,12 @@ import type {
   EventType,
   ExportFormat,
   FamilyContact,
+  LetterTemplate,
   Org,
   Player,
   PlayerImportResult,
+  PlayerLetter,
+  PlayerLetterSendResult,
   Recommendation,
   ReferralSummary,
   Registration,
@@ -3107,7 +3111,7 @@ export class SupabaseDataSource implements DataSource {
     );
   }
 
-  async sendEmail(type: 'org_invite' | 'player_invite' | 'team_manager_invite' | 'tryout_invite' | 'schedule_update' | 'reminder' | 'registration_confirmation', to: string, payload: any): Promise<void> {
+  async sendEmail(type: 'org_invite' | 'player_invite' | 'team_manager_invite' | 'tryout_invite' | 'schedule_update' | 'reminder' | 'registration_confirmation' | 'tryout_letter', to: string, payload: any): Promise<void> {
     const { supabase } = await this.ctx();
     const { error } = await supabase.functions.invoke('send-email', {
       body: { type, to, payload },
@@ -7941,6 +7945,256 @@ export class SupabaseDataSource implements DataSource {
       }
       throw unwrap({ data: null, error });
     }
+  }
+
+  // ─── Player selection letters ─────────────────────────────────────────────
+
+  private rowToLetterTemplate(r: Row): LetterTemplate {
+    return {
+      id: r.id,
+      name: r.name,
+      kind: r.kind as LetterKind,
+      subject: r.subject ?? '',
+      body: r.body ?? '',
+      tryoutId: r.tryout_id ?? undefined,
+      createdAt: toMs(r.created_at),
+      updatedAt: toMs(r.updated_at ?? r.created_at),
+    };
+  }
+
+  private rowToPlayerLetter(r: Row): PlayerLetter {
+    return {
+      id: r.id,
+      tryoutId: r.tryout_id,
+      playerId: r.participant_id,
+      athleteId: r.athlete_id ?? undefined,
+      templateId: r.template_id ?? undefined,
+      kind: r.kind as LetterKind,
+      subject: r.subject ?? '',
+      body: r.body ?? '',
+      recipientEmail: r.recipient_email ?? undefined,
+      status: (r.status ?? 'draft') as PlayerLetter['status'],
+      error: r.error ?? undefined,
+      sentAt: r.sent_at ? toMs(r.sent_at) : undefined,
+      createdAt: toMs(r.created_at),
+      updatedAt: toMs(r.updated_at ?? r.created_at),
+    };
+  }
+
+  async listLetterTemplates(): Promise<LetterTemplate[]> {
+    const { supabase, accountId } = await this.ctx();
+    const rows = unwrap(
+      await supabase
+        .from('letter_templates')
+        .select('*')
+        .eq('account_id', accountId)
+        .order('updated_at', { ascending: false }),
+    ) as Row[] | null;
+    return (rows ?? []).map((r) => this.rowToLetterTemplate(r));
+  }
+
+  async createLetterTemplate(input: {
+    name: string;
+    kind: LetterKind;
+    subject: string;
+    body: string;
+    tryoutId?: string;
+  }): Promise<LetterTemplate> {
+    const { supabase, userId, accountId } = await this.ctx();
+    const row = unwrap(
+      await supabase
+        .from('letter_templates')
+        .insert({
+          account_id: accountId,
+          name: input.name,
+          kind: input.kind,
+          subject: input.subject,
+          body: input.body,
+          tryout_id: input.tryoutId ?? null,
+          created_by: userId,
+        })
+        .select()
+        .single(),
+    ) as Row;
+    return this.rowToLetterTemplate(row);
+  }
+
+  async updateLetterTemplate(
+    id: string,
+    updates: Partial<{ name: string; kind: LetterKind; subject: string; body: string }>,
+  ): Promise<LetterTemplate> {
+    const { supabase } = await this.ctx();
+    const patch: Row = {};
+    if (updates.name !== undefined) patch.name = updates.name;
+    if (updates.kind !== undefined) patch.kind = updates.kind;
+    if (updates.subject !== undefined) patch.subject = updates.subject;
+    if (updates.body !== undefined) patch.body = updates.body;
+
+    const row = unwrap(
+      await supabase.from('letter_templates').update(patch).eq('id', id).select().single(),
+    ) as Row;
+    return this.rowToLetterTemplate(row);
+  }
+
+  async deleteLetterTemplate(id: string): Promise<void> {
+    const { supabase } = await this.ctx();
+    unwrap(await supabase.from('letter_templates').delete().eq('id', id).select().single());
+  }
+
+  async listPlayerLetters(tryoutId: string): Promise<PlayerLetter[]> {
+    const { supabase } = await this.ctx();
+    const rows = unwrap(
+      await supabase
+        .from('player_letters')
+        .select('*')
+        .eq('tryout_id', tryoutId)
+        .order('created_at', { ascending: false }),
+    ) as Row[] | null;
+    return (rows ?? []).map((r) => this.rowToPlayerLetter(r));
+  }
+
+  /**
+   * The send itself, shared by the bulk send and by a re-send of a stored copy.
+   *
+   * Returns the row as it now stands rather than throwing on a failed send: a
+   * letter that could not be delivered is still a letter the coach authored,
+   * and losing the copy would mean re-typing it to try again.
+   */
+  private async deliverLetter(
+    supabase: SupabaseClient,
+    userId: string,
+    letterId: string,
+    letter: { subject: string; body: string; recipientEmail?: string },
+  ): Promise<PlayerLetter> {
+    let error: string | null = null;
+    if (!letter.recipientEmail) {
+      error = 'No email address on file for this player.';
+    } else {
+      try {
+        await this.sendEmail('tryout_letter', letter.recipientEmail, {
+          subject: letter.subject,
+          body: letter.body,
+        });
+      } catch (e) {
+        error = e instanceof Error ? e.message : 'Failed to send the letter.';
+      }
+    }
+
+    const row = unwrap(
+      await supabase
+        .from('player_letters')
+        .update({
+          status: error ? 'failed' : 'sent',
+          error,
+          sent_at: error ? null : new Date().toISOString(),
+          sent_by: error ? null : userId,
+        })
+        .eq('id', letterId)
+        .select()
+        .single(),
+    ) as Row;
+    return this.rowToPlayerLetter(row);
+  }
+
+  async sendPlayerLetters(
+    tryoutId: string,
+    letters: {
+      playerId: string;
+      playerName: string;
+      athleteId?: string;
+      templateId?: string;
+      kind: LetterKind;
+      subject: string;
+      body: string;
+      recipientEmail?: string;
+    }[],
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<PlayerLetterSendResult[]> {
+    const { supabase, userId } = await this.ctx();
+    const results: PlayerLetterSendResult[] = [];
+
+    // Serially, not Promise.all: each letter is an edge-function invocation
+    // that hands SendGrid one message, and firing forty of those at once is how
+    // a club's domain gets rate-limited on the day it matters most. The
+    // progress callback is what keeps the screen honest about the wait.
+    let done = 0;
+    for (const input of letters) {
+      try {
+        // Inserted before the send, so a copy exists on the player's card even
+        // if the app is closed mid-run — the alternative loses the wording of a
+        // letter that may already be in someone's inbox.
+        const created = unwrap(
+          await supabase
+            .from('player_letters')
+            .insert({
+              tryout_id: tryoutId,
+              participant_id: input.playerId,
+              athlete_id: input.athleteId ?? null,
+              template_id: input.templateId ?? null,
+              kind: input.kind,
+              subject: input.subject,
+              body: input.body,
+              recipient_email: input.recipientEmail ?? null,
+              status: 'draft',
+            })
+            .select()
+            .single(),
+        ) as Row;
+
+        const letter = await this.deliverLetter(supabase, userId, created.id, input);
+        results.push({
+          playerId: input.playerId,
+          playerName: input.playerName,
+          letter,
+          error: letter.status === 'failed' ? letter.error : undefined,
+        });
+      } catch (e) {
+        // The insert itself failed — no copy was stored, so there is nothing to
+        // retry against. Reported per player, like an import row.
+        results.push({
+          playerId: input.playerId,
+          playerName: input.playerName,
+          error: e instanceof Error ? e.message : 'Failed to save the letter.',
+        });
+      }
+      onProgress?.(++done, letters.length);
+    }
+
+    return results;
+  }
+
+  async updatePlayerLetter(
+    id: string,
+    updates: Partial<{ subject: string; body: string; recipientEmail: string }>,
+  ): Promise<PlayerLetter> {
+    const { supabase } = await this.ctx();
+    const patch: Row = {};
+    if (updates.subject !== undefined) patch.subject = updates.subject;
+    if (updates.body !== undefined) patch.body = updates.body;
+    if (updates.recipientEmail !== undefined) patch.recipient_email = updates.recipientEmail || null;
+
+    const row = unwrap(
+      await supabase.from('player_letters').update(patch).eq('id', id).select().single(),
+    ) as Row;
+    return this.rowToPlayerLetter(row);
+  }
+
+  async resendPlayerLetter(id: string): Promise<PlayerLetter> {
+    const { supabase, userId } = await this.ctx();
+    const row = unwrap(
+      await supabase.from('player_letters').select('*').eq('id', id).single(),
+    ) as Row;
+    const current = this.rowToPlayerLetter(row);
+    return this.deliverLetter(supabase, userId, id, {
+      subject: current.subject,
+      body: current.body,
+      recipientEmail: current.recipientEmail,
+    });
+  }
+
+  async deletePlayerLetter(id: string): Promise<void> {
+    const { supabase } = await this.ctx();
+    unwrap(await supabase.from('player_letters').delete().eq('id', id).select().single());
   }
 
   async leaveSeason(seasonRosterId: string): Promise<void> {

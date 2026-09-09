@@ -120,4 +120,8 @@ export const queryKeys = {
   /** Reviewer allowlist check behind the feedback portal's menu item and screen guard. */
   feedbackReviewer: ['feedback', 'reviewer'] as const,
   feedbackSubmissions: ['feedback', 'submissions'] as const,
+  /** Letter templates hang off the account, not one tryout — see letters.ts. */
+  letterTemplates: ['letterTemplates'] as const,
+  /** Letters sent from one assessment — the Letters screen's history and the player card's read-only section. */
+  playerLetters: (tryoutId: string) => ['tryouts', tryoutId, 'letters'] as const,
 };

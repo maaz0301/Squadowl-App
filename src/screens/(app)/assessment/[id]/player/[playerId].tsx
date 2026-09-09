@@ -13,6 +13,7 @@ import {
   EmptyState,
   ErrorState,
   Header,
+  Input,
   LoadingState,
   Modal,
   Chip,
@@ -31,9 +32,15 @@ import {
   useSeasonsQuery,
   useAddSeasonPlayerMutation,
   useUploadPlayerPhotoMutation,
+  useFamilyContactsQuery,
+  useAddFamilyContactMutation,
+  useRemoveFamilyContactMutation,
+  usePlayerLettersQuery,
+  useResendPlayerLetterMutation,
 } from '@/features/queries';
 import { useAssessmentId, useAssessorMode } from '@/features/useAssessmentId';
 import { playerDisplayName, weightedOverall, getPlayerCategories, isGoaliePosition } from '@/data/rubrics';
+import { LETTER_KIND_LABELS } from '@/data/letters';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { PlanGate } from '@/components/PlanGate';
 
@@ -79,9 +86,38 @@ export default function PlayerHubScreen() {
 
   const player = tryoutQuery.data?.roster.find((p) => p.athleteId === playerId || p.id === playerId);
 
-  const { canManageTeam } = usePermissions();
+  const { canManageTeam, canAssess } = usePermissions();
   const user = useUser();
   const canLinkGuardian = canUseFeature(user?.planTier ?? 'free', 'guardianPortal');
+
+  // Extra family members beyond the one guardian on the athlete row — added
+  // here or from the Edit Player form, and by the guardian themselves from
+  // their own portal. This card is what surfaces them to the coach at all.
+  const familyContactsQuery = useFamilyContactsQuery(player?.athleteId);
+  const addFamilyContactMut = useAddFamilyContactMutation(player?.athleteId ?? '');
+  const removeFamilyContactMut = useRemoveFamilyContactMutation(player?.athleteId ?? '');
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [contactName, setContactName] = useState('');
+  const [contactRelationship, setContactRelationship] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+
+  // Letters sent to this player from the Letters tool — composing a new one
+  // lives there (it needs the template picker across the whole roster), so
+  // this card is a read-only history plus the re-send/retry a coach reaches
+  // for right from the player they're looking at.
+  // Coach only, matching the Letters tool itself — an invited assessor scores
+  // and edits the roster but doesn't decide who made the team.
+  const isCoachHere = canManageTeam && !isAssessorOnly;
+  const playerLettersQuery = usePlayerLettersQuery(id);
+  const resendLetterMut = useResendPlayerLetterMutation(id!);
+  // Filtered against the participant id (player?.id), not the URL's playerId
+  // param — that can be the athleteId instead (see the lookup above), while a
+  // PlayerLetter's playerId is always the tryout_participants row a copy is
+  // attached to.
+  const playerLetters = (playerLettersQuery.data ?? [])
+    .filter((l) => l.playerId === player?.id)
+    .sort((a, b) => b.createdAt - a.createdAt);
 
   const categories = useMemo(() => {
     if (!tryoutQuery.data || !player) return [];
@@ -109,6 +145,49 @@ export default function PlayerHubScreen() {
   const evals = tryoutQuery.data.evals
     .filter((e) => e.playerId === playerId)
     .sort((a, b) => b.createdAt - a.createdAt);
+
+  const submitFamilyContact = async () => {
+    if (!contactName.trim()) {
+      Alert.alert('Missing Info', 'Enter at least a name.');
+      return;
+    }
+    try {
+      await addFamilyContactMut.mutateAsync({
+        name: contactName.trim(),
+        relationship: contactRelationship.trim() || undefined,
+        email: contactEmail.trim() || undefined,
+        phone: contactPhone.trim() || undefined,
+      });
+      setContactName('');
+      setContactRelationship('');
+      setContactEmail('');
+      setContactPhone('');
+      setShowAddContact(false);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not add this contact.');
+    }
+  };
+
+  const confirmRemoveContact = (contactId: string, name: string) => {
+    Alert.alert(
+      'Remove Contact',
+      `Remove ${name} from this athlete's family contacts?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await removeFamilyContactMut.mutateAsync(contactId);
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'Could not remove this contact.');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <Screen scroll insideTabBar>
@@ -259,6 +338,53 @@ export default function PlayerHubScreen() {
           <Text style={{ color: colors.inkFaint }}>No guardian info provided.</Text>
         )}
       </Card>
+
+      {/* Open to anyone who can assess — including an invited assessor — so
+          they can see and correct the same family contacts a coach can. */}
+      {player.athleteId && canAssess ? (
+        <Card className="mb-4 gap-2">
+          <View className="flex-row items-center justify-between">
+            <Text className="text-sm font-bold uppercase" style={{ color: colors.inkMuted }}>
+              Family Contacts
+            </Text>
+            <Button label="+ Add" size="sm" variant="ghost" onPress={() => setShowAddContact(true)} />
+          </View>
+          <Text className="text-xs" style={{ color: colors.inkMuted }}>
+            A second parent, a grandparent, or anyone else who should get invites for this player.
+          </Text>
+          {familyContactsQuery.isLoading ? (
+            <ActivityIndicator color={colors.primary} />
+          ) : (familyContactsQuery.data ?? []).length === 0 ? (
+            <Text style={{ color: colors.inkFaint }}>No additional contacts added yet.</Text>
+          ) : (
+            <View className="gap-2">
+              {(familyContactsQuery.data ?? []).map((c) => (
+                <View
+                  key={c.id}
+                  className="flex-row items-center justify-between gap-2 border-b pb-2"
+                  style={{ borderColor: colors.border }}
+                >
+                  <View className="flex-1">
+                    <Text className="font-bold" style={{ color: colors.ink }}>
+                      {c.name}
+                      {c.relationship ? ` · ${c.relationship}` : ''}
+                    </Text>
+                    {c.email ? <Text className="text-xs" style={{ color: colors.inkMuted }}>{c.email}</Text> : null}
+                    {c.phone ? <Text className="text-xs" style={{ color: colors.inkMuted }}>{c.phone}</Text> : null}
+                  </View>
+                  <Button
+                    label="Remove"
+                    variant="ghost"
+                    size="sm"
+                    onPress={() => confirmRemoveContact(c.id, c.name)}
+                    loading={removeFamilyContactMut.isPending && removeFamilyContactMut.variables === c.id}
+                  />
+                </View>
+              ))}
+            </View>
+          )}
+        </Card>
+      ) : null}
 
       <Card accent className="mb-4 gap-2">
         <Text className="font-display font-bold" style={{ color: colors.ink }}>
@@ -439,6 +565,77 @@ export default function PlayerHubScreen() {
       })
       )}
 
+      {isCoachHere ? (
+        <Card className="mb-4 gap-2">
+          <View className="flex-row items-center justify-between gap-2">
+            <Text className="font-display font-bold" style={{ color: colors.ink }}>
+              Letters
+            </Text>
+            <Button
+              label="Send a Letter"
+              size="sm"
+              variant="ghost"
+              onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentLetters', params: { id: id, isAssessorOnly } })}
+            />
+          </View>
+          {playerLettersQuery.isLoading ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : playerLetters.length === 0 ? (
+            <Text style={{ color: colors.inkFaint }}>
+              No offer or roster decision letters sent to this player yet.
+            </Text>
+          ) : (
+            <View className="gap-2">
+              {playerLetters.map((l) => (
+                <View
+                  key={l.id}
+                  className="flex-row items-start justify-between gap-2 border-b pb-2 last:border-b-0 last:pb-0"
+                  style={{ borderColor: colors.border }}
+                >
+                  <View className="min-w-0 flex-1">
+                    <View className="flex-row flex-wrap items-center gap-1.5">
+                      <Text numberOfLines={1} className="font-bold" style={{ color: colors.ink }}>
+                        {l.subject}
+                      </Text>
+                      <Badge
+                        label={l.status}
+                        variant={l.status === 'sent' ? 'success' : l.status === 'failed' ? 'danger' : 'warning'}
+                      />
+                    </View>
+                    <Text numberOfLines={1} className="text-xs" style={{ color: colors.inkMuted }}>
+                      {LETTER_KIND_LABELS[l.kind]}
+                      {l.recipientEmail ? ` · ${l.recipientEmail}` : ''}
+                      {l.sentAt ? ` · ${new Date(l.sentAt).toLocaleDateString()}` : ''}
+                    </Text>
+                    {l.status === 'failed' && l.error ? (
+                      <Text className="mt-0.5 text-xs" style={{ color: colors.danger }}>
+                        {l.error}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Button
+                    label={l.status === 'sent' ? 'Re-send' : 'Retry'}
+                    variant="ghost"
+                    size="sm"
+                    loading={resendLetterMut.isPending && resendLetterMut.variables === l.id}
+                    onPress={async () => {
+                      try {
+                        const updated = await resendLetterMut.mutateAsync(l.id);
+                        if (updated.status === 'failed') {
+                          Alert.alert('Not Sent', updated.error || 'The letter could not be sent.');
+                        }
+                      } catch (e: any) {
+                        Alert.alert('Send Failed', e?.message || 'Could not re-send.');
+                      }
+                    }}
+                  />
+                </View>
+              ))}
+            </View>
+          )}
+        </Card>
+      ) : null}
+
       {canManageTeam && (
         <Button
           label="Delete Player"
@@ -468,6 +665,7 @@ export default function PlayerHubScreen() {
       <Modal visible={showEdit} title="Edit Player" onClose={() => setShowEdit(false)}>
         <AddPlayerForm
           defaultValues={player}
+          sport={tryoutQuery.data.sport}
           loading={updatePlayer.isPending || uploadPhoto.isPending}
           onSubmit={async (data) => {
             try {
@@ -490,6 +688,39 @@ export default function PlayerHubScreen() {
             }
           }}
         />
+      </Modal>
+
+      <Modal
+        visible={showAddContact}
+        title="Add Family Member"
+        onClose={() => {
+          if (addFamilyContactMut.isPending) return;
+          setShowAddContact(false);
+        }}
+      >
+        <View className="gap-3">
+          <Input label="Name" value={contactName} onChangeText={setContactName} />
+          <Input
+            label="Relationship"
+            value={contactRelationship}
+            onChangeText={setContactRelationship}
+            placeholder="e.g. Grandmother, Emergency Contact"
+          />
+          <Input
+            label="Email"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            value={contactEmail}
+            onChangeText={setContactEmail}
+          />
+          <Input label="Phone" value={contactPhone} onChangeText={setContactPhone} />
+          <Button
+            label="Add Contact"
+            onPress={submitFamilyContact}
+            loading={addFamilyContactMut.isPending}
+            disabled={!contactName.trim()}
+          />
+        </View>
       </Modal>
 
       <Modal visible={showGuardianLink} title="Link Guardian" onClose={() => setShowGuardianLink(false)}>

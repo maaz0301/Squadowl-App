@@ -1,5 +1,6 @@
 import { getDataSource } from '@/data';
 import type { DummyDataOptions, DummyTeamOptions } from '@/data/testDataGenerator';
+import type { LetterKind } from '@/data/letters';
 import {
   getPlayerRubrics,
   type RubricCategory
@@ -2111,7 +2112,7 @@ export function useDeleteTeamMutation() {
   });
 }
 
-export function useImportScanScoresMutation() { 
+export function useImportScanScoresMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
@@ -2124,6 +2125,121 @@ export function useImportScanScoresMutation() {
     onSuccess: (_, { tryoutId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.results(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
+    },
+  });
+}
+
+// ---- Player selection letters ----
+
+export function useLetterTemplatesQuery(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: queryKeys.letterTemplates,
+    queryFn: () => getDataSource().listLetterTemplates(),
+    enabled: options?.enabled ?? true,
+  });
+}
+
+export function useCreateLetterTemplateMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; kind: LetterKind; subject: string; body: string; tryoutId?: string }) =>
+      getDataSource().createLetterTemplate(input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.letterTemplates });
+    },
+  });
+}
+
+export function useUpdateLetterTemplateMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      updates,
+    }: {
+      id: string;
+      updates: Partial<{ name: string; kind: LetterKind; subject: string; body: string }>;
+    }) => getDataSource().updateLetterTemplate(id, updates),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.letterTemplates });
+    },
+  });
+}
+
+export function useDeleteLetterTemplateMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => getDataSource().deleteLetterTemplate(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.letterTemplates });
+    },
+  });
+}
+
+export function usePlayerLettersQuery(tryoutId: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.playerLetters(tryoutId ?? ''),
+    queryFn: () => getDataSource().listPlayerLetters(tryoutId!),
+    enabled: !!tryoutId,
+  });
+}
+
+export function useSendPlayerLettersMutation(
+  tryoutId: string,
+  onProgress?: (done: number, total: number) => void,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (
+      letters: {
+        playerId: string;
+        playerName: string;
+        athleteId?: string;
+        templateId?: string;
+        kind: LetterKind;
+        subject: string;
+        body: string;
+        recipientEmail?: string;
+      }[],
+    ) => getDataSource().sendPlayerLetters(tryoutId, letters, onProgress),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.playerLetters(tryoutId) });
+    },
+  });
+}
+
+export function useUpdatePlayerLetterMutation(tryoutId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      updates,
+    }: {
+      id: string;
+      updates: Partial<{ subject: string; body: string; recipientEmail: string }>;
+    }) => getDataSource().updatePlayerLetter(id, updates),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.playerLetters(tryoutId) });
+    },
+  });
+}
+
+export function useResendPlayerLetterMutation(tryoutId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => getDataSource().resendPlayerLetter(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.playerLetters(tryoutId) });
+    },
+  });
+}
+
+export function useDeletePlayerLetterMutation(tryoutId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => getDataSource().deletePlayerLetter(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.playerLetters(tryoutId) });
     },
   });
 }
