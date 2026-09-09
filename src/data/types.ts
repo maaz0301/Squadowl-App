@@ -981,17 +981,21 @@ export interface GuardianRosterAthlete {
   firstName: string;
   lastName: string;
   avatarUrl?: string;
+  /**
+   * Deliberately the event's tombstone only — name, sport, when and where.
+   * Scores, session results and recommendations belong to the coach who ran
+   * the assessment, so they are never assembled into a guardian's payload;
+   * see mapGuardianRosterRow().
+   */
   tryouts: {
     id: string;
     name: string;
     sport: string;
-    participantId: string; // <-- ADD THIS LINE HERE
-    sessions: {
-      name: string;
-      result?: string;
-      date?: number;
-      scores?: Record<string, number>;
-    }[];
+    participantId: string;
+    date?: string;
+    startTime?: string;
+    endTime?: string;
+    location?: string;
   }[];
   seasons: {
     id: string;

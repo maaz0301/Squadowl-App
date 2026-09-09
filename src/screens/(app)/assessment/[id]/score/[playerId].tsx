@@ -31,8 +31,13 @@ import {
   weightedOverall,
 } from '@/data/rubrics';
 import { RECOMMENDATIONS, ScoreFormSchema, type ScoreForm } from '@/data/types';
-import { useAthleteHistoryQuery, useSaveEvaluationMutation, useTryoutQuery } from '@/features/queries';
-import { useAssessmentId } from '@/features/useAssessmentId';
+import {
+  useAthleteHistoryQuery,
+  useSaveEvaluationMutation,
+  useSessionProgressQuery,
+  useTryoutQuery,
+} from '@/features/queries';
+import { useAssessmentId, useAssessorMode } from '@/features/useAssessmentId';
 import { useSessionStore } from '@/state/sessionStore';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -40,6 +45,7 @@ import { Controller, useForm } from 'react-hook-form';
 
 export default function ScoreScreen() {
   const id = useAssessmentId();
+  const isAssessorOnly = useAssessorMode();
   const route = useRoute<any>();
   const { playerId, evalId, session: routeSession } = route.params || {};
   const colors = useThemeColors();
@@ -103,7 +109,9 @@ export default function ScoreScreen() {
   };
 
   const player = tryoutQuery.data?.roster.find((p) => p.id === playerId);
-  const historyQuery = useAthleteHistoryQuery(player?.athleteId);
+  // Athlete history spans previous seasons, which an assessor may not see at
+  // all — passing no id leaves the query disabled so it is never fetched.
+  const historyQuery = useAthleteHistoryQuery(isAssessorOnly ? undefined : player?.athleteId);
   const existingEval = evalId
     ? tryoutQuery.data?.evals.find((e) => e.id === evalId)
     : undefined;
@@ -116,6 +124,19 @@ export default function ScoreScreen() {
 
   const mostRecentEval = previousEvals[0];
   const scoredSessions = new Map((tryoutQuery.data?.evals.filter((e) => e.playerId === playerId) || []).map(e => [e.session, e.id]));
+
+  // An assessor reads back none of this assessment's evaluations, so
+  // `scoredSessions` is empty for them and every player looked untouched from
+  // Session 1 — next to the coach's Sessions 1-5. The server answers with the
+  // numbering alone, no scores.
+  const sessionProgress = useSessionProgressQuery(id, isAssessorOnly).data;
+  const serverHighestSession = sessionProgress?.[playerId || ''] ?? 0;
+
+  const isServerScored = (s: string) => {
+    const num = Number(s.match(/^Session (\d+)$/)?.[1]);
+    return Number.isFinite(num) && num <= serverHighestSession;
+  };
+
   const baseHighestSessionNum = useMemo(() => {
     return (tryoutQuery.data?.evals || []).reduce((max, ev) => {
       if (!ev.session) return max;
@@ -125,8 +146,8 @@ export default function ScoreScreen() {
 
       const match = ev.session.match(/^Session (\d+)$/);
       return match ? Math.max(max, parseInt(match[1], 10)) : max;
-    }, 0);
-  }, [tryoutQuery.data?.evals]);
+    }, serverHighestSession);
+  }, [tryoutQuery.data?.evals, serverHighestSession]);
 
   const highestSessionNum = useMemo(() => {
     let maxNum = baseHighestSessionNum;
@@ -146,7 +167,16 @@ export default function ScoreScreen() {
   const completedSessionsForPlayer = useMemo(() => {
     return completedSessions?.[playerId || ''] || [];
   }, [completedSessions, playerId]);
-  const nextSession = existingEval?.session ?? SESSIONS.find(s => !completedSessionsForPlayer.includes(s) && !scoredSessions.has(s) && s !== 'Extra View') ?? 'Session 1';
+  const nextSession =
+    existingEval?.session ??
+    SESSIONS.find(
+      (s) =>
+        !completedSessionsForPlayer.includes(s) &&
+        !scoredSessions.has(s) &&
+        !isServerScored(s) &&
+        s !== 'Extra View',
+    ) ??
+    'Session 1';
   const currentSession = routeSession ?? nextSession;
 
   const categories = useMemo(() => {
@@ -415,7 +445,7 @@ export default function ScoreScreen() {
   });
 
   const isEditing = !!evalId;
-  const firstUnscoredIdx = SESSIONS.findIndex(s => !scoredSessions.has(s));
+  const firstUnscoredIdx = SESSIONS.findIndex(s => !scoredSessions.has(s) && !isServerScored(s));
 
   return (
     <Screen scroll={false} keyboardAvoiding={false} padded={false}>
@@ -478,7 +508,10 @@ export default function ScoreScreen() {
             const isScored = scoredSessions.has(s);
             const isCurrentOfEval = isEditing && existingEval?.session === s;
 
-            let disabled = false;
+            // A session the server counts but this viewer can't read is an
+            // assessor looking at the coach's work: opening it would start a
+            // second evaluation beside one they never see.
+            let disabled = isServerScored(s) && !isScored;
             if (isScored) {
               disabled = false; // allow editing
             } else if (firstUnscoredIdx !== -1 && idx > firstUnscoredIdx) {

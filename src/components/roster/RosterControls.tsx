@@ -1,8 +1,9 @@
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
+import { Button } from '@/components/ui';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import type { RosterFilter } from '@/state/sessionStore';
-import { ChevronIcon, ClearIcon, PlayIcon, PlusIcon, SearchIcon, ToolsIcon, UploadIcon } from './icons';
+import { CheckSquareIcon, ChevronIcon, ClearIcon, PlayIcon, PlusIcon, SearchIcon, ToolsIcon, UploadIcon } from './icons';
 
 /** The filters, in the order they're offered, with the label each one shows. */
 const FILTERS: { key: RosterFilter; label: string }[] = [
@@ -62,32 +63,37 @@ export function ScoreCta({
   );
 }
 
-/** Add, Import and Tools: three equal buttons, so none of them reads as the main one. */
+/** Add, Import, Select and Tools: equal buttons, so none of them reads as the main one. */
 export function RosterActions({
   onAdd,
   onImport,
+  onSelect,
   onTools,
 }: {
   onAdd: () => void;
   onImport: () => void;
+  onSelect: () => void;
   onTools: () => void;
 }) {
   const colors = useThemeColors();
   const actions = [
     { label: 'Add', icon: PlusIcon, onPress: onAdd },
     { label: 'Import', icon: UploadIcon, onPress: onImport },
+    { label: 'Select', icon: CheckSquareIcon, onPress: onSelect },
     { label: 'Tools', icon: ToolsIcon, onPress: onTools },
   ];
 
+  // A 2x2 grid, not one row of four — four labels at the original single-row
+  // size don't fit a phone-width screen without truncating.
   return (
-    <View className="flex-row gap-2">
+    <View className="flex-row flex-wrap justify-between gap-2">
       {actions.map(({ label, icon: Icon, onPress }) => (
         <Pressable
           key={label}
           onPress={onPress}
           accessibilityRole="button"
           accessibilityLabel={label}
-          className="min-h-[60px] flex-1 flex-row items-center justify-center gap-2.5 rounded-2xl border px-2 py-5 active:opacity-70"
+          className="min-h-[56px] w-[48.5%] flex-row items-center justify-center gap-2.5 rounded-2xl border px-2 py-4 active:opacity-70"
           style={{ backgroundColor: colors.tile, borderColor: colors.border }}
         >
           <View
@@ -101,6 +107,50 @@ export function RosterActions({
           </Text>
         </Pressable>
       ))}
+    </View>
+  );
+}
+
+/**
+ * Replaces RosterActions once select mode is on: back out of select mode,
+ * toggle all players in the current (filtered) list, or delete whichever ones
+ * are checked. `count` is how many are currently selected — 0 disables Delete
+ * rather than hiding it, so the button stays put as a coach starts checking rows.
+ */
+export function RosterSelectToolbar({
+  allSelected,
+  count,
+  deleting,
+  onBack,
+  onToggleAll,
+  onDeleteSelected,
+}: {
+  allSelected: boolean;
+  count: number;
+  deleting: boolean;
+  onBack: () => void;
+  onToggleAll: () => void;
+  onDeleteSelected: () => void;
+}) {
+  return (
+    <View className="flex-row flex-wrap items-center gap-2">
+      <Button label="← Back" variant="ghost" size="sm" onPress={onBack} disabled={deleting} />
+      <Button
+        label={allSelected ? 'Deselect All' : 'Select All'}
+        variant="secondary"
+        size="sm"
+        onPress={onToggleAll}
+        disabled={deleting}
+      />
+      <Button
+        label={`Delete Selected${count ? ` (${count})` : ''}`}
+        variant="danger"
+        size="sm"
+        disabled={count === 0}
+        loading={deleting}
+        onPress={onDeleteSelected}
+        className="flex-1"
+      />
     </View>
   );
 }

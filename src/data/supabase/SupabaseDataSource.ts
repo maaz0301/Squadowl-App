@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import { getSupabase } from '@/lib/supabase';
-import { type Session, type SupabaseClient } from '@supabase/supabase-js';
+import { type Session, type SupabaseClient, isAuthRetryableFetchError } from '@supabase/supabase-js';
 import type { DataSource } from '../datasource';
 import type { FeedbackAttachment, FeedbackReport, FeedbackSubmission } from '../extras';
 import {
@@ -216,11 +216,48 @@ async function readLocalFileAsArrayBuffer(fileUri: string): Promise<ArrayBuffer>
  * anything that doesn't look like a normal short message into a friendly fallback.
  */
 function authErrorMessage(error: { message?: string } | null | undefined, fallback: string): string {
+  if (error && isNetworkFetchError(error)) return NETWORK_ERROR_MESSAGE;
   const msg = error?.message;
   if (!msg) return fallback;
   const looksRaw = msg.length > 200 || /^\s*[{[]/.test(msg);
   return looksRaw ? fallback : msg;
 }
+
+/**
+ * A request that never got an HTTP response at all — RN's fetch() itself
+ * threw (offline, DNS hiccup, a flaky cell/Wi-Fi handoff, a captive portal).
+ * auth-js wraps these as AuthRetryableFetchError and passes the raw fetch
+ * error message straight through as `.message`, which means nothing to
+ * someone looking at a login screen. Worth a name because the SDK itself
+ * considers this class retryable (see withAuthRetry below) rather than a
+ * real rejection from the server.
+ */
+function isNetworkFetchError(error: unknown): boolean {
+  return isAuthRetryableFetchError(error) && (error as { status?: number }).status === 0;
+}
+
+/**
+ * One retry, only for the network-level failure above — not for a real
+ * rejection from the server (bad password, rate limit, etc.), which the
+ * first attempt already reports correctly. A dropped connection on mobile
+ * data is often a one-off blip, so silently trying again once beats
+ * surfacing a raw fetch error for something that would have worked a second
+ * later.
+ *
+ * auth-js resolves signUp/signInWithPassword/etc. with `{ data, error }`
+ * rather than throwing even for a network failure, so the retry has to
+ * inspect the returned `error`, not a caught exception.
+ */
+async function withAuthRetry<T extends { error: { message?: string } | null }>(
+  run: () => Promise<T>,
+): Promise<T> {
+  const result = await run();
+  if (result.error && isNetworkFetchError(result.error)) return run();
+  return result;
+}
+
+/** Message shown when withAuthRetry's second attempt also fails at the network level. */
+const NETWORK_ERROR_MESSAGE = "Couldn't reach the server. Check your connection and try again.";
 
 /**
  * A generated dummy player, with the AI's raw per-rubric scores when the batch
@@ -1313,7 +1350,9 @@ export class SupabaseDataSource implements DataSource {
   async login(email: string, password: string): Promise<AuthSession> {
     const supabase = getSupabase();
     const cleanEmail = email.trim();
-    const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+    const { data, error } = await withAuthRetry(() =>
+      supabase.auth.signInWithPassword({ email: cleanEmail, password }),
+    );
     if (error) console.error('LOGIN ERROR:', error);
     if (error || !data.session) throw new Error(authErrorMessage(error, 'Login failed. Please try again.'));
     this.accountId = null;
@@ -1327,11 +1366,13 @@ export class SupabaseDataSource implements DataSource {
 
   async signup(displayName: string, email: string, password: string, accountType: string): Promise<AuthSession> {
     const supabase = getSupabase();
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { display_name: displayName, account_type: accountType } },
-    });
+    const { data, error } = await withAuthRetry(() =>
+      supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { display_name: displayName, account_type: accountType } },
+      }),
+    );
     if (error) console.error('SIGNUP ERROR:', error);
     if (error) throw new Error(authErrorMessage(error, 'Signup failed. Please try again.'));
     let session = data.session;
@@ -1460,10 +1501,12 @@ export class SupabaseDataSource implements DataSource {
 
   async resendVerificationEmail(email: string): Promise<void> {
     const supabase = getSupabase();
-    const { error } = await supabase.auth.resend({
-      type: 'signup',
-      email,
-    });
+    const { error } = await withAuthRetry(() =>
+      supabase.auth.resend({
+        type: 'signup',
+        email,
+      }),
+    );
     if (error) throw new Error(authErrorMessage(error, 'Could not resend the verification email. Please try again.'));
   }
 
@@ -3019,7 +3062,22 @@ export class SupabaseDataSource implements DataSource {
 
     const toDelete = existing.filter((r) => !desiredKeys.has(rowKey(r))).map((r) => r.id);
     if (toDelete.length) {
-      unwrap(await supabase.from('tryout_assessors').delete().in('id', toDelete).select());
+      // Check the rows the delete actually took, not just its error: under RLS
+      // a DELETE whose rows the policy filters out removes nothing and still
+      // answers with no error, so throwing this result away reported a removal
+      // that never happened.
+      const deleted = unwrap(
+        await supabase.from('tryout_assessors').delete().in('id', toDelete).select('id'),
+      ) as Row[];
+      if (deleted.length < toDelete.length) {
+        console.error(
+          `syncAssessors: asked to remove ${toDelete.length} assessor row(s) from tryout ${tryoutId}, ` +
+            `the delete took ${deleted.length} — the tryout_assessors DELETE policy most likely refused the rest.`,
+        );
+        throw new Error(
+          'Could not remove this assessor. You may not have permission to change who assesses this evaluation.',
+        );
+      }
     }
 
     if (desired.length > 1) await this.markOnboarding({ inviteAssessors: true });
@@ -6323,6 +6381,27 @@ export class SupabaseDataSource implements DataSource {
     });
   }
 
+  async getSessionProgress(tryoutId: string): Promise<Record<string, number>> {
+    const { supabase } = await this.ctx();
+    const { data, error } = await supabase.rpc('get_session_progress_for_tryout', {
+      p_tryout_id: tryoutId,
+    });
+    if (error) {
+      // An instance that hasn't deployed the function yet keeps the old
+      // behaviour — numbering off whatever evaluations the caller can read —
+      // rather than failing the scoring screen outright.
+      console.log('get_session_progress_for_tryout unavailable:', error.message);
+      return {};
+    }
+    const progress: Record<string, number> = {};
+    for (const row of (data as Row[]) ?? []) {
+      if (row.participant_id != null && row.max_session != null) {
+        progress[row.participant_id as string] = Number(row.max_session);
+      }
+    }
+    return progress;
+  }
+
   async getAthleteHistory(athleteId: string): Promise<AthleteHistory> {
     const { supabase } = await this.ctx();
 
@@ -7769,6 +7848,24 @@ export class SupabaseDataSource implements DataSource {
 
   async listFamilyContacts(athleteId: string): Promise<FamilyContact[]> {
     const { supabase } = await this.ctx();
+    // Through the RPC unconditionally, not as a fallback after a failed direct
+    // read: RLS handles a read it rejects by filtering rows out, not by
+    // erroring, so a delegated (CLUB-mode) team manager's or invited
+    // assessor's SELECT here would come back an empty array — identical to
+    // "this player genuinely has none" — with no signal to retry on.
+    // list_athlete_family_contacts() re-applies the same authorization
+    // add/removeFamilyContact() fall back to below, so this is a superset read
+    // for account staff too, not just delegated/assessor callers. See
+    // 20260909140000_list_athlete_family_contacts_rpc.sql and
+    // 20260909160000_athlete_reachable_team_managers.sql in the web repo.
+    const { data, error } = await supabase.rpc('list_athlete_family_contacts', {
+      p_athlete_id: athleteId,
+    });
+    if (!error) return ((data ?? []) as Row[]).map((r) => this.rowToFamilyContact(r));
+
+    if (error.code !== 'PGRST202' && error.code !== '42883') throw unwrap({ data: null, error });
+    console.log('list_athlete_family_contacts() not deployed — falling back to a direct read (staff only).');
+
     const rows = unwrap(
       await supabase
         .from('athlete_family_contacts')
@@ -7784,29 +7881,72 @@ export class SupabaseDataSource implements DataSource {
     contact: { name: string; relationship?: string; email?: string; phone?: string },
   ): Promise<FamilyContact> {
     const { supabase, userId } = await this.ctx();
-    const row = unwrap(
-      await supabase
-        .from('athlete_family_contacts')
-        .insert({
-          athlete_id: athleteId,
-          name: contact.name,
-          relationship: contact.relationship || null,
-          email: contact.email || null,
-          phone: contact.phone || null,
-          created_by: userId,
-        })
-        .select()
-        .single(),
-    ) as Row;
-    return this.rowToFamilyContact(row);
+    const res = await supabase
+      .from('athlete_family_contacts')
+      .insert({
+        athlete_id: athleteId,
+        name: contact.name,
+        relationship: contact.relationship || null,
+        email: contact.email || null,
+        phone: contact.phone || null,
+        created_by: userId,
+      })
+      .select()
+      .single();
+
+    // '42501' is Postgres's own code for an INSERT that failed its RLS WITH
+    // CHECK — unlike an UPDATE/DELETE the policy rejects (which silently
+    // matches zero rows and looks like success), an insert violation is a real
+    // error, thrown straight from the table. This is how a delegated
+    // (CLUB-mode) team manager or an invited assessor — neither of whom holds
+    // a membership on the athlete's account — hits the account-staff-only
+    // athlete_family_contacts_rw policy. add_athlete_family_contact() is the
+    // same write behind a check that authorizes them explicitly.
+    if (res.error?.code === '42501') {
+      const { data, error } = await supabase.rpc('add_athlete_family_contact', {
+        p_athlete_id: athleteId,
+        p_name: contact.name,
+        p_relationship: contact.relationship || null,
+        p_email: contact.email || null,
+        p_phone: contact.phone || null,
+      });
+      if (error) {
+        if (error.code === 'PGRST202' || error.code === '42883') {
+          console.log('add_athlete_family_contact() not deployed — this account cannot add a family contact.');
+          throw new Error('Your account does not have permission to add a family contact for this player.');
+        }
+        throw unwrap({ data: null, error });
+      }
+      return this.rowToFamilyContact(data as Row);
+    }
+
+    return this.rowToFamilyContact(unwrap(res) as Row);
   }
 
   async removeFamilyContact(id: string): Promise<void> {
     const { supabase } = await this.ctx();
-    unwrap(await supabase.from('athlete_family_contacts').delete().eq('id', id));
+    // .select().single() so a DELETE an RLS policy silently drops (matches
+    // zero rows, which Postgres reports as an ordinary success) is told apart
+    // from one that actually removed the row: .single() errors (PGRST116)
+    // when zero rows come back, which is how a delegated team manager's
+    // blocked delete is distinguished from one that actually succeeded.
+    const res = await supabase.from('athlete_family_contacts').delete().eq('id', id).select().single();
+    if (!res.error) return;
+
+    const { error } = await supabase.rpc('remove_athlete_family_contact', { p_contact_id: id });
+    if (error) {
+      if (error.code === 'PGRST202' || error.code === '42883') {
+        console.log('remove_athlete_family_contact() not deployed — this account cannot remove a family contact.');
+        throw new Error('Your account does not have permission to remove this family contact.');
+      }
+      throw unwrap({ data: null, error });
+    }
   }
 
   async leaveSeason(seasonRosterId: string): Promise<void> {
+    // Removes the team roster row as well as the season one — see the interface
+    // doc and 20260902140000_guardian_leave_team_roster.sql.
+    //
     // Not this.ctx() — that resolves a *staff* tenant account via memberships,
     // which a guardian doesn't have. A plain user-scoped client is enough; the
     // RPC does its own authorization against the roster row.
@@ -7855,14 +7995,7 @@ export class SupabaseDataSource implements DataSource {
         tryout_participants(
           id,
           tryout_id,
-          tryouts(id, name, sport),
-          evaluations(
-            id,
-            session,
-            recommendation,
-            created_at,
-            evaluation_scores(rubric_key, value)
-          )
+          tryouts(id, name, sport, tryout_date, start_time, end_time, location)
         ),
         season_roster(
           id,
@@ -7916,53 +8049,28 @@ export class SupabaseDataSource implements DataSource {
   /** Shared by the get_guardian_rosters() RPC and the nested-embed fallback — both
    * hand back the same row shape. */
   private mapGuardianRosterRow(row: any): import('../types').GuardianRosterAthlete {
-    // 3. Map tryouts/assessments using the unique participant ID (tp.id)
+    // 3. Map tryouts/assessments using the unique participant ID (tp.id).
+    // Only the event's tombstone reaches a guardian: what it is called, the
+    // sport, and when and where it is. Scores, session results and the
+    // make/release recommendation are the coach's to share — they are dropped
+    // here, at the one place every guardian screen reads its data from, rather
+    // than hidden per screen, so no future screen can render them by accident.
+    // get_guardian_rosters() may still return them in its payload; this is the
+    // client-side follow-up regardless of what the RPC does.
     const tryoutsList = (row.tryout_participants || [])
       .map((tp: any) => {
         if (!tp.tryouts) return null;
 
-        const evals = tp.evaluations || [];
-        const sessionMap = new Map<string, { result: string; date: number; scores: Record<string, number> }>();
-
-        for (const e of evals) {
-          if (e.recommendation) {
-            const sessionName = e.session || 'Session 1';
-            const t = e.created_at ? new Date(e.created_at).getTime() : 0;
-            const existing = sessionMap.get(sessionName);
-
-            if (!existing || t > existing.date) {
-              const scoresRecord: Record<string, number> = {};
-              if (e.evaluation_scores && Array.isArray(e.evaluation_scores)) {
-                for (const score of e.evaluation_scores) {
-                  if (score.rubric_key && typeof score.value === 'number') {
-                    scoresRecord[score.rubric_key] = score.value;
-                  }
-                }
-              }
-
-              sessionMap.set(sessionName, {
-                result: REC_FROM_DB[e.recommendation] || e.recommendation,
-                date: t,
-                scores: scoresRecord,
-              });
-            }
-          }
-        }
-
-        const sessions = Array.from(sessionMap.entries())
-          .map(([name, data]) => ({
-            name,
-            result: data.result,
-            date: data.date,
-            scores: Object.keys(data.scores).length > 0 ? data.scores : undefined,
-          }))
-          .sort((a, b) => a.name.localeCompare(b.name));
-
         return {
-          ...tp.tryouts,
+          id: tp.tryouts.id,
+          name: tp.tryouts.name,
+          sport: tp.tryouts.sport,
+          date: tp.tryouts.tryout_date ?? undefined,
+          startTime: tp.tryouts.start_time ?? undefined,
+          endTime: tp.tryouts.end_time ?? undefined,
+          location: tp.tryouts.location ?? undefined,
           // Globally unique ID prevents multiple dashboard row items from collapsing
           participantId: tp.id,
-          sessions,
         };
       })
       .filter(Boolean);

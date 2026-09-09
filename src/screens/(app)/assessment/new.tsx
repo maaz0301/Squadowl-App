@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import {
   CreateAssessmentFormSchema,
   SPORTS,
@@ -91,6 +92,10 @@ export default function NewAssessmentScreen() {
     const email = assessorEmail.trim();
     if (!name || !email) {
       Alert.alert('Missing Info', 'An assessor needs both a name and an email address.');
+      return;
+    }
+    if (!z.string().email().safeParse(email).success) {
+      Alert.alert('Invalid Email', `"${email}" is not a valid email address.`);
       return;
     }
     // One row per address per tryout — the same constraint the settings screen

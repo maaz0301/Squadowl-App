@@ -32,13 +32,14 @@ import {
   useAddSeasonPlayerMutation,
   useUploadPlayerPhotoMutation,
 } from '@/features/queries';
-import { useAssessmentId } from '@/features/useAssessmentId';
+import { useAssessmentId, useAssessorMode } from '@/features/useAssessmentId';
 import { playerDisplayName, weightedOverall, getPlayerCategories, isGoaliePosition } from '@/data/rubrics';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { PlanGate } from '@/components/PlanGate';
 
 export default function PlayerHubScreen() {
   const assessmentId = useAssessmentId();
+  const isAssessorOnly = useAssessorMode();
   const route = useRoute<any>();
   const { playerId, from } = route.params || {};
   const backScreen = from === 'results' ? 'AssessmentResults' : 'AssessmentRoster';
@@ -376,20 +377,25 @@ export default function PlayerHubScreen() {
 
       </Card>
 
-      <Card className="mb-4 gap-2">
-        <Text className="font-display font-bold" style={{ color: colors.ink }}>
-          Player Profile
-        </Text>
-        <Text style={{ color: colors.inkMuted }}>
-          View full evaluation history, score trends, and season-over-season comparison.
-        </Text>
-        <Button
-          label="View Full Profile"
-          variant="secondary"
-          disabled={!player.athleteId}
-          onPress={() => navigation.navigate('PlayerProfile', { athleteId: player.athleteId })}
-        />
-      </Card>
+      {/* The profile is season-over-season history, which an assessor
+          scores without — they only ever see the assessment in front of
+          them. */}
+      {isAssessorOnly ? null : (
+        <Card className="mb-4 gap-2">
+          <Text className="font-display font-bold" style={{ color: colors.ink }}>
+            Player Profile
+          </Text>
+          <Text style={{ color: colors.inkMuted }}>
+            View full evaluation history, score trends, and season-over-season comparison.
+          </Text>
+          <Button
+            label="View Full Profile"
+            variant="secondary"
+            disabled={!player.athleteId}
+            onPress={() => navigation.navigate('PlayerProfile', { athleteId: player.athleteId })}
+          />
+        </Card>
+      )}
 
       <Text className="text-md font-display font-bold mb-3" style={{ color: colors.ink }}>
         Evaluations ({evals.length})

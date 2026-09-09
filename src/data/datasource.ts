@@ -204,6 +204,13 @@ export interface DataSource {
   sendTeamMessage(seasonId: string, body: string): Promise<TeamMessage>;
   deleteTeamMessage(messageId: string): Promise<void>;
   getAthleteHistory(athleteId: string): Promise<AthleteHistory>;
+  /**
+   * Highest session number each player in an assessment has already been
+   * scored under, keyed by player id. For assessors, whose read of the
+   * assessment's evaluations comes back empty — it carries the numbering they
+   * need to continue at the right session without exposing anyone's scores.
+   */
+  getSessionProgress(tryoutId: string): Promise<Record<string, number>>;
   getPlayerProfile(athleteId: string): Promise<PlayerProfile>;
   listAthletes(): Promise<Athlete[]>;
 
@@ -399,7 +406,12 @@ export interface DataSource {
   sendTeamRosterInvites(teamId: string, athleteIds?: string[]): Promise<import('./types').TeamInviteResult>;
   importScanScores(tryoutId: string, scores: { playerId: string; rubricKey: string; value: number }[]): Promise<void>;
   getGuardianRosters(): Promise<GuardianRosterAthlete[]>;
-  /** Removes the guardian's own athlete from a season's roster (guardian_leave_season RPC). */
+  /**
+   * Takes the guardian's own athlete off a team: the season roster entry, the
+   * team roster row behind it, and any other live season of the same team
+   * (guardian_leave_season RPC). Removing the team roster row is what makes it
+   * stick — anything less and the team's next event save re-enrolls them.
+   */
   leaveSeason(seasonRosterId: string): Promise<void>;
 
   // Extra family contacts a guardian keeps on their own athlete's profile

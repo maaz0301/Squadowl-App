@@ -7,7 +7,7 @@ import { DummyDataModal } from '@/components/DummyDataModal';
 import { ImportPlayersModal } from '@/components/roster/ImportPlayersModal';
 import { PlayerRow } from '@/components/roster/PlayerRow';
 import { ChevronIcon, PlusIcon } from '@/components/roster/icons';
-import { RosterActions, RosterFilters, RosterSearch, ScoreCta } from '@/components/roster/RosterControls';
+import { RosterActions, RosterFilters, RosterSearch, RosterSelectToolbar, ScoreCta } from '@/components/roster/RosterControls';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { UsageNudgeBanner } from '@/components/UsageNudgeBanner';
 import {
@@ -21,10 +21,12 @@ import {
   Screen,
 } from '@/components/ui';
 import { canUseFeature, isAtPlayerLimit } from '@/data/plans';
+import { isGoaliePosition } from '@/data/rubrics';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import {
   useAddPlayerMutation,
   useClearTestDataMutation,
+  useDeletePlayerMutation,
   useGenerateTestDataMutation,
   useImportTryoutPlayersMutation,
   useTryoutQuery,
@@ -32,19 +34,21 @@ import {
   tryoutBulkWriteKey,
 } from '@/features/queries';
 import { useIsMutating } from '@tanstack/react-query';
-import { useAssessmentId } from '@/features/useAssessmentId';
+import { useAssessmentId, useAssessorMode } from '@/features/useAssessmentId';
 import { useUser } from '@/state/authStore';
 import { useSessionStore, type RosterFilter } from '@/state/sessionStore';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 export default function RosterScreen() {
   const id = useAssessmentId();
+  const isAssessorOnly = useAssessorMode();
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
   const addPlayer = useAddPlayerMutation(id!);
   const uploadPhoto = useUploadPlayerPhotoMutation(id!);
   const importPlayers = useImportTryoutPlayersMutation(id!);
+  const deletePlayer = useDeletePlayerMutation(id!);
   const [dummyProgress, setDummyProgress] = useState<{ done: number; total: number } | null>(null);
   const genTest = useGenerateTestDataMutation(id!, (done, total) => setDummyProgress({ done, total }));
   // genTest.isPending flips false the instant generateTestData resolves —
@@ -70,6 +74,9 @@ export default function RosterScreen() {
   // player run looks exactly like an assessment nobody has added anyone to.
   const bulkWriting = useIsMutating({ mutationKey: tryoutBulkWriteKey(id ?? '') }) > 0;
   const [playerSearch, setPlayerSearch] = useState('');
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deletingSelected, setDeletingSelected] = useState(false);
 
   const isAssociation = canUseFeature(user?.planTier ?? 'free', 'enterprise');
 
@@ -108,10 +115,10 @@ export default function RosterScreen() {
         result = roster.filter((p) => !evalCountByPlayerId.has(p.id));
         break;
       case 'goalies':
-        result = roster.filter((p) => p.pos?.toUpperCase() === 'GTL');
+        result = roster.filter((p) => isGoaliePosition(p.pos));
         break;
       case 'skaters':
-        result = roster.filter((p) => p.pos?.toUpperCase() !== 'GTL');
+        result = roster.filter((p) => !isGoaliePosition(p.pos));
         break;
       default:
         result = roster;
@@ -129,7 +136,7 @@ export default function RosterScreen() {
   const filterCounts = useMemo((): Record<RosterFilter, number> => {
     const roster = tryoutQuery.data?.roster ?? [];
     const scored = roster.filter((p) => evalCountByPlayerId.has(p.id)).length;
-    const goalies = roster.filter((p) => p.pos?.toUpperCase() === 'GTL').length;
+    const goalies = roster.filter((p) => isGoaliePosition(p.pos)).length;
     return {
       all: roster.length,
       scored,
@@ -157,6 +164,46 @@ export default function RosterScreen() {
   const openPlayer = (playerId: string) => {
     setCurrentPlayer(playerId);
     navigation.navigate('AssessmentFlow', { screen: 'AssessmentPlayer', params: { id: id, playerId } });
+  };
+
+  const toggleSelected = (playerId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(playerId)) next.delete(playerId);
+      else next.add(playerId);
+      return next;
+    });
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const deleteSelected = () => {
+    const ids = [...selectedIds];
+    Alert.alert(
+      'Delete players?',
+      `${ids.length} player${ids.length === 1 ? '' : 's'} will be permanently removed from this roster.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingSelected(true);
+            try {
+              await Promise.all(ids.map((pid) => deletePlayer.mutateAsync(pid)));
+              exitSelectMode();
+            } catch (e: any) {
+              Alert.alert('Delete Failed', e?.message || 'Could not delete the selected players.');
+            } finally {
+              setDeletingSelected(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const hasPlayers = tryout.roster.length > 0;
@@ -308,6 +355,7 @@ export default function RosterScreen() {
           <PlayerRow
             player={item}
             evalCount={evalCountByPlayerId.get(item.id) ?? 0}
+            hideUnscored={isAssessorOnly}
             onPress={openPlayer}
           />
         )}

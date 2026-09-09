@@ -18,10 +18,25 @@ import { ChevronIcon } from './icons';
 export const PlayerRow = memo(function PlayerRow({
   player,
   evalCount,
+  hideUnscored,
+  selectable,
+  selected,
+  onToggleSelect,
   onPress,
 }: {
   player: Player;
   evalCount: number;
+  /**
+   * Skip the "unscored" badge for a viewer who can't read every evaluator's
+   * scores (an assessor, under blind evaluation) — `evalCount` for them only
+   * ever reflects their own scoring, so a bare 0 reads as nobody has scored
+   * this player when a coach or another assessor already has.
+   */
+  hideUnscored?: boolean;
+  /** Select mode is on for the whole list — tapping this row toggles it instead of opening the player. */
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (playerId: string) => void;
   onPress: (playerId: string) => void;
 }) {
   const colors = useThemeColors();
@@ -30,12 +45,34 @@ export const PlayerRow = memo(function PlayerRow({
 
   return (
     <Pressable
-      onPress={() => onPress(player.id)}
+      onPress={() => (selectable ? onToggleSelect?.(player.id) : onPress(player.id))}
       accessibilityRole="button"
       accessibilityLabel={`${playerDisplayName(player)}, ${scored ? `${evalCount} evaluations` : 'unscored'}`}
+      accessibilityState={selectable ? { selected: !!selected } : undefined}
       className="mb-2 flex-row items-center gap-3 rounded-2xl border px-3 py-3 active:opacity-70"
-      style={{ backgroundColor: colors.card, borderColor: colors.border }}
+      style={{
+        backgroundColor: colors.card,
+        borderColor: selectable && selected ? colors.primary : colors.border,
+      }}
     >
+      {selectable ? (
+        // A plain indicator, not a nested interactive Checkbox — this whole
+        // row is already a Pressable that toggles selection, and nesting
+        // another focusable control inside it would double-fire.
+        <View
+          className="h-5 w-5 shrink-0 items-center justify-center rounded-[6px] border"
+          style={{
+            borderColor: selected ? colors.primary : colors.border,
+            backgroundColor: selected ? colors.primary : 'transparent',
+          }}
+        >
+          {selected ? (
+            <Text className="text-xs font-bold" style={{ color: '#fff' }}>
+              ✓
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
       <Avatar first={player.first} last={player.last} pos={player.pos} uri={player.avatarUrl} />
 
       <View className="flex-1">
@@ -84,7 +121,7 @@ export const PlayerRow = memo(function PlayerRow({
             {evalCount === 1 ? 'eval' : 'evals'}
           </Text>
         </View>
-      ) : (
+      ) : hideUnscored ? null : (
         <View
           className="flex-row items-center gap-1 rounded-lg border border-dashed px-2 py-1.5"
           style={{ borderColor: colors.border, backgroundColor: 'transparent' }}

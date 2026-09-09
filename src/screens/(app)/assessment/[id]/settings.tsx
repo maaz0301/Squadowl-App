@@ -218,12 +218,16 @@ export default function SettingsScreen() {
   const removeAssessor = async (index: number) => {
     const newAssessors = [...tryout.assessors];
     newAssessors.splice(index, 1);
-    await updateTryout.mutateAsync({
-      id: tryout.id,
-      updates: {
-        assessors: newAssessors,
-      },
-    });
+    try {
+      await updateTryout.mutateAsync({
+        id: tryout.id,
+        updates: {
+          assessors: newAssessors,
+        },
+      });
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not remove this assessor.');
+    }
   };
 
   const handleCopy = async () => {

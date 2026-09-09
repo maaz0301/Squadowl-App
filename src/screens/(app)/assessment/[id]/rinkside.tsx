@@ -15,8 +15,13 @@ import {
   ScorePad,
   Screen,
 } from '@/components/ui';
-import { useTryoutQuery, useSaveEvaluationMutation, useAthleteHistoryQuery } from '@/features/queries';
-import { useAssessmentId } from '@/features/useAssessmentId';
+import {
+  useTryoutQuery,
+  useSaveEvaluationMutation,
+  useAthleteHistoryQuery,
+  useSessionProgressQuery,
+} from '@/features/queries';
+import { useAssessmentId, useAssessorMode } from '@/features/useAssessmentId';
 import { useSessionStore } from '@/state/sessionStore';
 import {
   categoryAverage,
@@ -31,6 +36,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function RinksideScreen() {
   const id = useAssessmentId();
+  const isAssessorOnly = useAssessorMode();
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
@@ -53,7 +59,12 @@ export default function RinksideScreen() {
   const roster = tryoutQuery.data?.roster ?? [];
   const player = roster[rinksideIndex];
 
-  const historyQuery = useAthleteHistoryQuery(player?.athleteId);
+  // Athlete history spans previous seasons, which an assessor may not see at
+  // all — passing no id leaves the query disabled so it is never fetched.
+  const historyQuery = useAthleteHistoryQuery(isAssessorOnly ? undefined : player?.athleteId);
+  // Only an assessor needs this: a coach already has every evaluation loaded.
+  const sessionProgressQuery = useSessionProgressQuery(id, isAssessorOnly);
+  const sessionProgress = sessionProgressQuery.data;
 
   const categories = useMemo(() => {
     if (!tryoutQuery.data || !player) return [];
@@ -71,11 +82,17 @@ export default function RinksideScreen() {
       : tryoutQuery.data.settings.skaterWeights;
   }, [tryoutQuery.data, player]);
 
-  const previousEvals = useMemo(() => {
-    const current = tryoutQuery.data?.evals.filter((e) => e.playerId === player?.id) || [];
-    const past = historyQuery.data?.pastEvaluations || [];
-    return [...current, ...past].sort((a, b) => b.createdAt - a.createdAt);
-  }, [tryoutQuery.data?.evals, historyQuery.data?.pastEvaluations, player?.id]);
+  // Only this assessment's own evaluations may seed the score form. Session
+  // labels ("Session 1") repeat across every season, so matching against the
+  // athlete's history loaded last season's scores into this season's first
+  // entry for a player — scoring them under the wrong season.
+  const currentEvals = useMemo(
+    () =>
+      (tryoutQuery.data?.evals.filter((e) => e.playerId === player?.id) ?? [])
+        .slice()
+        .sort((a, b) => b.createdAt - a.createdAt),
+    [tryoutQuery.data?.evals, player?.id],
+  );
 
   const highestSessionNum = useMemo(() => {
     let maxNum = (tryoutQuery.data?.evals || []).reduce((max, ev) => {
@@ -91,8 +108,12 @@ export default function RinksideScreen() {
     if (currentMatch) {
       maxNum = Math.max(maxNum, parseInt(currentMatch[1], 10));
     }
+    // An assessor's own read of `evals` is empty, so without the server's
+    // numbering the chip strip would only ever show up to Session 5 no matter
+    // how far the coach had actually gone.
+    maxNum = Math.max(maxNum, sessionProgress?.[player?.id || ''] ?? 0);
     return maxNum;
-  }, [tryoutQuery.data?.evals, session]);
+  }, [tryoutQuery.data?.evals, session, sessionProgress, player?.id]);
 
   const SESSIONS = useMemo(() => {
     const count = Math.max(5, highestSessionNum + 1);
@@ -101,7 +122,7 @@ export default function RinksideScreen() {
     return sessions;
   }, [highestSessionNum]);
 
-  const mostRecentEval = previousEvals[0];
+  const mostRecentEval = currentEvals[0];
 
   const scoredSessions = useMemo(() => {
     if (!tryoutQuery.data || !player) return new Set<string>();
@@ -116,11 +137,17 @@ export default function RinksideScreen() {
   const highestDoneSessionNum = useMemo(() => {
     const completedForPlayer = completedSessions?.[player?.id || ''] || [];
     const done = [...completedForPlayer, ...Array.from(scoredSessions)];
-    return done.reduce((max, s) => {
+    const fromLoadedEvals = done.reduce((max, s) => {
       const match = s?.match(/^Session (\d+)$/);
       return match ? Math.max(max, parseInt(match[1], 10)) : max;
     }, 0);
-  }, [completedSessions, scoredSessions, player?.id]);
+    // An assessor reads back none of the assessment's evaluations, so the
+    // labels above see only what they scored in this sitting — without this
+    // their first save restarted a player at Session 1 alongside the coach's
+    // Sessions 1-5. The server hands over the numbering and nothing else.
+    const fromServer = sessionProgress?.[player?.id || ''] ?? 0;
+    return Math.max(fromLoadedEvals, fromServer);
+  }, [completedSessions, scoredSessions, sessionProgress, player?.id]);
 
   // Default to the session *after* the last completed one (e.g. Session 3 done -> Session 4).
   // A fresh player (nothing done) defaults to Session 1.
@@ -131,12 +158,18 @@ export default function RinksideScreen() {
 
   const lastPlayerIdRef = useRef<string | null>(null);
 
+  // The default is applied once per player, so it has to wait for the session
+  // numbering: settling for Session 1 and correcting afterwards would be
+  // blocked by that same guard. Not loading for a coach, where this is the
+  // old behaviour unchanged.
+  const sessionNumberingReady = !sessionProgressQuery.isLoading;
+
   useEffect(() => {
-    if (player?.id && lastPlayerIdRef.current !== player.id) {
+    if (player?.id && sessionNumberingReady && lastPlayerIdRef.current !== player.id) {
       lastPlayerIdRef.current = player.id;
       setSession(defaultSessionForPlayer);
     }
-  }, [player?.id, defaultSessionForPlayer]);
+  }, [player?.id, defaultSessionForPlayer, sessionNumberingReady]);
 
   // Each time the screen is (re)opened, start at the first player on a freshly-defaulted,
   // empty session. Uses focus (not mount) because the tab screen stays mounted between visits.
@@ -191,7 +224,7 @@ export default function RinksideScreen() {
     const isSessionChanged = lastSession !== session;
 
     if (isPlayerChanged || isSessionChanged || !lastLoadedRef.current) {
-      const evalForSession = previousEvals.find(e => e.session === session);
+      const evalForSession = currentEvals.find(e => e.session === session);
       let loadedScores = {};
       let loadedRec = '';
 
@@ -208,7 +241,7 @@ export default function RinksideScreen() {
       previousStateRef.current = JSON.stringify({ scores: loadedScores, recommendation: loadedRec });
       lastLoadedRef.current = { playerId: player.id, session };
     }
-  }, [player?.id, session, previousEvals]);
+  }, [player?.id, session, currentEvals]);
 
   const handleSessionChange = (newSession: string) => {
     setSession(newSession);
@@ -362,11 +395,17 @@ export default function RinksideScreen() {
 
               return SESSIONS.map((s, idx) => {
                 const isScored = scoredSessionsMap.has(s);
-                let disabled = false;
+                // A session the server counts but this viewer can't read is an
+                // assessor looking at the coach's work: opening it would start a
+                // second evaluation beside one they never see.
+                const sessionNum = Number(s.match(/^Session (\d+)$/)?.[1]);
+                const isServerScored =
+                  Number.isFinite(sessionNum) && sessionNum <= (sessionProgress?.[player?.id || ''] ?? 0);
+                let disabled = isServerScored && !isScored;
                 if (!isScored && idx > nextSessionIdx) {
                   disabled = true;
                 }
-                
+
                 return (
                   <Chip 
                     key={s} 

@@ -1,25 +1,37 @@
 import { useState, useMemo } from 'react';
-import { View, Text, Pressable, Image, Alert } from 'react-native';
+import { View, Text, Pressable, Image, Alert, ScrollView } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { AddPlayerFormSchema, type AddPlayerForm as AddPlayerFormType, type Athlete } from '@/data/types';
-import { Button, Input, Modal, Avatar, YearField, PhoneField } from '@/components/ui';
+import { AddPlayerFormSchema, type AddPlayerForm as AddPlayerFormType, type Athlete, type Sport } from '@/data/types';
+import { Button, Chip, Input, Modal, Avatar, YearField, PhoneField } from '@/components/ui';
 import { useAthletesQuery } from '@/features/queries';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { launchImageLibrary } from 'react-native-image-picker';
+import { POSITION_OPTIONS_BY_SPORT } from '@/data/positions';
 
 interface Props {
   loading?: boolean;
   defaultValues?: Partial<AddPlayerFormType>;
+  /** Drives the position picker's options — Hockey positions for a Hockey evaluation, and so on. */
+  sport?: Sport;
   onSubmit: (data: AddPlayerFormType) => Promise<void>;
 }
 
-export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
+export function AddPlayerForm({ loading, defaultValues, sport, onSubmit }: Props) {
   const colors = useThemeColors();
   const athletesQuery = useAthletesQuery();
   const [modalVisible, setModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(defaultValues?.avatarUrl || null);
+
+  const positionOptions = (sport && POSITION_OPTIONS_BY_SPORT[sport]) || [];
+  // Free-text once the sport has no reference list (e.g. "Other"), or the coach
+  // picked "Other / custom" explicitly — otherwise a chip list of the sport's
+  // own positions beats typing a code from memory.
+  const [positionIsCustom, setPositionIsCustom] = useState(
+    positionOptions.length === 0 ||
+      !!(defaultValues?.pos && !positionOptions.some((o) => o.code === defaultValues.pos)),
+  );
 
   const { control, handleSubmit, setValue, watch } = useForm<AddPlayerFormType>({
     resolver: zodResolver(AddPlayerFormSchema),
@@ -28,7 +40,11 @@ export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
       first: defaultValues?.first || '',
       last: defaultValues?.last || '',
       jersey: defaultValues?.jersey || '',
-      pos: defaultValues?.pos || 'FWD',
+      // 'FWD' as a bare default only makes sense for the old free-text field —
+      // once a sport has its own position list, defaulting into a code that
+      // isn't actually on it would silently submit a mismatched position for
+      // anyone who never touches the picker.
+      pos: defaultValues?.pos || (positionOptions.length > 0 ? '' : 'FWD'),
       shoots: defaultValues?.shoots || '',
       yearOfBirth: defaultValues?.yearOfBirth || '',
       positionTryingOutFor: defaultValues?.positionTryingOutFor || '',
@@ -80,7 +96,11 @@ export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
     setValue('guardianPhone', a.guardianPhone || '');
     setValue('medicalInfo', a.medicalInfo || '');
     setValue('aboutChild', a.aboutChild || '');
-    setValue('pos', a.currentPosition || 'FWD');
+    const pos = a.currentPosition || (positionOptions.length > 0 ? '' : 'FWD');
+    setPositionIsCustom(
+      positionOptions.length === 0 || (!!pos && !positionOptions.some((o) => o.code === pos)),
+    );
+    setValue('pos', pos);
     setValue('currentTeam', a.currentTeam || '');
     setValue('currentLevel', a.currentLevel || '');
     setValue('jersey', a.jersey || '');
@@ -166,9 +186,52 @@ export function AddPlayerForm({ loading, defaultValues, onSubmit }: Props) {
       <Controller
         control={control}
         name="pos"
-        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
-          <Input label="Position (FWD/DEF/GTL)" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} autoCapitalize="characters" />
-        )}
+        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) =>
+          positionOptions.length > 0 && !positionIsCustom ? (
+            <View className="gap-1">
+              <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                Position
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {positionOptions.map((o) => (
+                  <Chip key={o.code} label={o.label} active={value === o.code} onPress={() => onChange(o.code)} />
+                ))}
+                <Chip
+                  label="Other / custom…"
+                  onPress={() => {
+                    setPositionIsCustom(true);
+                    onChange('');
+                  }}
+                />
+              </ScrollView>
+              {error?.message ? (
+                <Text className="text-sm" style={{ color: colors.danger }}>
+                  {error.message}
+                </Text>
+              ) : null}
+            </View>
+          ) : (
+            <Input
+              label={positionOptions.length > 0 ? 'Position (custom)' : 'Position (FWD/DEF/GTL)'}
+              onBlur={onBlur}
+              onChangeText={(t) => onChange(t.toUpperCase())}
+              value={value}
+              error={error?.message}
+              autoCapitalize="characters"
+              rightAccessory={
+                positionOptions.length > 0 ? (
+                  <Button
+                    label="Use list"
+                    variant="ghost"
+                    size="sm"
+                    className="min-h-[32px] px-2 py-1"
+                    onPress={() => setPositionIsCustom(false)}
+                  />
+                ) : undefined
+              }
+            />
+          )
+        }
       />
       <Controller
         control={control}
