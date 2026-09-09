@@ -28,7 +28,6 @@ import {
   useInviteMemberMutation,
   useResendInviteMutation,
   useCreateAndInviteMemberMutation,
-  useOrgMembersQuery,
   useSeasonsQuery,
   useAddSeasonPlayerMutation,
   useUploadPlayerPhotoMutation,
@@ -63,7 +62,6 @@ export default function PlayerHubScreen() {
   const inviteMut = useInviteMemberMutation();
   const resendInviteMut = useResendInviteMutation();
   const createAndInviteMut = useCreateAndInviteMemberMutation();
-  const { data: members = [] } = useOrgMembersQuery();
   
   const [showEdit, setShowEdit] = useState(false);
   const [showGuardianLink, setShowGuardianLink] = useState(false);

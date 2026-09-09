@@ -90,9 +90,15 @@ export default function EnterpriseScreen() {
   const orgQuery = useOrgQuery();
   const prefetchTryout = usePrefetchTryout();
   const paymentsQuery = useEnterprisePaymentsQuery();
-  const membersQuery = useOrgMembersQuery();
+  // Staff + assessors only — guardians come off every athlete and dominate
+  // large orgs. Load only when the Members tab is open so overview stays light.
+  // Permissions already warms the same staff-only cache.
+  const membersQuery = useOrgMembersQuery({
+    includeGuardians: false,
+    enabled: tab === 'members',
+  });
   const removeMut = useRemoveMemberMutation();
-  const tryoutsQuery = useTryoutsQuery(false);
+  const tryoutsQuery = useTryoutsQuery(false, tab === 'overview' || tab === 'actions');
   const teamsQuery = useTeamsQuery();
   const seasonsQuery = useSeasonsQuery();
 
@@ -228,10 +234,8 @@ export default function EnterpriseScreen() {
   }, [paymentsQuery.data]);
 
   /**
-   * The members directory deliberately folds in one entry per athlete guardian
-   * (see listOrgMembers), so its length tracks roster size — a 130-player roster
-   * reads as "130 members" even with nobody invited. The headline badge counts
-   * only people holding a seat in the org: staff and assessors.
+   * Staff + assessors only on this tab (guardians are on Manage Organization).
+   * Overview uses org.memberCount so it doesn't wait on this query.
    */
   const staffCount = useMemo(
     () => membersQuery.data?.filter((m) => m.role !== 'guardian').length,
@@ -461,11 +465,14 @@ export default function EnterpriseScreen() {
           ) : (
             <>
               <View className="flex-row flex-wrap gap-2 mb-4">
-                {(['admin', 'coach', 'assessor', 'guardian'] as const).map((role) => {
+                {(['admin', 'coach', 'assessor'] as const).map((role) => {
                   const count = (membersQuery.data ?? []).filter((m) => m.role === role).length;
                   return count > 0 ? <Badge key={role} label={`${role} · ${count}`} /> : null;
                 })}
               </View>
+              <Text className="text-xs mb-3" style={{ color: colors.inkMuted }}>
+                Staff and assessors. Guardians live under Manage Organization.
+              </Text>
               {(membersQuery.data ?? []).map((m) => (
                 <Card key={m.id} className="mb-2 flex-row justify-between items-center gap-2">
                   <View className="flex-1 pr-2">

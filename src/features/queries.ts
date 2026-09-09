@@ -1586,12 +1586,41 @@ export function useApplyReferralCodeMutation() {
   });
 }
 
-export function useOrgMembersQuery(includeTeamManagers = false) {
+export type OrgMembersQueryOptions = {
+  includeTeamManagers?: boolean;
+  /** When false, skip the athletes/guardian scan — much faster for large orgs. */
+  includeGuardians?: boolean;
+  enabled?: boolean;
+};
+
+export function useOrgMembersQuery(
+  includeTeamManagersOrOpts: boolean | OrgMembersQueryOptions = false,
+) {
   const userId = useAuthStore((s) => s.session?.user?.id);
+  const opts: Required<OrgMembersQueryOptions> =
+    typeof includeTeamManagersOrOpts === 'boolean'
+      ? {
+          includeTeamManagers: includeTeamManagersOrOpts,
+          includeGuardians: true,
+          enabled: true,
+        }
+      : {
+          includeTeamManagers: includeTeamManagersOrOpts.includeTeamManagers ?? false,
+          includeGuardians: includeTeamManagersOrOpts.includeGuardians ?? true,
+          enabled: includeTeamManagersOrOpts.enabled ?? true,
+        };
+  const staffOnly = !opts.includeGuardians;
   return useQuery({
-    queryKey: queryKeys.orgMembers(userId, includeTeamManagers),
-    queryFn: () => getDataSource().listOrgMembers(includeTeamManagers),
-    enabled: !!userId,
+    queryKey: queryKeys.orgMembers(userId, opts.includeTeamManagers, staffOnly),
+    queryFn: () =>
+      getDataSource().listOrgMembers({
+        includeTeamManagers: opts.includeTeamManagers,
+        includeGuardians: opts.includeGuardians,
+      }),
+    enabled: !!userId && opts.enabled,
+    // Permissions and the members tab both hit this; keep it warm so switching
+    // tabs / remounting doesn't re-pay the round trip every time.
+    staleTime: 60_000,
   });
 }
 

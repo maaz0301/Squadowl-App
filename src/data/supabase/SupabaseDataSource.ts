@@ -7142,54 +7142,54 @@ export class SupabaseDataSource implements DataSource {
   }
 
   // ─── Org Members ─────────────────────────────────────────────────────────────
-  async listOrgMembers(includeTeamManagers = false): Promise<import('../types').OrgMember[]> {
+  async listOrgMembers(
+    includeTeamManagersOrOpts:
+      | boolean
+      | { includeTeamManagers?: boolean; includeGuardians?: boolean } = false,
+  ): Promise<import('../types').OrgMember[]> {
+    const opts =
+      typeof includeTeamManagersOrOpts === 'boolean'
+        ? { includeTeamManagers: includeTeamManagersOrOpts, includeGuardians: true }
+        : {
+            includeTeamManagers: includeTeamManagersOrOpts.includeTeamManagers ?? false,
+            includeGuardians: includeTeamManagersOrOpts.includeGuardians ?? true,
+          };
+    const { includeTeamManagers, includeGuardians } = opts;
     const { supabase, accountId } = await this.ctx();
 
-    // Memberships, the account's tryouts (needed only to scope the assessor
-    // read) and the guardian-bearing athletes are three independent reads —
-    // only the assessors depend on anything here. Running all four in series
-    // put ~2.1s in front of every screen that asks who the caller is.
-    const [memRes, tryoutRes, teamRes, athleteRes] = await Promise.all([
+    // One wave: memberships, assessors (joined to this account's tryouts — no
+    // separate tryout-id round trip), optional guardians, optional teams.
+    // Guardians come off athletes and dominate large orgs; callers that only
+    // need staff (permissions, Remove Assessor) skip them.
+    const [memRes, assRes, teamRes, athleteRes] = await Promise.all([
       supabase
         .from('memberships')
         .select('id, user_id, role, created_at, profiles(email, display_name)')
         .eq('account_id', accountId),
-      // Fetch tryouts for the account to get assessors
-      supabase.from('tryouts').select('id').eq('account_id', accountId),
-      // …and the teams, for the managers they've been delegated to. Archived
-      // ones included: the delegation survives the archive and comes back with
-      // the team, so hiding it here would hide access that still exists. Only
-      // Manage Organization asks for them — everything else on this query pays
-      // a read per team otherwise.
+      supabase
+        .from('tryout_assessors')
+        .select('id, user_id, role, joined_at, email, name, tryouts!inner(account_id)')
+        .eq('tryouts.account_id', accountId),
       includeTeamManagers
         ? supabase.from('teams').select('id, name').eq('account_id', accountId)
         : Promise.resolve({ data: [] as Row[] }),
-      supabase
-        .from('athletes')
-        .select('id, guardian_name, guardian_email, guardian_user_id, created_at')
-        .eq('account_id', accountId)
-        .eq('archived', false),
+      includeGuardians
+        ? supabase
+            .from('athletes')
+            .select('id, guardian_name, guardian_email, guardian_user_id, created_at')
+            .eq('account_id', accountId)
+            .eq('archived', false)
+            .not('guardian_email', 'is', null)
+        : Promise.resolve({ data: [] as Row[] }),
     ]);
 
     const memData = memRes.data;
-    const tryouts = tryoutRes.data;
+    const assData = assRes.data || [];
     const teams = (teamRes.data ?? []) as Row[];
     const athletesData = athleteRes.data;
-
-    // Second wave: both of these need ids from the first one, and neither needs
-    // anything from the other.
-    const [assData, teamManagers] = await Promise.all([
-      (async (): Promise<any[]> => {
-        if (!tryouts || tryouts.length === 0) return [];
-        const tryoutIds = tryouts.map(t => t.id);
-        const { data } = await supabase
-          .from('tryout_assessors')
-          .select('id, user_id, role, joined_at, email, name')
-          .in('tryout_id', tryoutIds);
-        return data || [];
-      })(),
-      this.fetchTeamManagers(teams.map((t) => t.id as string)),
-    ]);
+    const teamManagers = includeTeamManagers
+      ? await this.fetchTeamManagers(teams.map((t) => t.id as string))
+      : [];
     const members: Map<string, import('../types').OrgMember> = new Map();
 
     // Add memberships

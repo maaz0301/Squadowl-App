@@ -255,7 +255,16 @@ export interface DataSource {
   ): Promise<{ url: string }>;
 
   // Org Members & Permissions
-  listOrgMembers(includeTeamManagers?: boolean): Promise<OrgMember[]>;
+  /**
+   * `includeTeamManagers` (legacy boolean) or options. `includeGuardians`
+   * defaults true — pass false for the light staff/assessor path used by
+   * permissions and the dashboard members tab's first paint.
+   */
+  listOrgMembers(
+    includeTeamManagersOrOpts?:
+      | boolean
+      | { includeTeamManagers?: boolean; includeGuardians?: boolean },
+  ): Promise<OrgMember[]>;
   inviteOrgMember(email: string, role: OrgRole): Promise<OrgMember>;
   updateOrgMemberRole(memberId: string, role: OrgRole): Promise<OrgMember>;
   removeOrgMember(memberId: string): Promise<void>;

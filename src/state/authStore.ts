@@ -185,7 +185,9 @@ import { useOrgMembersQuery } from '@/features/queries';
 
 export function usePermissions() {
   const user = useUser();
-  const { data: members = [] } = useOrgMembersQuery();
+  // Staff seat only — pulling every guardian off the athlete roster made this
+  // query the slow path behind every screen that checks canManageTeam / etc.
+  const { data: members = [] } = useOrgMembersQuery({ includeGuardians: false });
   
   if (!user) {
     return {
