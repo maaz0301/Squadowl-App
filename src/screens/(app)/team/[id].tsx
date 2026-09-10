@@ -9,7 +9,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
-import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation } from '@/features/queries';
+import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit } from '@/data/plans';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
@@ -27,6 +27,7 @@ import { TeamManagersCard } from '@/components/TeamManagersCard';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { getDataSource } from '@/data';
 import { queryKeys } from '@/lib/queryClient';
+import { DUMMY_LIMITS, clampOption } from '@/data/testDataGenerator';
 
 function feeCentsFromInput(feeInput: string): number {
   const dollars = parseFloat(feeInput);
@@ -70,6 +71,18 @@ export default function TeamDetailScreen() {
   // and headcounts, so they run off this light read — see
   // useTryoutSummariesQuery.
   const tryoutsQuery = useTryoutSummariesQuery(false);
+  // Dummy data generation writes onto a linked evaluation, so it targets this
+  // team's first one — auto-created on demand below if there isn't one yet.
+  // Computed off route params (not `team.id`, which isn't resolved yet) so
+  // these mutation hooks can be declared before any early return below.
+  const dummyTryoutId = (tryoutsQuery.data ?? []).find((t) => t.teamId === id)?.id ?? '';
+  const [showTestGen, setShowTestGen] = useState(false);
+  const [dummyProgress, setDummyProgress] = useState<{ done: number; total: number } | null>(null);
+  const genTest = useGenerateTestDataMutation(dummyTryoutId, (done, total) => setDummyProgress({ done, total }));
+  const clearTest = useClearTestDataMutation(dummyTryoutId);
+  const createDummyTryout = useCreateTryoutMutation();
+  const [preparingDummyTryout, setPreparingDummyTryout] = useState(false);
+  const [dummyPlayerCount, setDummyPlayerCount] = useState('25');
   const qc = useQueryClient();
   const updateTeam = useUpdateTeamMutation();
   const deleteTeam = useDeleteTeamMutation();
@@ -110,7 +123,7 @@ export default function TeamDetailScreen() {
   const [candidateTryoutFilter, setCandidateTryoutFilter] = useState<string | null>(null);
   const [enrollingAssessments, setEnrollingAssessments] = useState(false);
   const [showAddEvent, setShowAddEvent] = useState(false);
-  const [tab, setTab] = useState('schedule');
+  const [tab, setTab] = useState(route.params?.tab === 'settings' ? 'settings' : 'schedule');
   const [openRsvpEventId, setOpenRsvpEventId] = useState<string | null>(null);
   const [rsvpVisible, setRsvpVisible] = useState(RSVP_PAGE);
   const [rsvpSearch, setRsvpSearch] = useState('');
@@ -338,6 +351,31 @@ export default function TeamDetailScreen() {
   // Gates against the owning club's tier for a delegated team, not the
   // viewer's own — the club already pays for this team.
   const effectiveTier = effectiveTierForTeam(team, user?.planTier ?? 'free');
+  const isAssociation = canUseFeature(effectiveTier, 'enterprise');
+
+  /**
+   * Dummy roster players write onto a linked evaluation even though this flow
+   * never shows one — most freshly created teams don't have one yet, and
+   * making the coach go create and attach one first just to add a few test
+   * players defeated the point of a one-tap tool. So this stands a bare one
+   * up on the fly the first time it's needed, the same way generateDummyTeams
+   * does for brand-new teams. No rubrics: this flow only ever generates
+   * unscored roster players.
+   */
+  const ensureDummyTryoutId = async (): Promise<string> => {
+    if (dummyTryoutId) return dummyTryoutId;
+    const tryout = await createDummyTryout.mutateAsync({
+      name: `${team.name} Evaluation`,
+      sport: 'Hockey',
+      eventType: 'Tryout',
+      teamId: team.id,
+    });
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: queryKeys.tryouts(false) }),
+      qc.invalidateQueries({ queryKey: queryKeys.tryoutSummaries(false) }),
+    ]);
+    return tryout.id;
+  };
 
   const linkedTryouts = (tryoutsQuery.data ?? []).filter((t) => t.teamId === team.id);
   const unlinkedTryouts = (tryoutsQuery.data ?? []).filter((t) => !t.teamId);
@@ -1224,6 +1262,57 @@ export default function TeamDetailScreen() {
               />
             </View>
 
+            {isAssociation ? (
+              <Card className="mb-3 gap-2">
+                <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                  Dummy Data
+                </Text>
+                <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                  Add a batch of realistic dummy players straight to this team&apos;s roster.
+                </Text>
+                <View className="flex-row flex-wrap gap-2 mt-1">
+                  <Button
+                    label="Add Dummy Players"
+                    size="sm"
+                    loading={preparingDummyTryout}
+                    onPress={async () => {
+                      setPreparingDummyTryout(true);
+                      try {
+                        await ensureDummyTryoutId();
+                        setShowTestGen(true);
+                      } catch (e: any) {
+                        const msg = e?.message || 'Failed to prepare an evaluation.';
+                        if (Platform.OS === 'web') alert(msg);
+                        else Alert.alert('Error', msg);
+                      } finally {
+                        setPreparingDummyTryout(false);
+                      }
+                    }}
+                  />
+                  {dummyTryoutId ? (
+                    <Button
+                      label="Clear Dummy Data"
+                      size="sm"
+                      variant="ghost"
+                      loading={clearTest.isPending}
+                      onPress={async () => {
+                        try {
+                          const res = await clearTest.mutateAsync();
+                          const msg = `Removed ${res.removed} generated record${res.removed === 1 ? '' : 's'}.`;
+                          if (Platform.OS === 'web') alert(msg);
+                          else Alert.alert('Cleared', msg);
+                        } catch (e: any) {
+                          const msg = e?.message || 'Failed to clear dummy data.';
+                          if (Platform.OS === 'web') alert(msg);
+                          else Alert.alert('Error', msg);
+                        }
+                      }}
+                    />
+                  ) : null}
+                </View>
+              </Card>
+            ) : null}
+
             {/* A delegated manager runs the team but doesn't own it — deleting
                 the club's team isn't theirs to do, and the teams RLS grants
                 them update but not delete, so the button would only ever fail. */}
@@ -1699,6 +1788,83 @@ export default function TeamDetailScreen() {
             />
           ))}
         </View>
+      </Modal>
+
+      <Modal
+        visible={showTestGen}
+        title="Add Dummy Players"
+        onClose={() => setShowTestGen(false)}
+        footer={
+          <View className="mt-4" style={{ gap: 8 }}>
+            {genTest.isPending && dummyProgress && dummyProgress.total > 0 ? (
+              <View style={{ gap: 4 }}>
+                <View
+                  style={{
+                    width: '100%',
+                    height: 8,
+                    borderRadius: 999,
+                    overflow: 'hidden',
+                    backgroundColor: colors.tile,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: `${Math.min(100, Math.max(4, Math.round((dummyProgress.done / dummyProgress.total) * 100)))}%`,
+                      height: '100%',
+                      borderRadius: 999,
+                      backgroundColor: colors.primary,
+                    }}
+                  />
+                </View>
+                <Text className="text-xs text-center" style={{ color: colors.inkMuted }}>
+                  Adding {dummyProgress.done} of {dummyProgress.total} players...
+                </Text>
+              </View>
+            ) : null}
+            <Button
+              label={`Add ${clampOption(dummyPlayerCount, DUMMY_LIMITS.count, 25)} Players`}
+              loading={genTest.isPending || addRosterPlayers.isPending}
+              onPress={async () => {
+                setDummyProgress(null);
+                try {
+                  const tryoutIdForRoster = await ensureDummyTryoutId();
+                  const res = await genTest.mutateAsync({
+                    target: 'roster',
+                    count: clampOption(dummyPlayerCount, DUMMY_LIMITS.count, 25),
+                    withScores: false,
+                    sessionsPerPlayer: 1,
+                  });
+                  // generateTestData only writes onto the evaluation's own roster —
+                  // this screen is the team's, so the same athletes still have to
+                  // land on team_roster before the Players tab will show them.
+                  if (res.athleteIds?.length) {
+                    await addRosterPlayers.mutateAsync(
+                      res.athleteIds.map((athleteId) => ({ athleteId, sourceTryoutId: tryoutIdForRoster })),
+                    );
+                  }
+                  const msg = `Added ${res.players} players to the roster.`;
+                  if (Platform.OS === 'web') alert(msg);
+                  else Alert.alert('Dummy players added', msg);
+                } catch (e: any) {
+                  const msg = e?.message || 'Failed to add dummy players.';
+                  if (Platform.OS === 'web') alert(msg);
+                  else Alert.alert('Error', msg);
+                } finally {
+                  setShowTestGen(false);
+                  setDummyProgress(null);
+                }
+              }}
+            />
+          </View>
+        }
+      >
+        <Input
+          label={`How many players (${DUMMY_LIMITS.count.min}–${DUMMY_LIMITS.count.max})`}
+          value={dummyPlayerCount}
+          onChangeText={setDummyPlayerCount}
+          keyboardType="number-pad"
+          placeholder="25"
+        />
       </Modal>
 
       <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />

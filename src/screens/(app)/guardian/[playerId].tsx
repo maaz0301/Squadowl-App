@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { FlatList, View, Text, Pressable, Alert, ActivityIndicator } from 'react-native';
+import { FlatList, View, Text, Pressable, Alert } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 import { InAppBrowser } from 'react-native-inappbrowser-reborn';
 import { useQueryClient } from '@tanstack/react-query';
@@ -15,7 +15,6 @@ import {
   Badge,
   Button,
   Modal,
-  Input,
 } from '@/components/ui';
 import { ChatIconButton } from '@/components/ChatIconButton';
 import { ChatUnreadProbe, UnreadPill } from '@/components/ChatUnreadBadge';
@@ -25,9 +24,6 @@ import {
   useGuardianRealtimeSync,
   useSetAvailabilityMutation,
   useCreateTeamFeePaymentMutation,
-  useFamilyContactsQuery,
-  useAddFamilyContactMutation,
-  useRemoveFamilyContactMutation,
   useLeaveSeasonMutation,
 } from '@/features/queries';
 import { queryKeys } from '@/lib/queryClient';
@@ -121,8 +117,7 @@ function EventCard({ item, playerId, colors }: { item: SeasonEvent & { seasonNam
 
 import { useNavigation } from '@react-navigation/native';
 
-function TryoutSeasonCard({ item, colors, playerId }: { item: any; colors: any; playerId: string }) {
-  const navigation = useNavigation<any>();
+function SeasonCard({ item, colors, playerId }: { item: any; colors: any; playerId: string }) {
   const qc = useQueryClient();
   const userId = useAuthStore((s) => s.session?.user?.id);
   const payFeeMutation = useCreateTeamFeePaymentMutation();
@@ -185,58 +180,41 @@ function TryoutSeasonCard({ item, colors, playerId }: { item: any; colors: any; 
   };
 
   return (
-    <Pressable onPress={() => {
-      if (item._type === 'tryout') {
-        navigation.navigate('GuardianAssessmentDetails', { playerId, tryoutId: item.id });
-      }
-    }}>
-      <Card accent className="mb-3">
-        <View className="flex-row justify-between items-start">
-          <View className="flex-1 mr-2">
-            <ExpandableText text={item.name} className="text-lg font-display font-bold mb-1" style={{ color: colors.ink }} />
-            {item._type === 'season' ? (
-              <Text className="text-sm mb-2" style={{ color: colors.inkMuted }}>
-                Team: {item.teamName} · {item.sport}
-              </Text>
-            ) : (
-              <Text className="text-sm mb-2" style={{ color: colors.inkMuted }}>
-                Evaluation · {item.sport}
-              </Text>
-            )}
-          </View>
-          <Badge label={item._type === 'season' ? 'Team' : 'Evaluation'} variant={item._type === 'season' ? 'info' : 'brand'} />
+    <Card accent className="mb-3">
+      <View className="flex-row justify-between items-start">
+        <View className="flex-1 mr-2">
+          <ExpandableText text={item.name} className="text-lg font-display font-bold mb-1" style={{ color: colors.ink }} />
+          <Text className="text-sm mb-2" style={{ color: colors.inkMuted }}>
+            Team: {item.teamName} · {item.sport}
+          </Text>
         </View>
+        <Badge label="Team" variant="info" />
+      </View>
 
-        {item._type === 'season' && item.collectsFees ? (
-          <View className="mt-3 pt-3 border-t flex-row items-center justify-between" style={{ borderTopColor: colors.border }}>
-            <Text className="text-sm font-bold" style={{ color: colors.ink }}>
-              Team fee: {money(item.registrationFeeCents ?? 0)}
-            </Text>
-            {item.feeStatus === 'unpaid' ? (
-              <Button label="Pay Now" size="sm" loading={paying} onPress={payFee} />
-            ) : (
-              <Badge label={item.feeStatus === 'waived' ? 'Waived' : 'Paid'} variant="success" />
-            )}
-          </View>
-        ) : null}
+      {item.collectsFees ? (
+        <View className="mt-3 pt-3 border-t flex-row items-center justify-between" style={{ borderTopColor: colors.border }}>
+          <Text className="text-sm font-bold" style={{ color: colors.ink }}>
+            Team fee: {money(item.registrationFeeCents ?? 0)}
+          </Text>
+          {item.feeStatus === 'unpaid' ? (
+            <Button label="Pay Now" size="sm" loading={paying} onPress={payFee} />
+          ) : (
+            <Badge label={item.feeStatus === 'waived' ? 'Waived' : 'Paid'} variant="success" />
+          )}
+        </View>
+      ) : null}
 
-        {item._type === 'season' ? (
-          <View
-            className="mt-3 pt-3 border-t items-end"
-            style={{ borderTopColor: colors.border }}
-          >
-            <Button
-              label="Leave Team"
-              size="sm"
-              variant="ghost"
-              textClassName="text-danger"
-              loading={leaveSeasonMutation.isPending}
-              onPress={confirmLeave}
-            />
-          </View>
-        ) : null}
-      </Card>
-    </Pressable>
+      <View className="mt-3 pt-3 border-t items-end" style={{ borderTopColor: colors.border }}>
+        <Button
+          label="Leave Team"
+          size="sm"
+          variant="ghost"
+          textClassName="text-danger"
+          loading={leaveSeasonMutation.isPending}
+          onPress={confirmLeave}
+        />
+      </View>
+    </Card>
   );
 }
 
@@ -255,14 +233,6 @@ export default function GuardianPortalScreen() {
   // navigate away and back for the cache to refresh.
   useGuardianRealtimeSync();
 
-  const familyContactsQuery = useFamilyContactsQuery(playerId);
-  const addFamilyContact = useAddFamilyContactMutation(playerId);
-  const removeFamilyContact = useRemoveFamilyContactMutation(playerId);
-  const [showAddContact, setShowAddContact] = useState(false);
-  const [contactName, setContactName] = useState('');
-  const [contactRelationship, setContactRelationship] = useState('');
-  const [contactEmail, setContactEmail] = useState('');
-  const [contactPhone, setContactPhone] = useState('');
   // Unread counts per season, collected from the probes rendered at the end of
   // this screen. The header icon shows the total because it may open any of
   // these chats; the picker rows show their own, which is what tells the
@@ -271,39 +241,6 @@ export default function GuardianPortalScreen() {
   const reportUnread = useCallback((seasonId: string, count: number) => {
     setUnreadBySeason((prev) => (prev[seasonId] === count ? prev : { ...prev, [seasonId]: count }));
   }, []);
-
-  const submitFamilyContact = async () => {
-    if (!contactName.trim()) {
-      Alert.alert('Missing Info', 'Enter at least a name.');
-      return;
-    }
-    try {
-      await addFamilyContact.mutateAsync({
-        name: contactName.trim(),
-        relationship: contactRelationship.trim() || undefined,
-        email: contactEmail.trim() || undefined,
-        phone: contactPhone.trim() || undefined,
-      });
-      setContactName('');
-      setContactRelationship('');
-      setContactEmail('');
-      setContactPhone('');
-      setShowAddContact(false);
-    } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Could not add this contact.');
-    }
-  };
-
-  const confirmRemoveContact = (id: string, name: string) => {
-    Alert.alert('Remove Contact', `Remove ${name} from this athlete's family contacts?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () => removeFamilyContact.mutate(id),
-      },
-    ]);
-  };
 
   if (guardianQuery.isLoading) {
     return <LoadingState message="Loading portal..." />;
@@ -423,7 +360,7 @@ export default function GuardianPortalScreen() {
               message="This athlete isn't assigned to any seasons yet."
             />
           }
-          renderItem={({ item }) => <TryoutSeasonCard item={item} colors={colors} playerId={playerId} />}
+          renderItem={({ item }) => <SeasonCard item={item} colors={colors} playerId={playerId} />}
         />
       ) : tab === 'schedule' ? (
         <FlatList
@@ -454,55 +391,12 @@ export default function GuardianPortalScreen() {
             </View>
           </Card>
 
-          <Card className="mb-3">
-            <View className="flex-row items-center justify-between mb-2">
-              <Text className="text-lg font-bold" style={{ color: colors.ink }}>
-                Family Contacts
-              </Text>
-              <Button label="+ Add" size="sm" variant="ghost" onPress={() => setShowAddContact(true)} />
-            </View>
-            <Text className="text-xs mb-2" style={{ color: colors.inkMuted }}>
-              Other family members — a second parent, a grandparent, an emergency contact.
-            </Text>
-            {familyContactsQuery.isLoading ? (
-              <ActivityIndicator />
-            ) : (familyContactsQuery.data ?? []).length === 0 ? (
-              <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                No additional contacts added yet.
-              </Text>
-            ) : (
-              (familyContactsQuery.data ?? []).map((c) => (
-                <View
-                  key={c.id}
-                  className="flex-row items-center justify-between py-2 border-b"
-                  style={{ borderBottomColor: colors.border }}
-                >
-                  <View className="flex-1 mr-2">
-                    <Text className="font-medium" style={{ color: colors.ink }}>
-                      {c.name}
-                      {c.relationship ? ` · ${c.relationship}` : ''}
-                    </Text>
-                    {c.email ? (
-                      <Text className="text-xs" style={{ color: colors.inkMuted }}>{c.email}</Text>
-                    ) : null}
-                    {c.phone ? (
-                      <Text className="text-xs" style={{ color: colors.inkMuted }}>{c.phone}</Text>
-                    ) : null}
-                  </View>
-                  <Pressable onPress={() => confirmRemoveContact(c.id, c.name)} hitSlop={8}>
-                    <Text style={{ color: colors.danger, fontSize: 18, fontWeight: 'bold' }}>✕</Text>
-                  </Pressable>
-                </View>
-              ))
-            )}
-          </Card>
-
           <Card>
              <Text className="text-lg font-bold mb-2" style={{ color: colors.ink }}>
               Account Link
             </Text>
             <Text className="text-sm" style={{ color: colors.inkMuted }}>
-              This athlete is linked to your guardian account. You will receive notifications and updates regarding their tryouts and team events.
+              This athlete is linked to your guardian account. You will receive notifications and updates regarding their seasons and team events.
             </Text>
           </Card>
         </View>
@@ -542,36 +436,6 @@ export default function GuardianPortalScreen() {
         <ChatUnreadProbe key={s.id} seasonId={s.id} onCount={reportUnread} />
       ))}
 
-      <Modal
-        visible={showAddContact}
-        title="Add Family Contact"
-        onClose={() => {
-          if (addFamilyContact.isPending) return;
-          setShowAddContact(false);
-        }}
-        footer={
-          <View className="mt-4">
-            <Button
-              label="Add Contact"
-              onPress={submitFamilyContact}
-              loading={addFamilyContact.isPending}
-              disabled={!contactName.trim()}
-            />
-          </View>
-        }
-      >
-        <View className="gap-3">
-          <Input label="Name" value={contactName} onChangeText={setContactName} />
-          <Input
-            label="Relationship"
-            value={contactRelationship}
-            onChangeText={setContactRelationship}
-            placeholder="e.g. Grandmother, Emergency Contact"
-          />
-          <Input label="Email" value={contactEmail} onChangeText={setContactEmail} autoCapitalize="none" keyboardType="email-address" />
-          <Input label="Phone" value={contactPhone} onChangeText={setContactPhone} keyboardType="phone-pad" />
-        </View>
-      </Modal>
     </Screen>
   );
 }

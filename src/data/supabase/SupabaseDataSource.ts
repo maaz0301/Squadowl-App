@@ -3744,6 +3744,7 @@ export class SupabaseDataSource implements DataSource {
 
     let players = 0;
     let evaluations = 0;
+    let athleteIds: string[] | undefined;
     if (wantsRoster) {
       const res = await this.insertDummyRoster(
         supabase,
@@ -3759,6 +3760,7 @@ export class SupabaseDataSource implements DataSource {
       );
       players = res.players;
       evaluations = res.evaluations;
+      athleteIds = res.athleteIds;
     }
     report(totalUnits);
 
@@ -3769,7 +3771,7 @@ export class SupabaseDataSource implements DataSource {
     if (evaluations > 0) steps.scorePlayers = true;
     if (Object.keys(steps).length) await this.markOnboarding(steps);
 
-    return { registrations, players, evaluations };
+    return { registrations, players, evaluations, athleteIds };
   }
 
   /**
@@ -4261,13 +4263,13 @@ export class SupabaseDataSource implements DataSource {
     // So: collect the tagged ids first, then delete them through insertChunked,
     // which bounds each statement and halves the chunk again if one still times
     // out. Mirrors the web app's clearTestData.
-    const collectIds = async (table: string): Promise<string[]> => {
-      const out: string[] = [];
+    const collectRows = async (table: string, columns: string): Promise<Row[]> => {
+      const out: Row[] = [];
       let cursor: string | null = null;
       for (;;) {
         let q = supabase
           .from(table)
-          .select('id')
+          .select(columns)
           .eq('tryout_id', tryoutId)
           .eq('current_team', TEST_DATA_TAG);
         // Keyset, not OFFSET — same reasoning as fetchAllByIn. An unranged
@@ -4275,39 +4277,64 @@ export class SupabaseDataSource implements DataSource {
         // leave a 1000-player batch permanently half-cleared.
         if (cursor !== null) q = q.gt('id', cursor);
         const page = ((unwrap(await q.order('id').limit(FETCH_PAGE_SIZE)) as Row[] | null) ?? []) as Row[];
-        out.push(...page.map((r) => r.id as string));
+        out.push(...page);
         if (page.length < FETCH_PAGE_SIZE) return out;
         cursor = page[page.length - 1].id as string;
       }
     };
 
-    const deleteByIds = async (table: string, ids: string[], size: number): Promise<number> => {
+    const deleteByIds = async (table: string, ids: string[], size: number, column = 'id'): Promise<number> => {
       if (ids.length === 0) return 0;
       const deleted = await insertChunked(ids, size, async (chunk) => {
-        unwrap(await supabase.from(table).delete().in('id', chunk));
+        unwrap(await supabase.from(table).delete().in(column, chunk));
         return chunk;
       });
       return deleted.length;
     };
 
     // Participants carry the cascade, so they get the smaller chunk.
-    const participantIds = await collectIds('tryout_participants');
+    const participantRows = await collectRows('tryout_participants', 'id');
     const removedPlayers = await deleteByIds(
       'tryout_participants',
-      participantIds,
+      participantRows.map((r) => r.id as string),
+      DUMMY_CLEAR_CHUNK.participants,
+    );
+
+    // A team-linked evaluation's roster players are copied onto the team's own
+    // roster too (see addTeamRosterPlayers in generateTestData's caller), tagged
+    // there with source_tryout_id at insert time — a dedicated column, unlike
+    // tryout_participants.current_team, which doubles as a free-text field and
+    // isn't reliable to key off of. Queried directly rather than cross-referenced
+    // through participantRows above, so this still finds and removes them even
+    // if the evaluation side was already cleared or its rows were edited since.
+    const rosterRows = await (async () => {
+      const out: Row[] = [];
+      let cursor: string | null = null;
+      for (;;) {
+        let q = supabase.from('team_roster').select('id').eq('source_tryout_id', tryoutId);
+        if (cursor !== null) q = q.gt('id', cursor);
+        const page = ((unwrap(await q.order('id').limit(FETCH_PAGE_SIZE)) as Row[] | null) ?? []) as Row[];
+        out.push(...page);
+        if (page.length < FETCH_PAGE_SIZE) return out;
+        cursor = page[page.length - 1].id as string;
+      }
+    })();
+    const removedRoster = await deleteByIds(
+      'team_roster',
+      rosterRows.map((r) => r.id as string),
       DUMMY_CLEAR_CHUNK.participants,
     );
 
     // Generated registrations carry the same tag, so a pending queue filled by
     // the dummy button is cleared by the same action.
-    const registrationIds = await collectIds('registrations');
+    const registrationRows = await collectRows('registrations', 'id');
     const removedRegs = await deleteByIds(
       'registrations',
-      registrationIds,
+      registrationRows.map((r) => r.id as string),
       DUMMY_CLEAR_CHUNK.registrations,
     );
 
-    return { removed: removedPlayers + removedRegs };
+    return { removed: removedPlayers + removedRoster + removedRegs };
   }
 
   // ─── Registration ───────────────────────────────────────────────────────────

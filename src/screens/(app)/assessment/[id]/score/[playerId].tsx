@@ -93,6 +93,7 @@ export default function ScoreScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const formTopRef = useRef(0);
   const fieldYRef = useRef<Record<string, number>>({});
+  const sessionStripRef = useRef<ScrollView>(null);
 
   const rememberField = (key: string) => (e: LayoutChangeEvent) => {
     fieldYRef.current[key] = e.nativeEvent.layout.y;
@@ -506,6 +507,7 @@ export default function ScoreScreen() {
       ) : null}
 
       <ScrollView
+        ref={sessionStripRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingRight: 16 }}
@@ -514,6 +516,7 @@ export default function ScoreScreen() {
           {SESSIONS.map((s, idx) => {
             const isScored = scoredSessions.has(s);
             const isCurrentOfEval = isEditing && existingEval?.session === s;
+            const active = currentSession === s;
 
             // Assessor-only: sessions the server already counts (coach/manager
             // work this viewer cannot read) stay disabled so opening one does
@@ -527,24 +530,38 @@ export default function ScoreScreen() {
             }
 
             return (
-              <Chip
+              <View
                 key={s}
-                label={s}
-                active={currentSession === s}
-                disabled={disabled}
-                onPress={() => {
-                  if (disabled) return;
-
-                  let targetId;
-                  if (scoredSessions.has(s)) {
-                    targetId = scoredSessions.get(s);
-                  } else {
-                    targetId = null;
-                  }
-
-                  navigation.setParams({ evalId: targetId, session: s });
+                // Keeps whichever session is selected in view — otherwise a
+                // session late in the list is picked (say, restored from
+                // navigation params) and the strip still shows wherever it
+                // happened to be scrolled, with no hint of which chip is active.
+                onLayout={(e) => {
+                  if (!active) return;
+                  sessionStripRef.current?.scrollTo({
+                    x: Math.max(0, e.nativeEvent.layout.x - 16),
+                    animated: true,
+                  });
                 }}
-              />
+              >
+                <Chip
+                  label={s}
+                  active={active}
+                  disabled={disabled}
+                  onPress={() => {
+                    if (disabled) return;
+
+                    let targetId;
+                    if (scoredSessions.has(s)) {
+                      targetId = scoredSessions.get(s);
+                    } else {
+                      targetId = null;
+                    }
+
+                    navigation.setParams({ evalId: targetId, session: s });
+                  }}
+                />
+              </View>
             );
           })}
         </View>

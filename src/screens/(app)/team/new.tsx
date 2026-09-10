@@ -219,10 +219,10 @@ export default function NewTeamScreen() {
           : null,
       ]);
 
-      // Land straight on the new team's own screen instead of back on the list —
-      // a coach who just filled out this form wants to keep going on the team
-      // they made (add players, set up a season), not re-find it in the list.
-      navigation.replace('TeamDetail', { id: team.id });
+      // Land straight on the new team's own Settings tab instead of back on the
+      // list — a coach who just filled out this form wants to keep configuring
+      // the team they made (branding, fees, managers), not re-find it in the list.
+      navigation.replace('TeamDetail', { id: team.id, tab: 'settings' });
     } finally {
       setSubmitting(false);
     }
