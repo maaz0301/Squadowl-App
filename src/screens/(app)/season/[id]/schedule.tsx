@@ -9,6 +9,7 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { TeamBanner } from '@/components/TeamBanner';
 import { useSeasonTeamBrand } from '@/features/useTeamBrand';
 import { Badge, Button, Card, Chip, EmptyState, ErrorState, Input, LoadingState, Modal, Screen, DateField, TimeField, Header } from '@/components/ui';
+import { AddToCalendar } from '@/components/AddToCalendar';
 import { useSeasonQuery, useAddSeasonEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation } from '@/features/queries';
 import { getDataSource } from '@/data';
 
@@ -253,7 +254,8 @@ export default function SeasonScheduleScreen() {
               {item.date} · {item.startTime ?? '—'}–{item.endTime ?? '—'}
             </Text>
             {item.location ? <Text style={{ color: colors.inkFaint }}>{item.location}</Text> : null}
-            <View className="flex-row flex-wrap gap-2 mt-2">
+            <View className="flex-row flex-wrap gap-2 mt-2 items-center">
+              <AddToCalendar event={item} teamName={season.teamName} size="sm" />
               <Button label="Send Reminder" variant="secondary" size="sm" onPress={() => sendReminder(item)} loading={reminding === item.id} />
               <Button label="Edit" variant="secondary" size="sm" onPress={() => openEdit(item)} />
               <Button

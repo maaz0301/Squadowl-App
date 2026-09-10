@@ -6,6 +6,7 @@ import { TeamBanner } from '@/components/TeamBanner';
 import { useSeasonTeamBrand } from '@/features/useTeamBrand';
 import { Badge, Card, EmptyState, ErrorState, LoadingState, Screen } from '@/components/ui';
 import { useSeasonQuery } from '@/features/queries';
+import { AddToCalendar } from '@/components/AddToCalendar';
 
 export default function SeasonCalendarScreen() {
   const route = useRoute<any>();
@@ -59,7 +60,10 @@ export default function SeasonCalendarScreen() {
                           {ev.startTime ?? '—'} · {ev.location ?? 'TBD'}
                         </Text>
                       </View>
-                      <Badge label={ev.type} />
+                      <View className="items-end gap-1.5">
+                        <Badge label={ev.type} />
+                        <AddToCalendar event={ev} teamName={season.teamName} size="sm" />
+                      </View>
                     </Card>
                   ))}
               </View>

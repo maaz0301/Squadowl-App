@@ -82,6 +82,8 @@ import type {
   ScoreForm,
   Season,
   SeasonEvent,
+  EventRsvpContext,
+  EventRsvpToken,
   SeasonPlayer,
   SeasonSummary,
   TeamRosterCursor,
@@ -5738,22 +5740,84 @@ export class SupabaseDataSource implements DataSource {
    * send-email invoke per guardian (in series, a 25-player team was 25 round
    * trips of dead time; a 1000-player team was hopeless).
    */
-  private dispatchScheduleEmails(emails: string[], form: CreateEventForm): void {
-    if (emails.length === 0) return;
-    void Promise.allSettled(
-      emails.map((email) =>
-        this.sendEmail('schedule_update', email, {
-          eventName: form.title,
-          date: form.date,
-          time: form.startTime,
-          location: form.location,
-        }),
-      ),
-    ).then((results) => {
+  /**
+   * The schedule email for a newly created event.
+   *
+   * Carries per-player RSVP links so a guardian can answer straight from their
+   * inbox — the answer lands in the same event_availability row the in-app
+   * portal buttons write. Minting is best-effort: if it fails the notification
+   * still goes out, just without the buttons, which is exactly what happened
+   * before they existed. Never let it cost a guardian their invite.
+   *
+   * Grouped by address rather than by player, so a guardian with two kids on
+   * this event gets one email asking about both.
+   */
+  private dispatchScheduleEmails(
+    emails: string[],
+    form: CreateEventForm,
+    eventId: string,
+    seasonId: string,
+  ): void {
+    void (async () => {
+      // Named on the invite and in the calendar entry's title. Looked up here
+      // rather than passed in because neither call site holds the season row,
+      // and this whole helper is already off the critical path.
+      let teamName: string | undefined;
+      try {
+        const { supabase } = await this.ctx();
+        const { data } = await supabase
+          .from('seasons')
+          .select('team_name')
+          .eq('id', seasonId)
+          .maybeSingle();
+        teamName = (data as Row | null)?.team_name ?? undefined;
+      } catch {
+        // Cosmetic only — the invite is still correct without it.
+      }
+
+      const rsvpsByEmail = new Map<string, { playerName: string; token: string }[]>();
+      try {
+        for (const t of await this.issueEventRsvpTokens(eventId)) {
+          if (!t.guardianEmail) continue;
+          const list = rsvpsByEmail.get(t.guardianEmail) ?? [];
+          list.push({ playerName: t.playerName, token: t.token });
+          rsvpsByEmail.set(t.guardianEmail, list);
+        }
+      } catch (e) {
+        console.error('Could not issue RSVP links for this event', e);
+      }
+
+      const recipients = Array.from(new Set([...rsvpsByEmail.keys(), ...emails]));
+      if (recipients.length === 0) return;
+
+      const results = await Promise.allSettled(
+        recipients.map((email) =>
+          this.sendEmail('schedule_update', email, {
+            eventId,
+            eventName: form.title,
+            date: form.date,
+            startTime: form.startTime,
+            endTime: form.endTime,
+            location: form.location,
+            notes: form.notes,
+            teamName,
+            // Freshly created, so this is the first version of the invite any
+            // calendar client will see.
+            sequence: 0,
+            rsvps: rsvpsByEmail.get(email) ?? [],
+          }),
+        ),
+      );
+      this.reportScheduleEmailFailures(results, recipients.length);
+    })();
+  }
+
+  private reportScheduleEmailFailures(results: PromiseSettledResult<unknown>[], total: number): void {
+    void Promise.resolve(results).then((results) => {
       const failed = results.filter((r) => r.status === 'rejected');
       if (failed.length) {
         console.error(
-          `Failed to send ${failed.length}/${emails.length} schedule emails`,
+          `Failed to send ${failed.length}/${total} schedule emails`,
           (failed[0] as PromiseRejectedResult).reason,
         );
       }
@@ -5797,7 +5861,7 @@ export class SupabaseDataSource implements DataSource {
       const eventRow = payload.event as Row;
       const invited = Number(payload.invited_count ?? 0);
       onProgress?.(invited, invited);
-      this.dispatchScheduleEmails((payload.guardian_emails as string[]) ?? [], form);
+      this.dispatchScheduleEmails((payload.guardian_emails as string[]) ?? [], form, eventRow.id as string, seasonId);
       return this.rowToSeasonEvent(eventRow, {});
     }
     // Only a not-yet-deployed function falls through — anything else (a real
@@ -5896,7 +5960,7 @@ export class SupabaseDataSource implements DataSource {
           .filter(Boolean) as string[],
       ));
 
-      this.dispatchScheduleEmails(emails, form);
+      this.dispatchScheduleEmails(emails, form, eventId, seasonId);
     }
 
     return this.rowToSeasonEvent(row, {});
@@ -5924,33 +5988,67 @@ export class SupabaseDataSource implements DataSource {
     ) as Row;
 
     try {
-      const { data: availPlayers } = await supabase
-        .from('event_availability')
-        .select(`
-          roster_id,
-          season_roster(
-            player_email,
-            athletes(
-              guardian_email
-            )
-          )
-        `)
-        .eq('season_event_id', eventId);
-
       const playerEmails = new Set<string>();
       const guardianEmails = new Set<string>();
+      const rsvpsByEmail = new Map<string, { playerName: string; token: string }[]>();
 
-      if (availPlayers) {
-        for (const item of availPlayers as any[]) {
-          const sr = item.season_roster;
-          if (sr) {
-            if (sr.player_email) playerEmails.add(sr.player_email);
-            if (sr.athletes?.guardian_email) guardianEmails.add(sr.athletes.guardian_email);
+      // issue_event_rsvp_tokens() already joins through to each invited
+      // player's own address and their guardian's, so it doubles as the
+      // recipient list this used to assemble with a nested select — and it
+      // returns the RSVP link alongside, letting the re-send carry buttons.
+      // Idempotent, so a link already in an inbox from the original invite
+      // keeps working after an edit.
+      let tokensIssued = false;
+      try {
+        for (const t of await this.issueEventRsvpTokens(eventId)) {
+          tokensIssued = true;
+          for (const addr of [t.playerEmail, t.guardianEmail]) {
+            if (!addr) continue;
+            if (addr === t.playerEmail) playerEmails.add(addr);
+            else guardianEmails.add(addr);
+            const list = rsvpsByEmail.get(addr) ?? [];
+            list.push({ playerName: t.playerName, token: t.token });
+            rsvpsByEmail.set(addr, list);
+          }
+        }
+      } catch (e) {
+        console.error('Could not issue RSVP links for this event', e);
+      }
+
+      // Minting failed — fall back to the plain address lookup so an edit still
+      // notifies everyone, just without the RSVP buttons.
+      if (!tokensIssued) {
+        const { data: availPlayers } = await supabase
+          .from('event_availability')
+          .select(`
+            roster_id,
+            season_roster(
+              player_email,
+              athletes(
+                guardian_email
+              )
+            )
+          `)
+          .eq('season_event_id', eventId);
+
+        if (availPlayers) {
+          for (const item of availPlayers as any[]) {
+            const sr = item.season_roster;
+            if (sr) {
+              if (sr.player_email) playerEmails.add(sr.player_email);
+              if (sr.athletes?.guardian_email) guardianEmails.add(sr.athletes.guardian_email);
+            }
           }
         }
       }
 
       const allEmails = new Set([...playerEmails, ...guardianEmails]);
+
+      // A calendar client only replaces the copy it already holds when SEQUENCE
+      // is higher than the one it stored. Seconds since the event was created is
+      // monotonic per event and stays a small integer, so each edit supersedes
+      // the last instead of stacking up duplicates in someone's calendar.
+      const sequence = Math.max(0, Math.floor((toMs(row.updated_at) - toMs(row.created_at)) / 1000));
 
       if (playerEmails.size > 0) {
         supabase.functions.invoke('send-push-notification', {
@@ -5960,7 +6058,21 @@ export class SupabaseDataSource implements DataSource {
 
       for (const email of allEmails) {
         supabase.functions.invoke('send-email', {
-          body: { type: 'schedule_update', to: email, payload: { eventName: row.title, date: row.event_date, time: row.start_time, location: row.location } }
+          body: {
+            type: 'schedule_update',
+            to: email,
+            payload: {
+              eventId,
+              eventName: row.title,
+              date: row.event_date,
+              startTime: row.start_time,
+              endTime: row.end_time,
+              location: row.location,
+              notes: row.notes,
+              sequence,
+              rsvps: rsvpsByEmail.get(email) ?? [],
+            },
+          },
         }).catch(console.error);
       }
     } catch (e) {
@@ -6741,6 +6853,71 @@ export class SupabaseDataSource implements DataSource {
           { onConflict: 'season_event_id,roster_id' },
         )
     );
+  }
+
+  /**
+   * Mint (or re-read) the per-player RSVP links for one event.
+   *
+   * Called just before the schedule email goes out, so each recipient's message
+   * can carry Yes/Maybe/No links bound to their own player. Idempotent on the
+   * backend — a re-send reuses the tokens already issued, which keeps links
+   * already sitting in an inbox working.
+   */
+  async issueEventRsvpTokens(eventId: string): Promise<EventRsvpToken[]> {
+    const { supabase } = await this.ctx();
+    const rows = unwrap(
+      await supabase.rpc('issue_event_rsvp_tokens', { p_event_id: eventId }),
+    ) as Row[] | null;
+    return (rows ?? []).map((r) => ({
+      rosterId: r.roster_id,
+      playerName: r.player_name ?? '',
+      playerEmail: r.player_email ?? undefined,
+      guardianEmail: r.guardian_email ?? undefined,
+      token: r.token,
+    }));
+  }
+
+  /**
+   * Resolve an emailed RSVP link. Uses the plain anon client rather than
+   * `ctx()`: the recipient is usually not signed in — that is the whole point of
+   * the link — and requiring a session here would defeat it.
+   */
+  async getEventRsvpContext(token: string): Promise<EventRsvpContext | null> {
+    const supabase = getSupabase();
+    const { data, error } = await supabase.rpc('get_event_rsvp_context', { p_token: token });
+    if (error) throw new Error(error.message);
+    const row = (Array.isArray(data) ? data[0] : data) as Row | undefined;
+    return row ? this.rowToRsvpContext(row) : null;
+  }
+
+  /** Record an answer from an emailed RSVP link. Anon for the same reason. */
+  async submitEventRsvp(token: string, response: 'yes' | 'maybe' | 'no'): Promise<EventRsvpContext> {
+    const supabase = getSupabase();
+    const { data, error } = await supabase.rpc('submit_event_rsvp', {
+      p_token: token,
+      p_response: response,
+    });
+    if (error) throw new Error(error.message);
+    const row = (Array.isArray(data) ? data[0] : data) as Row | undefined;
+    if (!row) throw new Error('This RSVP link is no longer valid.');
+    return this.rowToRsvpContext(row);
+  }
+
+  private rowToRsvpContext(row: Row): EventRsvpContext {
+    return {
+      eventId: row.event_id,
+      type: EVENT_KIND_FROM_DB[row.kind] ?? 'Event',
+      title: row.title,
+      date: row.event_date,
+      startTime: row.start_time ?? undefined,
+      endTime: row.end_time ?? undefined,
+      location: row.location ?? undefined,
+      notes: row.notes ?? undefined,
+      seasonName: row.season_name ?? '',
+      teamName: row.team_name ?? '',
+      playerName: row.player_name ?? '',
+      response: row.response ?? 'pending',
+    };
   }
 
   // ─── Phase 4: Enterprise & Admin ─────────────────────────────────────────────────

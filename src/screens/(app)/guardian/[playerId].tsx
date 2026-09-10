@@ -17,6 +17,7 @@ import {
   Modal,
 } from '@/components/ui';
 import { ChatIconButton } from '@/components/ChatIconButton';
+import { AddToCalendar } from '@/components/AddToCalendar';
 import { ChatUnreadProbe, UnreadPill } from '@/components/ChatUnreadBadge';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
@@ -86,7 +87,10 @@ function EventCard({ item, playerId, colors }: { item: SeasonEvent & { seasonNam
       ) : null}
 
       <View className="mt-4 pt-3 border-t" style={{ borderTopColor: colors.border }}>
-        <Text className="text-sm font-bold mb-2" style={{ color: colors.inkMuted }}>RSVP</Text>
+        <View className="flex-row items-center justify-between mb-2">
+          <Text className="text-sm font-bold" style={{ color: colors.inkMuted }}>RSVP</Text>
+          <AddToCalendar event={item} teamName={item.teamName} size="sm" />
+        </View>
         <View className="flex-row gap-2">
           <Pressable
             onPress={() => handleRsvp('yes')}
