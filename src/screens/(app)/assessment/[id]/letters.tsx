@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { memo, useCallback, useMemo, useState } from 'react';
+import { Alert, FlatList, Pressable, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -134,6 +134,81 @@ export default function LettersScreen() {
     return roster.filter((p) => `${p.first} ${p.last}`.toLowerCase().includes(search));
   }, [tryout?.roster, playerSearch]);
 
+  const letters = lettersQuery.data ?? [];
+  // Memoized: this was rebuilt (with array-spread allocations) on every
+  // keystroke in the player search box even though `letters` hadn't changed,
+  // which is exactly what made a big roster feel laggy to filter.
+  const lettersByPlayer = useMemo(() => {
+    const map = new Map<string, PlayerLetter[]>();
+    for (const l of letters) {
+      const existing = map.get(l.playerId);
+      if (existing) existing.push(l);
+      else map.set(l.playerId, [l]);
+    }
+    return map;
+  }, [letters]);
+
+  const togglePlayer = useCallback((playerId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(playerId)) next.delete(playerId);
+      else next.add(playerId);
+      return next;
+    });
+  }, []);
+
+  // O(1) lookup for "which player sent this letter" instead of an O(n) find
+  // per letter — with a big roster and letter history that loop reran on
+  // every render (e.g. every checkbox tap above, since it shares this
+  // component's state) and added up fast.
+  const rosterById = useMemo(() => {
+    const map = new Map<string, Player>();
+    for (const p of tryout?.roster ?? []) map.set(p.id, p);
+    return map;
+  }, [tryout?.roster]);
+
+  const resendingId = resendLetter.isPending ? (resendLetter.variables as string) : null;
+
+  const viewLetter = useCallback((l: PlayerLetter) => setOpenLetter(l), []);
+
+  const resendLetterFor = useCallback(
+    async (l: PlayerLetter) => {
+      try {
+        const updated = await resendLetter.mutateAsync(l.id);
+        if (updated.status === 'failed') {
+          Alert.alert('Not Sent', updated.error || 'The letter could not be sent.');
+        }
+      } catch (e: any) {
+        Alert.alert('Send Failed', e?.message || 'Could not re-send.');
+      }
+    },
+    [resendLetter],
+  );
+
+  const deleteLetterFor = useCallback(
+    (l: PlayerLetter) => {
+      Alert.alert(
+        'Delete this copy?',
+        "The record comes off the player's card. It does not recall an email already delivered.",
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await deleteLetter.mutateAsync(l.id);
+              } catch (e: any) {
+                Alert.alert('Delete Failed', e?.message || 'Could not delete.');
+              }
+            },
+          },
+        ],
+      );
+    },
+    [deleteLetter],
+  );
+
   const goBack = () => navigation.navigate('AssessmentRoster');
 
   if (tryoutQuery.isLoading) return <LoadingState message="Loading letters..." />;
@@ -162,11 +237,6 @@ export default function LettersScreen() {
   }
 
   const templates = templatesQuery.data ?? [];
-  const letters = lettersQuery.data ?? [];
-  const lettersByPlayer = new Map<string, PlayerLetter[]>();
-  for (const l of letters) {
-    lettersByPlayer.set(l.playerId, [...(lettersByPlayer.get(l.playerId) ?? []), l]);
-  }
 
   const saveDraft = async () => {
     if (!draft) return;
@@ -224,14 +294,6 @@ export default function LettersScreen() {
     setSelectedIds(new Set());
     setPlayerSearch('');
   };
-
-  const togglePlayer = (playerId: string) =>
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(playerId)) next.delete(playerId);
-      else next.add(playerId);
-      return next;
-    });
 
   const send = () => {
     if (!sendWith) return;
@@ -425,55 +487,31 @@ export default function LettersScreen() {
               No players match.
             </Text>
           ) : (
-            <View className="gap-2">
-              {filteredRoster.map((p) => {
-                const isSelected = selectedIds.has(p.id);
-                const to = letterRecipient(p);
-                const already = lettersByPlayer.get(p.id) ?? [];
-                return (
-                  <View
-                    key={p.id}
-                    className="flex-row items-center gap-2 rounded-2xl border p-3"
-                    style={{
-                      backgroundColor: colors.card,
-                      borderColor: isSelected ? colors.primary : colors.border,
-                    }}
-                  >
-                    <Pressable
-                      onPress={() => togglePlayer(p.id)}
-                      accessibilityRole="checkbox"
-                      accessibilityState={{ checked: isSelected }}
-                      accessibilityLabel={playerDisplayName(p)}
-                      className="flex-1 flex-row items-center gap-3"
-                    >
-                      <View
-                        className="h-5 w-5 items-center justify-center rounded-[6px] border"
-                        style={{
-                          borderColor: isSelected ? colors.primary : colors.border,
-                          backgroundColor: isSelected ? colors.primary : 'transparent',
-                        }}
-                      >
-                        {isSelected ? <Text className="text-xs font-bold text-white">✓</Text> : null}
-                      </View>
-                      <View className="flex-1">
-                        <Text numberOfLines={1} className="text-sm font-bold" style={{ color: colors.ink }}>
-                          {playerDisplayName(p)}
-                        </Text>
-                        <Text
-                          numberOfLines={1}
-                          className="text-xs"
-                          style={{ color: to ? colors.inkMuted : colors.warning }}
-                        >
-                          {to ?? 'No email on file'}
-                        </Text>
-                      </View>
-                    </Pressable>
-                    {already.length ? <Badge label={`${already.length} sent`} variant="info" /> : null}
-                    <Button label="Preview" variant="ghost" size="sm" onPress={() => setPreviewFor(p)} />
-                  </View>
-                );
-              })}
-            </View>
+            // Bounded + windowed so this scrolls (and renders) on its own
+            // regardless of roster size, instead of the page's ScrollView
+            // mounting every row up front — that's what made opening this
+            // list feel slow on a big roster.
+            <FlatList
+              data={filteredRoster}
+              keyExtractor={(p) => p.id}
+              style={{ maxHeight: 420 }}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+              initialNumToRender={12}
+              maxToRenderPerBatch={12}
+              windowSize={7}
+              removeClippedSubviews
+              ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+              renderItem={({ item }) => (
+                <LetterPlayerRow
+                  player={item}
+                  selected={selectedIds.has(item.id)}
+                  sentCount={lettersByPlayer.get(item.id)?.length ?? 0}
+                  onToggle={togglePlayer}
+                  onPreview={setPreviewFor}
+                />
+              )}
+            />
           )}
         </Card>
       ) : null}
@@ -490,78 +528,17 @@ export default function LettersScreen() {
         />
       ) : (
         <View className="gap-2">
-          {letters.map((l) => {
-            const player = tryout.roster.find((p) => p.id === l.playerId);
-            return (
-              <Card key={l.id} className="gap-2">
-                <View className="flex-row items-start justify-between gap-2">
-                  <View className="flex-1">
-                    <Text numberOfLines={1} className="text-base font-bold" style={{ color: colors.ink }}>
-                      {player ? playerDisplayName(player) : 'Removed player'}
-                    </Text>
-                    <Text numberOfLines={1} className="mt-0.5 text-sm" style={{ color: colors.inkMuted }}>
-                      {l.subject}
-                    </Text>
-                    <Text numberOfLines={1} className="mt-0.5 text-xs" style={{ color: colors.inkMuted }}>
-                      {LETTER_KIND_LABELS[l.kind]}
-                      {l.recipientEmail ? ` · ${l.recipientEmail}` : ''}
-                      {l.sentAt ? ` · ${new Date(l.sentAt).toLocaleDateString()}` : ''}
-                    </Text>
-                    {l.status === 'failed' && l.error ? (
-                      <Text className="mt-1 text-xs" style={{ color: colors.danger }}>
-                        {l.error}
-                      </Text>
-                    ) : null}
-                  </View>
-                  <Badge label={l.status} variant={STATUS_VARIANT[l.status]} />
-                </View>
-                <View className="flex-row flex-wrap gap-2">
-                  <Button label="View" variant="secondary" size="sm" onPress={() => setOpenLetter(l)} />
-                  <Button
-                    label={l.status === 'sent' ? 'Re-send' : 'Retry'}
-                    variant="secondary"
-                    size="sm"
-                    loading={resendLetter.isPending && resendLetter.variables === l.id}
-                    onPress={async () => {
-                      try {
-                        const updated = await resendLetter.mutateAsync(l.id);
-                        if (updated.status === 'failed') {
-                          Alert.alert('Not Sent', updated.error || 'The letter could not be sent.');
-                        }
-                      } catch (e: any) {
-                        Alert.alert('Send Failed', e?.message || 'Could not re-send.');
-                      }
-                    }}
-                  />
-                  <Button
-                    label="Delete"
-                    variant="ghost"
-                    size="sm"
-                    onPress={() => {
-                      Alert.alert(
-                        'Delete this copy?',
-                        "The record comes off the player's card. It does not recall an email already delivered.",
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          {
-                            text: 'Delete',
-                            style: 'destructive',
-                            onPress: async () => {
-                              try {
-                                await deleteLetter.mutateAsync(l.id);
-                              } catch (e: any) {
-                                Alert.alert('Delete Failed', e?.message || 'Could not delete.');
-                              }
-                            },
-                          },
-                        ],
-                      );
-                    }}
-                  />
-                </View>
-              </Card>
-            );
-          })}
+          {letters.map((l) => (
+            <SentLetterRow
+              key={l.id}
+              letter={l}
+              player={rosterById.get(l.playerId)}
+              resending={resendingId === l.id}
+              onView={viewLetter}
+              onResend={resendLetterFor}
+              onDelete={deleteLetterFor}
+            />
+          ))}
         </View>
       )}
 
@@ -595,6 +572,124 @@ export default function LettersScreen() {
     </Screen>
   );
 }
+
+/**
+ * One player row in the send-picker. Memoised, and taking primitives
+ * (`selected`, `sentCount`) rather than derived objects, so toggling one
+ * player — or typing in the search box — doesn't re-render every other row.
+ */
+const LetterPlayerRow = memo(function LetterPlayerRow({
+  player,
+  selected,
+  sentCount,
+  onToggle,
+  onPreview,
+}: {
+  player: Player;
+  selected: boolean;
+  sentCount: number;
+  onToggle: (playerId: string) => void;
+  onPreview: (player: Player) => void;
+}) {
+  const colors = useThemeColors();
+  const to = letterRecipient(player);
+  return (
+    <View
+      className="flex-row items-center gap-2 rounded-2xl border p-3"
+      style={{
+        backgroundColor: colors.card,
+        borderColor: selected ? colors.primary : colors.border,
+      }}
+    >
+      <Pressable
+        onPress={() => onToggle(player.id)}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: selected }}
+        accessibilityLabel={playerDisplayName(player)}
+        className="flex-1 flex-row items-center gap-3"
+      >
+        <View
+          className="h-5 w-5 items-center justify-center rounded-[6px] border"
+          style={{
+            borderColor: selected ? colors.primary : colors.border,
+            backgroundColor: selected ? colors.primary : 'transparent',
+          }}
+        >
+          {selected ? <Text className="text-xs font-bold text-white">✓</Text> : null}
+        </View>
+        <View className="flex-1">
+          <Text numberOfLines={1} className="text-sm font-bold" style={{ color: colors.ink }}>
+            {playerDisplayName(player)}
+          </Text>
+          <Text numberOfLines={1} className="text-xs" style={{ color: to ? colors.inkMuted : colors.warning }}>
+            {to ?? 'No email on file'}
+          </Text>
+        </View>
+      </Pressable>
+      {sentCount ? <Badge label={`${sentCount} sent`} variant="info" /> : null}
+      <Button label="Preview" variant="ghost" size="sm" onPress={() => onPreview(player)} />
+    </View>
+  );
+});
+
+/**
+ * One row in the sent-letters history. Memoised so it doesn't reconcile on
+ * every unrelated state change in the screen (e.g. toggling a checkbox in
+ * the player picker above, which lives in the same component's state).
+ */
+const SentLetterRow = memo(function SentLetterRow({
+  letter: l,
+  player,
+  resending,
+  onView,
+  onResend,
+  onDelete,
+}: {
+  letter: PlayerLetter;
+  player: Player | undefined;
+  resending: boolean;
+  onView: (l: PlayerLetter) => void;
+  onResend: (l: PlayerLetter) => void;
+  onDelete: (l: PlayerLetter) => void;
+}) {
+  const colors = useThemeColors();
+  return (
+    <Card className="gap-2">
+      <View className="flex-row items-start justify-between gap-2">
+        <View className="flex-1">
+          <Text numberOfLines={1} className="text-base font-bold" style={{ color: colors.ink }}>
+            {player ? playerDisplayName(player) : 'Removed player'}
+          </Text>
+          <Text numberOfLines={1} className="mt-0.5 text-sm" style={{ color: colors.inkMuted }}>
+            {l.subject}
+          </Text>
+          <Text numberOfLines={1} className="mt-0.5 text-xs" style={{ color: colors.inkMuted }}>
+            {LETTER_KIND_LABELS[l.kind]}
+            {l.recipientEmail ? ` · ${l.recipientEmail}` : ''}
+            {l.sentAt ? ` · ${new Date(l.sentAt).toLocaleDateString()}` : ''}
+          </Text>
+          {l.status === 'failed' && l.error ? (
+            <Text className="mt-1 text-xs" style={{ color: colors.danger }}>
+              {l.error}
+            </Text>
+          ) : null}
+        </View>
+        <Badge label={l.status} variant={STATUS_VARIANT[l.status]} />
+      </View>
+      <View className="flex-row flex-wrap gap-2">
+        <Button label="View" variant="secondary" size="sm" onPress={() => onView(l)} />
+        <Button
+          label={l.status === 'sent' ? 'Re-send' : 'Retry'}
+          variant="secondary"
+          size="sm"
+          loading={resending}
+          onPress={() => onResend(l)}
+        />
+        <Button label="Delete" variant="ghost" size="sm" onPress={() => onDelete(l)} />
+      </View>
+    </Card>
+  );
+});
 
 /** The rendered letter, as the family will read it. */
 function LetterBody({ subject, body, to }: { subject: string; body: string; to?: string }) {

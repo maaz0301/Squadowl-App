@@ -16,6 +16,7 @@ import {
 } from '@/features/queries';
 import type { OrgMember, Tryout } from '@/data/types';
 import { usePermissions } from '@/state/authStore';
+import { useSessionStore } from '@/state/sessionStore';
 const ENT_TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'actions', label: 'Actions' },
@@ -86,6 +87,7 @@ export default function EnterpriseScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const { canManageOrganization } = usePermissions();
+  const setAssessorOnlyTryout = useSessionStore((s) => s.setAssessorOnlyTryout);
   const [tab, setTab] = useState<EntTab>('overview');
   const orgQuery = useOrgQuery();
   const prefetchTryout = usePrefetchTryout();
@@ -249,6 +251,10 @@ export default function EnterpriseScreen() {
 
   const openAssessment = (id: string) => {
     prefetchTryout(id);
+    // Full org-manager access, not the scoped-down assessor mode — clear any
+    // stale flag from a previous "Assigned Evaluations" visit to this same
+    // tryout (see useAssessorMode / team/[id].tsx's same fix).
+    setAssessorOnlyTryout(null);
     navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id } });
   };
 

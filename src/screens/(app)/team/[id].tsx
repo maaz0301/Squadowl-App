@@ -13,6 +13,7 @@ import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
 import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
+import { useSessionStore } from '@/state/sessionStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit } from '@/data/plans';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
@@ -68,6 +69,7 @@ export default function TeamDetailScreen() {
   const { id } = route.params || {};
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
+  const setAssessorOnlyTryout = useSessionStore((s) => s.setAssessorOnlyTryout);
   const teamsQuery = useTeamsQuery();
   // The badges, tab counts, Assessments tab and Attach modal only need names
   // and headcounts, so they run off this light read — see
@@ -1063,6 +1065,13 @@ export default function TeamDetailScreen() {
               <Pressable
                 onPress={() => {
                   setNavigatingId(t.id);
+                  // Opening a linked evaluation from the team's own manager
+                  // view is full manager access, not the scoped-down
+                  // assessor mode — clear any stale flag left over from a
+                  // previous "Assigned Evaluations" visit to this same
+                  // tryout, or Tools items like Letters stay hidden even
+                  // though this user has full access. See useAssessorMode.
+                  setAssessorOnlyTryout(null);
                   navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: t.id } });
                 }}
               >
