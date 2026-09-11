@@ -12,6 +12,8 @@
 const ALLOWED_WEB_ORIGINS = new Set(
   [
     'https://athlete-assessment-web.vercel.app',
+    'https://tryouthq.ca',
+    'https://www.tryouthq.ca',
     Deno.env.get('WEB_APP_URL'),
   ].filter((v): v is string => !!v),
 );
