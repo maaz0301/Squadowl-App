@@ -3,6 +3,8 @@ import { View, Text } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 import { Screen, Header, Card, EmptyState, LoadingState, ErrorState } from '@/components/ui';
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { MapLink } from '@/components/MapLink';
+import { hasMappableLocation } from '@/lib/mapLinks';
 import { useGuardianRostersQuery } from '@/features/queries';
 
 function DetailRow({ label, value, colors }: { label: string; value?: string; colors: any }) {
@@ -76,6 +78,18 @@ export default function GuardianAssessmentDetailsScreen() {
           <DetailRow label="Time" value={formatTimeRange(tryout.startTime, tryout.endTime)} colors={colors} />
           <DetailRow label="Location" value={tryout.location} colors={colors} />
         </Card>
+
+        {/* The one thing a guardian actually does with this screen on the
+            morning of the event, so it gets a row of its own rather than a link
+            buried in the detail table above. */}
+        {hasMappableLocation(tryout.location) ? (
+          <Card className="mb-4 flex-row items-center justify-between gap-3">
+            <Text className="text-sm" style={{ color: colors.inkMuted }}>
+              Getting there
+            </Text>
+            <MapLink location={tryout.location} label={tryout.name} />
+          </Card>
+        ) : null}
 
         <Card>
           <Text className="text-sm" style={{ color: colors.inkMuted }}>

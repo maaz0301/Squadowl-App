@@ -143,6 +143,27 @@ function unwrap<T>(res: { data: T; error: { message: string; code?: string } | n
   return res.data;
 }
 
+/**
+ * Runs a write that must have changed a row, and says whether it did.
+ *
+ * An UPDATE that RLS rejects is not an error in Postgres — it matches zero
+ * rows and reports success, which is how an assessor's Edit Player came to
+ * report a save it had not made. Chaining `.select().single()` turns that into
+ * PostgREST's PGRST116, which this reads as "refused" rather than throwing, so
+ * the caller can retry down a path that is authorized server-side. Any other
+ * error is a real failure and still throws.
+ */
+async function wroteRow(
+  query: PromiseLike<{ data: unknown; error: { message: string; code?: string } | null }>,
+): Promise<boolean> {
+  const res = await query;
+  if (!res.error) return true;
+  if (res.error.code === 'PGRST116') return false;
+  const err = new Error(res.error.message) as Error & { code?: string };
+  err.code = res.error.code;
+  throw err;
+}
+
 /** Roles the RLS write policies (athletes/teams/tryouts) accept. */
 const WRITABLE_ROLES = ['owner', 'admin', 'coach'];
 
@@ -772,6 +793,13 @@ export class SupabaseDataSource implements DataSource {
   /** In-flight ctx() account resolution, shared by concurrent callers. */
   private accountPromise: Promise<void> | null = null;
   private profileCache: Record<string, UserProfile> = {};
+  /**
+   * Owning account per `tryouts`/`teams` row, keyed "table:id". A row never
+   * changes hands, so this needs no invalidation — and a spreadsheet import
+   * asks the same question once per player, which without this cost thirty
+   * extra round trips to re-learn the same answer.
+   */
+  private ownerAccountByRow: Record<string, string> = {};
 
   private notImplemented(method: string): never {
     throw new Error(`SupabaseDataSource.${method}() not implemented yet.`);
@@ -2176,13 +2204,26 @@ export class SupabaseDataSource implements DataSource {
   }
 
   private async _addManualTeamPlayer(teamId: string, form: AddPlayerForm): Promise<{ athleteId: string }> {
-    const accountId = await this.writableAccountId();
+    // Same owning-account rule as _addPlayer: a manager running a club's team
+    // holds no membership on that club, and an athlete they create under their
+    // own account is one the club cannot read.
+    const ownerAccountId = await this.ownerAccountId('teams', teamId);
+    const callerAccountId = await this.writableAccountIdOrNull();
+    // A null owner means the row couldn't be read, not that it belongs to
+    // someone else — falling back to the caller's own account there keeps a
+    // coach whose lookup blipped on exactly the path they had before.
+    const writesAsOwner =
+      callerAccountId !== null && (ownerAccountId === null || callerAccountId === ownerAccountId);
+    if (callerAccountId === null && ownerAccountId === null) {
+      throw new Error('Current account lacks write permissions for this operation.');
+    }
+
     let athleteId = form.athleteId;
     if (typeof athleteId === 'object' && athleteId !== null) {
       athleteId = String((athleteId as any).id || athleteId);
     }
     if (!athleteId) {
-      athleteId = await this.createAthlete(accountId, {
+      const fields: Row = {
         first_name: form.first,
         last_name: form.last,
         year_of_birth: form.yearOfBirth ? Number(form.yearOfBirth) : null,
@@ -2193,7 +2234,10 @@ export class SupabaseDataSource implements DataSource {
         medical_info: form.medicalInfo || null,
         about: form.aboutChild || null,
         avatar_url: form.avatarUrl || null,
-      });
+      };
+      athleteId = writesAsOwner
+        ? await this.createAthlete(callerAccountId!, fields)
+        : await this.createAthleteForOwner({ teamId }, fields);
     }
     await this.addTeamRosterPlayers(teamId, [{ athleteId, jersey: form.jersey, pos: form.pos }]);
     return { athleteId };
@@ -2214,10 +2258,16 @@ export class SupabaseDataSource implements DataSource {
     add: (form: AddPlayerForm) => Promise<unknown>,
     onProgress?: (done: number) => void,
   ): Promise<PlayerImportResult> {
-    const result: PlayerImportResult = { added: 0, failed: [] };
+    const result: PlayerImportResult = { added: 0, failed: [], athleteIds: [], participantIds: [] };
     for (const [i, { line, form }] of rows.entries()) {
       try {
-        await add(form);
+        // Whatever the add path hands back; the team one returns the athlete it
+        // landed and the evaluation one a whole Player, both of which the
+        // caller needs to invite exactly the imported players rather than
+        // re-mailing the whole roster.
+        const added = (await add(form)) as { athleteId?: string; id?: string } | undefined;
+        if (added?.athleteId) result.athleteIds!.push(added.athleteId);
+        if (added?.id) result.participantIds!.push(added.id);
         result.added++;
       } catch (e) {
         result.failed.push({
@@ -2347,17 +2397,15 @@ export class SupabaseDataSource implements DataSource {
     // the dominant cost of the whole operation.
     await mapPool(targets, GUARDIAN_EMAIL_CONCURRENCY, async ({ player, email, role }) => {
       try {
-        unwrap(
-          await supabase
-            .from('portal_invites')
-            .insert({
-              account_id: team.account_id,
-              athlete_id: player.athleteId,
-              team_id: teamId,
-              email,
-              token: generateId('invite').slice(0, 20),
-            })
-            .select('id'),
+        await this.insertPortalInvite(
+          {
+            account_id: team.account_id,
+            athlete_id: player.athleteId,
+            team_id: teamId,
+            email,
+            token: generateId('invite').slice(0, 20),
+          },
+          { teamId },
         );
         await this.sendEmail('player_invite', email, {
           playerName: `${player.first} ${player.last}`.trim(),
@@ -3197,6 +3245,147 @@ export class SupabaseDataSource implements DataSource {
 
   // ─── Players ──────────────────────────────────────────────────────────────────
   /**
+   * Which account owns the roster a player is being added to — the evaluation's
+   * or the team's, not the caller's.
+   *
+   * Readable by everyone who can reach the row at all, assessors and delegated
+   * managers included, because it comes off the `tryouts`/`teams` row itself
+   * rather than from a membership. Returns null when the row can't be read,
+   * which the callers treat as "can't tell" and fall back to the caller's own
+   * account, exactly as before this existed.
+   */
+  private async ownerAccountId(table: 'tryouts' | 'teams', id: string): Promise<string | null> {
+    const key = `${table}:${id}`;
+    const cached = this.ownerAccountByRow[key];
+    if (cached) return cached;
+    try {
+      const supabase = getSupabase();
+      const { data } = await supabase.from(table).select('account_id').eq('id', id).maybeSingle();
+      const found = ((data as Row | null)?.account_id as string | undefined) ?? null;
+      // Only a hit is cached: a miss is usually "not readable right now" (a
+      // read that raced a sign-in, say), which must stay re-askable.
+      if (found) this.ownerAccountByRow[key] = found;
+      return found;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * writableAccountId() for callers who have somewhere else to go.
+   *
+   * An invited assessor can have no staff membership anywhere — an assessor is
+   * reached through `tryout_assessors`, not `memberships` — and for them
+   * writableAccountId() throws "Current account lacks write permissions", which
+   * used to be the end of adding a player. Now it only means the write has to
+   * go through the owning account instead.
+   */
+  private async writableAccountIdOrNull(): Promise<string | null> {
+    try {
+      return await this.writableAccountId();
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The athlete row for a player being added to someone else's roster.
+   *
+   * `create_athlete_for_caller()` resolves the owning account from auth.uid()
+   * server-side. That is right for a coach and wrong for everyone else who may
+   * edit a roster without being staff on the account behind it: an assessor who
+   * coaches elsewhere filed the athlete under *their* club, so the evaluation's
+   * owner could read the participant row and not the athlete it points at, and
+   * the player they had just watched being added rendered as "Unknown Player"
+   * with no birth year, guardian or photo. These two functions take the account
+   * off the evaluation or the team and check the caller's grant over that
+   * specific row (see 20260911120000_create_athlete_in_owning_account.sql).
+   */
+  private async createAthleteForOwner(
+    owner: { tryoutId: string } | { teamId: string },
+    fields: Row,
+  ): Promise<string> {
+    const supabase = getSupabase();
+    await this.resolveGuardianUserId(fields);
+
+    const [fn, args] =
+      'tryoutId' in owner
+        ? (['create_athlete_for_tryout', { p_tryout_id: owner.tryoutId, p_payload: fields }] as const)
+        : (['create_athlete_for_team', { p_team_id: owner.teamId, p_payload: fields }] as const);
+
+    const { data, error } = await supabase.rpc(fn, args);
+    if (error) {
+      if (error.code === 'PGRST202' || error.code === '42883') {
+        console.warn(
+          `${fn}() not deployed — apply 20260911120000_create_athlete_in_owning_account.sql. ` +
+            'Until then only staff on the owning account can add players.',
+        );
+        throw new Error(
+          'Your account cannot add players to this roster yet. Ask the coach who owns it to add them, ' +
+            'or to update the database.',
+        );
+      }
+      throw unwrap({ data: null, error });
+    }
+    return data as string;
+  }
+
+  /**
+   * Insert one `portal_invites` row, falling back to a security-definer RPC
+   * when the direct insert is refused by RLS.
+   *
+   * `account_id` on the row is (correctly) the evaluation's or team's owning
+   * account, not the caller's — but the table's own INSERT policy requires a
+   * `memberships` row with owner/admin/coach on that account, which an invited
+   * assessor or a delegated CLUB-mode manager simply doesn't have. That surfaced
+   * as "new row violates row-level security policy for table portal_invites" the
+   * moment the automatic post-add invite tried to fire for either of them. The
+   * RPC re-checks the same grant `createAthleteForOwner` already relies on and
+   * does the insert itself (see 20260911130000_create_portal_invite_in_owning_account.sql).
+   *
+   * `fallback` is omitted by the one caller (sendPortalInvite, the manual
+   * one-address button) that already inserts with the caller's *own*
+   * account_id — for that path a refusal is a genuine "you can't do this",
+   * not a missing grant to route around.
+   */
+  private async insertPortalInvite(
+    fields: Row,
+    fallback: { tryoutId: string } | { teamId: string } | null,
+  ): Promise<void> {
+    const supabase = getSupabase();
+    try {
+      unwrap(await supabase.from('portal_invites').insert(fields).select('id'));
+      return;
+    } catch (e) {
+      const err = e as { code?: string; message?: string };
+      const refused = err.code === '42501' || /row-level security/i.test(err.message ?? '');
+      if (!refused || !fallback) throw e;
+    }
+
+    const [fn, args] =
+      'tryoutId' in fallback
+        ? ([
+            'create_portal_invite_for_tryout',
+            { p_tryout_id: fallback.tryoutId, p_athlete_id: fields.athlete_id, p_email: fields.email, p_token: fields.token },
+          ] as const)
+        : ([
+            'create_portal_invite_for_team',
+            { p_team_id: fallback.teamId, p_athlete_id: fields.athlete_id, p_email: fields.email, p_token: fields.token },
+          ] as const);
+
+    const { error } = await supabase.rpc(fn, args);
+    if (error) {
+      if (error.code === 'PGRST202' || error.code === '42883') {
+        console.warn(
+          `${fn}() not deployed — apply 20260911130000_create_portal_invite_in_owning_account.sql. ` +
+            'Until then an assessor or delegated manager cannot send this invite.',
+        );
+      }
+      throw unwrap({ data: null, error });
+    }
+  }
+
+  /**
    * Give `fields` a `guardian_user_id`, creating the guardian's login (and
    * mailing them the password) when they don't have one yet. Split out of
    * createAthlete so the bulk registration-placement path can run this per
@@ -3261,9 +3450,27 @@ export class SupabaseDataSource implements DataSource {
 
   private async _addPlayer(tryoutId: string, form: AddPlayerForm): Promise<Player> {
     const { supabase } = await this.ctx();
-    const accountId = await this.writableAccountId();
     if (typeof tryoutId === 'object' && tryoutId !== null) {
       tryoutId = String((tryoutId as any).id || tryoutId);
+    }
+
+    // Who owns the evaluation decides where the athlete is filed. A coach
+    // adding to their own evaluation is the common case and goes through
+    // create_athlete_for_caller() exactly as before; anyone else who may edit
+    // this roster without being staff on the account behind it — an invited
+    // assessor, a delegated manager — has to write to the owning account or the
+    // owner ends up unable to read the athlete they just watched being added.
+    const ownerAccountId = await this.ownerAccountId('tryouts', tryoutId);
+    const callerAccountId = await this.writableAccountIdOrNull();
+    // A null owner means the row couldn't be read, not that it belongs to
+    // someone else — falling back to the caller's own account there keeps a
+    // coach whose lookup blipped on exactly the path they had before.
+    const writesAsOwner =
+      callerAccountId !== null && (ownerAccountId === null || callerAccountId === ownerAccountId);
+    if (callerAccountId === null && ownerAccountId === null) {
+      // Neither route is available: no staff membership anywhere, and the
+      // evaluation itself unreadable. Same message writableAccountId() gave.
+      throw new Error('Current account lacks write permissions for this operation.');
     }
 
     let athleteId = form.athleteId;
@@ -3272,7 +3479,7 @@ export class SupabaseDataSource implements DataSource {
     }
 
     if (!athleteId) {
-      athleteId = await this.createAthlete(accountId, {
+      const fields: Row = {
         first_name: form.first,
         last_name: form.last,
         year_of_birth: form.yearOfBirth ? Number(form.yearOfBirth) : null,
@@ -3283,7 +3490,10 @@ export class SupabaseDataSource implements DataSource {
         medical_info: form.medicalInfo || null,
         about: form.aboutChild || null,
         avatar_url: form.avatarUrl || null,
-      });
+      };
+      athleteId = writesAsOwner
+        ? await this.createAthlete(callerAccountId!, fields)
+        : await this.createAthleteForOwner({ tryoutId }, fields);
     }
     const participant = unwrap(
       await supabase
@@ -3362,14 +3572,51 @@ export class SupabaseDataSource implements DataSource {
       participantPatch.assigned_assessor_id = assessorId;
     }
 
+    // The direct writes first, so a coach keeps going through the tables' own
+    // policies exactly as before. `.select().single()` is what makes a refusal
+    // visible at all: RLS rejects an UPDATE by matching zero rows, which
+    // Postgres reports as an ordinary success, so without it this method wrote
+    // nothing and then re-read the unchanged row as if it had saved — which is
+    // why an assessor's Edit Player looked like it worked but never took.
+    let refused = false;
+
     if (Object.keys(athletePatch).length) {
       const part = unwrap(
         await supabase.from('tryout_participants').select('athlete_id').eq('id', playerId).single(),
       ) as Row;
-      unwrap(await supabase.from('athletes').update(athletePatch).eq('id', part.athlete_id).select());
+      refused = !(await wroteRow(
+        supabase.from('athletes').update(athletePatch).eq('id', part.athlete_id).select().single(),
+      ));
     }
-    if (Object.keys(participantPatch).length) {
-      unwrap(await supabase.from('tryout_participants').update(participantPatch).eq('id', playerId).select());
+    if (!refused && Object.keys(participantPatch).length) {
+      refused = !(await wroteRow(
+        supabase.from('tryout_participants').update(participantPatch).eq('id', playerId).select().single(),
+      ));
+    }
+
+    // Refused means the caller reaches this evaluation some way the tables'
+    // policies don't admit — an invited assessor, who gets to an evaluation
+    // through a tryout_assessors row rather than a membership. The
+    // update_tryout_player RPC does the same write behind a check that
+    // authorizes them explicitly; it re-applies both patches, which is
+    // harmless where one of the two already landed.
+    if (refused) {
+      const { error } = await supabase.rpc('update_tryout_player', {
+        p_participant_id: playerId,
+        p_athlete_patch: athletePatch,
+        p_participant_patch: participantPatch,
+      });
+      if (error) {
+        if (error.code === 'PGRST202' || error.code === '42883') {
+          console.warn('update_tryout_player() not deployed — an assessor cannot save player edits.');
+          throw new Error(
+            'Your account does not have permission to edit this player. Ask the coach who owns this evaluation to make the change.',
+          );
+        }
+        const err = new Error(error.message) as Error & { code?: string };
+        err.code = error.code;
+        throw err;
+      }
     }
     return this.fetchPlayer(playerId);
   }
@@ -4419,7 +4666,11 @@ export class SupabaseDataSource implements DataSource {
     const reg = unwrap(
       await supabase.from('registrations').select('*').eq('id', registrationId).single(),
     ) as Row;
-    const athleteId = await this.createAthlete(accountId, {
+    // Same owning-account rule as _addPlayer: whoever places the
+    // registration may not be staff on the account that owns the roster
+    // receiving it, and an athlete filed under the wrong account reads
+    // back as "Unknown Player" for everyone on the right one.
+    const fields: Row = {
       first_name: reg.first_name,
       last_name: reg.last_name,
       year_of_birth: reg.year_of_birth ?? null,
@@ -4429,7 +4680,12 @@ export class SupabaseDataSource implements DataSource {
       player_email: reg.player_email || null,
       medical_info: reg.medical_info || null,
       about: reg.about_player || null,
-    });
+    };
+    const ownerAccountId = await this.ownerAccountId('tryouts', tryoutId);
+    const athleteId =
+      ownerAccountId && ownerAccountId !== accountId
+        ? await this.createAthleteForOwner({ tryoutId }, fields)
+        : await this.createAthlete(accountId, fields);
     // Real athletes never pick their own jersey at registration — a coach
     // assigns it after roster placement. Test data gets a random one instead so
     // a dummy-data batch looks fully populated without manual entry per player.
@@ -4471,7 +4727,11 @@ export class SupabaseDataSource implements DataSource {
     const reg = unwrap(
       await supabase.from('registrations').select('*').eq('id', registrationId).single(),
     ) as Row;
-    const athleteId = await this.createAthlete(accountId, {
+    // Same owning-account rule as _addPlayer: whoever places the
+    // registration may not be staff on the account that owns the roster
+    // receiving it, and an athlete filed under the wrong account reads
+    // back as "Unknown Player" for everyone on the right one.
+    const fields: Row = {
       first_name: reg.first_name,
       last_name: reg.last_name,
       year_of_birth: reg.year_of_birth ?? null,
@@ -4481,7 +4741,12 @@ export class SupabaseDataSource implements DataSource {
       player_email: reg.player_email || null,
       medical_info: reg.medical_info || null,
       about: reg.about_player || null,
-    });
+    };
+    const ownerAccountId = await this.ownerAccountId('teams', teamId);
+    const athleteId =
+      ownerAccountId && ownerAccountId !== accountId
+        ? await this.createAthleteForOwner({ teamId }, fields)
+        : await this.createAthlete(accountId, fields);
     const rows = await this.addTeamRosterPlayers(teamId, [
       { athleteId, pos: reg.position_trying_out_for || undefined },
     ]);
@@ -6341,6 +6606,294 @@ export class SupabaseDataSource implements DataSource {
   }
 
 
+
+  /**
+   * Link season-roster players to the player/guardian portal, on every address
+   * each of them has on file.
+   *
+   * This is what makes the link automatic: the roster screens call it the
+   * moment players are added, so being on a roster and having a way into the
+   * portal are one event rather than two, and nobody has to remember to come
+   * back and press Invite. sendPortalInvite() stays for the manual button on a
+   * player's profile, which sends to one address the coach chose.
+   *
+   * The season twin of sendTeamRosterInvites(): pass `playerIds` to narrow to
+   * specific roster entries, `emails` to narrow to specific addresses; omit
+   * both to invite the whole season roster.
+   *
+   * Partial success is the normal outcome — a player with no email on file is a
+   * `skipped`, not a failure, and must never take the add down with it.
+   *
+   * An address that already has a pending invite is skipped silently rather
+   * than mailed again. Re-adding a player to a roster is routine (a mid-season
+   * move, a corrected entry, a season imported from its team), and each one
+   * firing another "you have been invited" at a parent who never used the first
+   * is how automatic sending turns into a complaint.
+   *
+   * Kept in step with the web app's method of the same name.
+   */
+  async sendSeasonRosterInvites(
+    seasonId: string,
+    playerIds?: string[],
+    emails?: string[],
+  ): Promise<TeamInviteResult> {
+    const { supabase, accountId } = await this.ctx();
+    const result: TeamInviteResult = { sent: [], failed: [], skipped: [] };
+
+    let query = supabase
+      .from('season_roster')
+      .select('id, athlete_id, jersey, player_email, athletes(first_name, last_name, guardian_email, player_email)')
+      .eq('season_id', seasonId);
+    if (playerIds?.length) query = query.in('id', playerIds);
+    const rows = (unwrap(await query) as Row[] | null) ?? [];
+    if (rows.length === 0) return result;
+
+    // The season carries the team's name for the email; a failed read here is
+    // not worth failing the invites over, so it degrades to an unnamed team.
+    const season = (
+      await supabase.from('seasons').select('name, team_name').eq('id', seasonId).maybeSingle()
+    ).data as Row | null;
+    const teamName =
+      (season?.team_name as string | null) ?? (season?.name as string | null) ?? undefined;
+
+    // One work item per (player, address). A player and their guardian each get
+    // their own invite row and token, so accepting one doesn't consume the
+    // other. Player wins when one address is on file as both — the wording
+    // differs between the two roles and it must only go once.
+    const targets: {
+      athleteId: string;
+      playerName: string;
+      jersey?: string;
+      email: string;
+      role: 'Player' | 'Guardian';
+    }[] = [];
+    const wanted = emails?.length ? new Set(emails.map((e) => e.trim().toLowerCase())) : null;
+    for (const r of rows) {
+      const rawAthlete = r.athletes;
+      const a = (Array.isArray(rawAthlete) ? rawAthlete[0] : rawAthlete) ?? {};
+      const playerName = `${a.first_name ?? ''} ${a.last_name ?? ''}`.trim() || 'Unnamed player';
+
+      const byEmail = new Map<string, 'Player' | 'Guardian'>();
+      const guardian = (a.guardian_email as string | null)?.trim();
+      if (guardian) byEmail.set(guardian, 'Guardian');
+      // The season enrollment's address overrides the athlete's own, matching
+      // rowToSeasonPlayer — a player who uses a different address for this club
+      // should be invited at the one the roster holds.
+      const own = ((r.player_email ?? a.player_email) as string | null)?.trim();
+      if (own) byEmail.set(own, 'Player');
+
+      const chosen = wanted
+        ? [...byEmail].filter(([email]) => wanted.has(email.toLowerCase()))
+        : [...byEmail];
+      if (chosen.length === 0) {
+        result.skipped.push(playerName);
+        continue;
+      }
+      for (const [email, role] of chosen) {
+        targets.push({ athleteId: r.athlete_id, playerName, jersey: r.jersey ?? undefined, email, role });
+      }
+    }
+
+    if (targets.length === 0) return result;
+
+    // One read covering every athlete rather than one per address. A failed
+    // read leaves `pending` empty, which means "send it" — a duplicate invite
+    // is a far better failure than a silently withheld one.
+    let pending = new Set<string>();
+    try {
+      const athleteIds = [...new Set(targets.map((t) => t.athleteId))];
+      const chunks: string[][] = [];
+      for (let i = 0; i < athleteIds.length; i += ROSTER_UPSERT_CHUNK) {
+        chunks.push(athleteIds.slice(i, i + ROSTER_UPSERT_CHUNK));
+      }
+      const pages = await mapPool(chunks, REGISTRATION_CHUNK_CONCURRENCY, async (ids) =>
+        (unwrap(
+          await supabase
+            .from('portal_invites')
+            .select('athlete_id, email, accepted_at')
+            .in('athlete_id', ids)
+            .is('accepted_at', null),
+        ) as Row[] | null) ?? [],
+      );
+      pending = new Set(
+        pages.flat().map((r) => `${r.athlete_id}|${String(r.email).toLowerCase()}`),
+      );
+    } catch (e) {
+      console.warn('Could not check existing portal invites; sending anyway:', e);
+    }
+
+    // Same bounded fan-out as the team path — each target is an insert plus a
+    // send-email call, and a full roster sent serially is the dominant cost of
+    // the whole operation.
+    const fresh = targets.filter((t) => !pending.has(`${t.athleteId}|${t.email.toLowerCase()}`));
+    await mapPool(fresh, GUARDIAN_EMAIL_CONCURRENCY, async (t) => {
+      try {
+        unwrap(
+          await supabase
+            .from('portal_invites')
+            .insert({
+              account_id: accountId,
+              athlete_id: t.athleteId,
+              season_id: seasonId,
+              email: t.email,
+              token: generateId('invite').slice(0, 20),
+            })
+            .select('id'),
+        );
+        await this.sendEmail('player_invite', t.email, {
+          playerName: t.playerName,
+          teamName,
+          jersey: t.jersey,
+          role: t.role,
+        });
+        result.sent.push(t.email);
+      } catch (e) {
+        result.failed.push({
+          email: t.email,
+          message: e instanceof Error ? e.message : 'Could not send invite.',
+        });
+      }
+    });
+
+    return result;
+  }
+
+  /**
+   * Link tryout participants to the player/guardian portal, on every address
+   * each of them has on file.
+   *
+   * Assessors can add players straight onto a tryout roster, and until now
+   * that guardian never got a way into the portal at all — there was no invite
+   * of any kind on this side, only on season/team rosters. `can_access_tryout`
+   * already grants a guardian read access to any tryout their athlete
+   * participates in once `athletes.guardian_user_id` is set (see migration
+   * 0006_guardian_roster_access.sql); all that was missing was actually
+   * inviting them, which is pure application code — no RLS or RPC change.
+   *
+   * `portal_invites` has no tryout_id column and doesn't need one: access is
+   * governed by `tryout_participants` + `guardian_user_id`, not by which
+   * season/team the invite row names, so this leaves both null exactly like a
+   * standalone tryout has neither.
+   *
+   * Same shape as sendSeasonRosterInvites/sendTeamRosterInvites: pass
+   * `participantIds` to narrow to specific roster rows, `emails` to narrow to
+   * specific addresses; omit both to invite the whole tryout roster. Partial
+   * success is the normal outcome, and an address with a still-pending invite
+   * is skipped rather than mailed again.
+   *
+   * Kept in step with the web app's method of the same name.
+   */
+  async sendTryoutRosterInvites(
+    tryoutId: string,
+    participantIds?: string[],
+    emails?: string[],
+  ): Promise<TeamInviteResult> {
+    const { supabase } = await this.ctx();
+    const result: TeamInviteResult = { sent: [], failed: [], skipped: [] };
+
+    let query = supabase
+      .from('tryout_participants')
+      .select('id, athlete_id, jersey, athletes(first_name, last_name, guardian_email, player_email)')
+      .eq('tryout_id', tryoutId);
+    if (participantIds?.length) query = query.in('id', participantIds);
+    const rows = (unwrap(await query) as Row[] | null) ?? [];
+    if (rows.length === 0) return result;
+
+    // The tryout's own account, not the caller's: a delegated manager can run
+    // a tryout that lives on the club's account, and portal_invites.account_id
+    // is keyed to the row it's about, same as the team path.
+    const tryout = unwrap(
+      await supabase.from('tryouts').select('account_id, name, teams(name)').eq('id', tryoutId).maybeSingle(),
+    ) as Row | null;
+    if (!tryout) throw new Error('Assessment not found');
+    const rawTeam = tryout.teams;
+    const teamName =
+      (Array.isArray(rawTeam) ? rawTeam[0] : rawTeam)?.name ?? (tryout.name as string | undefined);
+
+    // One work item per (player, address) — same Player-wins-over-Guardian rule
+    // as the season/team paths, for the same reason: the email is worded
+    // differently for each role and an address on file as both must only be
+    // sent once.
+    const targets: { athleteId: string; playerName: string; jersey?: string; email: string; role: 'Player' | 'Guardian' }[] = [];
+    const wanted = emails?.length ? new Set(emails.map((e) => e.trim().toLowerCase())) : null;
+    for (const r of rows) {
+      const rawAthlete = r.athletes;
+      const a = (Array.isArray(rawAthlete) ? rawAthlete[0] : rawAthlete) ?? {};
+      const playerName = `${a.first_name ?? ''} ${a.last_name ?? ''}`.trim() || 'Unnamed player';
+
+      const byEmail = new Map<string, 'Player' | 'Guardian'>();
+      const guardian = (a.guardian_email as string | null)?.trim();
+      if (guardian) byEmail.set(guardian, 'Guardian');
+      const own = (a.player_email as string | null)?.trim();
+      if (own) byEmail.set(own, 'Player');
+
+      const chosen = wanted
+        ? [...byEmail].filter(([email]) => wanted.has(email.toLowerCase()))
+        : [...byEmail];
+      if (chosen.length === 0) {
+        result.skipped.push(playerName);
+        continue;
+      }
+      for (const [email, role] of chosen) {
+        targets.push({ athleteId: r.athlete_id, playerName, jersey: r.jersey ?? undefined, email, role });
+      }
+    }
+
+    if (targets.length === 0) return result;
+
+    // One read covering every athlete rather than one per address. A failed
+    // read leaves `pending` empty, which means "send it" — a duplicate invite
+    // is a far better failure than a silently withheld one.
+    let pending = new Set<string>();
+    try {
+      const athleteIds = [...new Set(targets.map((t) => t.athleteId))];
+      const chunks: string[][] = [];
+      for (let i = 0; i < athleteIds.length; i += ROSTER_UPSERT_CHUNK) {
+        chunks.push(athleteIds.slice(i, i + ROSTER_UPSERT_CHUNK));
+      }
+      const pages = await mapPool(chunks, REGISTRATION_CHUNK_CONCURRENCY, async (ids) =>
+        (unwrap(
+          await supabase
+            .from('portal_invites')
+            .select('athlete_id, email, accepted_at')
+            .in('athlete_id', ids)
+            .is('accepted_at', null),
+        ) as Row[] | null) ?? [],
+      );
+      pending = new Set(pages.flat().map((r) => `${r.athlete_id}|${String(r.email).toLowerCase()}`));
+    } catch (e) {
+      console.warn('Could not check existing portal invites; sending anyway:', e);
+    }
+
+    const fresh = targets.filter((t) => !pending.has(`${t.athleteId}|${t.email.toLowerCase()}`));
+    await mapPool(fresh, GUARDIAN_EMAIL_CONCURRENCY, async (t) => {
+      try {
+        await this.insertPortalInvite(
+          {
+            account_id: tryout.account_id,
+            athlete_id: t.athleteId,
+            email: t.email,
+            token: generateId('invite').slice(0, 20),
+          },
+          { tryoutId },
+        );
+        await this.sendEmail('player_invite', t.email, {
+          playerName: t.playerName,
+          teamName,
+          jersey: t.jersey,
+          role: t.role,
+        });
+        result.sent.push(t.email);
+      } catch (e) {
+        result.failed.push({
+          email: t.email,
+          message: e instanceof Error ? e.message : 'Could not send invite.',
+        });
+      }
+    });
+
+    return result;
+  }
 
   async sendPortalInvite(seasonId: string, playerId: string, email: string): Promise<void> {
     const { supabase, accountId } = await this.ctx();

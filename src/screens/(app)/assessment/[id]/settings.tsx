@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { MapLink, MapLocationHint } from '@/components/MapLink';
 import {
   Badge,
   Button,
@@ -276,8 +277,13 @@ export default function SettingsScreen() {
         {tryout.tryoutDate ? (
           <Text style={{ color: colors.inkFaint }}>
             {tryout.tryoutDate}{' '}
-            {tryout.startTime ? `· ${tryout.startTime}${tryout.endTime ? `–${tryout.endTime}` : ''}` : ''} ·{' '}
-            {tryout.rink}
+            {tryout.startTime ? `· ${tryout.startTime}${tryout.endTime ? `–${tryout.endTime}` : ''}` : ''}
+            {tryout.rink ? (
+              <>
+                {' · '}
+                <MapLink location={tryout.rink} label={tryout.name} variant="inline" />
+              </>
+            ) : null}
           </Text>
         ) : null}
         {tryout.cloud?.id ? <Badge label={`Code: ${tryout.cloud.id}`} variant="brand" /> : null}
@@ -356,7 +362,15 @@ export default function SettingsScreen() {
           <DateField label="Date" value={tryoutDate} onChange={setTryoutDate} placeholder="Select a date" />
           <TimeField label="Start Time" value={startTime} onChange={setStartTime} placeholder="Select a time" />
           <TimeField label="End Time" value={endTime} onChange={setEndTime} placeholder="Select a time" />
-          <Input label="Location" value={rink} onChangeText={setRink} placeholder="Field A" />
+          <View>
+            <Input
+              label="Location"
+              value={rink}
+              onChangeText={setRink}
+              placeholder="Field A, 55 Bloor St W, Toronto"
+            />
+            <MapLocationHint location={rink} />
+          </View>
           <Button label="Save" onPress={saveEdit} loading={updateTryout.isPending} />
         </View>
       </Modal>

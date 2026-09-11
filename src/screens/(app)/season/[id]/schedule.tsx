@@ -10,6 +10,7 @@ import { TeamBanner } from '@/components/TeamBanner';
 import { useSeasonTeamBrand } from '@/features/useTeamBrand';
 import { Badge, Button, Card, Chip, EmptyState, ErrorState, Input, LoadingState, Modal, Screen, DateField, TimeField, Header } from '@/components/ui';
 import { AddToCalendar } from '@/components/AddToCalendar';
+import { MapLink, MapLocationHint } from '@/components/MapLink';
 import { useSeasonQuery, useAddSeasonEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation } from '@/features/queries';
 import { getDataSource } from '@/data';
 
@@ -253,9 +254,14 @@ export default function SeasonScheduleScreen() {
             <Text style={{ color: colors.inkMuted }}>
               {item.date} · {item.startTime ?? '—'}–{item.endTime ?? '—'}
             </Text>
-            {item.location ? <Text style={{ color: colors.inkFaint }}>{item.location}</Text> : null}
+            {item.location ? (
+              <Text style={{ color: colors.inkFaint }}>
+                <MapLink location={item.location} label={item.title} variant="inline" />
+              </Text>
+            ) : null}
             <View className="flex-row flex-wrap gap-2 mt-2 items-center">
               <AddToCalendar event={item} teamName={season.teamName} size="sm" />
+              <MapLink location={item.location} label={item.title} size="sm" />
               <Button label="Send Reminder" variant="secondary" size="sm" onPress={() => sendReminder(item)} loading={reminding === item.id} />
               <Button label="Edit" variant="secondary" size="sm" onPress={() => openEdit(item)} />
               <Button
@@ -294,7 +300,16 @@ export default function SeasonScheduleScreen() {
               <TimeField label="Start Time" value={value} onChange={onChange} placeholder="Select a time" error={error?.message} disablePast dateValue={watch('date')} />
             )} />
             <Controller control={control} name="location" render={({ field: { onChange, onBlur, value } }) => (
-              <Input label="Location" onBlur={onBlur} onChangeText={onChange} value={value} />
+              <View>
+                <Input
+                  label="Location"
+                  placeholder="Venue and street address"
+                  onBlur={onBlur}
+                  onChangeText={onChange}
+                  value={value}
+                />
+                <MapLocationHint location={value} />
+              </View>
             )} />
             {editingEventId ? null : (
               <>

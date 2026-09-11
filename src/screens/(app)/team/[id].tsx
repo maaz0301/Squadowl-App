@@ -8,6 +8,8 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { MapLink, MapLocationHint } from '@/components/MapLink';
+import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
 import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
@@ -168,9 +170,19 @@ export default function TeamDetailScreen() {
   const [showAddManualPlayer, setShowAddManualPlayer] = useState(false);
   const [showImportPlayers, setShowImportPlayers] = useState(false);
 
+  /**
+   * Add a player by hand and link them to the portal, in one step — the invite
+   * is the point of adding them, and making the coach save, reopen the profile
+   * and invite from there was three steps to send one email.
+   *
+   * The player is on the roster whatever the invite does: the form closes
+   * first, and the send reports itself on top of the roster. Only a bounce or
+   * an address the player doesn't have is worth a dialog.
+   */
   const submitManualPlayer = async (data: AddPlayerFormValues) => {
+    let athleteId: string;
     try {
-      const { athleteId } = await addManualPlayer.mutateAsync(data);
+      ({ athleteId } = await addManualPlayer.mutateAsync(data));
       if (athleteId && data.avatarUrl && data.avatarUrl.startsWith('file://')) {
         try {
           await uploadTeamPlayerPhoto.mutateAsync({
@@ -185,6 +197,27 @@ export default function TeamDetailScreen() {
       setShowAddManualPlayer(false);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Could not add this player.');
+      return;
+    }
+
+    // No athlete id means the add reported no row to invite — a send scoped to
+    // it would match nobody and report "there was nobody to invite" at a coach
+    // who just saved a player.
+    if (!athleteId) return;
+
+    try {
+      const result = await sendInvites.mutateAsync([athleteId]);
+      if (inviteNeedsAttention(result)) {
+        const { title, message } = describeInviteResult(result);
+        alertMsg(title, message);
+      }
+    } catch (e: any) {
+      alertMsg(
+        'Invite Not Sent',
+        `${`${data.first} ${data.last}`.trim()} was added to the roster, but the invite could not be sent: ${
+          e?.message || 'Unknown error'
+        }`,
+      );
     }
   };
 
@@ -464,6 +497,26 @@ export default function TeamDetailScreen() {
       setPickedAthletes(new Set());
       setCandidateTryoutFilter(null);
       setShowAddPlayers(false);
+
+      // Landing on the roster is what earns the portal invite, so it goes out
+      // here rather than waiting for someone to press Send Invites afterwards.
+      // Only a bounce or a player with no address on file is worth a dialog — a
+      // confirmation after every add is noise that trains people to dismiss
+      // without reading.
+      try {
+        const result = await sendInvites.mutateAsync(picked.map((c) => c.athleteId));
+        if (inviteNeedsAttention(result)) {
+          const { title, message } = describeInviteResult(result);
+          alertMsg(title, message);
+        }
+      } catch (e: any) {
+        alertMsg(
+          'Invites Not Sent',
+          `The players were added to the roster, but their portal invites could not be sent: ${
+            e?.message || 'Unknown error'
+          }`,
+        );
+      }
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Could not add players to the team.');
     } finally {
@@ -589,17 +642,8 @@ export default function TeamDetailScreen() {
    */
   const sendRosterInvites = async () => {
     try {
-      const result = await sendInvites.mutateAsync(undefined);
-      const lines: string[] = [];
-      if (result.sent.length > 0) {
-        lines.push(`Invites sent to ${result.sent.length} ${result.sent.length === 1 ? 'address' : 'addresses'}.`);
-      }
-      if (result.skipped.length > 0) lines.push(`No email on file for: ${result.skipped.join(', ')}.`);
-      if (result.failed.length > 0) {
-        lines.push(`Could not send to ${result.failed.map((f) => f.email).join(', ')}.`);
-      }
-      if (lines.length === 0) lines.push('There was nobody to invite.');
-      alertMsg(result.sent.length > 0 ? 'Invites Sent' : 'No Invites Sent', lines.join('\n\n'));
+      const { title, message } = describeInviteResult(await sendInvites.mutateAsync(undefined));
+      alertMsg(title, message);
     } catch (e: any) {
       alertMsg('Error', e?.message || 'Could not send invites.');
     }
@@ -1093,7 +1137,12 @@ export default function TeamDetailScreen() {
                         <Text className="text-sm mt-0.5" style={{ color: colors.inkMuted }}>
                           {ev.date}
                           {ev.startTime ? ` · ${ev.startTime}${ev.endTime ? `–${ev.endTime}` : ''}` : ''}
-                          {ev.location ? ` · ${ev.location}` : ''}
+                          {ev.location ? (
+                            <>
+                              {' · '}
+                              <MapLink location={ev.location} label={ev.title} variant="inline" />
+                            </>
+                          ) : null}
                         </Text>
                       </View>
                       <Badge label={ev.type} variant={ev.type === 'Game' ? 'brand' : 'info'} />
@@ -1222,7 +1271,8 @@ export default function TeamDetailScreen() {
                       </View>
                     ) : null}
 
-                    <View className="flex-row gap-2">
+                    <View className="flex-row flex-wrap gap-2 items-center">
+                      <MapLink location={ev.location} label={ev.title} size="sm" />
                       <Button label="Edit" variant="secondary" size="sm" onPress={() => openEditEventModal(ev)} />
                       <Button
                         label="Delete"
@@ -1609,7 +1659,26 @@ export default function TeamDetailScreen() {
         visible={showImportPlayers}
         onClose={() => setShowImportPlayers(false)}
         target={team.name}
-        onImport={(rows, onProgress) => importPlayers.mutateAsync({ rows, onProgress })}
+        onImport={async (rows, onProgress) => {
+          const result = await importPlayers.mutateAsync({ rows, onProgress });
+          // Same rule as every other way onto this roster: the import is what
+          // earns the portal invite. Scoped to the athletes the import actually
+          // landed, so a re-import doesn't re-mail the players already there.
+          //
+          // No dialog on the way out, unlike the other add paths: the modal
+          // shows its own per-row import summary the moment this returns, and a
+          // second dialog in front of it — "no email on file for these four" —
+          // buries the one the coach is waiting for. A player the invite
+          // couldn't reach already reads as "No invite" on the roster.
+          if (result.athleteIds?.length) {
+            try {
+              await sendInvites.mutateAsync(result.athleteIds);
+            } catch (e) {
+              console.warn('Portal invites failed after a roster import:', e);
+            }
+          }
+          return result;
+        }}
       />
 
       <Modal
@@ -1621,8 +1690,9 @@ export default function TeamDetailScreen() {
         }}
       >
         <AddPlayerForm
-          loading={addManualPlayer.isPending || uploadTeamPlayerPhoto.isPending}
+          loading={addManualPlayer.isPending || uploadTeamPlayerPhoto.isPending || sendInvites.isPending}
           onSubmit={submitManualPlayer}
+          submitLabel="Save Player & Send Invite"
         />
       </Modal>
 
@@ -1682,7 +1752,16 @@ export default function TeamDetailScreen() {
             control={eventForm.control}
             name="location"
             render={({ field: { onChange, onBlur, value } }) => (
-              <Input label="Location" onBlur={onBlur} onChangeText={onChange} value={value} />
+              <View>
+                <Input
+                  label="Location"
+                  placeholder="Venue and street address"
+                  onBlur={onBlur}
+                  onChangeText={onChange}
+                  value={value}
+                />
+                <MapLocationHint location={value} />
+              </View>
             )}
           />
           {editingEventId ? null : (

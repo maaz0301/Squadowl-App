@@ -216,7 +216,10 @@ export default function PlayerHubScreen() {
               })
             }
           />
-          {canManageTeam && <Button label="Edit" variant="secondary" className="flex-1" onPress={() => setShowEdit(true)} />}
+          {/* Edit is open to anyone who can assess — including an invited
+              assessor — since fixing a wrong jersey number or position
+              shouldn't need the owning coach; Delete stays coach/admin-only. */}
+          {canAssess && <Button label="Edit" variant="secondary" className="flex-1" onPress={() => setShowEdit(true)} />}
         </View>
 
       <Card className="mb-4 gap-1">

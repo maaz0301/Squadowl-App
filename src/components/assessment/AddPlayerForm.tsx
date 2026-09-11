@@ -15,9 +15,14 @@ interface Props {
   /** Drives the position picker's options — Hockey positions for a Hockey evaluation, and so on. */
   sport?: Sport;
   onSubmit: (data: AddPlayerFormType) => Promise<void>;
+  /**
+   * Defaults to "Save Player". The team roster passes its own, because saving
+   * there also sends the portal invite and the button should say so.
+   */
+  submitLabel?: string;
 }
 
-export function AddPlayerForm({ loading, defaultValues, sport, onSubmit }: Props) {
+export function AddPlayerForm({ loading, defaultValues, sport, onSubmit, submitLabel }: Props) {
   const colors = useThemeColors();
   const athletesQuery = useAthletesQuery();
   const [modalVisible, setModalVisible] = useState(false);
@@ -276,7 +281,7 @@ export function AddPlayerForm({ loading, defaultValues, sport, onSubmit }: Props
         )}
       />
       <Button
-        label="Save Player"
+        label={submitLabel ?? 'Save Player'}
         onPress={handleSubmit(onSubmit, (errors) => {
           const emailError = errors.guardianEmail ?? errors.playerEmail;
           if (emailError) {

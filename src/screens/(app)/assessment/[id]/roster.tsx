@@ -23,6 +23,7 @@ import {
 import { canUseFeature, isAtPlayerLimit } from '@/data/plans';
 import { isGoaliePosition } from '@/data/rubrics';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
+import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import {
   useAddPlayerMutation,
   useClearTestDataMutation,
@@ -30,6 +31,7 @@ import {
   useGenerateTestDataMutation,
   useImportTryoutPlayersMutation,
   useTryoutQuery,
+  useTryoutRosterInvitesMutation,
   useUploadPlayerPhotoMutation,
   tryoutBulkWriteKey,
 } from '@/features/queries';
@@ -46,6 +48,7 @@ export default function RosterScreen() {
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
   const addPlayer = useAddPlayerMutation(id!);
+  const inviteParticipant = useTryoutRosterInvitesMutation(id!);
   const uploadPhoto = useUploadPlayerPhotoMutation(id!);
   const importPlayers = useImportTryoutPlayersMutation(id!);
   const deletePlayer = useDeletePlayerMutation(id!);
@@ -398,10 +401,18 @@ export default function RosterScreen() {
       >
         <AddPlayerForm
           sport={tryout.sport}
-          loading={addPlayer.isPending || uploadPhoto.isPending}
+          loading={addPlayer.isPending || uploadPhoto.isPending || inviteParticipant.isPending}
+          submitLabel="Save Player & Send Invite"
           onSubmit={async (data) => {
+            // Saving a player here now links them to the portal too, same as
+            // adding one to a season or team roster — until now an assessor
+            // could add a player with a guardian email and that guardian had
+            // no way in at all, since a tryout roster had no invite mechanism
+            // of any kind. This form has no Invite toggles (that's web-only),
+            // so every address the player has on file is mailed.
+            let player: Awaited<ReturnType<typeof addPlayer.mutateAsync>>;
             try {
-              const player = await addPlayer.mutateAsync(data);
+              player = await addPlayer.mutateAsync(data);
               if (player.athleteId && data.avatarUrl && data.avatarUrl.startsWith('file://')) {
                 try {
                   await uploadPhoto.mutateAsync({
@@ -422,6 +433,27 @@ export default function RosterScreen() {
                   { text: 'Cancel', style: 'cancel' },
                   { text: 'Retry', onPress: () => addPlayer.mutate(data) }
                 ]
+              );
+              return;
+            }
+
+            // Its own try/catch, deliberately outside the one above: the
+            // player is on the roster whatever the invite does, and a failed
+            // send here must never show as "Save Error" with a Retry that
+            // would re-run addPlayer and create a second participant. Only a
+            // bounce or a guardian with no address on file is worth an alert.
+            try {
+              const result = await inviteParticipant.mutateAsync({ participantIds: [player.id] });
+              if (inviteNeedsAttention(result)) {
+                const { title, message } = describeInviteResult(result);
+                Alert.alert(title, message);
+              }
+            } catch (e: any) {
+              Alert.alert(
+                'Invite Not Sent',
+                `${`${data.first} ${data.last}`.trim()} was added to the roster, but the portal invite could not be sent: ${
+                  e?.message || 'Unknown error'
+                }`,
               );
             }
           }}
@@ -505,7 +537,27 @@ export default function RosterScreen() {
         visible={showImport}
         onClose={() => setShowImport(false)}
         target={tryout.name}
-        onImport={(rows, onProgress) => importPlayers.mutateAsync({ rows, onProgress })}
+        onImport={async (rows, onProgress) => {
+          const result = await importPlayers.mutateAsync({ rows, onProgress });
+          // Same rule as adding one by hand above, and as the team import: the
+          // import is what earns the portal invite, so a spreadsheet of players
+          // with guardian emails links them all without anyone opening thirty
+          // profiles. Scoped to the rows the import actually landed, so a
+          // re-import doesn't re-mail the players already there.
+          //
+          // No dialog on the way out, unlike the manual add: the modal shows
+          // its own per-row import summary the moment this returns, and a
+          // second dialog in front of it — "no email on file for these four" —
+          // buries the one the coach is waiting for.
+          if (result.participantIds?.length) {
+            try {
+              await inviteParticipant.mutateAsync({ participantIds: result.participantIds });
+            } catch (e) {
+              console.warn('Portal invites failed after a roster import:', e);
+            }
+          }
+          return result;
+        }}
       />
 
       <DummyDataModal

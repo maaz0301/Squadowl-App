@@ -7,6 +7,7 @@ import { useSeasonTeamBrand } from '@/features/useTeamBrand';
 import { Badge, Card, EmptyState, ErrorState, LoadingState, Screen } from '@/components/ui';
 import { useSeasonQuery } from '@/features/queries';
 import { AddToCalendar } from '@/components/AddToCalendar';
+import { MapLink } from '@/components/MapLink';
 
 export default function SeasonCalendarScreen() {
   const route = useRoute<any>();
@@ -57,12 +58,18 @@ export default function SeasonCalendarScreen() {
                       <View className="flex-1">
                         <Text className="font-bold" style={{ color: colors.ink }}>{ev.title}</Text>
                         <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                          {ev.startTime ?? '—'} · {ev.location ?? 'TBD'}
+                          {ev.startTime ?? '—'} ·{' '}
+                          {ev.location ? (
+                            <MapLink location={ev.location} label={ev.title} variant="inline" />
+                          ) : (
+                            'TBD'
+                          )}
                         </Text>
                       </View>
                       <View className="items-end gap-1.5">
                         <Badge label={ev.type} />
                         <AddToCalendar event={ev} teamName={season.teamName} size="sm" />
+                        <MapLink location={ev.location} label={ev.title} size="sm" />
                       </View>
                     </Card>
                   ))}

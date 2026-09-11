@@ -13,7 +13,9 @@ import {
   useSeasonRosterPagesQuery,
   useAddSeasonPlayerMutation,
   useImportSeasonPlayersFromTeamMutation,
+  useSeasonRosterInvitesMutation,
 } from '@/features/queries';
+import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 
 /** Matches listSeasonRosterPage's own page size — see SEASON_ROSTER_SCREEN_PAGE. */
 const SEASON_ROSTER_PAGE = 50;
@@ -32,6 +34,7 @@ export default function SeasonRosterScreen() {
   const rosterPages = useSeasonRosterPagesQuery(id);
   const addPlayer = useAddSeasonPlayerMutation();
   const importTeam = useImportSeasonPlayersFromTeamMutation();
+  const invitePlayers = useSeasonRosterInvitesMutation(id ?? '');
   const [showAdd, setShowAdd] = useState(false);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -51,9 +54,23 @@ export default function SeasonRosterScreen() {
   const season = seasonQuery.data;
   const players = rosterPages.data?.pages.flatMap((p) => p.players) ?? [];
 
+  /**
+   * Add a player and link them to the portal in one step.
+   *
+   * The invite is what makes a roster entry useful to the family it names, so
+   * it goes out with the add rather than waiting for someone to open the
+   * player's profile and press Invite — which is how players ended up on
+   * rosters for a whole season with no way into the portal.
+   *
+   * The player is on the roster whatever the invite does: the form closes
+   * first, and only a bounce or a player with no address on file is worth a
+   * dialog. A send that simply worked says nothing — a confirmation after every
+   * add is noise.
+   */
   const handleAdd = async () => {
     if (!firstName.trim() || !lastName.trim()) return;
-    await addPlayer.mutateAsync({
+    const name = `${firstName.trim()} ${lastName.trim()}`;
+    const player = await addPlayer.mutateAsync({
       seasonId: id!,
       player: {
         firstName: firstName.trim(),
@@ -69,12 +86,44 @@ export default function SeasonRosterScreen() {
     setPlayerEmail('');
     setGuardianEmail('');
     setShowAdd(false);
+
+    try {
+      const result = await invitePlayers.mutateAsync({ playerIds: [player.id] });
+      if (inviteNeedsAttention(result)) {
+        const { title, message } = describeInviteResult(result);
+        Alert.alert(title, message);
+      }
+    } catch (e: any) {
+      Alert.alert(
+        'Invite Not Sent',
+        `${name} was added to the roster, but the portal invite could not be sent: ${
+          e?.message || 'Unknown error'
+        }`,
+      );
+    }
   };
 
+  /**
+   * Import the linked team's players, and link each of them to the portal.
+   *
+   * Same rule as adding one by hand: landing on a roster is what earns an
+   * invite. Most of these athletes were already invited when they joined the
+   * team, and sendSeasonRosterInvites skips an address that still has a pending
+   * invite — so this reaches exactly the players who had no way in yet.
+   */
   const handleImport = async () => {
     try {
-      await importTeam.mutateAsync(id!);
-      Alert.alert('Import Complete', 'Roster players imported successfully from the linked team evaluations.');
+      const imported = await importTeam.mutateAsync(id!);
+      let note = 'Roster players imported successfully from the linked team evaluations.';
+      if (imported.length > 0) {
+        try {
+          const result = await invitePlayers.mutateAsync({ playerIds: imported.map((p) => p.id) });
+          if (inviteNeedsAttention(result)) note = `${note}\n\n${describeInviteResult(result).message}`;
+        } catch (e: any) {
+          note = `${note}\n\nPortal invites could not be sent: ${e?.message || 'Unknown error'}`;
+        }
+      }
+      Alert.alert('Import Complete', note);
     } catch (e: any) {
       Alert.alert('Import Failed', e.message || 'Could not import players.');
     }
@@ -91,7 +140,7 @@ export default function SeasonRosterScreen() {
               label="Import Team"
               variant="ghost"
               size="sm"
-              loading={importTeam.isPending}
+              loading={importTeam.isPending || invitePlayers.isPending}
               onPress={handleImport}
             />
           ) : undefined

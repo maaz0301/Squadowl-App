@@ -30,6 +30,7 @@ import {
   type RankingDirection,
 } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { MapLocationHint } from '@/components/MapLink';
 import { Button, Chip, DateField, TimeField, Input, Modal, Screen, Header, ErrorState, LoadingState, Badge } from '@/components/ui';
 import { useCreateTryoutMutation, useTeamsQuery, useTryoutSummariesQuery, useUpdateTryoutMutation } from '@/features/queries';
 import { useSessionStore } from '@/state/sessionStore';
@@ -445,16 +446,19 @@ export default function NewAssessmentScreen() {
                 control={control}
                 name="rink"
                 render={({ field: { onChange, onBlur, value } }) => (
-                  <Input
-                    label="Location"
-                    placeholder="Field A"
-                    onBlur={onBlur}
-                    onChangeText={onChange}
-                    value={value}
-                    returnKeyType="done"
-                    onFocus={revealField('rink')}
-                    onSubmitEditing={() => Keyboard.dismiss()}
-                  />
+                  <>
+                    <Input
+                      label="Location"
+                      placeholder="Field A, 55 Bloor St W, Toronto"
+                      onBlur={onBlur}
+                      onChangeText={onChange}
+                      value={value}
+                      returnKeyType="done"
+                      onFocus={revealField('rink')}
+                      onSubmitEditing={() => Keyboard.dismiss()}
+                    />
+                    <MapLocationHint location={value} />
+                  </>
                 )}
               />
             </View>

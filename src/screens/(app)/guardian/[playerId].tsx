@@ -18,6 +18,7 @@ import {
 } from '@/components/ui';
 import { ChatIconButton } from '@/components/ChatIconButton';
 import { AddToCalendar } from '@/components/AddToCalendar';
+import { MapLink } from '@/components/MapLink';
 import { ChatUnreadProbe, UnreadPill } from '@/components/ChatUnreadBadge';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
@@ -82,14 +83,17 @@ function EventCard({ item, playerId, colors }: { item: SeasonEvent & { seasonNam
       </View>
       {item.location ? (
         <Text className="text-sm font-medium mt-1" style={{ color: colors.inkMuted }}>
-          📍 {item.location}
+          <MapLink location={item.location} label={item.title} variant="inline" />
         </Text>
       ) : null}
 
       <View className="mt-4 pt-3 border-t" style={{ borderTopColor: colors.border }}>
         <View className="flex-row items-center justify-between mb-2">
           <Text className="text-sm font-bold" style={{ color: colors.inkMuted }}>RSVP</Text>
-          <AddToCalendar event={item} teamName={item.teamName} size="sm" />
+          <View className="flex-row items-center gap-2">
+            <MapLink location={item.location} label={item.title} size="sm" />
+            <AddToCalendar event={item} teamName={item.teamName} size="sm" />
+          </View>
         </View>
         <View className="flex-row gap-2">
           <Pressable

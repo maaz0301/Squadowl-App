@@ -426,6 +426,28 @@ export interface DataSource {
    * invited. Never throws for a single bad address: see TeamInviteResult.
    */
   sendTeamRosterInvites(teamId: string, athleteIds?: string[]): Promise<import('./types').TeamInviteResult>;
+  /**
+   * Invite season-roster players to the portal on every address each has on
+   * file — the automatic counterpart to sendPortalInvite's one chosen address,
+   * and the season twin of sendTeamRosterInvites.
+   */
+  sendSeasonRosterInvites(
+    seasonId: string,
+    playerIds?: string[],
+    emails?: string[],
+  ): Promise<import('./types').TeamInviteResult>;
+  /**
+   * Invite tryout participants to the portal on every address each has on
+   * file — the assessment-roster twin of sendSeasonRosterInvites /
+   * sendTeamRosterInvites. No RLS or RPC change backs this: `can_access_tryout`
+   * already lets a guardian read a tryout once their athlete is on its roster
+   * and their account is linked; this is what actually gets them that link.
+   */
+  sendTryoutRosterInvites(
+    tryoutId: string,
+    participantIds?: string[],
+    emails?: string[],
+  ): Promise<import('./types').TeamInviteResult>;
   importScanScores(tryoutId: string, scores: { playerId: string; rubricKey: string; value: number }[]): Promise<void>;
   getGuardianRosters(): Promise<GuardianRosterAthlete[]>;
   /**

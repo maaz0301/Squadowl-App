@@ -3,6 +3,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { MapLink } from '@/components/MapLink';
 import { TeamBanner } from '@/components/TeamBanner';
 import { ChatIconButton } from '@/components/ChatIconButton';
 import { ChatUnreadBadge } from '@/components/ChatUnreadBadge';
@@ -119,15 +120,21 @@ export default function SeasonHubScreen() {
               <Badge label={ev.type} variant={ev.type === 'Game' ? 'brand' : 'info'} />
             </View>
             <Text className="text-sm" style={{ color: colors.inkMuted }}>
-              {ev.date} · {ev.startTime ?? '—'} · {ev.location ?? 'TBD'}
+              {ev.date} · {ev.startTime ?? '—'} ·{' '}
+              {ev.location ? (
+                <MapLink location={ev.location} label={ev.title} variant="inline" />
+              ) : (
+                'TBD'
+              )}
             </Text>
-            <View className="flex-row mt-2">
+            <View className="flex-row mt-2 gap-2 items-center">
               <Button
                 label="Edit"
                 variant="secondary"
                 size="sm"
                 onPress={() => navigation.navigate('SeasonSchedule', { id: id, editEventId: ev.id })}
               />
+              <MapLink location={ev.location} label={ev.title} size="sm" />
             </View>
           </Card>
         ))
