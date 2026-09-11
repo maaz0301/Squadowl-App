@@ -558,8 +558,17 @@ export function useUpdateTryoutMutation() {
   return useMutation({
     mutationFn: ({ id, updates }: { id: string; updates: Partial<Tryout> }) =>
       withTimeout(getDataSource().updateTryout(id, updates), 15000),
-    onSuccess: (tryout) => {
-      qc.invalidateQueries({ queryKey: queryKeys.tryout(tryout.id) });
+    onSuccess: (_tryout, { id, updates }) => {
+      // updateTryout()'s return value carries empty roster/evals/registrations
+      // (see SupabaseDataSource.updateTryout) to avoid re-paying the full
+      // roster+evaluations assembly on every small edit, so it can't be used to
+      // replace the cache directly. Merging just the changed fields into the
+      // existing cache entry — the same move useCreateTryoutMutation makes —
+      // gets the UI (e.g. FriendPackagesCard) updated instantly instead of
+      // invalidating and forcing that multi-second refetch behind a spinner.
+      qc.setQueryData(queryKeys.tryout(id), (current: Tryout | undefined) =>
+        current ? { ...current, ...updates } : current,
+      );
       qc.invalidateQueries({ queryKey: queryKeys.tryouts(false) });
     },
   });

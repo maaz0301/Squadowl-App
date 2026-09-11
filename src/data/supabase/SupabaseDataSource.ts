@@ -3041,16 +3041,17 @@ export class SupabaseDataSource implements DataSource {
     // Built from the patched row plus a cheap assessors fetch, instead of
     // getTryout()'s full reassembly (every player, every evaluation, every
     // registration). Every caller of updateTryout either discards this
-    // return value — relying on useUpdateTryoutMutation's cache invalidation
-    // to pick up the change in the background — or, the one exception
-    // (assessment/new.tsx right after creating a tryout), only reads
-    // `.assessors`. Nobody needs roster/evals/registrations here, and a patch
-    // as small as re-linking a tryout's team was paying the same cost as
-    // opening the full roster screen — which is what timed out attaching a
-    // 1,000-player assessment to a team.
-    const assessorRows = unwrap(
-      await supabase.from('tryout_assessors').select('*').eq('tryout_id', id),
-    ) as Row[];
+    // return value — relying on useUpdateTryoutMutation's cache merge to pick
+    // up the change — or, the one exception (assessment/new.tsx right after
+    // creating a tryout), only reads `.assessors`, and only when it just sent
+    // `updates.assessors`. Nobody needs roster/evals/registrations here, and a
+    // patch as small as re-linking a tryout's team — or saving a friend
+    // package — was paying for an assessors round trip nobody asked for, on
+    // top of the cost that timed out attaching a 1,000-player assessment to a
+    // team.
+    const assessorRows = updates.assessors !== undefined
+      ? (unwrap(await supabase.from('tryout_assessors').select('*').eq('tryout_id', id)) as Row[])
+      : [];
     const settings = row.settings ?? { skaterWeights: {}, goalieWeights: {}, customRubrics: [] };
     const ai = row.ai_assessments ?? {};
     const { teamBuilder, friendPackages, ...aiAssessments } = ai;

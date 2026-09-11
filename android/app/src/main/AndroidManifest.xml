@@ -16,6 +16,14 @@
 
       One entry per mime type exportData.ts actually writes; a format added there
       needs its type added here or it will not be viewable.
+
+      The two scheme entries below are the same story for MapLink.tsx
+      (event/tryout "Directions" links) and calendarLinks.ts's openCalendarUrl:
+      both call Linking.canOpenURL() before opening — on the Google Maps/`geo:`
+      URI and a calendar provider's https template respectively — and without a
+      scheme declared here that always resolves to false on targetSdk 30+, so
+      the tap silently does nothing (the flow gives up before ever calling
+      openURL).
     -->
     <queries>
         <intent>
@@ -29,6 +37,14 @@
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="text/csv" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
         </intent>
     </queries>
 
