@@ -694,7 +694,7 @@ export function useSaveEvaluationMutation(tryoutId: string) {
       const activeAssessor = useSessionStore.getState().activeAssessor;
       return withTimeout(
         getDataSource().saveEvaluation(tryoutId, playerId, form, evalId, activeAssessor),
-        5000,
+        15000,
         'Saving evaluation timed out. Please check your connection.'
       );
     },
