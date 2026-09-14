@@ -26,13 +26,14 @@ import {
   type CreateAssessmentForm,
   type Assessor,
   type CustomRubric,
+  type Tryout,
   type ScoringType,
   type RankingDirection,
 } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { MapLocationHint } from '@/components/MapLink';
 import { Button, Chip, DateField, TimeField, Input, Modal, Screen, Header, ErrorState, LoadingState, Badge } from '@/components/ui';
-import { useCreateTryoutMutation, useTeamsQuery, useTryoutSummariesQuery, useUpdateTryoutMutation } from '@/features/queries';
+import { CreateTryoutContinuingError, useCreateTryoutMutation, useTeamsQuery, useTryoutSummariesQuery, useUpdateTryoutMutation } from '@/features/queries';
 import { useSessionStore } from '@/state/sessionStore';
 import { useUser } from '@/state/authStore';
 import { isAtAssessmentLimit } from '@/data/plans';
@@ -266,11 +267,47 @@ export default function NewAssessmentScreen() {
     try {
       tryout = await createTryout.mutateAsync(data);
     } catch (e: any) {
+      if (e instanceof CreateTryoutContinuingError) {
+        // A big team's roster is still being copied in. Don't report a failure
+        // (a retry would create a duplicate) — let it finish in the background,
+        // save the rubrics/assessors onto it once it lands, and send the coach
+        // back so they can keep working.
+        const assessors = pendingAssessors;
+        const rubrics = pendingRubrics;
+        e.pending
+          .then((t) => finishSetup(t, assessors, rubrics, true))
+          .catch((err) => console.warn('Background evaluation create failed', err));
+        Alert.alert(
+          'Still setting up',
+          `"${data.name}" is being created and its team players are being added in the background. ` +
+            'It will appear in your evaluations list in a moment — no need to create it again.',
+          [{ text: 'OK', onPress: () => navigation.goBack() }],
+        );
+        return;
+      }
       Alert.alert('Error', e?.message || 'Could not create the evaluation.');
       return;
     }
-    setCurrentTryout(tryout.id);
-    setAssessorOnlyTryout(null);
+    if (await finishSetup(tryout, pendingAssessors, pendingRubrics, false)) {
+      navigation.replace('AssessmentFlow', { screen: 'AssessmentSettings', params: { id: tryout.id } });
+    }
+  });
+
+  /**
+   * Everything after the evaluation row exists: select it, save rubrics and
+   * assessors, and mail invites. `background` is the path where the screen has
+   * already been left, so failures are logged instead of alerted.
+   */
+  const finishSetup = async (
+    tryout: Tryout,
+    pendingAssessors: Assessor[],
+    pendingRubrics: CustomRubric[],
+    background: boolean,
+  ): Promise<boolean> => {
+    if (!background) {
+      setCurrentTryout(tryout.id);
+      setAssessorOnlyTryout(null);
+    }
 
     if (pendingAssessors.length || pendingRubrics.length) {
       try {
@@ -305,15 +342,14 @@ export default function NewAssessmentScreen() {
           }
         }
       } catch (e: any) {
-        Alert.alert(
-          'Partial Save',
-          `The assessment was created, but saving its rubrics/assessors failed: ${e?.message || 'Unknown error'}`,
-        );
+        const msg = `The assessment was created, but saving its rubrics/assessors failed: ${e?.message || 'Unknown error'}`;
+        if (background) console.warn(msg);
+        else Alert.alert('Partial Save', msg);
       }
     }
 
-    navigation.replace('AssessmentFlow', { screen: 'AssessmentSettings', params: { id: tryout.id } });
-  });
+    return true;
+  };
 
   if (teamsQuery.isLoading || tryoutsQuery.isLoading) return <LoadingState message="Loading..." />;
   if (teamsQuery.isError || tryoutsQuery.isError) {

@@ -2984,18 +2984,39 @@ export class SupabaseDataSource implements DataSource {
             position: r.position ?? null,
             registration_source: 'manual' as const,
           }));
-          // Chunked for the same reason addTeamRosterPlayers is: a whole large
-          // team's worth of rows in one insert can outrun Postgres's statement
-          // timeout, which — since this whole import is best-effort — used to
-          // mean a big team's assessment came back with no players imported at
-          // all instead of a slower but complete import.
-          const chunks: (typeof participants)[] = [];
-          for (let i = 0; i < participants.length; i += ROSTER_UPSERT_CHUNK) {
-            chunks.push(participants.slice(i, i + ROSTER_UPSERT_CHUNK));
+          // Routed through insert_tryout_participants_for_caller(), same as the
+          // dummy-data import: a plain insert re-runs participants_write's
+          // can_access_tryout() once per row, so a ~1000-player team took ~50
+          // 20-row inserts and blew past the create mutation's client timeout —
+          // surfacing as "check your network connection" while the server kept
+          // going. The RPC authorizes once, so a whole team is one request.
+          try {
+            await insertChunked(participants, DUMMY_CHUNK.participants, async (chunk) => {
+              const { data, error } = await supabase.rpc('insert_tryout_participants_for_caller', {
+                p_tryout_id: row.id,
+                participants: chunk.map(({ tryout_id: _t, ...p }) => p),
+              });
+              if (error) throw new Error(error.message);
+              return (data ?? []) as string[];
+            });
+          } catch {
+            // RPC missing or refused on this database — fall back to chunked
+            // direct inserts. Skip athletes the RPC may already have placed so a
+            // partial first attempt doesn't duplicate them.
+            const placed = new Set(
+              (
+                await this.fetchAllByIn('tryout_participants', 'athlete_id', 'tryout_id', [row.id], PARTICIPANTS_PAGE)
+              ).map((p) => p.athlete_id),
+            );
+            const remaining = participants.filter((p) => !placed.has(p.athlete_id));
+            const chunks: (typeof participants)[] = [];
+            for (let i = 0; i < remaining.length; i += ROSTER_UPSERT_CHUNK) {
+              chunks.push(remaining.slice(i, i + ROSTER_UPSERT_CHUNK));
+            }
+            await mapPool(chunks, ROSTER_WRITE_CONCURRENCY, async (chunk) => {
+              await supabase.from('tryout_participants').insert(chunk);
+            });
           }
-          await mapPool(chunks, ROSTER_WRITE_CONCURRENCY, async (chunk) => {
-            await supabase.from('tryout_participants').insert(chunk);
-          });
         }
       } catch {
         // Non-fatal: the assessment is created, the coach can add players later.

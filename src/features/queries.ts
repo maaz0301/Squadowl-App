@@ -539,18 +539,52 @@ export function useGuardianRealtimeSync() {
 export function useCreateTryoutMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (form: CreateAssessmentForm) => withTimeout(getDataSource().createTryout(form), 15000),
-    onSuccess: (tryout) => {
-      // Seed the single-tryout cache with what the create call already
-      // returned — without this, navigating straight to the new assessment's
-      // settings screen lands useTryoutQuery on an empty cache, which refetches
-      // the whole roster+evaluations bundle behind a blocking spinner instead
-      // of rendering immediately.
-      qc.setQueryData(queryKeys.tryout(tryout.id), tryout);
-      qc.invalidateQueries({ queryKey: queryKeys.tryouts(false) });
-      qc.invalidateQueries({ queryKey: queryKeys.profile });
+    // Longer than the usual 15s: a team-linked create imports and re-reads the
+    // whole team roster, and giving up early doesn't cancel the server-side
+    // create — it just told the coach "network error" and invited a retry that
+    // made a duplicate evaluation.
+    mutationFn: (form: CreateAssessmentForm) => {
+      const pending = getDataSource().createTryout(form);
+      return new Promise<Tryout>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          // Hand the still-running create back to the screen instead of a
+          // "network" error, and refresh the caches whenever it does land.
+          pending.then(seed).catch(() => {});
+          reject(new CreateTryoutContinuingError(pending));
+        }, form.teamId ? 90000 : 15000);
+        pending.then(
+          (t) => { clearTimeout(timer); resolve(t); },
+          (e) => { clearTimeout(timer); reject(e); },
+        );
+      });
     },
+    onSuccess: (tryout) => seed(tryout),
   });
+
+  function seed(tryout: Tryout) {
+    // Seed the single-tryout cache with what the create call already
+    // returned — without this, navigating straight to the new assessment's
+    // settings screen lands useTryoutQuery on an empty cache, which refetches
+    // the whole roster+evaluations bundle behind a blocking spinner instead
+    // of rendering immediately.
+    qc.setQueryData(queryKeys.tryout(tryout.id), tryout);
+    qc.invalidateQueries({ queryKey: queryKeys.tryouts(false) });
+    qc.invalidateQueries({ queryKey: queryKeys.profile });
+  }
+}
+
+/**
+ * Thrown when creating an evaluation outlasts the client timeout. The create
+ * isn't cancelled — `pending` still resolves with the finished evaluation (and
+ * its imported team players) — so the screen can tell the coach it's being
+ * finished in the background rather than reporting a failure they'd retry,
+ * which used to produce a duplicate evaluation.
+ */
+export class CreateTryoutContinuingError extends Error {
+  constructor(readonly pending: Promise<Tryout>) {
+    super('The evaluation is still being created in the background.');
+    this.name = 'CreateTryoutContinuingError';
+  }
 }
 
 export function useUpdateTryoutMutation() {
@@ -1405,7 +1439,10 @@ export function useUpdateSeasonEventMutation(seasonId: string) {
       eventId: string;
       updates: Partial<import('@/data/types').SeasonEvent>;
     }) => getDataSource().updateSeasonEvent(seasonId, eventId, updates),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.season(seasonId) }),
+    // void: don't make mutateAsync (and the caller's spinner) wait on the
+    // season refetch — it's the most expensive query in the app. See the
+    // matching comment on the web app's queries.ts for the full rationale.
+    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.season(seasonId) }),
   });
 }
 
