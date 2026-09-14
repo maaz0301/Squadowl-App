@@ -4457,17 +4457,32 @@ export class SupabaseDataSource implements DataSource {
       rankingDirection: r.rankingDirection,
     }));
 
-    // Chunk so each Claude call stays within a comfortable output size.
-    const chunkSizes: number[] = [];
-    for (let remaining = count; remaining > 0; remaining -= AI_CHUNK) {
-      chunkSizes.push(Math.min(AI_CHUNK, remaining));
-    }
-
+    // Split into as many roughly-equal parallel calls as the AI concurrency
+    // ceiling allows, capped so no single call is asked to generate more than
+    // AI_CHUNK players (a comfortable Claude output size). Packing every call
+    // to AI_CHUNK before adding another — the previous approach — made a
+    // 25-player batch run as one 20-player call plus an almost-empty 5-player
+    // one, so its wall time paid for generating 20 players even though the
+    // batch only needed 2 calls either way. Balancing the remainder across
+    // `width` calls instead means the wall time tracks the smallest even
+    // split, not the most lopsided one — for the modal's default 25-player
+    // batch that's two ~13-player calls in parallel rather than a 20-player
+    // call gating a trivial second one.
+    //
     // Every chunk at once for a big batch (1000 players = 50 chunks = 50 in
     // flight), scaling down to the chunk count for small ones. These are
     // independent edge-function invocations, so width here is what turns a
-    // multi-minute batch into a single round trip's worth of waiting.
-    const width = concurrencyFor(chunkSizes.length, DUMMY_MAX_CONCURRENCY.ai);
+    // multi-minute batch into a single round trip's worth of waiting. At the
+    // 1000-player ceiling this reduces to the old fixed-size chunking exactly
+    // (50 calls of 20), so the largest batch still fires as one wave.
+    const width = Math.min(Math.max(1, Math.ceil(count / AI_CHUNK)), DUMMY_MAX_CONCURRENCY.ai);
+    const chunkSizes: number[] = [];
+    let remaining = count;
+    for (let i = width; i > 0; i--) {
+      const size = Math.ceil(remaining / i);
+      chunkSizes.push(size);
+      remaining -= size;
+    }
     let reported = 0;
     const results = await mapPool(chunkSizes, width, async (chunkCount) => {
       let players: AITestPlayer[] = [];
