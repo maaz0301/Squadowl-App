@@ -1,53 +1,28 @@
-import { Alert, Linking, Platform, Pressable, Text } from 'react-native';
+import { useState } from 'react';
+import { Alert, Linking, Pressable, Text, View } from 'react-native';
 
+import { Modal } from '@/components/ui';
 import {
   appleDirectionsUrl,
-  geoUri,
   googleMapsUrl,
   hasMappableLocation,
   looksAddressable,
+  wazeUrl,
 } from '@/lib/mapLinks';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 /**
- * Open an event's location in whatever map app this device has.
- *
- * Platform-preferred rather than one universal URL like the web app's
- * MapLink: on a phone the native handler is already installed and already
- * signed in to the user's saved places, so iOS goes to Apple Maps and Android
- * to its default handler via `geo:`. Google's universal https URL is the
- * fallback in both cases — it opens the Google Maps app when installed and the
- * website when not, so this can never dead-end.
+ * "Directions" for an event's location — a picker over Apple Maps, Google
+ * Maps and Waze, the three apps players and parents actually have installed.
+ * An explicit choice rather than one auto-selected link (as this used to be,
+ * silently preferring Apple on iOS and a `geo:` default elsewhere) because
+ * there is no way to guess which of the three someone prefers, and a Waze
+ * regular bounces off a button that always lands them in Apple/Google
+ * instead. Mirrors AddToCalendar's own picker for the same reason it does:
+ * one tap opens a small list of options rather than a menu of map brands.
  *
  * Only the address is ever handed to a map provider — no event/venue name
  * folded into the query.
- */
-export async function openInMaps(location: string): Promise<void> {
-  const candidates =
-    Platform.OS === 'ios'
-      ? [appleDirectionsUrl(location), googleMapsUrl(location)]
-      : Platform.OS === 'android'
-        ? [geoUri(location), googleMapsUrl(location)]
-        : [googleMapsUrl(location)];
-
-  for (const url of candidates) {
-    // canOpenURL is the check that makes the fallback meaningful: a geo: URI on
-    // a device with no map app resolves to nothing at all, and openURL would
-    // reject rather than fall through.
-    try {
-      if (await Linking.canOpenURL(url)) {
-        await Linking.openURL(url);
-        return;
-      }
-    } catch {
-      // Treat an unanswerable canOpenURL the same as a "no" and try the next.
-    }
-  }
-  throw new Error('No map app available to open this location.');
-}
-
-/**
- * "Directions" for an event's location.
  *
  * Renders nothing when there is no usable location — including the "TBD" a
  * coach types before the venue is settled, which would otherwise send someone
@@ -71,6 +46,7 @@ export function MapLink({
   variant?: 'chip' | 'inline';
 }) {
   const colors = useThemeColors();
+  const [open, setOpen] = useState(false);
   if (!hasMappableLocation(location)) return null;
 
   // `label` (the event/venue name) never reaches the map provider — only the
@@ -78,47 +54,82 @@ export function MapLink({
   // is read out but never sent anywhere.
   const place = location.trim();
   const a11yLabel = label ? `Directions to ${label}` : `Directions to ${place}`;
-  const open = () => {
-    openInMaps(place).catch((e: unknown) =>
+
+  const options = [
+    { key: 'apple', label: 'Apple Maps', url: appleDirectionsUrl(place) },
+    { key: 'google', label: 'Google Maps', url: googleMapsUrl(place) },
+    { key: 'waze', label: 'Waze', url: wazeUrl(place) },
+  ];
+
+  const choose = async (url: string) => {
+    setOpen(false);
+    try {
+      await Linking.openURL(url);
+    } catch (e) {
       Alert.alert(
         'Could not open maps',
         e instanceof Error ? e.message : 'Please try again from your map app.',
-      ),
-    );
+      );
+    }
   };
+
+  const picker = (
+    <Modal visible={open} title="Get directions" onClose={() => setOpen(false)}>
+      <View className="gap-2">
+        {options.map((o) => (
+          <Pressable
+            key={o.key}
+            onPress={() => choose(o.url)}
+            className="rounded-xl border px-4 py-3"
+            style={{ backgroundColor: colors.tile, borderColor: colors.border }}
+          >
+            <Text className="text-base font-bold" style={{ color: colors.ink }}>
+              {o.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </Modal>
+  );
 
   if (variant === 'inline') {
     return (
-      <Text
-        onPress={open}
-        accessibilityRole="link"
-        accessibilityLabel={a11yLabel}
-        style={{ color: colors.primary, textDecorationLine: 'underline' }}
-      >
-        📍 {place}
-      </Text>
+      <>
+        <Text
+          onPress={() => setOpen(true)}
+          accessibilityRole="link"
+          accessibilityLabel={a11yLabel}
+          style={{ color: colors.primary, textDecorationLine: 'underline' }}
+        >
+          📍 {place}
+        </Text>
+        {picker}
+      </>
     );
   }
 
   return (
-    <Pressable
-      onPress={open}
-      accessibilityRole="link"
-      accessibilityLabel={a11yLabel}
-      // min-h/justify-center at sm matches Button's own sm sizing (see
-      // Button.tsx's sizeStyles) — without it, the 📍 emoji's taller line
-      // height (a platform quirk, worst on Android) makes this chip render
-      // visibly taller than a plain-text Button sitting right next to it.
-      className={`rounded-lg border justify-center ${size === 'sm' ? 'px-2.5 py-1.5 min-h-[36px]' : 'px-3.5 py-2.5'}`}
-      style={{ backgroundColor: colors.tile, borderColor: colors.border }}
-    >
-      <Text
-        className={`font-bold ${size === 'sm' ? 'text-xs' : 'text-sm'}`}
-        style={{ color: colors.ink }}
+    <>
+      <Pressable
+        onPress={() => setOpen(true)}
+        accessibilityRole="link"
+        accessibilityLabel={a11yLabel}
+        // min-h/justify-center at sm matches Button's own sm sizing (see
+        // Button.tsx's sizeStyles) — without it, the 📍 emoji's taller line
+        // height (a platform quirk, worst on Android) makes this chip render
+        // visibly taller than a plain-text Button sitting right next to it.
+        className={`rounded-lg border justify-center ${size === 'sm' ? 'px-2.5 py-1.5 min-h-[36px]' : 'px-3.5 py-2.5'}`}
+        style={{ backgroundColor: colors.tile, borderColor: colors.border }}
       >
-        📍 Directions
-      </Text>
-    </Pressable>
+        <Text
+          className={`font-bold ${size === 'sm' ? 'text-xs' : 'text-sm'}`}
+          style={{ color: colors.ink }}
+        >
+          📍 Directions
+        </Text>
+      </Pressable>
+      {picker}
+    </>
   );
 }
 

@@ -225,11 +225,13 @@ export default function RosterScreen() {
 
   return (
     <Screen padded={false}>
-      <Header
-        title={tryout.name}
-        showBack
-        onBack={() => navigation.navigate('DashboardMain')}
-      />
+      <View className="px-4">
+        <Header
+          title={tryout.name}
+          showBack
+          onBack={() => navigation.navigate('DashboardMain')}
+        />
+      </View>
       {hasPlayers ? (
         <View className="gap-2 px-4 pb-3">
           <UsageNudgeBanner

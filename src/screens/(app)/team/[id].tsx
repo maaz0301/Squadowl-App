@@ -8,6 +8,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { AddToCalendar } from '@/components/AddToCalendar';
 import { MapLink, MapLocationHint } from '@/components/MapLink';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
@@ -1302,6 +1303,7 @@ export default function TeamDetailScreen() {
                           MapLink's text-xs "sm" chip. MapLink's default (md) size lands
                           at the same actual height as Button's "sm" — this is the match,
                           not a mismatch to fix later. */}
+                      <AddToCalendar event={ev} teamName={team.name} />
                       <MapLink location={ev.location} label={ev.title} />
                       <Button label="Edit" variant="secondary" size="sm" onPress={() => openEditEventModal(ev)} />
                       <Button

@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import Svg, { Path } from 'react-native-svg';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, ErrorState, Header, LoadingState, Screen, Tabs } from '@/components/ui';
+import { Badge, Button, Card, ErrorState, Header, LoadingState, Modal, Screen, Tabs } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
 import {
   useOrgQuery,
@@ -13,6 +14,8 @@ import {
   useTeamsQuery,
   useSeasonsQuery,
   usePrefetchTryout,
+  useArchiveTryoutMutation,
+  useDeleteTryoutMutation,
 } from '@/features/queries';
 import type { OrgMember, Tryout } from '@/data/types';
 import { usePermissions } from '@/state/authStore';
@@ -103,6 +106,14 @@ export default function EnterpriseScreen() {
   const tryoutsQuery = useTryoutsQuery(false, tab === 'overview' || tab === 'actions');
   const teamsQuery = useTeamsQuery();
   const seasonsQuery = useSeasonsQuery();
+  const archiveTryout = useArchiveTryoutMutation();
+  const deleteTryout = useDeleteTryoutMutation();
+  // Same action modal as the main dashboard's evaluation cards — Largest
+  // Evaluations is a report, but the rows are the same tryouts, so removing
+  // one here should behave identically rather than inventing a second
+  // "remove an evaluation" flow.
+  const [actionTryout, setActionTryout] = useState<{ id: string; name: string } | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const tryouts = tryoutsQuery.data ?? [];
 
@@ -381,21 +392,45 @@ export default function EnterpriseScreen() {
                   <Text className="font-display font-bold" style={{ color: colors.ink }}>
                     Largest Evaluations
                   </Text>
-                  {metrics.largest.map((t) => (
-                    <Pressable key={t.id} onPress={() => openAssessment(t.id)} className="py-2">
-                      <View className="flex-row justify-between items-center">
-                        <View className="flex-1 pr-2">
-                          <Text className="font-bold" style={{ color: colors.ink }}>
-                            {t.name}
-                          </Text>
-                          <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
-                            {t.sport} · {t.evals?.length ?? 0} evaluations
-                          </Text>
+                  {metrics.largest.map((t) => {
+                    const isBusy = busyId === t.id;
+                    return (
+                      <Pressable
+                        key={t.id}
+                        onPress={() => openAssessment(t.id)}
+                        disabled={isBusy}
+                        className="py-2"
+                        style={isBusy ? { opacity: 0.5 } : undefined}
+                      >
+                        <View className="flex-row justify-between items-center">
+                          <View className="flex-1 pr-2">
+                            <Text className="font-bold" style={{ color: colors.ink }}>
+                              {t.name}
+                            </Text>
+                            <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
+                              {t.sport} · {t.evals?.length ?? 0} evaluations
+                            </Text>
+                          </View>
+                          <View className="flex-row items-center gap-2">
+                            <Badge label={`${t.roster?.length ?? 0}`} variant="brand" />
+                            {isBusy ? (
+                              <ActivityIndicator size="small" color={colors.danger} />
+                            ) : (
+                              <Pressable
+                                onPress={() => setActionTryout({ id: t.id, name: t.name })}
+                                hitSlop={8}
+                                className="p-1"
+                              >
+                                <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                                  <Path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" stroke={colors.danger} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                                </Svg>
+                              </Pressable>
+                            )}
+                          </View>
                         </View>
-                        <Badge label={`${t.roster?.length ?? 0}`} variant="brand" />
-                      </View>
-                    </Pressable>
-                  ))}
+                      </Pressable>
+                    );
+                  })}
                 </Card>
               ) : null}
             </>
@@ -518,6 +553,40 @@ export default function EnterpriseScreen() {
           )}
         </ScrollView>
       ) : null}
+
+      <Modal
+        visible={!!actionTryout}
+        title="Evaluation Actions"
+        onClose={() => setActionTryout(null)}
+      >
+        <View className="gap-3">
+          <Text className="text-base mb-4" style={{ color: colors.inkMuted }}>
+            What would you like to do with "{actionTryout?.name}"?
+          </Text>
+          <Button
+            label="Archive Evaluation"
+            variant="secondary"
+            onPress={() => {
+              if (actionTryout) {
+                setBusyId(actionTryout.id);
+                archiveTryout.mutate(actionTryout.id, { onSettled: () => setBusyId(null) });
+              }
+              setActionTryout(null);
+            }}
+          />
+          <Button
+            label="Delete Permanently"
+            variant="danger"
+            onPress={() => {
+              if (actionTryout) {
+                setBusyId(actionTryout.id);
+                deleteTryout.mutate(actionTryout.id, { onSettled: () => setBusyId(null) });
+              }
+              setActionTryout(null);
+            }}
+          />
+        </View>
+      </Modal>
     </Screen>
   );
 }
