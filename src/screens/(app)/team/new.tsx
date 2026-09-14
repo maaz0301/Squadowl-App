@@ -12,7 +12,7 @@ import { Button, Card, Chip, ErrorState, Header, Input, LoadingState, Screen, Av
 import { canUseFeature, isAtTeamLimit } from '@/data/plans';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import type { DummyTeamOptions } from '@/data/testDataGenerator';
-import { TEAM_MANAGER_ROLES, type Team, type TeamManagerRole } from '@/data/types';
+import type { Team } from '@/data/types';
 import { getDataSource } from '@/data';
 import { queryKeys } from '@/lib/queryClient';
 import {
@@ -55,7 +55,6 @@ export default function NewTeamScreen() {
   const [collectsFees, setCollectsFees] = useState(false);
   const [feeInput, setFeeInput] = useState('');
   const [managerEmail, setManagerEmail] = useState('');
-  const [managerRole, setManagerRole] = useState<TeamManagerRole>('manager');
   const [connecting, setConnecting] = useState(false);
   // Covers the whole submit, not just createTeam: the season, the logo, the
   // branding write and the manager invite all run after it, and the button's
@@ -208,11 +207,12 @@ export default function NewTeamScreen() {
           }
         })(),
         // Coach+/Club only: let the same "creating a team" flow hand it straight
-        // to another coach instead of making them find the new team afterward
-        // just to invite someone to it.
+        // to another manager instead of making them find the new team
+        // afterward just to invite someone to it. Always 'manager' — see
+        // TeamManagersCard for why 'coach' isn't offered as an invite role.
         canManageTeamCoaches && managerEmail.trim()
           ? getDataSource()
-              .inviteTeamManager(team.id, managerEmail.trim(), managerRole)
+              .inviteTeamManager(team.id, managerEmail.trim(), 'manager')
               .catch((e: any) =>
                 showAlert('Invite Error', `The team was created, but inviting ${managerEmail.trim()} failed: ` + e.message),
               )
@@ -321,12 +321,12 @@ export default function NewTeamScreen() {
         {canManageTeamCoaches ? (
           <View className="gap-2">
             <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-              Invite a coach or manager (optional)
+              Invite a manager (optional)
             </Text>
             <Text className="text-xs" style={{ color: colors.inkMuted }}>
-              Give them this team's roster, schedule, and chat as soon as it's created — nothing else on
-              your account. If they don't have a TryoutHQ account yet, one is created and their sign-in
-              details are emailed to them.
+              Give them this team's roster, schedule, and chat as soon as it's created — but not
+              evaluations, and nothing else on your account. If they don't have a TryoutHQ account yet,
+              one is created and their sign-in details are emailed to them.
             </Text>
             <Input
               label="Email address"
@@ -334,18 +334,8 @@ export default function NewTeamScreen() {
               onChangeText={setManagerEmail}
               keyboardType="email-address"
               autoCapitalize="none"
-              placeholder="coach@example.com"
+              placeholder="manager@example.com"
             />
-            <View className="flex-row gap-2">
-              {TEAM_MANAGER_ROLES.map((r) => (
-                <Chip
-                  key={r}
-                  label={r === 'coach' ? 'Coach' : 'Manager'}
-                  active={managerRole === r}
-                  onPress={() => setManagerRole(r)}
-                />
-              ))}
-            </View>
           </View>
         ) : null}
 

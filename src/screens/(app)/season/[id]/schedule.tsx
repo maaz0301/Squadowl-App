@@ -260,13 +260,17 @@ export default function SeasonScheduleScreen() {
               </Text>
             ) : null}
             <View className="flex-row flex-wrap gap-2 mt-2 items-center">
-              <AddToCalendar event={item} teamName={season.teamName} size="sm" />
-              <MapLink location={item.location} label={item.title} size="sm" />
+              {/* No size="sm" on these two: Button's own text stays text-base at every
+                  size (see Button.tsx), so its "sm" already renders taller than these
+                  chips' text-xs "sm". Their default (md) size lands at the same actual
+                  height as Button's "sm" — this is the match, not a mismatch to fix later. */}
+              <AddToCalendar event={item} teamName={season.teamName} />
+              <MapLink location={item.location} label={item.title} />
               <Button label="Send Reminder" variant="secondary" size="sm" onPress={() => sendReminder(item)} loading={reminding === item.id} />
               <Button label="Edit" variant="secondary" size="sm" onPress={() => openEdit(item)} />
               <Button
                 label="Delete"
-                variant="ghost"
+                variant="danger"
                 size="sm"
                 loading={deleteEvent.isPending && deleteEvent.variables === item.id}
                 onPress={() => confirmDeleteEvent(item.id, item.title)}

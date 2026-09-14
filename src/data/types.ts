@@ -401,9 +401,17 @@ export const TeamRosterPlayerSchema = z.object({
    * Also on the athlete, and read here for the same reason as the guardian
    * fields: it was showing "—" for any team player not on an assessment roster.
    * Deliberately the only sensitive field pulled onto the roster read — see the
-   * column list on the team_roster select.
+   * column list on the team_roster select. Omitted by the server entirely
+   * unless `canViewMedical` is true.
    */
   medicalInfo: z.string().optional(),
+  /**
+   * True when the viewer is the account this athlete actually belongs to, or
+   * is the athlete's own linked guardian — computed server-side off the
+   * athlete row, same as PlayerProfile.canViewMedical. False for a delegated
+   * team manager, even though they can see every other field on this row.
+   */
+  canViewMedical: z.boolean(),
   /**
    * The athlete's photo, straight off the athlete row. Read here so the team
    * player card can paint it from the roster the team screen already has —
@@ -888,6 +896,7 @@ export interface PlayerProfile {
   jersey?: string;
   yearOfBirth?: string;
   aboutChild?: string;
+  /** Omitted by the server entirely unless `canViewMedical` is true — never sent to a viewer who shouldn't have it. */
   medicalInfo?: string;
   playerEmail?: string;
   guardianName?: string;
@@ -898,6 +907,14 @@ export interface PlayerProfile {
   teams: { teamId: string; teamName: string }[];
   /** Newest first. */
   assessments: PlayerProfileAssessment[];
+  /**
+   * True when the viewer is the account this athlete actually belongs to
+   * (`athletes.account_id`), or is the athlete's own linked guardian —
+   * computed server-side off the same row, not guessed from role or a
+   * separate teams query. False for a delegated team manager or an assessor
+   * who merely has evaluation access.
+   */
+  canViewMedical: boolean;
 }
 
 // ---- Phase 4: Enterprise & Admin ----

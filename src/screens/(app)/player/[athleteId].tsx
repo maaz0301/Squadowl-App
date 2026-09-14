@@ -26,7 +26,6 @@ export default function PlayerProfileScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const { isGuardian } = usePermissions();
-
   const profileQuery = usePlayerProfileQuery(athleteId);
   const profile = profileQuery.data;
 
@@ -66,12 +65,14 @@ export default function PlayerProfileScreen() {
         <Row label="Guardian Phone" value={profile.guardianPhone} colors={colors} />
       </Card>
 
-      <Card className="mb-4 gap-2">
-        <Text className="font-display font-bold" style={{ color: colors.ink }}>
-          Additional Info
-        </Text>
-        <Row label="Medical" value={profile.medicalInfo} colors={colors} />
-      </Card>
+      {profile.canViewMedical ? (
+        <Card className="mb-4 gap-2">
+          <Text className="font-display font-bold" style={{ color: colors.ink }}>
+            Additional Info
+          </Text>
+          <Row label="Medical" value={profile.medicalInfo} colors={colors} />
+        </Card>
+      ) : null}
 
       {/* Assessment history is scores: the season-over-season averages, the
           trend and every evaluation's overall. It belongs to the coach who ran

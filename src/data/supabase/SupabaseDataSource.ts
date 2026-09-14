@@ -361,7 +361,7 @@ function teamRosterSelect(inner = false): string {
   return (
     'id, team_id, athlete_id, jersey, position, source_tryout_id, created_at, ' +
     `athletes${inner ? '!inner' : ''}(id, first_name, last_name, year_of_birth, avatar_url, ` +
-    'player_email, guardian_email, guardian_name, guardian_phone, guardian_user_id, medical_info)'
+    'player_email, guardian_email, guardian_name, guardian_phone, guardian_user_id, medical_info, account_id)'
   );
 }
 
@@ -1812,7 +1812,7 @@ export class SupabaseDataSource implements DataSource {
    * returning a row, and the whole read ran serially on top of that.
    */
   async listTeamRoster(teamId: string): Promise<TeamRosterPlayer[]> {
-    const { supabase } = await this.ctx();
+    const { supabase, accountId, userId } = await this.ctx();
 
     const [rows, teamRes] = await Promise.all([
       this.fetchAllByIn(
@@ -1858,6 +1858,7 @@ export class SupabaseDataSource implements DataSource {
     return rows.map((r) =>
       this.rowToTeamRosterPlayer(
         r,
+        { accountId, userId },
         feeStatusByAthlete.get(r.athlete_id),
         r.source_tryout_id ? nameBySourceId.get(r.source_tryout_id) : undefined,
       ),
@@ -1890,7 +1891,7 @@ export class SupabaseDataSource implements DataSource {
     teamId: string,
     opts?: { after?: TeamRosterCursor; limit?: number; search?: string },
   ): Promise<{ players: TeamRosterPlayer[]; nextCursor?: TeamRosterCursor }> {
-    const { supabase } = await this.ctx();
+    const { supabase, accountId, userId } = await this.ctx();
     const limit = opts?.limit ?? TEAM_ROSTER_SCREEN_PAGE;
     const search = likeTerm(opts?.search ?? '');
 
@@ -1939,6 +1940,7 @@ export class SupabaseDataSource implements DataSource {
       players: rows.map((r) =>
         this.rowToTeamRosterPlayer(
           r,
+          { accountId, userId },
           feeStatusByAthlete.get(r.athlete_id),
           r.source_tryout_id ? nameBySourceId.get(r.source_tryout_id) : undefined,
         ),
@@ -1977,7 +1979,7 @@ export class SupabaseDataSource implements DataSource {
    * instead of pulling a thousand to render one.
    */
   async getTeamRosterPlayer(teamId: string, athleteId: string): Promise<TeamRosterPlayer | null> {
-    const { supabase } = await this.ctx();
+    const { supabase, accountId, userId } = await this.ctx();
     const { data: row } = await supabase
       .from('team_roster')
       .select(teamRosterSelect())
@@ -2001,6 +2003,7 @@ export class SupabaseDataSource implements DataSource {
 
     return this.rowToTeamRosterPlayer(
       r,
+      { accountId, userId },
       feeStatusByAthlete.get(athleteId),
       r.source_tryout_id ? nameBySourceId.get(r.source_tryout_id as string) : undefined,
     );
@@ -2066,11 +2069,17 @@ export class SupabaseDataSource implements DataSource {
 
   private rowToTeamRosterPlayer(
     r: Row,
+    viewer: { accountId: string; userId: string },
     feeStatus?: TeamRosterPlayer['feeStatus'],
     sourceTryoutName?: string,
   ): TeamRosterPlayer {
     const rawAthlete = r.athletes;
     const a = (Array.isArray(rawAthlete) ? rawAthlete[0] : rawAthlete) ?? {};
+    // Same rule as getPlayerProfile: medical is visible only to the account
+    // this athlete actually belongs to, or to their own linked guardian — not
+    // to a delegated team manager, who legitimately gets every other field on
+    // this row.
+    const canViewMedical = a.account_id === viewer.accountId || a.guardian_user_id === viewer.userId;
     return {
       id: r.id,
       athleteId: r.athlete_id,
@@ -2085,7 +2094,8 @@ export class SupabaseDataSource implements DataSource {
       guardianName: a.guardian_name ?? undefined,
       guardianPhone: a.guardian_phone ?? undefined,
       linkedGuardianId: a.guardian_user_id ?? undefined,
-      medicalInfo: a.medical_info ?? undefined,
+      medicalInfo: canViewMedical ? (a.medical_info ?? undefined) : undefined,
+      canViewMedical,
       sourceTryoutId: r.source_tryout_id ?? undefined,
       sourceTryoutName,
       feeStatus,
@@ -2103,7 +2113,7 @@ export class SupabaseDataSource implements DataSource {
     onProgress?: (done: number, total: number) => void,
   ): Promise<TeamRosterPlayer[]> {
     if (entries.length === 0) return [];
-    const { supabase } = await this.ctx();
+    const { supabase, accountId, userId } = await this.ctx();
     // Collapse duplicate athletes within the batch — upsert rejects a payload
     // that hits the same conflict target twice.
     const byAthlete = new Map<string, (typeof entries)[number]>();
@@ -2145,7 +2155,7 @@ export class SupabaseDataSource implements DataSource {
           // in here once per 20-registration chunk — re-read the entire team
           // roster once per chunk.
           .select(
-            'id, team_id, athlete_id, jersey, position, source_tryout_id, created_at, athletes(id, first_name, last_name, year_of_birth, player_email, guardian_email, guardian_name, guardian_phone, guardian_user_id, medical_info)',
+            'id, team_id, athlete_id, jersey, position, source_tryout_id, created_at, athletes(id, first_name, last_name, year_of_birth, player_email, guardian_email, guardian_name, guardian_phone, guardian_user_id, medical_info, account_id)',
           ),
       ) as Row[];
       done += chunk.length;
@@ -2190,6 +2200,7 @@ export class SupabaseDataSource implements DataSource {
     return upserted.map((r) =>
       this.rowToTeamRosterPlayer(
         r,
+        { accountId, userId },
         undefined,
         r.source_tryout_id ? nameBySourceId.get(r.source_tryout_id) : undefined,
       ),
@@ -7322,14 +7333,22 @@ export class SupabaseDataSource implements DataSource {
   }
 
   async getPlayerProfile(athleteId: string): Promise<PlayerProfile> {
-    const { supabase } = await this.ctx();
+    const { supabase, userId, accountId } = await this.ctx();
 
     const { data: athleteRow } = await supabase
       .from('athletes')
-      .select('id, first_name, last_name, avatar_url, player_email, guardian_name, guardian_email, guardian_phone, default_position, year_of_birth, about, medical_info')
+      .select('id, first_name, last_name, avatar_url, player_email, guardian_name, guardian_email, guardian_phone, guardian_user_id, default_position, year_of_birth, about, medical_info, account_id')
       .eq('id', athleteId)
       .maybeSingle();
     if (!athleteRow) throw new Error('Athlete not found');
+
+    // Medical is sensitive: only the account this athlete actually belongs to
+    // (not a delegated team manager or an invited assessor, who can both
+    // legitimately read everything else here) or the athlete's own guardian
+    // gets it. Computed off the row itself rather than cross-referencing a
+    // separate teams query, which can't tell true ownership from delegation
+    // and goes stale/empty independently of this request.
+    const canViewMedical = athleteRow.account_id === accountId || (!!userId && athleteRow.guardian_user_id === userId);
 
     const { participants, tryoutById, teams, assessments } = await this.fetchAthleteAssessmentContext(
       supabase,
@@ -7367,7 +7386,7 @@ export class SupabaseDataSource implements DataSource {
       jersey: mostRecent?.jersey ?? undefined,
       yearOfBirth: athleteRow.year_of_birth != null ? String(athleteRow.year_of_birth) : undefined,
       aboutChild: athleteRow.about ?? undefined,
-      medicalInfo: athleteRow.medical_info ?? undefined,
+      medicalInfo: canViewMedical ? (athleteRow.medical_info ?? undefined) : undefined,
       playerEmail: athleteRow.player_email ?? undefined,
       guardianName: athleteRow.guardian_name ?? undefined,
       guardianEmail: athleteRow.guardian_email ?? undefined,
@@ -7375,6 +7394,7 @@ export class SupabaseDataSource implements DataSource {
       pastSeasons,
       teams,
       assessments,
+      canViewMedical,
     };
   }
 
@@ -7924,10 +7944,15 @@ export class SupabaseDataSource implements DataSource {
         .from('memberships')
         .select('id, user_id, role, created_at, profiles(email, display_name)')
         .eq('account_id', accountId),
+      // Deleted tryouts excluded — deleteTryout() only sets deleted_at (the row
+      // and its assessors stay for history), so without this an assessor on a
+      // deleted evaluation never left this list no matter how many evaluations
+      // under them got deleted.
       supabase
         .from('tryout_assessors')
         .select('id, user_id, role, joined_at, email, name, tryouts!inner(account_id)')
-        .eq('tryouts.account_id', accountId),
+        .eq('tryouts.account_id', accountId)
+        .is('tryouts.deleted_at', null),
       includeTeamManagers
         ? supabase.from('teams').select('id, name').eq('account_id', accountId)
         : Promise.resolve({ data: [] as Row[] }),

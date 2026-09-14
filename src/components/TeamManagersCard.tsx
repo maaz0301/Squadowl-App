@@ -1,24 +1,29 @@
 import { useState } from 'react';
 import { Alert, Platform, Text, View } from 'react-native';
 
-import { Badge, Button, Card, Chip, Input } from '@/components/ui';
+import { Badge, Button, Card, Input } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
 import {
   useInviteTeamManagerMutation,
   useRemoveTeamManagerMutation,
   useTeamManagersQuery,
 } from '@/features/queries';
-import { TEAM_MANAGER_ROLES, type PlanTier, type TeamManagerRole } from '@/data/types';
+import type { PlanTier, TeamManagerRole } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 /**
- * Delegation: hand this one team to another coach or manager by email. They
- * get the team, its roster, schedule, and chat, its athletes' profiles, and
- * that team's payment records — and nothing else on the account (other teams,
- * org billing, org membership). The account's own staff keep full access
- * either way, which is why this list never affects the inviter's own rights.
- * A delegate can also manage this list themselves, on this team only — they
- * cannot delegate a team they don't already manage.
+ * Delegation: hand this one team to another manager by email. They get the
+ * team, its roster, schedule, and chat, its athletes' profiles, and that
+ * team's payment records — but not its evaluations, and nothing else on the
+ * account (other teams, org billing, org membership). The account's own
+ * staff keep full access either way, which is why this list never affects
+ * the inviter's own rights. A delegate can also manage this list themselves,
+ * on this team only — they cannot delegate a team they don't already manage.
+ *
+ * Every new grant here is role 'manager' — 'coach' is no longer offered as
+ * an invite option (it doubles as evaluation access, which delegation
+ * doesn't include), but ROLE_LABEL keeps 'coach' mapped so a row granted
+ * before this change still displays correctly.
  *
  * Gated on `teamManagers` (Coach+ and up) — mirrors the web app's plans.ts,
  * which sells this starting at Coach+, not just Club/enterprise.
@@ -56,7 +61,6 @@ export function TeamManagersCard({ teamId, teamName, readOnly, tierOverride }: P
   const remove = useRemoveTeamManagerMutation(teamId);
 
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<TeamManagerRole>('manager');
 
   // Matches the showAlert helper the team/assessment screens already use:
   // RN's Alert is a no-op on web, where this app also runs.
@@ -69,7 +73,11 @@ export function TeamManagersCard({ teamId, teamName, readOnly, tierOverride }: P
     const trimmed = email.trim();
     if (!trimmed) return;
     try {
-      await invite.mutateAsync({ email: trimmed, role });
+      // 'coach' is no longer offered here — only the account's own staff
+      // get evaluation access to a delegated team, so every new delegate
+      // this card grants is a 'manager'. Existing 'coach'-labeled rows from
+      // before this change still display and work as before.
+      await invite.mutateAsync({ email: trimmed, role: 'manager' });
       setEmail('');
       showAlert(
         'Access granted',
@@ -106,8 +114,8 @@ export function TeamManagersCard({ teamId, teamName, readOnly, tierOverride }: P
             Team Managers
           </Text>
           <Text className="text-xs mt-1" style={{ color: colors.inkMuted }}>
-            Give another coach or manager access to run {teamName}. They'll see this team's roster,
-            schedule, and chat — but nothing else on your account. You keep full access.
+            Give another manager access to run {teamName}. They'll see this team's roster, schedule,
+            and chat — but not evaluations, and nothing else on your account. You keep full access.
           </Text>
         </View>
 
@@ -160,13 +168,8 @@ export function TeamManagersCard({ teamId, teamName, readOnly, tierOverride }: P
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
-              placeholder="coach@example.com"
+              placeholder="manager@example.com"
             />
-            <View className="flex-row gap-2">
-              {TEAM_MANAGER_ROLES.map((r) => (
-                <Chip key={r} label={ROLE_LABEL[r]} active={role === r} onPress={() => setRole(r)} />
-              ))}
-            </View>
             <Button
               label="Grant Access"
               size="sm"

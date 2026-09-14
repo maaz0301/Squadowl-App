@@ -11,7 +11,7 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { MapLink, MapLocationHint } from '@/components/MapLink';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
-import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
+import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation, useTeamManagersQuery } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit } from '@/data/plans';
@@ -94,6 +94,12 @@ export default function TeamDetailScreen() {
   const uploadLogo = useUploadTeamLogoMutation();
   const user = useUser();
   const { canManageTeam } = usePermissions();
+  // Only fetch team-manager rows when this team is reached via delegation
+  // (CLUB mode) — needed to tell a 'coach'-labeled delegate from a
+  // 'manager'-labeled one for canViewEvaluations below. Skipped for a team
+  // the account actually owns, where canManageTeam alone decides it.
+  const teamManagedForPerm = teamsQuery.data?.find((t) => t.id === id)?.managed;
+  const { data: teamManagers = [] } = useTeamManagersQuery(teamManagedForPerm ? id : undefined);
   const [editing, setEditing] = useState(false);
   const [brandColor, setBrandColor] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -377,6 +383,16 @@ export default function TeamDetailScreen() {
   // still see the Edit button, fill out the form, and hit Save only to be
   // rejected with a raw "new row violates row-level security policy" error.
   const canEditTeam = !!team.managed || canManageTeam;
+
+  // Evaluations are coach-only. For the account's own team that's
+  // canManageTeam; for a team reached via delegation it's specifically the
+  // 'coach'-labeled delegate — a 'manager'-labeled delegate runs the
+  // roster/schedule/chat but doesn't also get evaluation results, per
+  // TeamManagersCard's own description of what a delegate is handed.
+  const myManagerRole = teamManagers.find(
+    (m) => (user?.id && m.userId === user.id) || (user?.email && m.email.toLowerCase() === user.email.toLowerCase()),
+  )?.role;
+  const canViewEvaluations = team.managed ? myManagerRole === 'coach' : canManageTeam;
 
   // Every surface on this screen — background, header ink, tabs, cards — is
   // derived from the team's brand colour so the whole hub reads as the team's,
@@ -850,7 +866,7 @@ export default function TeamDetailScreen() {
         tabs={[
           { key: 'schedule', label: 'Schedule', badge: allTeamEvents.length || undefined },
           { key: 'players', label: 'Players', badge: playerCount },
-          { key: 'assessments', label: 'Evaluations', badge: linkedTryouts.length },
+          ...(canViewEvaluations ? [{ key: 'assessments', label: 'Evaluations', badge: linkedTryouts.length }] : []),
           { key: 'settings', label: 'Settings' },
         ]}
         activeKey={tab}
@@ -1024,7 +1040,7 @@ export default function TeamDetailScreen() {
             )}
           />
         </View>
-      ) : tab === 'assessments' ? (
+      ) : tab === 'assessments' && canViewEvaluations ? (
         // Same rationale as the Players tab: an association could have many linked
         // assessments, so this scrolls as a virtualized FlatList with the
         // header/actions fixed above it rather than scrolling away.
@@ -1141,9 +1157,6 @@ export default function TeamDetailScreen() {
                     <View className="flex-row justify-between items-start">
                       <View className="flex-1 pr-2">
                         <Text className="font-bold text-base" style={{ color: colors.ink }}>
-                          {ev.title}
-                        </Text>
-                        <Text className="text-sm mt-0.5" style={{ color: colors.inkMuted }}>
                           {ev.date}
                           {ev.startTime ? ` · ${ev.startTime}${ev.endTime ? `–${ev.endTime}` : ''}` : ''}
                           {ev.location ? (
@@ -1152,6 +1165,9 @@ export default function TeamDetailScreen() {
                               <MapLink location={ev.location} label={ev.title} variant="inline" />
                             </>
                           ) : null}
+                        </Text>
+                        <Text className="text-sm mt-0.5" style={{ color: colors.inkMuted }}>
+                          {ev.title}
                         </Text>
                       </View>
                       <Badge label={ev.type} variant={ev.type === 'Game' ? 'brand' : 'info'} />
@@ -1281,11 +1297,16 @@ export default function TeamDetailScreen() {
                     ) : null}
 
                     <View className="flex-row flex-wrap gap-2 items-center">
-                      <MapLink location={ev.location} label={ev.title} size="sm" />
+                      {/* No size="sm" here: Button's own text stays text-base at every
+                          size (see Button.tsx), so its "sm" already renders taller than
+                          MapLink's text-xs "sm" chip. MapLink's default (md) size lands
+                          at the same actual height as Button's "sm" — this is the match,
+                          not a mismatch to fix later. */}
+                      <MapLink location={ev.location} label={ev.title} />
                       <Button label="Edit" variant="secondary" size="sm" onPress={() => openEditEventModal(ev)} />
                       <Button
                         label="Delete"
-                        variant="ghost"
+                        variant="danger"
                         size="sm"
                         loading={deleteEvent.isPending && deleteEvent.variables === ev.id}
                         onPress={() => confirmDeleteEvent(ev.id, ev.title)}

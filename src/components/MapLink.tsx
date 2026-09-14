@@ -105,7 +105,11 @@ export function MapLink({
       onPress={open}
       accessibilityRole="link"
       accessibilityLabel={a11yLabel}
-      className={`rounded-lg border ${size === 'sm' ? 'px-2.5 py-1.5' : 'px-3.5 py-2.5'}`}
+      // min-h/justify-center at sm matches Button's own sm sizing (see
+      // Button.tsx's sizeStyles) — without it, the 📍 emoji's taller line
+      // height (a platform quirk, worst on Android) makes this chip render
+      // visibly taller than a plain-text Button sitting right next to it.
+      className={`rounded-lg border justify-center ${size === 'sm' ? 'px-2.5 py-1.5 min-h-[36px]' : 'px-3.5 py-2.5'}`}
       style={{ backgroundColor: colors.tile, borderColor: colors.border }}
     >
       <Text

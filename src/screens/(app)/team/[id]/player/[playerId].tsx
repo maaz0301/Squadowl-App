@@ -144,10 +144,12 @@ export default function TeamPlayerScreen() {
           <Row label="Phone" value={rosterEntry?.guardianPhone ?? fullPlayer?.guardianPhone} colors={colors} />
         </Card>
 
-        <Card className="mb-4 gap-2">
-          <Text className="font-display font-bold" style={{ color: colors.ink }}>Additional Info</Text>
-          <Row label="Medical" value={rosterEntry?.medicalInfo ?? fullPlayer?.medicalInfo} colors={colors} />
-        </Card>
+        {rosterEntry?.canViewMedical ? (
+          <Card className="mb-4 gap-2">
+            <Text className="font-display font-bold" style={{ color: colors.ink }}>Additional Info</Text>
+            <Row label="Medical" value={rosterEntry.medicalInfo} colors={colors} />
+          </Card>
+        ) : null}
 
         {canManageTeam ? (
           <View className="mb-4 gap-2">
