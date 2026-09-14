@@ -572,9 +572,9 @@ export const AddPlayerFormSchema = z.object({
     .refine(isValidOptionalEmail, { message: 'Please enter a valid email address' }),
   guardianName: z.string().optional(),
   guardianEmail: z
-    .string({ message: 'Guardian email is required' })
-    .min(1, 'Guardian email is required')
-    .email('Please enter a valid email address'),
+    .string()
+    .optional()
+    .refine(isValidOptionalEmail, { message: 'Please enter a valid email address' }),
   guardianPhone: z.string().optional().refine(isValidGuardianPhone, { message: 'Phone number must be between 10 and 15 digits' }),
   currentTeam: z.string().optional(),
   currentLevel: z.string().optional(),

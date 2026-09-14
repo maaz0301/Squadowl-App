@@ -263,7 +263,7 @@ export function AddPlayerForm({ loading, defaultValues, sport, onSubmit, submitL
         control={control}
         name="guardianEmail"
         render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
-          <Input label="Guardian Email *" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} autoCapitalize="none" keyboardType="email-address" />
+          <Input label="Guardian Email" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} autoCapitalize="none" keyboardType="email-address" />
         )}
       />
       <Controller

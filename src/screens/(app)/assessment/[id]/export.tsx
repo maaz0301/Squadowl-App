@@ -87,6 +87,11 @@ export default function ExportScreen() {
         <Text style={{ color: colors.inkMuted }}>
           {tryout.roster.length} players · {tryout.evals.length} evaluations
         </Text>
+        <Button
+          label="View Results Instantly"
+          variant="secondary"
+          onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentResults', params: { id } })}
+        />
       </Card>
 
       {exportsAllowed ? (
