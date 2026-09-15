@@ -21,7 +21,7 @@ import {
   Screen,
 } from '@/components/ui';
 import { canUseFeature, isAtPlayerLimit } from '@/data/plans';
-import { isGoaliePosition } from '@/data/rubrics';
+import { isInPositionGroup, rosterPositionGroups } from '@/data/positions';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import {
@@ -30,6 +30,7 @@ import {
   useDeletePlayerMutation,
   useGenerateTestDataMutation,
   useImportTryoutPlayersMutation,
+  useSessionProgressQuery,
   useTryoutQuery,
   useTryoutRosterInvitesMutation,
   useUploadPlayerPhotoMutation,
@@ -106,48 +107,74 @@ export default function RosterScreen() {
     return counts;
   }, [tryoutQuery.data]);
 
+  // An assessor reads back none of the assessment's evaluations — scoring is
+  // blind, so get_evaluations_for_tryouts() only returns rows to account staff
+  // — and off `evals` alone every player they've just scored still counts as
+  // unscored. For them "scored" comes from the session-progress RPC instead:
+  // which players have a session saved, and nothing about the scores.
+  const sessionProgressQuery = useSessionProgressQuery(id, isAssessorOnly);
+  const scoredIds = useMemo(() => {
+    const ids = new Set(evalCountByPlayerId.keys());
+    if (isAssessorOnly) {
+      for (const [playerId, maxSession] of Object.entries(sessionProgressQuery.data ?? {})) {
+        if (maxSession > 0) ids.add(playerId);
+      }
+    }
+    return ids;
+  }, [evalCountByPlayerId, isAssessorOnly, sessionProgressQuery.data]);
+
+  const positionGroups = useMemo(
+    () => (tryoutQuery.data ? rosterPositionGroups(tryoutQuery.data.sport, tryoutQuery.data.roster) : []),
+    [tryoutQuery.data],
+  );
+  // The filter is remembered across assessments, so a hockey one can leave
+  // "Goalies" selected on a basketball roster that has no such category.
+  const activeFilter: RosterFilter =
+    rosterFilter === 'all' ||
+    rosterFilter === 'scored' ||
+    rosterFilter === 'unscored' ||
+    positionGroups.some((g) => `pos:${g.key}` === rosterFilter)
+      ? rosterFilter
+      : 'all';
+
   const filteredRoster = useMemo(() => {
     if (!tryoutQuery.data) return [];
     const { roster } = tryoutQuery.data;
     let result;
-    switch (rosterFilter) {
+    switch (activeFilter) {
       case 'scored':
-        result = roster.filter((p) => evalCountByPlayerId.has(p.id));
+        result = roster.filter((p) => scoredIds.has(p.id));
         break;
       case 'unscored':
-        result = roster.filter((p) => !evalCountByPlayerId.has(p.id));
+        result = roster.filter((p) => !scoredIds.has(p.id));
         break;
-      case 'goalies':
-        result = roster.filter((p) => isGoaliePosition(p.pos));
-        break;
-      case 'skaters':
-        result = roster.filter((p) => !isGoaliePosition(p.pos));
-        break;
-      default:
+      case 'all':
         result = roster;
+        break;
+      default: {
+        const group = positionGroups.find((g) => `pos:${g.key}` === activeFilter);
+        result = group ? roster.filter((p) => isInPositionGroup(group, p.pos)) : roster;
+      }
     }
     const search = playerSearch.trim().toLowerCase();
     if (search) {
       result = result.filter((p) => `${p.first} ${p.last}`.toLowerCase().includes(search));
     }
     return result;
-  }, [tryoutQuery.data, rosterFilter, playerSearch, evalCountByPlayerId]);
+  }, [tryoutQuery.data, activeFilter, playerSearch, scoredIds, positionGroups]);
 
   // Every filter's count, whichever one is showing: a chip that says how many
   // players it would leave answers "how much is left to score?" without the
   // coach having to select it and read the list length.
-  const filterCounts = useMemo((): Record<RosterFilter, number> => {
+  const filterCounts = useMemo((): Record<string, number> => {
     const roster = tryoutQuery.data?.roster ?? [];
-    const scored = roster.filter((p) => evalCountByPlayerId.has(p.id)).length;
-    const goalies = roster.filter((p) => isGoaliePosition(p.pos)).length;
-    return {
-      all: roster.length,
-      scored,
-      unscored: roster.length - scored,
-      goalies,
-      skaters: roster.length - goalies,
-    };
-  }, [tryoutQuery.data, evalCountByPlayerId]);
+    const scored = roster.filter((p) => scoredIds.has(p.id)).length;
+    const counts: Record<string, number> = { all: roster.length, scored, unscored: roster.length - scored };
+    for (const g of positionGroups) {
+      counts[`pos:${g.key}`] = roster.filter((p) => isInPositionGroup(g, p.pos)).length;
+    }
+    return counts;
+  }, [tryoutQuery.data, scoredIds, positionGroups]);
 
   if (tryoutQuery.isLoading) return <LoadingState message="Loading roster..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
@@ -213,7 +240,7 @@ export default function RosterScreen() {
   };
 
   const hasPlayers = tryout.roster.length > 0;
-  const scoredCount = evalCountByPlayerId.size;
+  const scoredCount = filterCounts.scored;
   // A background refetch keeps rendering the *previous* cached tryout, which
   // right after a bulk add (dummy data, or QR registrations placed onto the
   // roster) is still the empty one — `isLoading` is false the whole time
@@ -316,7 +343,12 @@ export default function RosterScreen() {
 
           <RosterSearch value={playerSearch} onChange={setPlayerSearch} />
 
-          <RosterFilters active={rosterFilter} counts={filterCounts} onSelect={setRosterFilter} />
+          <RosterFilters
+            active={activeFilter}
+            counts={filterCounts}
+            positionGroups={positionGroups}
+            onSelect={setRosterFilter}
+          />
         </View>
       ) : null}
 

@@ -358,8 +358,6 @@ export default function DashboardScreen() {
         <EmptyState
           title="No teams created"
           message="Create a team to group rosters, schedule practices and games, and manage evaluations."
-          actionLabel="Create Team"
-          onAction={() => navigation.navigate('NewTeam')}
         />
       );
     }
@@ -367,8 +365,6 @@ export default function DashboardScreen() {
       <EmptyState
         title="No evaluations yet"
         message="Create your first tryout or evaluation to begin scoring players."
-        actionLabel="Create Evaluation"
-        onAction={() => navigation.navigate('NewAssessment')}
       />
     );
   };

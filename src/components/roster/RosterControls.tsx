@@ -2,16 +2,15 @@ import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
 import { Button } from '@/components/ui';
 import { useThemeColors } from '@/theme/ThemeProvider';
+import type { PositionGroup } from '@/data/positions';
 import type { RosterFilter } from '@/state/sessionStore';
 import { CheckSquareIcon, ChevronIcon, ClearIcon, PlayIcon, PlusIcon, SearchIcon, ToolsIcon, UploadIcon } from './icons';
 
-/** The filters, in the order they're offered, with the label each one shows. */
+/** The fixed filters, in the order they're offered; the sport's position categories follow them. */
 const FILTERS: { key: RosterFilter; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'scored', label: 'Scored' },
   { key: 'unscored', label: 'Unscored' },
-  { key: 'skaters', label: 'Skaters' },
-  { key: 'goalies', label: 'Goalies' },
 ];
 
 /**
@@ -194,13 +193,20 @@ export function RosterSearch({ value, onChange }: { value: string; onChange: (v:
 export function RosterFilters({
   active,
   counts,
+  positionGroups,
   onSelect,
 }: {
   active: RosterFilter;
-  counts: Record<RosterFilter, number>;
+  counts: Record<string, number>;
+  /** The sport's position categories, one chip each (see rosterPositionGroups). */
+  positionGroups: PositionGroup[];
   onSelect: (f: RosterFilter) => void;
 }) {
   const colors = useThemeColors();
+  const filters: { key: RosterFilter; label: string }[] = [
+    ...FILTERS,
+    ...positionGroups.map((g) => ({ key: `pos:${g.key}` as const, label: g.label })),
+  ];
   return (
     <ScrollView
       horizontal
@@ -208,7 +214,7 @@ export function RosterFilters({
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{ gap: 10, paddingLeft: 2, paddingRight: 8, paddingVertical: 2 }}
     >
-      {FILTERS.map(({ key, label }) => {
+      {filters.map(({ key, label }) => {
         const isActive = active === key;
         return (
           <Pressable
@@ -236,7 +242,7 @@ export function RosterFilters({
                 className="text-xs font-bold"
                 style={{ color: isActive ? colors.primary : colors.inkFaint }}
               >
-                {counts[key]}
+                {counts[key] ?? 0}
               </Text>
             </View>
           </Pressable>

@@ -9041,7 +9041,7 @@ export class SupabaseDataSource implements DataSource {
     const { data: rpcData, error: rpcError } = await supabase.rpc('get_guardian_rosters');
 
     if (!rpcError) {
-      return ((rpcData as any[]) ?? []).map((row) => this.mapGuardianRosterRow(row));
+      return this.filterActiveGuardianRosters((rpcData as any[]) ?? []);
     }
 
     // Environments that haven't run the migration yet fall back to the old embed.
@@ -9068,7 +9068,8 @@ export class SupabaseDataSource implements DataSource {
         tryout_participants(
           id,
           tryout_id,
-          tryouts(id, name, sport, tryout_date, start_time, end_time, location)
+          removed_at,
+          tryouts(id, name, sport, tryout_date, start_time, end_time, location, deleted_at)
         ),
         season_roster(
           id,
@@ -9084,6 +9085,7 @@ export class SupabaseDataSource implements DataSource {
             team_name,
             sport,
             team_id,
+            archived,
             teams(collects_fees, registration_fee_cents),
             season_events(
               id,
@@ -9116,7 +9118,21 @@ export class SupabaseDataSource implements DataSource {
       return [];
     }
 
-    return ((data as any[]) ?? []).map((row) => this.mapGuardianRosterRow(row));
+    return this.filterActiveGuardianRosters((data as any[]) ?? []);
+  }
+
+  /**
+   * Now that get_guardian_rosters()/the fallback query both drop soft-deleted
+   * tryouts and archived seasons (20260915130000), an athlete whose only team
+   * or evaluation was deleted comes back with empty tryouts/seasons arrays
+   * instead of just vanishing — the guardian_user_id/guardian_email link
+   * itself is never removed. Drop the card entirely once there's nothing
+   * active left to show for it.
+   */
+  private filterActiveGuardianRosters(rows: any[]): import('../types').GuardianRosterAthlete[] {
+    return rows
+      .map((row) => this.mapGuardianRosterRow(row))
+      .filter((athlete) => athlete.tryouts.length > 0 || athlete.seasons.length > 0);
   }
 
   /** Shared by the get_guardian_rosters() RPC and the nested-embed fallback — both
@@ -9133,6 +9149,16 @@ export class SupabaseDataSource implements DataSource {
     const tryoutsList = (row.tryout_participants || [])
       .map((tp: any) => {
         if (!tp.tryouts) return null;
+        // Soft-deleted (tryouts.deleted_at) — only present on the fallback
+        // query's row shape; get_guardian_rosters() already excludes these
+        // server-side (20260915130000), so this is a no-op for that path.
+        if (tp.tryouts.deleted_at) return null;
+        // This one player removed from the evaluation (tryout_participants.removed_at
+        // — the same soft delete deletePlayer() uses, see assembleTryouts' identical
+        // filter) rather than the whole tryout. Only present on the fallback query's
+        // row shape; get_guardian_rosters() already excludes these server-side
+        // (20260915160000), so this is a no-op for that path.
+        if (tp.removed_at) return null;
 
         return {
           id: tp.tryouts.id,
@@ -9152,6 +9178,11 @@ export class SupabaseDataSource implements DataSource {
     const seasonsList = (row.season_roster || [])
       .map((sr: any) => {
         if (!sr.seasons) return null;
+        // Archived (team deleted, or the season itself deleted/archived) — only
+        // present on the fallback query's row shape; get_guardian_rosters()
+        // already excludes these server-side (20260915130000), so this is a
+        // no-op for that path.
+        if (sr.seasons.archived) return null;
 
         const assignedEventIds = new Set<string>(
           (sr.event_availability || []).map((ea: any) => ea.season_event_id)
