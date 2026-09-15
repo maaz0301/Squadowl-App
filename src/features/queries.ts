@@ -1451,10 +1451,22 @@ export function useUpdateSeasonEventMutation(seasonId: string) {
       eventId: string;
       updates: Partial<import('@/data/types').SeasonEvent>;
     }) => getDataSource().updateSeasonEvent(seasonId, eventId, updates),
-    // void: don't make mutateAsync (and the caller's spinner) wait on the
-    // season refetch — it's the most expensive query in the app. See the
-    // matching comment on the web app's queries.ts for the full rationale.
-    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.season(seasonId) }),
+    // Splices the server-returned event straight into the cached season, same
+    // as addEventToSeasonCache above, so the schedule shows the edit the
+    // moment save returns instead of waiting on the season refetch below —
+    // the most expensive query in the app.
+    onSuccess: (event) => {
+      qc.setQueryData<import('@/data/types').Season>(queryKeys.season(seasonId), (prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          events: prev.events
+            .map((e) => (e.id === event.id ? { ...e, ...event } : e))
+            .sort((a, b) => a.date.localeCompare(b.date)),
+        };
+      });
+      void qc.invalidateQueries({ queryKey: queryKeys.season(seasonId) });
+    },
   });
 }
 
