@@ -41,13 +41,14 @@ import { ASSESSOR_INVITE_URL } from '@/config/app';
  * left the coach unsure whether it meant the email hadn't gone out or the
  * assessor hadn't answered yet.
  */
-const INVITE_STATUS: Record<'pending' | 'accepted' | 'declined', {
+const INVITE_STATUS: Record<'pending' | 'accepted' | 'declined' | 'completed', {
   label: string;
   variant: 'warning' | 'success' | 'danger';
 }> = {
   pending: { label: 'Invite pending', variant: 'warning' },
   accepted: { label: 'Invite accepted', variant: 'success' },
   declined: { label: 'Invite declined', variant: 'danger' },
+  completed: { label: 'Assessing complete', variant: 'success' },
 };
 
 export default function SettingsScreen() {

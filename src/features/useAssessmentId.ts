@@ -43,3 +43,19 @@ export function useAssessorMode(): boolean {
       false,
   );
 }
+
+/**
+ * Whether this viewer gets the assessor's cut of the assessment in front of
+ * them, rather than the owner's coach controls.
+ *
+ * `useAssessorMode()` is a navigation-param hint — right for however this
+ * screen was reached, but a delegated team manager who is also an assessor
+ * on their own team's assessment would get pinned to the assessor view for
+ * the rest of the session on that hint alone. `viewerIsOwner`, computed
+ * server-side per tryout from account/team ownership or lead-assessor
+ * status, is the real answer and wins the moment it has loaded.
+ */
+export function useIsAssessorOnly(viewerIsOwner: boolean | undefined): boolean {
+  const param = useAssessorMode();
+  return viewerIsOwner === undefined ? param : !viewerIsOwner;
+}

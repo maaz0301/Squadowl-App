@@ -1192,6 +1192,10 @@ export class SupabaseDataSource implements DataSource {
 
   private async assembleTryouts(tryoutRows: Row[]): Promise<Tryout[]> {
     if (tryoutRows.length === 0) return [];
+    // Who is asking — every assembled tryout carries `viewerIsOwner`, and the
+    // screens read it to decide whether this caller gets the full coach
+    // controls or only the scoring flow.
+    const { userId, accountId } = await this.ctx();
     const ids = tryoutRows.map((t) => t.id);
 
     const [pRowsAll, aRows, eRows, rRows] = await Promise.all([
@@ -1249,6 +1253,10 @@ export class SupabaseDataSource implements DataSource {
       // ever queried by the database.
       const { teamBuilder, friendPackages, ...aiAssessments } = ai;
       const roster = (pByT[t.id] ?? []).map((p) => this.rowToPlayer(p, assessorNameById));
+      // The lead assessor is the coach who ran the assessment (createTryout
+      // seeds their own row as 'lead'), so they count as an owner even when
+      // the row sits on another account — a club's, say.
+      const myAssessorRole = (aByT[t.id] ?? []).find((a) => a.user_id === userId)?.role;
       return {
         id: t.id,
         name: t.name,
@@ -1276,6 +1284,7 @@ export class SupabaseDataSource implements DataSource {
           : undefined,
         archived: t.archived,
         registrationFeeCents: t.registration_fee_cents ?? undefined,
+        viewerIsOwner: t.account_id === accountId || myAssessorRole === 'lead',
         teamBuilder,
         friendPackages,
         aiAssessments: Object.keys(aiAssessments).length ? aiAssessments : undefined,
@@ -2855,7 +2864,7 @@ export class SupabaseDataSource implements DataSource {
   private async fetchAssignedTryoutRows(): Promise<Row[]> {
     const { supabase, userId, accountId } = await this.ctx();
     const links = unwrap(
-      await supabase.from('tryout_assessors').select('tryout_id').eq('user_id', userId).neq('status', 'declined'),
+      await supabase.from('tryout_assessors').select('tryout_id').eq('user_id', userId).not('status', 'in', '(declined,completed)'),
     ) as Row[];
     const ids = [...new Set(links.map((l) => l.tryout_id))];
     if (!ids.length) return [];
@@ -2893,6 +2902,17 @@ export class SupabaseDataSource implements DataSource {
     const { supabase } = await this.ctx();
     const { error } = await supabase.rpc('set_assessor_status', { p_tryout_id: tryoutId, p_status: 'declined' });
     if (error) throw new Error(error.message);
+  }
+
+  async completeAssignedTryout(tryoutId: string): Promise<void> {
+    const { supabase } = await this.ctx();
+    const { error } = await supabase.rpc('set_assessor_status', { p_tryout_id: tryoutId, p_status: 'completed' });
+    if (error) {
+      if (/Invalid assessor status/i.test(error.message)) {
+        throw new Error('Completing an evaluation is not available yet. Please try again after the next update.');
+      }
+      throw new Error(error.message);
+    }
   }
 
   async createTryout(form: CreateAssessmentForm): Promise<Tryout> {
@@ -3029,7 +3049,7 @@ export class SupabaseDataSource implements DataSource {
   }
 
   async updateTryout(id: string, updates: Partial<Tryout>): Promise<Tryout> {
-    const { supabase } = await this.ctx();
+    const { supabase, userId, accountId } = await this.ctx();
     const patch: Row = {};
     if (updates.name !== undefined) patch.name = updates.name;
     if (updates.sport !== undefined) patch.sport = updates.sport;
@@ -3115,6 +3135,8 @@ export class SupabaseDataSource implements DataSource {
         : undefined,
       archived: row.archived,
       registrationFeeCents: row.registration_fee_cents ?? undefined,
+      viewerIsOwner:
+        row.account_id === accountId || assessorRows.find((a) => a.user_id === userId)?.role === 'lead',
       teamBuilder,
       friendPackages,
       aiAssessments: Object.keys(aiAssessments).length ? aiAssessments : undefined,

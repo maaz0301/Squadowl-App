@@ -303,6 +303,18 @@ export function useRejectAssignmentMutation() {
   });
 }
 
+export function useCompleteAssignmentMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (tryoutId: string) => getDataSource().completeAssignedTryout(tryoutId),
+    onSuccess: (_data, tryoutId) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.assignedTryouts });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tryoutSummaries(false) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
+    },
+  });
+}
+
 // ---- Tryouts ----
 /**
  * The **full** tryouts, rosters/evaluations/registrations and all. Only for

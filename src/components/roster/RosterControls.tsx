@@ -28,7 +28,6 @@ export function ScoreCta({
   onPress: () => void;
 }) {
   const colors = useThemeColors();
-  const remaining = total - scored;
   const pct = total === 0 ? 0 : Math.round((scored / total) * 100);
   return (
     <Pressable
@@ -45,9 +44,6 @@ export function ScoreCta({
       <View className="flex-1">
         <Text className="font-display text-lg font-bold" style={{ color: '#fff' }}>
           Score Players
-        </Text>
-        <Text className="mt-0.5 text-sm" style={{ color: 'rgba(255,255,255,0.85)' }}>
-          {remaining === 0 ? 'Everyone has been scored' : `${remaining} still to score`}
         </Text>
       </View>
       <ChevronIcon color="#fff" size={20} />
@@ -68,11 +64,16 @@ export function RosterActions({
   onImport,
   onSelect,
   onTools,
+  onCompleteAssessing,
+  completingAssessing,
 }: {
   onAdd: () => void;
   onImport: () => void;
   onSelect: () => void;
   onTools: () => void;
+  /** Assessors only — see useCompleteAssessing. Omitted entirely for anyone else. */
+  onCompleteAssessing?: () => void;
+  completingAssessing?: boolean;
 }) {
   const colors = useThemeColors();
   const actions = [
@@ -85,27 +86,37 @@ export function RosterActions({
   // A 2x2 grid, not one row of four — four labels at the original single-row
   // size don't fit a phone-width screen without truncating.
   return (
-    <View className="flex-row flex-wrap justify-between gap-2">
-      {actions.map(({ label, icon: Icon, onPress }) => (
-        <Pressable
-          key={label}
-          onPress={onPress}
-          accessibilityRole="button"
-          accessibilityLabel={label}
-          className="min-h-[56px] w-[48.5%] flex-row items-center justify-center gap-2.5 rounded-2xl border px-2 py-4 active:opacity-70"
-          style={{ backgroundColor: colors.tile, borderColor: colors.border }}
-        >
-          <View
-            className="h-9 w-9 items-center justify-center rounded-full"
-            style={{ backgroundColor: 'rgba(255,107,43,0.14)' }}
+    <View className="gap-2">
+      <View className="flex-row flex-wrap justify-between gap-2">
+        {actions.map(({ label, icon: Icon, onPress }) => (
+          <Pressable
+            key={label}
+            onPress={onPress}
+            accessibilityRole="button"
+            accessibilityLabel={label}
+            className="min-h-[56px] w-[48.5%] flex-row items-center justify-center gap-2.5 rounded-2xl border px-2 py-4 active:opacity-70"
+            style={{ backgroundColor: colors.tile, borderColor: colors.border }}
           >
-            <Icon color={colors.primary} size={18} />
-          </View>
-          <Text className="text-lg font-bold" style={{ color: colors.ink }}>
-            {label}
-          </Text>
-        </Pressable>
-      ))}
+            <View
+              className="h-9 w-9 items-center justify-center rounded-full"
+              style={{ backgroundColor: 'rgba(255,107,43,0.14)' }}
+            >
+              <Icon color={colors.primary} size={18} />
+            </View>
+            <Text className="text-lg font-bold" style={{ color: colors.ink }}>
+              {label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      {onCompleteAssessing ? (
+        <Button
+          label="Complete Assessing"
+          variant="secondary"
+          loading={completingAssessing}
+          onPress={onCompleteAssessing}
+        />
+      ) : null}
     </View>
   );
 }

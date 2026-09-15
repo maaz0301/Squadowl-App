@@ -38,6 +38,7 @@ import {
 } from '@/features/queries';
 import { useIsMutating } from '@tanstack/react-query';
 import { useAssessmentId, useAssessorMode } from '@/features/useAssessmentId';
+import { useCompleteAssessing } from '@/features/useCompleteAssessing';
 import { useUser } from '@/state/authStore';
 import { useSessionStore, type RosterFilter } from '@/state/sessionStore';
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -176,6 +177,8 @@ export default function RosterScreen() {
     return counts;
   }, [tryoutQuery.data, scoredIds, positionGroups]);
 
+  const { canComplete, completing, complete } = useCompleteAssessing(tryoutQuery.data);
+
   if (tryoutQuery.isLoading) return <LoadingState message="Loading roster..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
     return <ErrorState message="Could not load roster." onRetry={() => tryoutQuery.refetch()} />;
@@ -300,6 +303,8 @@ export default function RosterScreen() {
               onImport={() => setShowImport(true)}
               onSelect={() => setSelectMode(true)}
               onTools={() => setShowTools(true)}
+              onCompleteAssessing={canComplete ? () => complete() : undefined}
+              completingAssessing={completing}
             />
           )}
 

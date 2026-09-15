@@ -106,6 +106,8 @@ export interface DataSource {
   listAssignedTryoutSummaries(): Promise<TryoutSummary[]>;
   acceptAssignedTryout(tryoutId: string): Promise<void>;
   rejectAssignedTryout(tryoutId: string): Promise<void>;
+  /** Marks the caller's own assessor row 'completed' — off their hub, scores untouched. */
+  completeAssignedTryout(tryoutId: string): Promise<void>;
   getTryout(id: string): Promise<Tryout | null>;
   createTryout(form: CreateAssessmentForm): Promise<Tryout>;
   updateTryout(id: string, updates: Partial<Tryout>): Promise<Tryout>;

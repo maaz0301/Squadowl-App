@@ -67,7 +67,8 @@ export const AssessorSchema = z.object({
   name: z.string(),
   email: z.string().email().optional().or(z.literal('')),
   role: z.enum(['lead', 'assistant', 'assessor']).default('assessor'),
-  status: z.enum(['pending', 'accepted', 'declined']).optional().default('pending'),
+  /** `completed`: the assessor hit Complete Assessing — off their hub, data untouched. */
+  status: z.enum(['pending', 'accepted', 'declined', 'completed']).optional().default('pending'),
   userId: z.string().optional().nullable(),
 });
 
@@ -273,6 +274,14 @@ export const TryoutSchema = z.object({
   archived: z.boolean().default(false),
   /** Cents charged per registration through Stripe Connect. Unset/0 = free to register. */
   registrationFeeCents: z.number().optional(),
+  /**
+   * Whether the signed-in user owns this assessment: their account created it,
+   * or they are its lead assessor. Everyone else who can reach it — an invited
+   * assessor, a helper working someone else's tryout — may score players and
+   * edit the roster, nothing more. Computed per read by the datasource from
+   * the caller's identity; never stored on the row.
+   */
+  viewerIsOwner: z.boolean().default(false),
   teamBuilder: z.any().optional(),
   friendPackages: z.array(z.object({
     id: z.string(),
