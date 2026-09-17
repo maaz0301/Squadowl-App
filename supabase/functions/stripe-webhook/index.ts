@@ -239,6 +239,32 @@ serve(async (req: Request) => {
           }
         }
 
+        // A founder discount code used on this checkout. Recorded here, not when
+        // the session was created, so only completed checkouts count toward the
+        // code's limits. Idempotent on the session id.
+        const discountCodeId = session.metadata?.discountCodeId;
+        if (accountId && discountCodeId) {
+          const { data: redemption, error: discountError } = await supabaseAdmin.rpc(
+            'record_discount_redemption',
+            {
+              p_code_id: discountCodeId,
+              p_account_id: accountId,
+              p_session_id: session.id,
+              p_plan_tier: planTier ?? null,
+              p_discount_cents: Math.round(Number(session.total_details?.amount_discount) || 0),
+            },
+          );
+          if (discountError) {
+            // The customer already has the discount; don't make Stripe redeliver
+            // the whole event over the bookkeeping.
+            console.error('Error recording discount code redemption:', discountError);
+          } else if (redemption === null) {
+            console.log('Discount code redemption already recorded for session:', session.id);
+          } else {
+            console.log(`Recorded discount code ${session.metadata?.discountCode} for account ${accountId}.`);
+          }
+        }
+
         // Add-on team licenses (Club: CAD$10/team/year beyond the 6 included) carry no
         // planTier — they raise the team cap and must leave the subscription tier alone.
         if (accountId && session.metadata?.type === 'team_license') {

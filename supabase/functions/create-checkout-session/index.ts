@@ -37,7 +37,7 @@ serve(async (req) => {
   }
 
   try {
-    const { planTier, interval: rawInterval, addOn, quantity: rawQuantity, origin, applyCredits } = await req.json();
+    const { planTier, interval: rawInterval, addOn, quantity: rawQuantity, origin, applyCredits, discountCode: rawDiscountCode } = await req.json();
     const interval: 'year' | 'month' = rawInterval === 'month' ? 'month' : 'year';
     const webOrigin = resolveWebOrigin(origin);
     // Add-on team licenses (Club: CAD$10/team/year beyond the 6 included) go through
@@ -151,12 +151,39 @@ serve(async (req) => {
       };
     }
 
+    // Founder-issued discount code (founder console → Billing → Discount Codes).
+    // Validated here against its limits/expiry/plan tiers, then applied as a
+    // one-off Stripe coupon. The use is only recorded by stripe-webhook once the
+    // checkout completes, so an abandoned checkout doesn't burn one.
+    const discountCode = typeof rawDiscountCode === 'string' ? rawDiscountCode.trim() : '';
+    let discount: any = null;
+    if (discountCode) {
+      if (isTeamLicense) {
+        throw new Error('Discount codes apply to plan upgrades only.');
+      }
+      const { data: check, error: checkErr } = await supabaseAdmin.rpc('check_discount_code', {
+        p_code: discountCode,
+        p_plan_tier: String(planTier ?? '').toLowerCase(),
+        p_account_id: accountId,
+      });
+      if (checkErr) {
+        console.error('Error checking discount code:', checkErr);
+        throw new Error('Could not check that discount code. Please try again.');
+      }
+      if (!check?.valid) {
+        throw new Error(check?.message || "That discount code isn't valid.");
+      }
+      discount = check;
+    }
+
     // Loyalty credit. The balance is drawn down as a one-off coupon on this
     // checkout's first invoice; the ledger is only debited once the webhook sees
     // the session complete, so abandoning checkout costs the customer nothing.
     let creditCents = 0;
     let couponId: string | null = null;
-    if (applyCredits) {
+    // Checkout takes a single discount, so a discount code wins and the credit
+    // stays on the ledger for a later payment.
+    if (applyCredits && !discount) {
       const { data: available, error: creditErr } = await supabaseAdmin.rpc(
         'referral_available_credit',
         { p_account_id: accountId },
@@ -177,7 +204,19 @@ serve(async (req) => {
       }
     }
 
-    if (creditCents > 0) {
+    if (discount) {
+      const coupon = await stripe.coupons.create({
+        ...(discount.kind === 'percent'
+          ? { percent_off: Number(discount.percentOff) }
+          : { amount_off: Number(discount.amountOffCents), currency: 'cad' }),
+        duration: discount.duration,
+        ...(discount.duration === 'repeating' ? { duration_in_months: Number(discount.durationMonths) } : {}),
+        max_redemptions: 1,
+        name: `TryoutHQ code ${discount.code}`,
+        metadata: { accountId, discountCodeId: discount.id, discountCode: discount.code },
+      });
+      couponId = coupon.id;
+    } else if (creditCents > 0) {
       const coupon = await stripe.coupons.create({
         amount_off: creditCents,
         currency: 'cad',
@@ -214,6 +253,8 @@ serve(async (req) => {
             planTier: planTier,
             interval: interval,
             referralCreditsCents: String(creditCents),
+            // Tells the webhook which discount code to record a use of.
+            ...(discount ? { discountCodeId: discount.id, discountCode: discount.code } : {}),
           },
     };
 
