@@ -502,6 +502,16 @@ function shardRangesAfter(cursor: string): ShardRange[] {
  */
 const PARTICIPANTS_PAGE = 200;
 const SEASON_ROSTER_PAGE = 200;
+
+/**
+ * Marks a tryout row the caller reached as a coach of its *team* rather than
+ * through their own account — CLUB-mode delegation, or a club owner seeing an
+ * assessment a delegate created on their team. Both come back from RPCs, not
+ * from the account_id filter, so the flag is set where they are merged in and
+ * read again in assembleTryouts(); it never touches the database. Mirrors the
+ * web app's VIEWER_MANAGES_TEAM.
+ */
+const VIEWER_MANAGES_TEAM = '__viewerManagesTeam';
 /**
  * Rows per page for the *screen-facing* roster reads — the Season Roster list
  * and a team's Players tab. A page is one statement and one screenful, so the
@@ -1284,7 +1294,8 @@ export class SupabaseDataSource implements DataSource {
           : undefined,
         archived: t.archived,
         registrationFeeCents: t.registration_fee_cents ?? undefined,
-        viewerIsOwner: t.account_id === accountId || myAssessorRole === 'lead',
+        viewerIsOwner:
+          t.account_id === accountId || t[VIEWER_MANAGES_TEAM] === true || myAssessorRole === 'lead',
         teamBuilder,
         friendPackages,
         aiAssessments: Object.keys(aiAssessments).length ? aiAssessments : undefined,
@@ -2695,7 +2706,13 @@ export class SupabaseDataSource implements DataSource {
         if (seen.has(t.id)) continue;
         if (t.deleted_at || (!includeArchived && t.archived)) continue;
         seen.add(t.id);
-        extra.push(t);
+        // Reached as the team's coach, not through this account — see
+        // VIEWER_MANAGES_TEAM. Without the flag these rows assembled with
+        // `viewerIsOwner: false`, which handed a delegate or a club owner the
+        // assessor's cut of an assessment on their own team: no results, no
+        // settings, and a Complete Assessing button that belongs to the people
+        // actually assigned to score it.
+        extra.push({ ...t, [VIEWER_MANAGES_TEAM]: true });
       }
     }
     return [...rows, ...extra];
@@ -2856,13 +2873,42 @@ export class SupabaseDataSource implements DataSource {
 
 
   async getTryout(id: string): Promise<Tryout | null> {
-    const { supabase } = await this.ctx();
+    const { supabase, accountId } = await this.ctx();
     const row = (
       await supabase.from('tryouts').select('*').eq('id', id).is('deleted_at', null).maybeSingle()
     ).data as Row | null;
     if (!row) return null;
-    const [assembled] = await this.assembleTryouts([row]);
+    // One row read straight from the table, so unlike listTryouts() there is no
+    // RPC merge to say whether a caller on another account is this team's coach
+    // or only an invited assessor. Only ask when the account doesn't already
+    // match — for the coach opening their own assessment, the common case, this
+    // costs nothing — and only when there's a team to reach it through, since
+    // both RPCs join on team_id.
+    const tagged =
+      row.account_id !== accountId && row.team_id && (await this.viewerManagesTryoutTeam(id))
+        ? { ...row, [VIEWER_MANAGES_TEAM]: true }
+        : row;
+    const [assembled] = await this.assembleTryouts([tagged]);
     return assembled ?? null;
+  }
+
+  /**
+   * Whether the caller reaches this assessment as a coach of its team rather
+   * than through their own account: a team delegated to them (CLUB mode), or
+   * their own team a delegate created the assessment under. These are the same
+   * two RPCs listTryouts() merges, so the coaches it lists keep an owner's
+   * rights here. A pre-migration instance without the functions answers no,
+   * which leaves ownership resting on account_id alone — the old behaviour.
+   */
+  private async viewerManagesTryoutTeam(id: string): Promise<boolean> {
+    const supabase = getSupabase();
+    const [managedRes, ownedTeamRes] = await Promise.all([
+      supabase.rpc('list_tryouts_for_managed_teams'),
+      supabase.rpc('list_tryouts_on_my_owned_teams'),
+    ]);
+    return [managedRes.data, ownedTeamRes.data].some((rows) =>
+      ((rows ?? []) as Row[]).some((t) => t.id === id),
+    );
   }
 
   async listAssignedTryouts(): Promise<Tryout[]> {
