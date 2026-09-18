@@ -133,4 +133,12 @@ export const queryKeys = {
   letterTemplates: ['letterTemplates'] as const,
   /** Letters sent from one assessment — the Letters screen's history and the player card's read-only section. */
   playerLetters: (tryoutId: string) => ['tryouts', tryoutId, 'letters'] as const,
+  /**
+   * One player's copies, scoped server-side instead of fetching the whole
+   * assessment's letters and filtering client-side — nested under
+   * playerLetters(tryoutId) so the mutations that invalidate that key (a
+   * prefix match) still catch this one too.
+   */
+  playerLettersForParticipant: (tryoutId: string, participantId: string) =>
+    [...queryKeys.playerLetters(tryoutId), participantId] as const,
 };

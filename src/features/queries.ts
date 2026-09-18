@@ -2316,6 +2316,19 @@ export function usePlayerLettersQuery(tryoutId: string | undefined) {
   });
 }
 
+/**
+ * One player's letters, fetched pre-filtered instead of pulling the whole
+ * assessment's and filtering client-side — see PlayerHubScreen, the one
+ * caller that only ever needs a single player's copies.
+ */
+export function usePlayerLettersForParticipantQuery(tryoutId: string | undefined, participantId: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.playerLettersForParticipant(tryoutId ?? '', participantId ?? ''),
+    queryFn: () => getDataSource().listPlayerLetters(tryoutId!, participantId!),
+    enabled: !!tryoutId && !!participantId,
+  });
+}
+
 export function useSendPlayerLettersMutation(
   tryoutId: string,
   onProgress?: (done: number, total: number) => void,

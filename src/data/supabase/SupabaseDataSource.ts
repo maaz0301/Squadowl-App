@@ -1397,7 +1397,18 @@ export class SupabaseDataSource implements DataSource {
       supabase.auth.signInWithPassword({ email: cleanEmail, password }),
     );
     if (error) console.error('LOGIN ERROR:', error);
-    if (error || !data.session) throw new Error(authErrorMessage(error, 'Login failed. Please try again.'));
+    if (error || !data.session) {
+      // GoTrue returns this same generic message whether the password was
+      // wrong or the account is simply gone — deleteUser() leaves nothing in
+      // auth.users to tell those apart. deleted_accounts (web repo migration
+      // 20260918120000_deleted_accounts.sql) is the one record left, so a
+      // failed login is worth the extra round trip to check it.
+      if (error?.message === 'Invalid login credentials') {
+        const { data: wasDeleted } = await supabase.rpc('email_was_deleted', { p_email: cleanEmail });
+        if (wasDeleted) throw new Error('This account no longer exists.');
+      }
+      throw new Error(authErrorMessage(error, 'Login failed. Please try again.'));
+    }
     this.accountId = null;
     // Drop any in-flight ctx() lookup with it, so the next caller re-resolves
     // instead of awaiting an answer computed before this reset.
@@ -8882,15 +8893,11 @@ export class SupabaseDataSource implements DataSource {
     unwrap(await supabase.from('letter_templates').delete().eq('id', id).select().single());
   }
 
-  async listPlayerLetters(tryoutId: string): Promise<PlayerLetter[]> {
+  async listPlayerLetters(tryoutId: string, participantId?: string): Promise<PlayerLetter[]> {
     const { supabase } = await this.ctx();
-    const rows = unwrap(
-      await supabase
-        .from('player_letters')
-        .select('*')
-        .eq('tryout_id', tryoutId)
-        .order('created_at', { ascending: false }),
-    ) as Row[] | null;
+    let query = supabase.from('player_letters').select('*').eq('tryout_id', tryoutId);
+    if (participantId) query = query.eq('participant_id', participantId);
+    const rows = unwrap(await query.order('created_at', { ascending: false })) as Row[] | null;
     return (rows ?? []).map((r) => this.rowToPlayerLetter(r));
   }
 

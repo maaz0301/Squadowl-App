@@ -487,8 +487,12 @@ export interface DataSource {
   ): Promise<import('./types').LetterTemplate>;
   deleteLetterTemplate(id: string): Promise<void>;
 
-  /** Every letter sent from this assessment, newest first — the send screen's history. */
-  listPlayerLetters(tryoutId: string): Promise<import('./types').PlayerLetter[]>;
+  /**
+   * Every letter sent from this assessment, newest first — the send screen's
+   * history. Pass participantId to scope to one player's copies instead of
+   * fetching the whole assessment's.
+   */
+  listPlayerLetters(tryoutId: string, participantId?: string): Promise<import('./types').PlayerLetter[]>;
   /**
    * Render a template for each selected player, email it, and attach the copy
    * to their card.

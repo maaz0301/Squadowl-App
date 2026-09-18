@@ -858,7 +858,7 @@ export default function TeamDetailScreen() {
                 })
               }
             />
-            {canEditTeam ? <Button label="Edit" variant="ghost" size="sm" onPress={startEdit} /> : null}
+            {canEditTeam ? <Button label="Edit" variant="primary" size="sm" onPress={startEdit} /> : null}
           </View>
         }
       />
@@ -1322,15 +1322,6 @@ export default function TeamDetailScreen() {
           </PlanGate>
         ) : (
           <View>
-            {canEditTeam ? (
-              <Card className="mb-3 gap-2">
-                <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-                  Team
-                </Text>
-                <Button label="Edit Team Details" variant="secondary" size="sm" onPress={startEdit} />
-              </Card>
-            ) : null}
-
             {/* CLUB mode: hand this one team to another coach/manager. A
                 delegate of this team can now manage the list too (see
                 can_delegate_team() in 20260827120000_team_manager_full_access.sql) —

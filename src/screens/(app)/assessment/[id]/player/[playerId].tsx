@@ -34,7 +34,7 @@ import {
   useFamilyContactsQuery,
   useAddFamilyContactMutation,
   useRemoveFamilyContactMutation,
-  usePlayerLettersQuery,
+  usePlayerLettersForParticipantQuery,
   useResendPlayerLetterMutation,
 } from '@/features/queries';
 import { useAssessmentId, useAssessorMode } from '@/features/useAssessmentId';
@@ -107,15 +107,13 @@ export default function PlayerHubScreen() {
   // Coach only, matching the Letters tool itself — an invited assessor scores
   // and edits the roster but doesn't decide who made the team.
   const isCoachHere = canManageTeam && !isAssessorOnly;
-  const playerLettersQuery = usePlayerLettersQuery(id);
+  // Scoped server-side to this one player (player?.id, the tryout_participants
+  // row — not the URL's playerId param, which can be the athleteId instead;
+  // see the lookup above) instead of fetching every letter in the assessment
+  // and filtering client-side.
+  const playerLettersQuery = usePlayerLettersForParticipantQuery(id, player?.id);
   const resendLetterMut = useResendPlayerLetterMutation(id!);
-  // Filtered against the participant id (player?.id), not the URL's playerId
-  // param — that can be the athleteId instead (see the lookup above), while a
-  // PlayerLetter's playerId is always the tryout_participants row a copy is
-  // attached to.
-  const playerLetters = (playerLettersQuery.data ?? [])
-    .filter((l) => l.playerId === player?.id)
-    .sort((a, b) => b.createdAt - a.createdAt);
+  const playerLetters = (playerLettersQuery.data ?? []).slice().sort((a, b) => b.createdAt - a.createdAt);
 
   const categories = useMemo(() => {
     if (!tryoutQuery.data || !player) return [];
