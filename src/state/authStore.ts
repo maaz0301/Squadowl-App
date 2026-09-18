@@ -29,6 +29,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   signup: (displayName: string, email: string, password: string, accountType: string) => Promise<void>;
   logout: (reason?: 'expired') => Promise<void>;
+  deleteAccount: () => Promise<void>;
   /** Sign out because the session died on its own — see the action's comment. */
   expireSession: () => Promise<void>;
   restoreSession: (forceRefresh?: boolean) => Promise<void>;
@@ -87,6 +88,27 @@ export const useAuthStore = create<AuthState>()(
             completedSessions: {},
           });
           set({ sessionExpired: reason === 'expired' });
+          get().setSession(null);
+          deliberateSignOut = false;
+        }
+      },
+      deleteAccount: async () => {
+        deliberateSignOut = true;
+        try {
+          await getDataSource().deleteAccount();
+        } finally {
+          queryClient.clear();
+          useSessionStore.setState({
+            currentTryoutId: null,
+            currentPlayerId: null,
+            currentEvalId: null,
+            workingScores: {},
+            rosterFilter: 'all',
+            rinksideIndex: 0,
+            activeAssessor: null,
+            combineTryoutIds: [],
+            completedSessions: {},
+          });
           get().setSession(null);
           deliberateSignOut = false;
         }

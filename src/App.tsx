@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { AppState, type AppStateStatus, LogBox, Platform } from 'react-native';
-import { NavigationContainer, type LinkingOptions } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef, type LinkingOptions } from '@react-navigation/native';
 import RootNavigator from './navigation/RootNavigator';
 import { QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { queryClient } from './lib/queryClient';
@@ -12,6 +12,7 @@ import '../global.css';
 import { useAuthStore } from './state/authStore';
 import { getSupabase } from './lib/supabase';
 import { usePushNotifications } from './hooks/usePushNotifications';
+import { featureForRoute, trackFeatureUse } from './lib/analytics';
 
 // react-native-keyboard-aware-scroll-view (used by every <Screen scroll>
 // screen, e.g. login/signup/forgot-password) polls whether the focused
@@ -24,6 +25,19 @@ import { usePushNotifications } from './hooks/usePushNotifications';
 // error still surfaces normally. Revisit if the library (0.9.5, stale
 // relative to RN 0.85's Fabric default) is ever upgraded or replaced.
 LogBox.ignoreLogs(['viewIsDescendantOf() noop']);
+
+const navigationRef = createNavigationContainerRef<Record<string, object | undefined>>();
+let lastTrackedRoute: string | undefined;
+
+/** Counts a feature use each time the focused screen changes to a tracked one (see lib/analytics.ts). */
+function trackCurrentRoute() {
+  const name = navigationRef.getCurrentRoute()?.name;
+  if (name === lastTrackedRoute) return;
+  lastTrackedRoute = name;
+  if (!useAuthStore.getState().session) return;
+  const feature = featureForRoute(name);
+  if (feature) trackFeatureUse(feature);
+}
 
 /**
  * Only the loyalty referral link (`aastryout://signup?ref=CODE`) is wired up
@@ -112,7 +126,12 @@ export default function App() {
       <SafeAreaProvider>
         <AppThemeProvider>
           <QueryClientProvider client={queryClient}>
-            <NavigationContainer linking={linking}>
+            <NavigationContainer
+              ref={navigationRef}
+              linking={linking}
+              onReady={trackCurrentRoute}
+              onStateChange={trackCurrentRoute}
+            >
               <RootNavigator />
             </NavigationContainer>
           </QueryClientProvider>

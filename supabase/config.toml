@@ -2,17 +2,39 @@
 # Full [auth] block kept explicit (not just the smtp sub-table) because
 # `supabase config push` fills in any field this file doesn't set with the
 # CLI's blank-project defaults and overwrites the live project with them —
-# it doesn't merge on top of what's already deployed. These values mirror
-# what was already live before the SMTP change (site_url, confirmations,
-# MFA, OTP length, rate limit) so pushing this file again can't reset them.
+# it doesn't merge on top of what's already deployed.
+#
+# 2026-09-18: that hazard was real. This file had drifted well behind the live
+# project — site_url, additional_redirect_urls and the whole SMTP block were
+# all stale — and a push to change two unrelated values would have reset every
+# one of them. It only failed because `env(SMTP_FROM_EMAIL)` was unset in the
+# pushing shell and GoTrue rejected the invalid smtp_admin_email. The values
+# below were re-read from the live project (`config push`'s own diff) and now
+# match it. Diff every line of a push before confirming it: anything you did
+# not deliberately change is this file going stale again.
 [auth]
 enabled = true
-site_url = "aastryout://"
+# The web app, not the mobile deep link: this is the fallback target for any
+# auth redirect, and a custom scheme here strands every browser that opens a
+# confirmation mail (see auth-send-email/index.ts's buildConfirmUrl comment).
+site_url = "https://www.tryouthq.ca"
 external_url = "http://127.0.0.1:54321/auth/v1"
-additional_redirect_urls = ["https://athlete-assessment-web.vercel.app/auth/callback", "http://localhost:3000/auth/callback"]
+# Wildcards, matching live: an exact /auth/callback path alone refuses every
+# link that carries a `next` query parameter.
+additional_redirect_urls = ["https://www.tryouthq.ca/**", "https://tryouthq.ca/**", "aastryout://**", "https://athlete-assessment-web.vercel.app/**", "http://localhost:3000/**", "https://tryouthq.ca", "https://www.tryouthq.ca"]
 jwt_expiry = 3600
 jwt_issuer = "http://127.0.0.1:54321/auth/v1"
 enable_refresh_token_rotation = true
+# How long a just-rotated refresh token still works. Spelled out rather than
+# left to the CLI default (10s) that every `config push` was silently writing:
+# with rotation on, two tabs — or the app returning from the background — can
+# refresh with the same token at once, and the loser has its token revoked.
+# GoTrue then emits SIGNED_OUT, which the apps treat as "your session ran out"
+# (authStore.expireSession), so a user who never idled gets logged out. 60s is
+# wide enough to absorb that race. Sessions themselves have no expiry: there is
+# deliberately no [auth.sessions] block, so neither `timebox` nor
+# `inactivity_timeout` applies and a signed-in user stays signed in.
+refresh_token_reuse_interval = 60
 
 [auth.rate_limit]
 token_refresh = 150
@@ -38,19 +60,29 @@ enable_confirmations = true
 secure_password_change = false
 max_frequency = "1s"
 otp_length = 8
-otp_expiry = 3600
+# Password-reset / confirmation code lifetime. Raised from the 1h default: the
+# code is delivered by email, and an inbox that lands it 40 minutes late left
+# the user no usable window. 7200 = 2h; the ceiling is 86400 (24h), and
+# Supabase's security advisor flags anything above 3600.
+otp_expiry = 7200
 
 # Routes Supabase Auth's own emails (signup confirmation, password-reset OTP)
-# through the same Gmail SMTP used by the send-email function, instead of
-# Supabase's default rate-limited mailer.
+# through SendGrid — the same sender the send-email and auth-send-email
+# functions use — instead of Supabase's default rate-limited mailer.
+#
+# Literals, not env() references, because these are what the live project
+# holds and a push resolves env() against the *pushing shell*: unset there, it
+# sends empty strings to a live mail configuration. `pass` stays an env()
+# reference because it is the SendGrid API key and must not be committed —
+# export SENDGRID_SMTP_PASS before any push that touches this block.
 [auth.email.smtp]
 enabled = true
-host = "env(SMTP_HOST)"
+host = "smtp.sendgrid.net"
 port = 587
-user = "env(SMTP_FROM_EMAIL)"
-pass = "env(SMTP_PASS)"
-admin_email = "env(SMTP_FROM_EMAIL)"
-sender_name = "Athlete Assessment"
+user = "apikey"
+pass = "env(SENDGRID_SMTP_PASS)"
+admin_email = "noreply@tryouthq.ca"
+sender_name = "TryoutHQ"
 
 [auth.sms]
 enable_signup = false

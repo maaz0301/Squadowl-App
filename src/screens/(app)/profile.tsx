@@ -27,6 +27,7 @@ export default function ProfileScreen() {
   const navigation = useNavigation<any>();
   const user = useUser();
   const logout = useAuthStore((s) => s.logout);
+  const deleteAccount = useAuthStore((s) => s.deleteAccount);
   const themeMode = useThemeStore((s) => s.mode);
   const toggleTheme = useThemeStore((s) => s.toggle);
   const updateProfile = useUpdateProfileMutation();
@@ -52,6 +53,7 @@ export default function ProfileScreen() {
   // without this the button sat there looking untapped and invited a second
   // press on top of the first.
   const [signingOut, setSigningOut] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const plan = getPlanDefinition(user?.planTier ?? 'free');
   const extraTeamLicenses = user?.extraTeamLicenses ?? 0;
@@ -102,6 +104,29 @@ export default function ProfileScreen() {
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to update password');
     }
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to permanently delete your account? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingAccount(true);
+            try {
+              await deleteAccount();
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'Could not delete your account.');
+              setDeletingAccount(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const openPortal = async () => {
@@ -308,6 +333,16 @@ export default function ProfileScreen() {
           </Card>
         </>
       )}
+
+      <Card className="mb-4 gap-2">
+        <Text className="font-display font-bold" style={{ color: colors.danger }}>
+          Danger Zone
+        </Text>
+        <Text className="text-xs" style={{ color: colors.inkMuted }}>
+          Deleting your account permanently removes your login and profile. This cannot be undone.
+        </Text>
+        <Button label="Delete Account" variant="danger" size="sm" onPress={handleDeleteAccount} loading={deletingAccount} />
+      </Card>
 
       <Button
         label="Log Out"

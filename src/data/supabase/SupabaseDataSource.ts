@@ -1446,6 +1446,12 @@ export class SupabaseDataSource implements DataSource {
     return this.toAuthSession(session, user);
   }
 
+  async deleteAccount(): Promise<void> {
+    const { error } = await getSupabase().functions.invoke('delete-account', {});
+    if (error) throw new Error(authErrorMessage(error, 'Failed to delete your account. Please try again.'));
+    await this.logout();
+  }
+
   async logout(): Promise<void> {
     this.accountId = null;
     // Drop any in-flight ctx() lookup with it, so the next caller re-resolves
