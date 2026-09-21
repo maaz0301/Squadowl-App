@@ -1217,6 +1217,566 @@ ADDENDUM 3 (Shawn, Sept 20-21)  -  PLAN UPGRADE + CREATE TEAM
    24.7 No new red screens / warnings on cold start.                 ____
 
 =====================================================================
+MASTER FEATURE TEST SUITE  (sections 25-50)
+=====================================================================
+  Every feature of the app, area by area, as a baseline + regression
+  suite. Run it on the OLD build and the NEW build and compare. Each
+  line: [PASS] / [FAIL] / [N/A]. Sections 1-24 above are the change-
+  specific before/after cases; this part is the full-coverage safety net.
+
+  PLAN LIMITS USED BELOW (from src/data/plans.ts)
+   Free      : 1 evaluation, 15 players, 1 team, 3 custom rubrics,
+               no exports, no Team Builder / AI / share links /
+               Season Hub / guardian portal / team managers / payments
+   Coach     : unlimited evaluations, 30 players, 1 team, 5 rubrics,
+               CSV export, Season Hub, guardian portal, payments
+   Coach+    : unlimited evaluations, 100 players, 2 teams, unlimited
+               rubrics, CSV+PDF, Team Builder, AI summaries, share
+               links, team managers
+   Club      : unlimited evaluations + players, 6 teams included (+ paid
+               extra teams), CSV+PDF+XLSX, enterprise/organization tools
+  TEST ACCOUNTS: Free, Coach, Coach+, Club owner; a delegated manager;
+  an assessor-only account; a guardian-only account; a brand-new account.
+
+
+=====================================================================
+25. SIGN UP, LOGIN, ONBOARDING
+=====================================================================
+   25.1  Sign up with a new email: verification email arrives, link works,
+         account created.                                              ____
+   25.2  Sign up with an email that already exists: clear error.        ____
+   25.3  Weak password / mismatched confirm / invalid email: inline errors.___
+   25.4  Login with correct + wrong password: wrong shows a clear error
+         and does not lock the form.                                    ____
+   25.5  Forgot password: email arrives, reset link opens the app/web,
+         new password works, old one does not.                          ____
+   25.6  Login persists across app restart; Log Out returns to login and
+         clears the previous account's data (no stale lists).           ____
+   25.7  Token expiry / offline start: app recovers without a red screen.___
+   25.8  Onboarding wizard (welcome + wizard): completes, can be skipped,
+         does not reappear afterwards.                                  ____
+   25.9  Coach vs guardian account type lands on the right home.        ____
+   25.10 Deep links: invite link, assessor invite, RSVP link, registration
+         link open the right screen (logged in and logged out).         ____
+   25.11 Two accounts on one device: switching accounts shows no data
+         from the first.                                                ____
+
+
+=====================================================================
+26. HOME / DASHBOARD
+=====================================================================
+   26.1  Home shows greeting, Dashboard card, Evaluations and Teams jump
+         tiles with correct counts.                                     ____
+   26.2  Evaluations tab: standalone evaluations only (team-linked ones
+         are on their team). Empty state text when none.                ____
+   26.3  Teams tab: every team the user owns or manages; "Managed" badge
+         on delegated ones; delegated teams have no trash icon.         ____
+   26.4  New Evaluation / New Team buttons: plan limit message when at the
+         limit (Free: 1 evaluation, 1 team).                            ____
+   26.5  Pencil edit, trash delete (confirm + cancel), tap to open.      ____
+   26.6  Combine Mode: pick 2+ evaluations, combined results open.       ____
+   26.7  Archived toggle lists archived evaluations; restore works.      ____
+   26.8  "Assigned to me" section: accept / decline an assessor invite;
+         status updates; opening scores as assessor.                    ____
+   26.9  "My Athletes" section for a guardian: cards, seasons, links.    ____
+   26.10 Usage banner (near/at plan limit) shows correct numbers and an
+         upgrade link.                                                  ____
+   26.11 Bottom nav: Evaluations / Teams / Profile switch without losing
+         scroll; badge/unread indicators correct.                       ____
+   26.12 Pull-to-refresh updates lists; loading + error + retry states.  ____
+   26.13 Search button opens Search (see 46). Avatar opens Profile.      ____
+
+
+=====================================================================
+27. EVALUATION: CREATE, EDIT, COPY, ARCHIVE, DELETE
+=====================================================================
+  CREATE (New Evaluation)
+   27.1  Required fields: name (2+ chars) and at least one rubric; clear
+         errors; nothing is created on error.                           ____
+   27.2  Sport chips (Hockey, Volleyball, other + custom name), event
+         type chips (Tryout, Assessment, ...) saved and shown on tile.  ____
+   27.3  Date + start/end time pickers: values saved; end time must be
+         after start; past dates handled as designed.                   ____
+   27.4  Location text saved; "Preview on map" hint appears for an
+         address; tapping opens maps.                                   ____
+   27.5  Optional Team chip: created evaluation lands on that team, copies
+         the team's players, big team shows "Still setting up...".      ____
+   27.6  Add rubrics (default set per sport, add/remove/reorder/weights)
+         and assessors (name + email) before creating.                  ____
+   27.7  Free plan: creating a 2nd evaluation shows the limit message.   ____
+   27.8  Keyboard never hides the field being typed in; Create button
+         reachable on Android + iPhone.                                 ____
+   27.9  After create: lands on Evaluation Settings; assessor invite
+         emails go out; evaluation appears in the list.                 ____
+  EDIT
+   27.10 Settings > Edit Details and the home pencil: change name, date,
+         times, location; both places show the same values afterwards.  ____
+   27.11 Blank name keeps the old name; clearing date/time clears them.  ____
+   27.12 Assessors: add, remove, resend invite, status labels (pending /
+         accepted / declined / completed).                              ____
+   27.13 Rubric Builder: add/edit/delete rubrics, weights, per-position
+         (skater/goalie) sets; "View Reference" lists them.             ____
+  COPY / ARCHIVE / DELETE
+   27.14 Copy Evaluation duplicates settings + rubrics (and roster as
+         designed); respects the plan limit.                            ____
+   27.15 Archive: leaves Home, appears under Archived, can be restored;
+         data intact.                                                   ____
+   27.16 Delete: strong confirmation; evaluation removed; players and
+         athletes are not lost from other evaluations/teams.            ____
+   27.17 Evaluation on a team: delete/archive keeps the team and roster. ____
+   27.18 Cloud registration code shown; regenerate/copy works.            ____
+
+
+=====================================================================
+28. EVALUATION ROSTER
+=====================================================================
+   28.1  Roster list: avatar, name, jersey, position pill, QR tag, scored
+         count; smooth with 900+ players.                               ____
+   28.2  Search by name; filter chips (All / Scored / Unscored / each
+         position group) with correct counts; filter is remembered.     ____
+   28.3  Add Player: required first/last, valid emails, phone 10-15
+         digits, birth year; guardian email creates/links a guardian
+         account and sends the invite.                                  ____
+   28.4  Add existing athlete from another evaluation/team (no duplicate
+         athlete created).                                              ____
+   28.5  Edit player (name, jersey, position, contact, photo): saved,
+         list updates.                                                  ____
+   28.6  Player limit: Free 15, Coach 30, Coach+ 100: message at the
+         limit for Add, Import, Registrations placement, Roster Library.___
+   28.7  Import (CSV/XLSX): mapping step, preview, "Remove incomplete",
+         summary of added/failed rows (see sections 2-3).               ____
+   28.8  Select mode: Select All / Deselect All / Delete Selected with
+         confirmation; partial failure message; counts update.          ____
+   28.9  Delete a single player from the player screen; soft delete keeps
+         history; guardian link cleared only if on no other roster.     ____
+   28.10 Tools: Team Builder, Roster Library, Scan Sheet Import, Player
+         Selection Letters, Dummy Data, Clear Dummy Data (visible per
+         plan/role).                                                    ____
+   28.11 Roster Library: pick players from other evaluations, import.    ____
+   28.12 Scan Sheet Import: photo/scan of a paper sheet parses rows,
+         mapping + confirm.                                             ____
+   28.13 Dummy data generator: counts respected, scores optional, clear
+         removes only generated records.                                ____
+   28.14 "Complete Assessing" (assessor): marks done, no double submit.  ____
+   28.15 Roster while a bulk add runs elsewhere shows "Adding players..."
+         not the empty state.                                           ____
+
+
+=====================================================================
+29. REGISTRATIONS AND QR
+=====================================================================
+   29.1  Registration code + QR + Share link generate; QR scans on a
+         second phone and opens the public form.                        ____
+   29.2  Public form (register/[eventId]): required fields, waiver,
+         friends, guardian details; submit shows a confirmation and the
+         registration appears as Pending.                               ____
+   29.3  Pending / All / Dismissed tabs, badge count accurate.            ____
+   29.4  Tap a card: profile modal with all submitted fields; Add to
+         Roster, Dismiss from there.                                    ____
+   29.5  Select / Select All / Clear; sticky "N selected" bar; "Add N to
+         Roster" places everyone (team OR evaluation destination),
+         progress reaches N of N.                                       ____
+   29.6  Single Add to Roster; destination picker lists only valid
+         evaluations/teams; Free-plan limit respected.                  ____
+   29.7  Dismiss a registration; it moves to Dismissed; can be re-added.  ____
+   29.8  Siblings with the same guardian email: one guardian account,
+         both athletes linked.                                          ____
+   29.9  Export CSV opens the share sheet with correct columns.           ____
+   29.10 Simulate QR Reg, Dummy Data, Clear Dummy Data (Club/association).___
+   29.11 Payment status badge (paid/unpaid) matches Stripe for paid
+         registrations.                                                 ____
+   29.12 Duplicate submission (same player twice): handled as designed.   ____
+
+
+=====================================================================
+30. SCORING (RINKSIDE, SCORE SCREEN, SCAN SHEET, OFFLINE)
+=====================================================================
+   30.1  Rinkside: pick player, score each rubric with the pad, notes,
+         strengths/improve, recommendation; save shows success.         ____
+   30.2  Score a goalie vs skater: the right rubric set appears.         ____
+   30.3  Edit an existing score: replaces (not duplicates) the session.  ____
+   30.4  Multiple assessors score the same player: blind scoring, each
+         sees only their own; coach sees all.                           ____
+   30.5  Save timeout / no network: clear message, entered scores kept,
+         retry works, no duplicate on retry.                            ____
+   30.6  Keyboard while typing notes: nothing hidden, Save reachable.     ____
+   30.7  Scoring order/progress: "scored / total" count updates.          ____
+   30.8  Assessor-only account: only assigned evaluation, no roster edit,
+         no results of other assessors, no delete.                      ____
+   30.9  Scan sheet import for scores: mapping, confirm, applies.         ____
+   30.10 Session progress (assessor) reflects players already scored.     ____
+
+
+=====================================================================
+31. RESULTS, RANKINGS, COMPARE, EXPORT
+=====================================================================
+   31.1  Results list ranks players by weighted overall; ties handled;
+         unscored players last or hidden as designed; correct after a
+         rubric weight change.                                          ____
+   31.2  Category scores per player match the raw entries.                ____
+   31.3  Compare: pick 2+ players, side-by-side categories, scores.       ____
+   31.4  AI summaries (Coach+): generate, saved, regenerate, error when
+         offline; blocked on lower plans with upgrade prompt.           ____
+   31.5  Share links (Coach+): create, open in browser, revoke; guardian
+         sees only their own player.                                    ____
+   31.6  Export screen: CSV (Coach+), PDF (Coach+), XLSX (Club); Free
+         is blocked with upgrade prompt; file opens correctly.          ____
+   31.7  Exported numbers equal on-screen numbers; special characters
+         and long names not broken.                                     ____
+   31.8  Results after deleting a player or a rubric: no crash, math OK.  ____
+   31.9  Combine results across 2+ evaluations: merged ranking correct.   ____
+
+
+=====================================================================
+32. TEAM BUILDER
+=====================================================================
+   32.1  Blocked on Free/Coach with upgrade prompt; opens on Coach+/Club
+         (or on a delegated team using the owner's plan).               ____
+   32.2  Generate with no prompt (deterministic) and with a prompt (AI):
+         team count/size respected, goalies distributed, warnings shown
+         when a team has too many goalies.                              ____
+   32.3  Friend packages: create/edit/delete; members stay together in a
+         generated split; package beats registration friend names.      ____
+   32.4  Adjust panel: drag (hold, then move), tap-to-move sheet, Undo,
+         Redo, Done; team counts and averages update.                   ____
+   32.5  Save a split with a label; Saved Team Sets list, load, delete;
+         "New" hides the live draft.                                    ____
+   32.6  Export a split as XLSX/PDF; team detail screen export; file has
+         the adjusted teams.                                            ____
+   32.7  Regenerate replaces edits; no stale edits after switching sets.  ____
+   32.8  Large roster (900+): generation completes, screen responsive.    ____
+
+
+=====================================================================
+33. PLAYER SELECTION LETTERS
+=====================================================================
+   33.1  Templates: create, edit, delete; standard Offer / Roster
+         Decision starters; "Template saved" pill; same list in the
+         evaluation and the team Options tab.                           ____
+   33.2  Placeholders insert and render: player, parent, team, feedback
+         notes; unfilled tokens are flagged before sending.             ____
+   33.3  Select players (search, select all), preview per player, send in
+         bulk with progress; players with no email are reported failed.  ____
+   33.4  Sent letters list: view, re-send, delete; copy appears on the
+         player card.                                                   ____
+   33.5  Letter email arrives, professional formatting, correct subject
+         and greeting for each recipient.                               ____
+   33.6  Deleting a template does not delete sent letters.                ____
+   33.7  Keyboard does not hide the letter text on Android; long letters
+         scroll (see section 17).                                       ____
+   33.8  Coach only: assessor-only accounts do not see letters.           ____
+
+
+=====================================================================
+34. ROLES AND PERMISSIONS MATRIX
+=====================================================================
+  For each role, open every area below and record: can see / can edit /
+  blocked with a clear message.
+   34.1  Owner/admin/coach (account staff): everything on own account.   ____
+   34.2  Delegated team manager: that team's roster, schedule, chat,
+         players, options, AND its evaluations (owner's plan); not other
+         teams, billing, organization, or delete team.                  ____
+   34.3  Assessor-only: only assigned evaluation(s); scoring only.       ____
+   34.4  Guardian-only: My Athletes, their child's schedule/RSVP, chat,
+         letters, share links; no coach screens, no bottom Teams tab.   ____
+   34.5  Direct URL / deep link to a screen the role cannot open: blocked
+         or redirected, no data leak.                                   ____
+   34.6  Removing someone's access takes effect after refresh/next open.  ____
+   34.7  RLS spot checks with ids from another account: read and write
+         both refused.                                                  ____
+
+
+=====================================================================
+35. TEAM: CREATE, EDIT, DELETE
+=====================================================================
+   35.1  New Team: name required; season (optional); logo upload; team
+         colour (18 swatches incl. None); creates and lands on Options.  ____
+   35.2  Invite a manager at creation (email): manager gets access; new
+         email gets an account + sign-in details.                       ____
+   35.3  "Are you collecting fees?" No/Yes: Yes asks for a fee amount and
+         needs Stripe Connect set up (see 43).                          ____
+   35.4  Team limit: Free 1, Coach 1, Coach+ 2, Club 6 (+ extra licenses)
+         message when exceeded; managed teams do not count.             ____
+   35.5  Edit team: name, season, logo, colour, fees; header/branded
+         background update immediately everywhere.                      ____
+   35.6  Header reads "<Team> Hub"; tabs Schedule / Players / Evaluations
+         / Options with correct badges.                                 ____
+   35.7  Delete Team (Danger Zone): confirmation; team, roster, schedule
+         removed; linked evaluations detach (decide where they go);
+         athletes remain on their evaluations.                          ____
+   35.8  Testing tools (Dummy Data / Clear Dummy Teams) create and remove
+         only generated teams.                                          ____
+   35.9  New Team form: Create button and Testing Tools reachable on
+         Android (3-button, gesture) and iPhone.                        ____
+
+
+=====================================================================
+36. TEAM SCHEDULE, EVENTS, RSVP, CALENDAR
+=====================================================================
+   36.1  + Event: type (Practice/Game/Event...), title, date, optional end
+         date, start/end time, location, notes; saved and listed by
+         upcoming/past.                                                 ____
+   36.2  Validation: title required; date format; end date on/after
+         date; end time after start; past date/time blocked; errors
+         shown inline.                                                  ____
+   36.3  Everyone on the roster invited by default; choose specific
+         players; invite emails/push go out.                            ____
+   36.4  Edit an event (all fields); delete an event with confirmation;
+         RSVPs of a deleted event disappear.                            ____
+   36.5  RSVP tallies Yes / Maybe / No / Pending expand into names; coach
+         can set a player's answer; guardian can answer for their child. ____
+   36.6  Add to calendar (device calendar / ICS link) works on iPhone and
+         Android; times and timezone correct.                           ____
+   36.7  Map link from location opens maps.                              ____
+   36.8  Schedule updates notify guardians (push/email) once.            ____
+   36.9  Attendance and availability screens: mark attendance, totals.    ____
+   36.10 Calendar view: month navigation, events on correct days.        ____
+
+
+=====================================================================
+37. TEAM PLAYERS
+=====================================================================
+   37.1  Players tab: paged list (50), "Load more", server-side search,
+         Remove per row with confirmation; smooth at 999 players.       ____
+   37.2  Add Players from Evaluations: search, evaluation filter chips,
+         Select all (filtered only), "On Team" rows disabled; limit
+         message; invites go out once.                                  ____
+   37.3  + Add Player Manually and Import Spreadsheet (sections 2-3).      ____
+   37.4  Select mode: Select All (whole team or filtered search), delete
+         confirmation, counts, badge update.                            ____
+   37.5  Send Invites (whole roster) and per-player invite: report of
+         sent / failed / no email; no duplicates.                       ____
+   37.6  Player card: jersey, position, guardian block with "Account
+         Linked / Not Linked", fee status, edit, photo, medical info only
+         for permitted roles.                                           ____
+   37.7  Fee status (paid / unpaid / waived) shown and editable for fee
+         teams; matches Stripe.                                         ____
+   37.8  Adding a player to a team with a season syncs the season roster
+         (schedule/RSVP appear for that player).                        ____
+   37.9  Removing a player removes them from schedule RSVPs, not from
+         their evaluations.                                             ____
+
+
+=====================================================================
+38. TEAM OPTIONS TAB
+=====================================================================
+   38.1  Team Managers card: invite by email (Coach+ and up), list
+         managers, remove; new/existing account; role wording.          ____
+   38.2  Export Team: Excel and PDF of the full roster, no medical info
+         (section 15).                                                  ____
+   38.3  Player Selection Letters: template list/edit/new/delete in
+         place; Send letters lists the team's evaluations.              ____
+   38.4  Dummy Data: add/clear players on the team.                      ____
+   38.5  Danger Zone: Delete Team visible to owner only.                 ____
+
+
+=====================================================================
+39. SEASON HUB SCREENS
+=====================================================================
+   39.1  Create a season (new.tsx) with name, dates, roster from the team
+         or evaluation; season appears in the team.                     ____
+   39.2  Season index: overview cards, next event, roster count.          ____
+   39.3  Season roster: fee status, sign-ups, invites, payments.          ____
+   39.4  Season player card: contact, availability history.               ____
+   39.5  Season settings: edit/archive/delete the season; Save/Delete
+         buttons visible on Android nav bar.                            ____
+   39.6  Availability, attendance, calendar screens load with correct
+         counts and no cross-team data.                                 ____
+   39.7  Plan gate: Season Hub blocked on Free.                          ____
+
+
+=====================================================================
+40. TEAM CHAT
+=====================================================================
+   40.1  Team chat opens from the team header; unread badge count on the
+         header and the chat list.                                      ____
+   40.2  Send a message: appears instantly for sender, arrives for other
+         members in real time and by push when the app is closed.       ____
+   40.3  Keyboard: input bar stays above the keyboard on Android and
+         iPhone; long threads scroll; messages not hidden by the nav bar.___
+   40.4  Members: manager and guardians can post; someone removed from
+         the team loses access.                                         ____
+   40.5  Multiple teams: chat picker ("Choose a Team") opens the right
+         thread; unread counts per team.                                ____
+   40.6  Special characters, emoji, long messages, links.                ____
+
+
+=====================================================================
+41. GUARDIAN PORTAL
+=====================================================================
+   41.1  Invite email (from team Send Invites, player card, evaluation
+         player card): guardian receives it, account created/linked.    ____
+   41.2  Guardian home: My Athletes cards with seasons; child profile
+         with Overview / Schedule / Info tabs.                          ____
+   41.3  RSVP for the child; fee shown and pay flow (see 43); Leave Team
+         removes the child from the team area only.                     ____
+   41.4  Guardian assessment view: sees results/letters/shared summary
+         only for their own child.                                      ____
+   41.5  Share directory: guardian shares/unshares an athlete with a
+         coach; coach sees it under Shared Athletes; release flow.      ____
+   41.6  Resend invite / re-invite when the login account was deleted.    ____
+   41.7  Guardian cannot open any other athlete by id.                    ____
+   41.8  (Deferred item #19) child appears both under My Athletes and in
+         the team area after accepting an invite.                       ____
+
+
+=====================================================================
+42. PLAYER PROFILES AND SHARED ATHLETES
+=====================================================================
+   42.1  Player profile (athlete screen): history across evaluations and
+         seasons, scores, letters, photo.                               ____
+   42.2  Shared athletes list: accept/decline; accepted athlete appears in
+         a chosen evaluation roster; released state.                    ____
+   42.3  Profile edits (name, birth year, contact) propagate to every
+         roster the athlete is on.                                      ____
+
+
+=====================================================================
+43. PAYMENTS, STRIPE CONNECT, FEES
+=====================================================================
+   43.1  Payments dashboard: connect Stripe account, status, onboarding
+         return link, disconnect messages.                              ____
+   43.2  Registration fee: guardian pays via Stripe checkout; status
+         flips to paid; coach sees it; platform fee 0.5% + Stripe fees
+         shown as documented.                                           ____
+   43.3  Team fee: guardian pays; fee status on the roster; waive a fee.  ____
+   43.4  Failed / cancelled payment leaves unpaid, retry works.           ____
+   43.5  Refund or dispute appears correctly (webhook).                   ____
+   43.6  Plans without payments (Free) cannot enable fees.                ____
+   43.7  Test mode only for all payment testing.                          ____
+
+
+=====================================================================
+44. PLANS, UPGRADE, BILLING, LOYALTY
+=====================================================================
+   44.1  Upgrade screen: four plan cards with correct price, features,
+         current-plan badge; monthly/yearly toggle changes prices.      ____
+   44.2  Free -> paid: Checkout, success return, plan unlocks within a
+         few seconds; discount code (founder) valid/invalid/expired.    ____
+   44.3  Paid -> higher (prorated, section 21); paid -> lower (scheduled
+         at term end, section 21 regression); cancel -> Free at term end.___
+   44.4  Manage Subscription opens the Stripe portal; invoices listed.    ____
+   44.5  Pending plan change / scheduled cancellation is shown in the app.___
+   44.6  Club extra team licenses: buy (quantity), team cap rises, second
+         subscription is left alone by upgrades/downgrades.             ____
+   44.7  Plan gates hide/show: Team Builder, AI, exports by format, share
+         links, Season Hub, guardian portal, team managers, payments,
+         custom rubric cap, enterprise tools - for each of the 4 tiers.  ____
+   44.8  Loyalty/referral: referral code apply, credit ledger, credit
+         applied at Checkout, capped a cent below total.                ____
+   44.9  Webhooks: subscription updated/deleted keep plan_tier correct;
+         no double billing after any change.                            ____
+
+
+=====================================================================
+45. PROFILE AND ACCOUNT
+=====================================================================
+   45.1  Profile: photo change, name/organization edit + cancel, badges
+         (role, plan, status), plan limits summary.                     ____
+   45.2  Change Password: works, old password rejected afterwards.        ____
+   45.3  Dark Mode switch persists across restarts.                       ____
+   45.4  Quick links (Search, Members, Feedback, Loyalty) open correctly.  ____
+   45.5  Delete Account: confirmation, account + data removed, cannot log
+         in afterwards; Log Out and Delete visible above the Android nav
+         bar (section 1).                                               ____
+   45.6  Push notification permission prompt and settings; test push
+         arrives (schedule update, chat, invite).                       ____
+
+
+=====================================================================
+46. SEARCH
+=====================================================================
+   46.1  Search evaluations, players, seasons, teams by partial text;
+         results open the right screen.                                 ____
+   46.2  Empty query / no results states; special characters; very long
+         text.                                                          ____
+   46.3  Results respect permissions (no other accounts' data).           ____
+   46.4  Team-linked evaluations are found even though hidden from Home.   ____
+
+
+=====================================================================
+47. ORGANIZATION, ENTERPRISE, ADMIN
+=====================================================================
+   47.1  Dashboard (organization-wide reporting) totals equal the sum of
+         teams/evaluations; loads fast with large accounts.             ____
+   47.2  Members: list guardians/coaches/assessors, invite, remove, resend.___
+   47.3  Enterprise/association tools visible on Club only.                ____
+   47.4  Admin/founder screens visible to platform admins only.           ____
+
+
+=====================================================================
+48. FEEDBACK
+=====================================================================
+   48.1  Submit feedback with type + text + screenshot; confirmation shown;
+         appears in feedback reports (admins).                          ____
+   48.2  Attachment size/type limits; offline submit fails clearly and can
+         be retried.                                                    ____
+
+
+=====================================================================
+49. CROSS-CUTTING QUALITY CHECKS (run on every build)
+=====================================================================
+  PLATFORM / DEVICE
+   49.1  iPhone (Dynamic Island + home-indicator model), small iPhone.    ____
+   49.2  Android 3-button nav, Android gesture nav, Android 13/14, 15/16.  ____
+   49.3  Small phone (5.5"), large phone, tablet; portrait + landscape.    ____
+   49.4  Font size 100% / 130% / 200%: nothing clipped or overlapping.     ____
+   49.5  Dark and light mode on every screen; team-colour backgrounds.     ____
+  KEYBOARD
+   49.6  Every form and bottom sheet: focused field visible, Save
+         reachable, no big gap, works with hardware/software keyboards.   ____
+  NETWORK
+   49.7  Airplane mode on: friendly errors, no infinite spinners; data
+         entered is not lost; retry works after reconnect.               ____
+   49.8  Slow 3G: progress indicators move; no double submits.            ____
+   49.9  Background and resume mid-action (import, export, send, pay).     ____
+  DATA
+   49.10 Very large data (999 players, 900+ evaluation players, 50+
+         events): lists stay smooth, no crash, memory stable.            ____
+   49.11 Special characters (accents, apostrophes, commas, emoji, RTL) in
+         names, notes, letters, exports.                                 ____
+   49.12 Duplicate taps on any submit button create only one record.       ____
+  ERRORS
+   49.13 Every mutation failure shows a readable message, never a raw
+         database error; screens with errors offer Retry.                ____
+   49.14 No red screens; new yellow warnings compared with the old build.  ____
+  ACCESSIBILITY
+   49.15 Screen reader labels on icon buttons (pencil, trash, back, chat);
+         tap targets at least 44pt.                                      ____
+  PERFORMANCE
+   49.16 Cold start under a few seconds; tab switches instant; memory
+         after 10 minutes of use stable.                                 ____
+  SECURITY / PRIVACY
+   49.17 No medical info in exports or letters unless intended; guardian
+         contact hidden from roles that should not see it.               ____
+   49.18 Invite/registration tokens single-use and expire.                 ____
+   49.19 Logged-out state shows no cached private data.                    ____
+
+
+=====================================================================
+50. END-TO-END STORIES (run start to finish on a clean account)
+=====================================================================
+   50.1  COACH SEASON: sign up -> create team -> invite manager -> create
+         evaluation for the team -> share QR -> 20 registrations ->
+         select all and add to the team roster -> score players ->
+         results -> Team Builder split + adjust -> send Offer / Decision
+         letters -> export roster -> create schedule events -> guardians
+         RSVP -> team chat.                                              ____
+   50.2  CLUB: upgrade to Club -> add extra teams -> delegate a team to a
+         manager who creates evaluations on the club's plan -> managers
+         invite players -> organization dashboard totals.                 ____
+   50.3  GUARDIAN: receives invite -> sets password -> sees child under My
+         Athletes and the team schedule -> RSVPs -> pays the fee ->
+         reads the letter -> leaves the team.                            ____
+   50.3b ASSESSOR: receives evaluation invite -> accepts -> scores blind
+         -> completes assessing -> coach sees combined results.          ____
+   50.4  BILLING: Free -> Coach -> Coach+ (prorated) -> downgrade to Coach
+         (end of term) -> cancel to Free (end of term); limits and gates
+         correct at every step.                                          ____
+   50.5  DATA HYGIENE: delete a player, an evaluation, a team, then the
+         account; nothing orphaned or visible to others.                 ____
+
+=====================================================================
 SIGN-OFF
 =====================================================================
   Tester: ____________   Date: __________   Build: ______________
