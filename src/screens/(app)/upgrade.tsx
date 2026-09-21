@@ -198,16 +198,15 @@ export default function UpgradeScreen() {
    * Switches to any tier, in either direction. The two directions take
    * deliberately different routes.
    *
-   * An **upgrade** always goes through Checkout, and is charged in full for a
-   * billing year that restarts today — the remaining time on the plan being
-   * left behind is not credited. That is a product decision, not Stripe's
-   * default: the portal's own switch flow only ever bills the prorated
-   * difference, and no portal setting charges full price while forfeiting
-   * prepaid time. Checkout is the only route that does. stripe-webhook cancels
-   * the superseded subscription once the checkout completes — without that
-   * half, this is a double-billing bug.
+   * An **upgrade** with a live subscription goes through the Stripe portal,
+   * which swaps the plan on the existing subscription and charges only the
+   * prorated difference for the time left (the portal is configured for that —
+   * see create-portal-session). It used to go through Checkout, which billed
+   * the full price for a new year and forfeited the time already paid for; that
+   * is what an upgrade from Coach to Coach+ charged CAD$69.99 for. An account
+   * with no live subscription still starts an ordinary Checkout.
    *
-   * A **downgrade** stays with the portal, where it is scheduled rather than
+   * A **downgrade** also uses the portal, where it is scheduled rather than
    * applied: the account keeps the tier it has paid for until the term ends.
    */
   const switchPlan = async (tier: PlanTier) => {
@@ -217,6 +216,10 @@ export default function UpgradeScreen() {
     if (direction === 'upgrade') {
       const confirmedUpgrade = await confirmUpgrade(tier);
       if (!confirmedUpgrade) return;
+      if (planChangeRoute(tier, user?.subscriptionStatus) === 'portal') {
+        await openPortal();
+        return;
+      }
       await startCheckout(tier);
       return;
     }
@@ -240,14 +243,12 @@ export default function UpgradeScreen() {
   const confirmUpgrade = async (tier: PlanTier) => {
     if (!hasLiveSubscription(user?.subscriptionStatus)) return true;
     const target = getPlanDefinition(tier);
-    const price = target.pricing ? formatCad(target.pricing.year.amountCents) : '';
     return confirmAsync({
       title: `Upgrade to ${target.name}?`,
       message:
-        `You'll be charged ${price} today for a full year of ${target.name}, starting now.\n\n` +
-        `The time left on your ${currentPlan.name} plan isn't credited or refunded, and that ` +
-        `subscription is cancelled once the payment goes through.`,
-      confirmLabel: 'Continue to payment',
+        `You'll only pay the difference for the time left on your ${currentPlan.name} plan, not the full ` +
+        `${target.name} price. You'll finish the change in Stripe, where the exact amount is shown before you confirm.`,
+      confirmLabel: 'Continue',
     });
   };
 
@@ -541,12 +542,12 @@ export default function UpgradeScreen() {
                     loading={loadingTier === item.tier || loadingPortal}
                   />
                   {/* The two directions bill so differently that the button
-                      alone would mislead: one charges a full year today, the
-                      other charges nothing until the current term runs out. */}
+                      alone would mislead: one charges only the prorated
+                      difference today, the other charges nothing until the current term runs out. */}
                   <Text className="text-xs text-center" style={{ color: colors.inkFaint }}>
                     {isUpgrade
                       ? hasLiveSubscription(user?.subscriptionStatus)
-                        ? 'Full price today, billed for a new year. Time left on your current plan isn’t credited.'
+                        ? 'You only pay the difference for the time left on your current plan.'
                         : 'Full price today, billed for a new year.'
                       : planChangeRoute(item.tier, user?.subscriptionStatus) === 'portal'
                         ? 'Takes effect when your current term ends. Nothing changes today.'

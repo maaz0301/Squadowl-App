@@ -23,6 +23,7 @@ import {
 } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { useUser } from '@/state/authStore';
+import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { EXPO_PUBLIC_WEB_URL } from '@env';
 import { useNavigation } from '@react-navigation/native';
@@ -39,6 +40,8 @@ export default function RegistrationsScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
+  // A team someone else owns is run on that team's plan, not the viewer's own.
+  const effectiveTier = useEffectivePlanTier(tryoutQuery.data?.teamId);
   const regsQuery = useRegistrationsQuery(id!);
   const ensureCloud = useEnsureCloudSessionMutation();
   // Only the destination's headcount is read below, so the light list is
@@ -72,7 +75,7 @@ export default function RegistrationsScreen() {
   // Registration whose submitted profile is open. Non-null == profile open.
   const [viewingId, setViewingId] = useState<string | null>(null);
 
-  const isAssociation = canUseFeature(user?.planTier ?? 'free', 'enterprise');
+  const isAssociation = canUseFeature(effectiveTier, 'enterprise');
 
   const showAlert = (title: string, message: string) => {
     if (Platform.OS === 'web') alert(`${title}\n\n${message}`);
@@ -130,6 +133,15 @@ export default function RegistrationsScreen() {
   const toggleSelectAll = () => {
     setSelected(allPendingSelected ? new Set() : new Set(pendingIds));
   };
+  // What "Add N to Roster" actually places: the ticked registrations that are
+  // still pending. A player dismissed (or placed elsewhere) after being ticked
+  // stays in `selected`, and would otherwise be counted and sent anyway.
+  const pendingIdSet = new Set(pendingIds);
+  const selectedIds = [...selected].filter((regId) => pendingIdSet.has(regId));
+  // The "Add to Roster" on a card means the whole ticked group when that card is
+  // one of them — tapping it on one of several ticked players used to place only
+  // that one, which is how a multi-select "sent one player".
+  const addFromCard = (regId: string) => setPlacing(selected.has(regId) && selectedIds.length > 1 ? selectedIds : [regId]);
 
   const runPlacement = async (destination: RosterDestination) => {
     const ids = placing ?? [];
@@ -141,8 +153,8 @@ export default function RegistrationsScreen() {
     if (destination.kind === 'assessment') {
       const target = (allTryouts.data ?? []).find((t) => t.id === destination.id);
       const existing = target?.playerCount ?? 0;
-      if (isAtPlayerLimit(user?.planTier ?? 'free', existing + ids.length - 1)) {
-        setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'players', 'players'));
+      if (isAtPlayerLimit(effectiveTier, existing + ids.length - 1)) {
+        setLimitMsg(buildLimitReachedMessage(effectiveTier, 'players', 'players'));
         return;
       }
     }
@@ -296,11 +308,11 @@ export default function RegistrationsScreen() {
                       variant="secondary"
                       onPress={toggleSelectAll}
                     />
-                    {selected.size > 0 ? (
+                    {selectedIds.length > 0 ? (
                       <Button
-                        label={`Add ${selected.size} to Roster`}
+                        label={`Add ${selectedIds.length} to Roster`}
                         size="sm"
-                        onPress={() => setPlacing([...selected])}
+                        onPress={() => setPlacing(selectedIds)}
                       />
                     ) : null}
                   </>
@@ -381,9 +393,13 @@ export default function RegistrationsScreen() {
                   onPress={() => toggleSelect(item.id)}
                 />
                 <Button
-                  label="Add to Roster"
+                  label={
+                    selected.has(item.id) && selectedIds.length > 1
+                      ? `Add ${selectedIds.length} to Roster`
+                      : 'Add to Roster'
+                  }
                   size="sm"
-                  onPress={() => setPlacing([item.id])}
+                  onPress={() => addFromCard(item.id)}
                 />
                 <Button
                   label="Dismiss"
@@ -396,6 +412,21 @@ export default function RegistrationsScreen() {
           </Card>
         )}
       />
+
+      {/* Outside the list, so the group action stays on screen however far down
+          the coach has scrolled while ticking players. */}
+      {tab === 'pending' && selectedIds.length > 0 ? (
+        <View
+          className="flex-row items-center gap-2 border-t px-4 py-3"
+          style={{ borderColor: colors.border, backgroundColor: colors.card }}
+        >
+          <Text className="flex-1 text-sm font-bold" style={{ color: colors.ink }}>
+            {selectedIds.length} selected
+          </Text>
+          <Button label="Clear" variant="ghost" size="sm" onPress={() => setSelected(new Set())} />
+          <Button label={`Add ${selectedIds.length} to Roster`} size="sm" onPress={() => setPlacing(selectedIds)} />
+        </View>
+      ) : null}
 
       <Modal visible={showQr} title="Registration QR" onClose={() => setShowQr(false)}>
         <View className="items-center py-6 gap-4">

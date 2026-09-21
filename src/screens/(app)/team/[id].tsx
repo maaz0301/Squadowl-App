@@ -12,7 +12,7 @@ import { AddToCalendar } from '@/components/AddToCalendar';
 import { MapLink, MapLocationHint } from '@/components/MapLink';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
-import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation, useTeamManagersQuery } from '@/features/queries';
+import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit } from '@/data/plans';
@@ -22,6 +22,8 @@ import { CreateEventFormSchema, type AddPlayerForm as AddPlayerFormValues, type 
 import { BottomNav } from '@/components/BottomNav';
 import { ChatIconButton } from '@/components/ChatIconButton';
 import { ImportPlayersModal } from '@/components/roster/ImportPlayersModal';
+import { RosterSelectToolbar } from '@/components/roster/RosterControls';
+import { LetterTemplatesManager } from '@/components/letters/LetterTemplatesManager';
 import { ChatUnreadBadge } from '@/components/ChatUnreadBadge';
 import { PlanGate } from '@/components/PlanGate';
 import { TeamBanner } from '@/components/TeamBanner';
@@ -95,12 +97,7 @@ export default function TeamDetailScreen() {
   const uploadLogo = useUploadTeamLogoMutation();
   const user = useUser();
   const { canManageTeam } = usePermissions();
-  // Only fetch team-manager rows when this team is reached via delegation
-  // (CLUB mode) — needed to tell a 'coach'-labeled delegate from a
-  // 'manager'-labeled one for canViewEvaluations below. Skipped for a team
-  // the account actually owns, where canManageTeam alone decides it.
   const teamManagedForPerm = teamsQuery.data?.find((t) => t.id === id)?.managed;
-  const { data: teamManagers = [] } = useTeamManagersQuery(teamManagedForPerm ? id : undefined);
   const [editing, setEditing] = useState(false);
   const [brandColor, setBrandColor] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -170,6 +167,18 @@ export default function TeamDetailScreen() {
   const importPlayers = useImportTeamRosterPlayersMutation(id);
   const uploadTeamPlayerPhoto = useUploadTeamPlayerPhotoMutation(id);
   const removeRosterPlayer = useRemoveTeamRosterPlayerMutation(id);
+  const removeRosterPlayers = useRemoveTeamRosterPlayersMutation(id);
+  // Which roster export is running (Options tab), so the buttons can't double-fire.
+  const [exportingTeam, setExportingTeam] = useState<'xlsx' | 'pdf' | null>(null);
+  // Players-tab select mode: pick several (or everyone) and remove them together.
+  const [rosterSelectMode, setRosterSelectMode] = useState(false);
+  const [selectedRosterIds, setSelectedRosterIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (tab !== 'players') {
+      setRosterSelectMode(false);
+      setSelectedRosterIds(new Set());
+    }
+  }, [tab]);
   const sendInvites = useTeamRosterInvitesMutation(id);
 
   // A player who never went through an assessment (no tryout roster to pull
@@ -385,15 +394,10 @@ export default function TeamDetailScreen() {
   // rejected with a raw "new row violates row-level security policy" error.
   const canEditTeam = !!team.managed || canManageTeam;
 
-  // Evaluations are coach-only. For the account's own team that's
-  // canManageTeam; for a team reached via delegation it's specifically the
-  // 'coach'-labeled delegate — a 'manager'-labeled delegate runs the
-  // roster/schedule/chat but doesn't also get evaluation results, per
-  // TeamManagersCard's own description of what a delegate is handed.
-  const myManagerRole = teamManagers.find(
-    (m) => (user?.id && m.userId === user.id) || (user?.email && m.email.toLowerCase() === user.email.toLowerCase()),
-  )?.role;
-  const canViewEvaluations = team.managed ? myManagerRole === 'coach' : canManageTeam;
+  // A manager of this team can create and run its evaluations, on the owning
+  // club's plan (see effectiveTier) — their own account stays as it was. So
+  // every manager, whatever role label their row carries, sees the tab.
+  const canViewEvaluations = team.managed ? true : canManageTeam;
 
   // Every surface on this screen — background, header ink, tabs, cards — is
   // derived from the team's brand colour so the whole hub reads as the team's,
@@ -566,6 +570,82 @@ export default function TeamDetailScreen() {
     Alert.alert('Remove Player', message, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: () => void removePlayer(athleteId) },
+    ]);
+  };
+
+  /** Export the whole roster (not just the loaded page) as Excel or PDF. */
+  const exportTeam = async (format: 'xlsx' | 'pdf') => {
+    if (exportingTeam) return;
+    setExportingTeam(format);
+    try {
+      const players = await getDataSource().listTeamRoster(team.id);
+      if (players.length === 0) {
+        alertMsg('Nothing to Export', 'This team has no players yet.');
+        return;
+      }
+      const { exportTeamRosterData } = await import('@/lib/exportData');
+      await exportTeamRosterData({ name: team.name, season: team.season }, players, format);
+    } catch (e: any) {
+      alertMsg('Export Failed', e?.message || 'Could not export the team.');
+    } finally {
+      setExportingTeam(null);
+    }
+  };
+
+  const openEvaluationLetters = (tryoutId: string) => {
+    // Full manager access from the team's own view, not the scoped-down assessor
+    // mode — same reset the Evaluations tab does before opening one.
+    setAssessorOnlyTryout(null);
+    navigation.navigate('AssessmentFlow', {
+      screen: 'AssessmentLetters',
+      params: { id: tryoutId, isAssessorOnly: false },
+    });
+  };
+
+  const exitRosterSelect = () => {
+    setRosterSelectMode(false);
+    setSelectedRosterIds(new Set());
+  };
+
+  const toggleRosterSelected = (athleteId: string) =>
+    setSelectedRosterIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(athleteId)) next.delete(athleteId);
+      else next.add(athleteId);
+      return next;
+    });
+
+  // With no search running, "all" means the whole team — the ids query already
+  // holds every athlete, while the list itself only ever holds the pages pulled
+  // so far. With a search running it means the matches on screen.
+  const selectableRosterIds =
+    debouncedPlayerSearch.trim() === ''
+      ? (rosterAthleteIds ?? listedPlayers.map((p) => p.athleteId))
+      : listedPlayers.map((p) => p.athleteId);
+  const allRosterSelected =
+    selectableRosterIds.length > 0 && selectableRosterIds.every((athleteId) => selectedRosterIds.has(athleteId));
+
+  const removeSelectedPlayers = async () => {
+    const ids = [...selectedRosterIds];
+    try {
+      await removeRosterPlayers.mutateAsync(ids);
+      exitRosterSelect();
+    } catch (e: any) {
+      alertMsg('Remove Failed', e?.message || 'Could not remove the selected players.');
+    }
+  };
+
+  const confirmRemoveSelected = () => {
+    const count = selectedRosterIds.size;
+    if (count === 0) return;
+    const message = `${count} player${count === 1 ? '' : 's'} will be removed from ${team.name}.`;
+    if (Platform.OS === 'web') {
+      if (confirm(`Remove Players\n\n${message}`)) void removeSelectedPlayers();
+      return;
+    }
+    Alert.alert('Remove Players', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => void removeSelectedPlayers() },
     ]);
   };
 
@@ -835,7 +915,7 @@ export default function TeamDetailScreen() {
 
   const headerBlock = (
     <>
-      <Header title="Team" showBack />
+      <Header title={`${team.name} Hub`} showBack />
 
       {/* The team's own branding leads every tab, and the same banner repeats on
           the schedule/roster/player screens below it. linkToHub is off here —
@@ -868,7 +948,7 @@ export default function TeamDetailScreen() {
           { key: 'schedule', label: 'Schedule', badge: allTeamEvents.length || undefined },
           { key: 'players', label: 'Players', badge: playerCount },
           ...(canViewEvaluations ? [{ key: 'assessments', label: 'Evaluations', badge: linkedTryouts.length }] : []),
-          { key: 'settings', label: 'Settings' },
+          { key: 'settings', label: 'Options' },
         ]}
         activeKey={tab}
         onChange={setTab}
@@ -889,40 +969,63 @@ export default function TeamDetailScreen() {
         <View className="flex-1">
           <View className="px-4">
             {headerBlock}
-            <View className="flex-row flex-wrap gap-2 mb-3">
-              <Button
-                label="Add Players from Evaluations"
-                size="sm"
-                onPress={() => {
-                  addPlayersPressAt.current = performance.now();
-                  setPickedAthletes(new Set());
-                  setCandidateSearch('');
-                  setCandidateTryoutFilter(null);
-                  setShowAddPlayers(true);
-                }}
-              />
-              <Button
-                label="+ Add Player Manually"
-                size="sm"
-                variant="secondary"
-                onPress={() => setShowAddManualPlayer(true)}
-              />
-              <Button
-                label="Import Spreadsheet"
-                size="sm"
-                variant="secondary"
-                onPress={() => setShowImportPlayers(true)}
-              />
-              {canEditTeam && playerCount > 0 ? (
+            {rosterSelectMode ? (
+              <View className="mb-3">
+                <RosterSelectToolbar
+                  allSelected={allRosterSelected}
+                  count={selectedRosterIds.size}
+                  deleting={removeRosterPlayers.isPending}
+                  onBack={exitRosterSelect}
+                  onToggleAll={() =>
+                    setSelectedRosterIds(allRosterSelected ? new Set() : new Set(selectableRosterIds))
+                  }
+                  onDeleteSelected={confirmRemoveSelected}
+                />
+              </View>
+            ) : (
+              <View className="flex-row flex-wrap gap-2 mb-3">
                 <Button
-                  label="Send Invites"
+                  label="Add Players from Evaluations"
+                  size="sm"
+                  onPress={() => {
+                    addPlayersPressAt.current = performance.now();
+                    setPickedAthletes(new Set());
+                    setCandidateSearch('');
+                    setCandidateTryoutFilter(null);
+                    setShowAddPlayers(true);
+                  }}
+                />
+                <Button
+                  label="+ Add Player Manually"
                   size="sm"
                   variant="secondary"
-                  loading={sendInvites.isPending}
-                  onPress={confirmSendRosterInvites}
+                  onPress={() => setShowAddManualPlayer(true)}
                 />
-              ) : null}
-            </View>
+                <Button
+                  label="Import Spreadsheet"
+                  size="sm"
+                  variant="secondary"
+                  onPress={() => setShowImportPlayers(true)}
+                />
+                {playerCount > 0 ? (
+                  <Button
+                    label="Select"
+                    size="sm"
+                    variant="secondary"
+                    onPress={() => setRosterSelectMode(true)}
+                  />
+                ) : null}
+                {canEditTeam && playerCount > 0 ? (
+                  <Button
+                    label="Send Invites"
+                    size="sm"
+                    variant="secondary"
+                    loading={sendInvites.isPending}
+                    onPress={confirmSendRosterInvites}
+                  />
+                ) : null}
+              </View>
+            )}
             {playerCount > 0 ? (
               <Input
                 value={playerSearch}
@@ -939,7 +1042,7 @@ export default function TeamDetailScreen() {
             keyboardShouldPersistTaps="handled"
             data={rosterPages.isLoading ? [] : listedPlayers}
             keyExtractor={(p) => p.id}
-            extraData={navigatingId}
+            extraData={[navigatingId, rosterSelectMode, selectedRosterIds]}
             // See the assessment roster's list: cap how much of a large roster
             // is mounted before the first paint.
             initialNumToRender={12}
@@ -1005,11 +1108,40 @@ export default function TeamDetailScreen() {
             renderItem={({ item: p }) => (
               <Pressable
                 onPress={() => {
+                  if (rosterSelectMode) {
+                    toggleRosterSelected(p.athleteId);
+                    return;
+                  }
                   setNavigatingId(p.athleteId);
                   navigation.navigate('TeamPlayer', { id: team.id, playerId: p.athleteId });
                 }}
+                accessibilityRole="button"
+                accessibilityState={rosterSelectMode ? { selected: selectedRosterIds.has(p.athleteId) } : undefined}
               >
-                <Card className="mb-2 flex-row items-center gap-3">
+                <Card
+                  className="mb-2 flex-row items-center gap-3"
+                  style={
+                    rosterSelectMode && selectedRosterIds.has(p.athleteId)
+                      ? { borderColor: colors.primary }
+                      : undefined
+                  }
+                >
+                  {rosterSelectMode ? (
+                    // An indicator, not a nested control: the whole row toggles.
+                    <View
+                      className="h-5 w-5 shrink-0 items-center justify-center rounded-[6px] border"
+                      style={{
+                        borderColor: selectedRosterIds.has(p.athleteId) ? colors.primary : colors.border,
+                        backgroundColor: selectedRosterIds.has(p.athleteId) ? colors.primary : 'transparent',
+                      }}
+                    >
+                      {selectedRosterIds.has(p.athleteId) ? (
+                        <Text className="text-xs font-bold" style={{ color: '#fff' }}>
+                          ✓
+                        </Text>
+                      ) : null}
+                    </View>
+                  ) : null}
                   <Avatar first={p.first} last={p.last} size={36} pos={p.pos} />
                   <View className="flex-1">
                     <Text className="font-bold" style={{ color: colors.ink }}>
@@ -1025,7 +1157,7 @@ export default function TeamDetailScreen() {
                       variant={p.feeStatus === 'unpaid' ? 'warning' : 'success'}
                     />
                   ) : null}
-                  {navigatingId === p.athleteId ? (
+                  {rosterSelectMode ? null : navigatingId === p.athleteId ? (
                     <ActivityIndicator size="small" color={colors.primary} />
                   ) : (
                     <Button
@@ -1334,6 +1466,75 @@ export default function TeamDetailScreen() {
                 tierOverride={effectiveTier}
               />
             </View>
+
+            <Card className="mb-3 gap-2">
+              <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                Export Team
+              </Text>
+              <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                Download the full roster with jersey, position, year of birth, and player and guardian contact
+                details. Medical information is not included.
+              </Text>
+              <View className="flex-row flex-wrap gap-2 mt-1">
+                <Button
+                  label="Excel"
+                  size="sm"
+                  variant="secondary"
+                  loading={exportingTeam === 'xlsx'}
+                  disabled={exportingTeam !== null}
+                  onPress={() => exportTeam('xlsx')}
+                />
+                <Button
+                  label="PDF"
+                  size="sm"
+                  variant="secondary"
+                  loading={exportingTeam === 'pdf'}
+                  disabled={exportingTeam !== null}
+                  onPress={() => exportTeam('pdf')}
+                />
+              </View>
+            </Card>
+
+            {canViewEvaluations ? (
+              <Card className="mb-3 gap-3">
+                <View className="gap-1">
+                  <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                    Player Selection Letters
+                  </Text>
+                  <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                    The Offer Letter (made the team) and the Roster Decision Letter (not selected). Write and
+                    edit them here.
+                  </Text>
+                </View>
+                <LetterTemplatesManager />
+                <View className="gap-2">
+                  <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                    Send letters
+                  </Text>
+                  {linkedTryouts.length === 0 ? (
+                    <Text className="text-xs" style={{ color: colors.inkFaint }}>
+                      Sending is done from an evaluation. No evaluations are linked to this team yet — create or
+                      attach one on the Evaluations tab.
+                    </Text>
+                  ) : (
+                    <>
+                      <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                        Choose the players and send from the evaluation:
+                      </Text>
+                      {linkedTryouts.map((t) => (
+                        <Button
+                          key={t.id}
+                          label={t.name}
+                          size="sm"
+                          variant="secondary"
+                          onPress={() => openEvaluationLetters(t.id)}
+                        />
+                      ))}
+                    </>
+                  )}
+                </View>
+              </Card>
+            ) : null}
 
             {isAssociation ? (
               <Card className="mb-3 gap-2">

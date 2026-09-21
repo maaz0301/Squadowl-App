@@ -81,14 +81,14 @@ type TeamRosterCache =
   | null
   | undefined;
 
-/** Removes an athlete from whichever of those shapes a cache entry holds. The
+/** Removes athletes from whichever of those shapes a cache entry holds. The
  * prefix also covers the single-player entry (useTeamRosterPlayerQuery), which
  * has no `pages`; it is left alone here and dropped by the invalidate. */
-function dropRosterPlayer(cache: TeamRosterCache, athleteId: string): TeamRosterCache {
+function dropRosterPlayers(cache: TeamRosterCache, athleteIds: ReadonlySet<string>): TeamRosterCache {
   if (Array.isArray(cache)) {
     // Either the flat roster or the athlete-id list, depending on the entry.
     return (cache as unknown[]).filter((p) =>
-      typeof p === 'string' ? p !== athleteId : (p as TeamRosterPlayer).athleteId !== athleteId,
+      typeof p === 'string' ? !athleteIds.has(p) : !athleteIds.has((p as TeamRosterPlayer).athleteId),
     ) as TeamRosterCache;
   }
   if (!cache || !Array.isArray((cache as InfiniteData<TeamRosterPage>).pages)) return cache;
@@ -96,9 +96,13 @@ function dropRosterPlayer(cache: TeamRosterCache, athleteId: string): TeamRoster
     ...(cache as InfiniteData<TeamRosterPage>),
     pages: (cache as InfiniteData<TeamRosterPage>).pages.map((page) => ({
       ...page,
-      players: page.players.filter((p) => p.athleteId !== athleteId),
+      players: page.players.filter((p) => !athleteIds.has(p.athleteId)),
     })),
   };
+}
+
+function dropRosterPlayer(cache: TeamRosterCache, athleteId: string): TeamRosterCache {
+  return dropRosterPlayers(cache, new Set([athleteId]));
 }
 
 /**
@@ -266,6 +270,28 @@ export function useRemoveTeamRosterPlayerMutation(teamId: string) {
         dropRosterPlayer(old, athleteId),
       );
       qc.invalidateQueries({ queryKey: teamRosterKey(teamId) });
+    },
+  });
+}
+
+/**
+ * Remove a set of players from a team roster in one go — the Players tab's
+ * "select all, delete". Same optimistic drop as the single removal, applied to
+ * every id at once so the list doesn't shed rows one refetch at a time.
+ */
+export function useRemoveTeamRosterPlayersMutation(teamId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (athleteIds: string[]) => getDataSource().removeTeamRosterPlayers(teamId, athleteIds),
+    onSuccess: (_data, athleteIds) => {
+      const ids = new Set(athleteIds);
+      qc.setQueriesData<TeamRosterCache>({ queryKey: teamRosterKey(teamId) }, (old) => dropRosterPlayers(old, ids));
+    },
+    // Whatever the outcome: a partial failure still changed the roster, and the
+    // refetch is what shows which players are actually left.
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: teamRosterKey(teamId) });
+      qc.invalidateQueries({ queryKey: queryKeys.seasons });
     },
   });
 }
@@ -732,6 +758,37 @@ export function useDeletePlayerMutation(tryoutId: string) {
       qc.invalidateQueries({ queryKey: queryKeys.sharedAthletes });
       // Their guardian is dropped with them once they are off every roster, so
       // the member directory that derives guardians from athletes is now stale.
+      qc.invalidateQueries({ queryKey: queryKeys.orgMembers() });
+    },
+  });
+}
+
+/**
+ * Delete several players from an assessment roster in one mutation. The
+ * per-player mutation invalidates four queries on every success; run over a
+ * whole roster that is hundreds of refetches, so this drops the rows from the
+ * cache once and invalidates once.
+ */
+export function useDeletePlayersMutation(tryoutId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (playerIds: string[]) => getDataSource().deletePlayers(tryoutId, playerIds),
+    onSettled: (result) => {
+      const gone = new Set(result?.deleted ?? []);
+      if (gone.size > 0) {
+        qc.setQueryData<Tryout | undefined>(queryKeys.tryout(tryoutId), (old) =>
+          old
+            ? {
+                ...old,
+                roster: old.roster.filter((p) => !gone.has(p.id)),
+                evals: old.evals.filter((e) => !gone.has(e.playerId)),
+              }
+            : old,
+        );
+      }
+      qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
+      qc.invalidateQueries({ queryKey: ['tryouts'] });
+      qc.invalidateQueries({ queryKey: queryKeys.sharedAthletes });
       qc.invalidateQueries({ queryKey: queryKeys.orgMembers() });
     },
   });

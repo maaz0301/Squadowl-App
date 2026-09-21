@@ -1,10 +1,10 @@
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
 import { Alert, Platform } from 'react-native';
-import { Tryout, ExportFormat } from '@/data/types';
+import { Tryout, ExportFormat, type TeamRosterPlayer } from '@/data/types';
 import { buildTeamBuilderExportRows, type TeamBuilderState } from '@/data/teamBuilder';
 import { buildFullResultsCsvRows, buildPlayerFullResults, buildReportDocInfo } from '@/data/resultsExport';
-import { csvCell } from '@/lib/exportCsv';
+import { csvCell, slugify } from '@/lib/exportCsv';
 import { PDFDocument, PDFFont, StandardFonts, rgb } from 'pdf-lib';
 import * as XLSX from 'xlsx';
 
@@ -510,4 +510,144 @@ export async function exportTeamBuilderData(
   }
 
   await writeAndDeliverFile(fileName, fileContent, encoding, mimeType, format);
+}
+
+/**
+ * The columns of a team roster export, in order. Contact details a coach needs
+ * to reach a family are here; medical information is deliberately not — it is a
+ * sensitive field with its own permission on the roster read, and a shared
+ * spreadsheet or PDF outlives that permission.
+ */
+export const TEAM_ROSTER_EXPORT_HEADERS = [
+  'Jersey',
+  'First Name',
+  'Last Name',
+  'Position',
+  'Year of Birth',
+  'Player Email',
+  'Guardian Name',
+  'Guardian Email',
+  'Guardian Phone',
+  'Fee Status',
+  'Evaluation',
+] as const;
+
+const FEE_STATUS_LABEL: Record<'unpaid' | 'paid' | 'waived', string> = {
+  unpaid: 'Unpaid',
+  paid: 'Paid',
+  waived: 'Waived',
+};
+
+/** One row per player, ordered by last then first name so a printed copy reads like a roll call. */
+export function buildTeamRosterExportRows(players: TeamRosterPlayer[]): string[][] {
+  return [...players]
+    .sort(
+      (a, b) =>
+        (a.last || '').localeCompare(b.last || '', undefined, { sensitivity: 'base' }) ||
+        (a.first || '').localeCompare(b.first || '', undefined, { sensitivity: 'base' }),
+    )
+    .map((p) => [
+      p.jersey ?? '',
+      p.first ?? '',
+      p.last ?? '',
+      p.pos ?? '',
+      p.yearOfBirth != null ? String(p.yearOfBirth) : '',
+      p.playerEmail ?? '',
+      p.guardianName ?? '',
+      p.guardianEmail ?? '',
+      p.guardianPhone ?? '',
+      p.feeStatus ? FEE_STATUS_LABEL[p.feeStatus] : '',
+      p.sourceTryoutName ?? '',
+    ]);
+}
+
+/**
+ * Export a team's roster as Excel or PDF. Takes the whole roster rather than a
+ * page of it — the Players tab only ever holds 50 rows of a large team.
+ */
+export async function exportTeamRosterData(
+  team: { name: string; season?: string },
+  players: TeamRosterPlayer[],
+  format: 'xlsx' | 'pdf',
+): Promise<void> {
+  const headers = [...TEAM_ROSTER_EXPORT_HEADERS] as string[];
+  const rows = buildTeamRosterExportRows(players);
+  const fileName = `${slugify(team.name, 'roster')}.${format}`;
+  const title = team.season ? `${team.name} (${team.season})` : team.name;
+
+  let fileContent = '';
+  let mimeType = 'text/plain';
+
+  if (format === 'xlsx') {
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws['!cols'] = [8, 14, 16, 10, 13, 26, 20, 26, 16, 11, 22].map((wch) => ({ wch }));
+    const wb = XLSX.utils.book_new();
+    // Sheet names are capped at 31 characters and can't hold : \ / ? * [ ]
+    XLSX.utils.book_append_sheet(wb, ws, 'Roster');
+    fileContent = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+    mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  } else {
+    // Landscape: eleven columns don't fit a portrait page at a readable size.
+    const PAGE_W = 842;
+    const PAGE_H = 595;
+    const MARGIN = 36;
+    const widths = [34, 62, 70, 42, 46, 118, 84, 118, 68, 46, 98];
+    const scale = (PAGE_W - MARGIN * 2) / widths.reduce((sum, w) => sum + w, 0);
+    const colX: number[] = [];
+    let x = MARGIN;
+    for (const w of widths) {
+      colX.push(x);
+      x += w * scale;
+    }
+    const colWidth = widths.map((w) => w * scale - 4);
+    const SIZE = 8;
+
+    const pdfDoc = await PDFDocument.create();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+    /** Cut a cell to its column instead of letting it run into the next one. */
+    const fit = (text: string, width: number, f: PDFFont): string => {
+      let out = pdfSafe(text);
+      if (f.widthOfTextAtSize(out, SIZE) <= width) return out;
+      while (out.length > 1 && f.widthOfTextAtSize(out + '...', SIZE) > width) out = out.slice(0, -1);
+      return out + '...';
+    };
+
+    let page = pdfDoc.addPage([PAGE_W, PAGE_H]);
+    let y = PAGE_H - MARGIN;
+    // 16pt headline: long names are trimmed by width so they can't run off the page.
+    let headline = pdfSafe(title);
+    while (headline.length > 1 && fontBold.widthOfTextAtSize(headline, 16) > PAGE_W - MARGIN * 2) headline = headline.slice(0, -1);
+    page.drawText(headline, { x: MARGIN, y: y - 6, size: 16, font: fontBold });
+    y -= 26;
+    page.drawText(pdfSafe(`Roster - ${players.length} ${players.length === 1 ? 'player' : 'players'}`), {
+      x: MARGIN,
+      y,
+      size: 10,
+      font,
+    });
+    y -= 22;
+
+    const drawHeader = () => {
+      headers.forEach((h, i) => page.drawText(fit(h, colWidth[i], fontBold), { x: colX[i], y, size: SIZE, font: fontBold }));
+      y -= 14;
+    };
+    drawHeader();
+
+    for (const row of rows) {
+      if (y < MARGIN) {
+        page = pdfDoc.addPage([PAGE_W, PAGE_H]);
+        y = PAGE_H - MARGIN;
+        drawHeader();
+      }
+      row.forEach((cell, i) => page.drawText(fit(cell, colWidth[i], font), { x: colX[i], y, size: SIZE, font }));
+      y -= 13;
+    }
+
+    fileContent = await pdfDoc.saveAsBase64();
+    mimeType = 'application/pdf';
+  }
+
+  await writeAndDeliverFile(fileName, fileContent, 'base64', mimeType, format);
 }

@@ -324,8 +324,8 @@ export default function NewTeamScreen() {
               Invite a manager (optional)
             </Text>
             <Text className="text-xs" style={{ color: colors.inkMuted }}>
-              Give them this team's roster, schedule, and chat as soon as it's created — but not
-              evaluations, and nothing else on your account. If they don't have a TryoutHQ account yet,
+              Give them this team's roster, schedule, and chat as soon as it's created, and let
+              them create its evaluations — but nothing else on your account. If they don't have a TryoutHQ account yet,
               one is created and their sign-in details are emailed to them.
             </Text>
             <Input

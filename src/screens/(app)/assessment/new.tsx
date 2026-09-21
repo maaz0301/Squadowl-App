@@ -37,6 +37,7 @@ import { CreateTryoutContinuingError, useCreateTryoutMutation, useTeamsQuery, us
 import { useSessionStore } from '@/state/sessionStore';
 import { useUser } from '@/state/authStore';
 import { isAtAssessmentLimit } from '@/data/plans';
+import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { getDataSource } from '@/data';
@@ -252,15 +253,22 @@ export default function NewAssessmentScreen() {
   const sport = watch('sport');
   const eventType = watch('eventType');
   const teamId = watch('teamId');
+  // An evaluation for a team someone else owns is created on that team's plan,
+  // not the creator's own — the manager's account stays as it is.
+  const tier = useEffectivePlanTier(teamId);
+  const teamIsManaged = !!teamsQuery.data?.find((t) => t.id === teamId)?.managed;
 
   const onSubmit = handleSubmit(async (data) => {
     if (pendingRubrics.length === 0) {
       setRubricError('Add at least one rubric before creating the evaluation.');
       return;
     }
-    const count = tryoutsQuery.data?.length ?? 0;
-    if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
-      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'assessments', 'evaluations'));
+    // On a managed team only that team's evaluations are visible (and counted).
+    const count = teamIsManaged
+      ? (tryoutsQuery.data ?? []).filter((t) => t.teamId === teamId).length
+      : (tryoutsQuery.data?.length ?? 0);
+    if (isAtAssessmentLimit(tier, count)) {
+      setLimitMsg(buildLimitReachedMessage(tier, 'assessments', 'evaluations'));
       return;
     }
     let tryout;
@@ -473,8 +481,8 @@ export default function NewAssessmentScreen() {
             <Controller
               control={control}
               name="endTime"
-              render={({ field: { onChange, value } }) => (
-                <TimeField label="End Time" value={value} onChange={onChange} placeholder="Select a time" />
+              render={({ field: { onChange, value }, fieldState: { error } }) => (
+                <TimeField label="End Time" value={value} onChange={onChange} placeholder="Select a time" error={error?.message} />
               )}
             />
             <View onLayout={rememberField('rink')}>

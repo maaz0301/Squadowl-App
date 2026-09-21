@@ -38,6 +38,8 @@ interface Zone {
   name: string;
   accent: string;
   playerIds: string[];
+  /** Mean overall of the scored players in the bin, or null when none are scored. */
+  avg: string | null;
 }
 
 /**
@@ -83,18 +85,25 @@ export function TeamAdjuster({
 }) {
   const colors = useThemeColors();
 
-  const zones = useMemo<Zone[]>(
-    () => [
+  const zones = useMemo<Zone[]>(() => {
+    // Same rule as the team cards on the Team Builder screen: an overall of 0 is
+    // the absence of a rating, not a low one, so it stays out of the average.
+    // Shown here so the effect of a move on both teams is visible as it happens.
+    const averageOf = (playerIds: string[]): string | null => {
+      const scores = playerIds.map((id) => overallByPlayerId.get(id) ?? 0).filter((v) => v > 0);
+      return scores.length > 0 ? (scores.reduce((sum, v) => sum + v, 0) / scores.length).toFixed(1) : null;
+    };
+    return [
       ...teams.map((t, i) => ({
         id: t.id,
         name: t.name,
         accent: TEAM_ACCENTS[i % TEAM_ACCENTS.length],
         playerIds: t.players,
+        avg: averageOf(t.players),
       })),
-      { id: UNASSIGNED, name: 'Unassigned', accent: colors.inkMuted, playerIds: unassigned },
-    ],
-    [teams, unassigned, colors.inkMuted],
-  );
+      { id: UNASSIGNED, name: 'Unassigned', accent: colors.inkMuted, playerIds: unassigned, avg: null },
+    ];
+  }, [teams, unassigned, colors.inkMuted, overallByPlayerId]);
 
   // Android's back gesture would otherwise pop the whole Team Builder screen,
   // taking every manual adjustment with it — including the ones made before the
@@ -118,6 +127,11 @@ export function TeamAdjuster({
   const focusedZone = zones.find((z) => z.id === focusedZoneId) ?? zones[0];
 
   const [dragging, setDragging] = useState<{ playerId: string; from: string } | null>(null);
+  // True from the moment a hold has been long enough to mean a drag, before the
+  // finger has moved. The list has to stop scrolling *then*: once the finger
+  // moves, the list's own scroll gesture starts at the same instant the drag
+  // asks for the touch, and it can win — the row scrolls away instead of lifting.
+  const [holdingRow, setHoldingRow] = useState(false);
   const [hoverZoneId, setHoverZoneId] = useState<string | null>(null);
   const [movePickerFor, setMovePickerFor] = useState<{ playerId: string; from: string } | null>(null);
 
@@ -208,7 +222,7 @@ export function TeamAdjuster({
         keyExtractor={(pid) => pid}
         // Dropping the responder mid-drag would strand the ghost, and the list
         // must not scroll away underneath a lifted row.
-        scrollEnabled={!dragging}
+        scrollEnabled={!dragging && !holdingRow}
         ListEmptyComponent={
           <Text className="text-sm py-6 text-center" style={{ color: colors.inkMuted }}>
             No players on this team. Drag someone in, or tap a player on another team.
@@ -222,6 +236,7 @@ export function TeamAdjuster({
             accent={focusedZone?.accent ?? colors.border}
             colors={colors}
             isDragging={dragging?.playerId === playerId}
+            onHold={setHoldingRow}
             onTap={() => setMovePickerFor({ playerId, from: focusedZone?.id ?? UNASSIGNED })}
             onDragStart={(windowX, windowY) => {
               setDragging({ playerId, from: focusedZone?.id ?? UNASSIGNED });
@@ -372,6 +387,7 @@ function ZoneBin({
       </View>
       <Text className="text-[11px] mt-0.5" style={{ color: colors.inkMuted }}>
         {zone.playerIds.length} {zone.playerIds.length === 1 ? 'player' : 'players'}
+        {zone.avg ? ` · Avg ${zone.avg}` : ''}
       </Text>
     </Pressable>
   );
@@ -384,6 +400,7 @@ function DraggableRow({
   accent,
   colors,
   isDragging,
+  onHold,
   onTap,
   onDragStart,
   onDragMove,
@@ -395,6 +412,8 @@ function DraggableRow({
   accent: string;
   colors: ReturnType<typeof useThemeColors>;
   isDragging: boolean;
+  /** Reports whether a hold long enough to become a drag is in progress. */
+  onHold: (holding: boolean) => void;
   onTap: () => void;
   onDragStart: (windowX: number, windowY: number) => void;
   onDragMove: (windowX: number, windowY: number) => void;
@@ -412,6 +431,13 @@ function DraggableRow({
     timer.current = null;
   };
 
+  // Every way a touch can end lands here, so the list is never left locked.
+  const endHold = () => {
+    cancelTimer();
+    armed.current = false;
+    onHold(false);
+  };
+
   const responder = useRef(
     PanResponder.create({
       // Capture without claiming: returning false leaves the touch to the list
@@ -423,6 +449,7 @@ function DraggableRow({
         cancelTimer();
         timer.current = setTimeout(() => {
           armed.current = true;
+          onHold(true);
         }, LONG_PRESS_MS);
         return false;
       },
@@ -443,13 +470,11 @@ function DraggableRow({
         onDragMove(g.moveX, g.moveY);
       },
       onPanResponderRelease: (_e, g) => {
-        cancelTimer();
-        armed.current = false;
+        endHold();
         onDragEnd(g.moveX, g.moveY);
       },
       onPanResponderTerminate: (_e, g) => {
-        cancelTimer();
-        armed.current = false;
+        endHold();
         onDragEnd(g.moveX, g.moveY);
       },
       // Nothing else should be able to take the row away mid-drag.
@@ -460,10 +485,10 @@ function DraggableRow({
   const name = player ? playerDisplayName(player) : playerId;
 
   return (
-    <View {...responder.panHandlers}>
+    <View {...responder.panHandlers} onTouchEnd={endHold} onTouchCancel={endHold}>
       <Pressable
         onPress={() => {
-          cancelTimer();
+          endHold();
           // A completed drag ends in a release too; without this the move sheet
           // would open on top of the drop the coach just made.
           if (dragged.current) {

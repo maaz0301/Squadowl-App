@@ -18,6 +18,8 @@ import {
 } from '@/components/ui';
 import { BottomNav } from '@/components/BottomNav';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
+import { EditEvaluationModal } from '@/components/assessment/EditEvaluationModal';
+import type { TryoutSummary } from '@/data/types';
 import { UsageNudgeBanner } from '@/components/UsageNudgeBanner';
 import { useAuthStore, useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
@@ -77,6 +79,8 @@ export default function DashboardScreen() {
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
   const [assignedExpanded, setAssignedExpanded] = useState(true);
   const [actionTryout, setActionTryout] = useState<{ id: string; name: string } | null>(null);
+  // The evaluation whose details are open in the tile's edit dialog.
+  const [editingTryout, setEditingTryout] = useState<TryoutSummary | null>(null);
   const [myAthletesExpanded, setMyAthletesExpanded] = useState(isGuardianOnly);
   const [navigatingId, setNavigatingId] = useState<string | null>(null);
   // Tracks which card is mid delete/archive so the spinner shows immediately and
@@ -242,7 +246,15 @@ export default function DashboardScreen() {
 
   const fabLabel = tab === 'teams' ? '+ New Team' : '+ New Evaluation';
 
-  const listData = isGuardianOnly ? [] : tab === 'teams' ? teamsQuery.data : tryoutsQuery.data;
+  // The Evaluations list is for standalone evaluations. One created for a team
+  // lives on that team's own Evaluations tab, so showing it here as well made it
+  // look like it belonged to both. Only hidden when its team is one this user
+  // can actually open — an evaluation pointing at a team that isn't in their list
+  // would otherwise be unreachable from anywhere.
+  const visibleTeamIds = new Set((teamsQuery.data ?? []).map((t) => t.id));
+  const standaloneTryouts = (tryoutsQuery.data ?? []).filter((t) => !t.teamId || !visibleTeamIds.has(t.teamId));
+
+  const listData = isGuardianOnly ? [] : tab === 'teams' ? teamsQuery.data : standaloneTryouts;
 
   const renderItem = ({ item }: { item: any }) => {
     if (tab === 'teams') {
@@ -332,6 +344,18 @@ export default function DashboardScreen() {
                 {isNavigating || isBusy ? (
                   <ActivityIndicator size="small" color={isBusy ? colors.danger : colors.primary} />
                 ) : (
+                <>
+                <Pressable
+                  onPress={() => setEditingTryout(item)}
+                  hitSlop={8}
+                  className="p-1"
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit ${item.name}`}
+                >
+                  <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                    <Path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke={colors.inkMuted} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                </Pressable>
                 <Pressable
                   onPress={() => handleDeleteAssessment(item.id, item.name)}
                   hitSlop={8}
@@ -341,6 +365,7 @@ export default function DashboardScreen() {
                     <Path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" stroke={colors.danger} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
                   </Svg>
                 </Pressable>
+                </>
                 )}
               </View>
               {selected ? <Badge label="Selected" variant="brand" /> : null}
@@ -369,7 +394,10 @@ export default function DashboardScreen() {
     );
   };
 
-  const evalCount = tryoutsQuery.data?.length ?? 0;
+  // The tile and the list agree on standalone evaluations; the plan-limit nudge
+  // below still counts every evaluation the account owns, team-linked included.
+  const evalCount = standaloneTryouts.length;
+  const totalEvalCount = tryoutsQuery.data?.length ?? 0;
   // Visible count: every team the user can see, including ones delegated to
   // them. Distinct from ownedTeamCount below, which feeds the plan-limit
   // nudge/gate — delegated teams don't consume this account's own allowance.
@@ -498,7 +526,7 @@ export default function DashboardScreen() {
                 <UsageNudgeBanner
                   tier={user?.planTier ?? 'free'}
                   metric="assessments"
-                  count={evalCount}
+                  count={totalEvalCount}
                   label="evaluations"
                 />
               )
@@ -729,6 +757,7 @@ export default function DashboardScreen() {
       </Modal>
 
       <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
+      <EditEvaluationModal tryout={editingTryout} onClose={() => setEditingTryout(null)} />
     </Screen>
   );
 }

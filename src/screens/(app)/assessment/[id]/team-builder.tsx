@@ -387,6 +387,13 @@ export default function TeamBuilderScreen() {
         )}
 
         {teamBuilder && (
+          <Text className="text-xs mb-3" style={{ color: colors.inkMuted }}>
+            Adjust moves players between teams: hold a player to drag them onto a team, or tap one and pick a
+            team. Team averages update as you go.
+          </Text>
+        )}
+
+        {teamBuilder && (
           <View className="flex-row gap-2 mb-4">
             <Button
               label="Save"

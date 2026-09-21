@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, FlatList, Pressable, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
@@ -7,7 +7,6 @@ import {
   Badge,
   Button,
   Card,
-  Chip,
   EmptyState,
   ErrorState,
   Header,
@@ -18,15 +17,11 @@ import {
 } from '@/components/ui';
 import {
   BUILT_IN_LETTER_TEMPLATES,
-  LETTER_KINDS,
-  LETTER_KIND_DESCRIPTIONS,
   LETTER_KIND_LABELS,
-  LETTER_PLACEHOLDERS,
   buildLetterVars,
   letterRecipient,
   renderLetter,
   unfilledTokens,
-  type LetterKind,
 } from '@/data/letters';
 import { playerDisplayName } from '@/data/rubrics';
 import type { LetterTemplate, Player, PlayerLetter } from '@/data/types';
@@ -44,15 +39,7 @@ import {
 } from '@/features/queries';
 import { useAssessmentId, useAssessorMode } from '@/features/useAssessmentId';
 import { useUser } from '@/state/authStore';
-
-/** The template editor's working copy — a new template until it has an id. */
-interface TemplateDraft {
-  id?: string;
-  name: string;
-  kind: LetterKind;
-  subject: string;
-  body: string;
-}
+import { TemplateEditor, type TemplateDraft } from '@/components/letters/TemplateEditor';
 
 const STATUS_VARIANT = { sent: 'success', failed: 'danger', draft: 'warning' } as const;
 
@@ -89,6 +76,14 @@ export default function LettersScreen() {
   const deleteLetter = useDeletePlayerLetterMutation(id!);
 
   const [draft, setDraft] = useState<TemplateDraft | null>(null);
+  // Brief confirmation once a template is saved: the editor closes on success,
+  // which on its own reads the same as it closing because something went wrong.
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!savedNotice) return;
+    const timer = setTimeout(() => setSavedNotice(null), 2600);
+    return () => clearTimeout(timer);
+  }, [savedNotice]);
   const [sendWith, setSendWith] = useState<LetterTemplate | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [playerSearch, setPlayerSearch] = useState('');
@@ -260,6 +255,7 @@ export default function LettersScreen() {
         });
       }
       setDraft(null);
+      setSavedNotice('Template saved');
     } catch (e: any) {
       Alert.alert('Save Error', e?.message || 'Could not save the template.');
     }
@@ -378,6 +374,22 @@ export default function LettersScreen() {
           />
         }
       />
+
+      {savedNotice ? (
+        <View
+          className="mb-3 flex-row items-center gap-2 self-start rounded-full px-3 py-1.5"
+          style={{ backgroundColor: 'rgba(34,197,94,0.16)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.45)' }}
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+        >
+          <Text className="text-sm font-bold" style={{ color: colors.success }}>
+            ✓
+          </Text>
+          <Text className="text-sm font-bold" style={{ color: colors.success }}>
+            {savedNotice}
+          </Text>
+        </View>
+      ) : null}
 
       <Text className="mb-2 text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
         Templates
@@ -725,120 +737,5 @@ function LetterBody({ subject, body, to }: { subject: string; body: string; to?:
         {body}
       </Text>
     </View>
-  );
-}
-
-function TemplateEditor({
-  draft,
-  saving,
-  onChange,
-  onClose,
-  onSave,
-}: {
-  draft: TemplateDraft | null;
-  saving: boolean;
-  onChange: (d: TemplateDraft) => void;
-  onClose: () => void;
-  onSave: () => void;
-}) {
-  const colors = useThemeColors();
-  return (
-    <Modal
-      visible={!!draft}
-      title={draft?.id ? 'Edit Template' : 'New Template'}
-      onClose={onClose}
-      footer={<Button label="Save Template" loading={saving} onPress={onSave} />}
-    >
-      {draft ? (
-        <View className="gap-3">
-          <Input
-            label="Template name"
-            value={draft.name}
-            onChangeText={(v) => onChange({ ...draft, name: v })}
-            placeholder="e.g. U15 AAA Offer Letter"
-          />
-          <View className="gap-1">
-            <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-              Type
-            </Text>
-            <View className="flex-row flex-wrap">
-              {LETTER_KINDS.map((k) => (
-                <Chip
-                  key={k}
-                  label={LETTER_KIND_LABELS[k]}
-                  active={draft.kind === k}
-                  onPress={() => onChange({ ...draft, kind: k })}
-                />
-              ))}
-            </View>
-            <Text className="text-xs" style={{ color: colors.inkMuted }}>
-              {LETTER_KIND_DESCRIPTIONS[draft.kind]}
-            </Text>
-          </View>
-          <Input label="Subject" value={draft.subject} onChangeText={(v) => onChange({ ...draft, subject: v })} />
-          <Input
-            label="Letter"
-            value={draft.body}
-            onChangeText={(v) => onChange({ ...draft, body: v })}
-            multiline
-            numberOfLines={12}
-            style={{ minHeight: 220, textAlignVertical: 'top' }}
-          />
-          <Text className="text-xs" style={{ color: colors.inkMuted }}>
-            Tap a placeholder below to add it to the end of the letter.
-          </Text>
-
-          {/* Only the standard letters carry pre-written wording, so offering
-              them here is what makes "start from the template" reachable when a
-              coach is already halfway through writing their own. */}
-          {!draft.id ? (
-            <View>
-              <Text className="mb-1.5 text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-                Start from a standard letter
-              </Text>
-              <View className="flex-row flex-wrap">
-                {BUILT_IN_LETTER_TEMPLATES.map((t) => (
-                  <Chip
-                    key={t.kind}
-                    label={LETTER_KIND_LABELS[t.kind]}
-                    onPress={() =>
-                      onChange({
-                        ...draft,
-                        name: draft.name || t.name,
-                        kind: t.kind,
-                        subject: t.subject,
-                        body: t.body,
-                      })
-                    }
-                  />
-                ))}
-              </View>
-            </View>
-          ) : null}
-
-          <View>
-            <Text className="mb-1.5 text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-              Placeholders
-            </Text>
-            <View className="gap-1">
-              {LETTER_PLACEHOLDERS.map((p) => (
-                <Pressable
-                  key={p.token}
-                  onPress={() => onChange({ ...draft, body: `${draft.body}{{${p.token}}}` })}
-                  className="flex-row flex-wrap items-center gap-2 rounded-lg px-2 py-2 active:opacity-70"
-                  style={{ backgroundColor: colors.tile }}
-                >
-                  <Text className="text-xs font-bold" style={{ color: colors.primary }}>{`{{${p.token}}}`}</Text>
-                  <Text className="flex-1 text-xs" style={{ color: colors.inkMuted }}>
-                    {p.hint}
-                  </Text>
-                  {!p.auto ? <Badge label="you write this" variant="warning" /> : null}
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        </View>
-      ) : null}
-    </Modal>
   );
 }

@@ -27,7 +27,7 @@ import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import {
   useAddPlayerMutation,
   useClearTestDataMutation,
-  useDeletePlayerMutation,
+  useDeletePlayersMutation,
   useGenerateTestDataMutation,
   useImportTryoutPlayersMutation,
   useSessionProgressQuery,
@@ -40,6 +40,7 @@ import { useIsMutating } from '@tanstack/react-query';
 import { useAssessmentId, useAssessorMode } from '@/features/useAssessmentId';
 import { useCompleteAssessing } from '@/features/useCompleteAssessing';
 import { useUser } from '@/state/authStore';
+import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { useSessionStore, type RosterFilter } from '@/state/sessionStore';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
@@ -49,11 +50,13 @@ export default function RosterScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
+  // A team someone else owns is run on that team's plan, not the viewer's own.
+  const effectiveTier = useEffectivePlanTier(tryoutQuery.data?.teamId);
   const addPlayer = useAddPlayerMutation(id!);
   const inviteParticipant = useTryoutRosterInvitesMutation(id!);
   const uploadPhoto = useUploadPlayerPhotoMutation(id!);
   const importPlayers = useImportTryoutPlayersMutation(id!);
-  const deletePlayer = useDeletePlayerMutation(id!);
+  const deletePlayers = useDeletePlayersMutation(id!);
   const [dummyProgress, setDummyProgress] = useState<{ done: number; total: number } | null>(null);
   const genTest = useGenerateTestDataMutation(id!, (done, total) => setDummyProgress({ done, total }));
   // genTest.isPending flips false the instant generateTestData resolves —
@@ -83,7 +86,7 @@ export default function RosterScreen() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deletingSelected, setDeletingSelected] = useState(false);
 
-  const isAssociation = canUseFeature(user?.planTier ?? 'free', 'enterprise');
+  const isAssociation = canUseFeature(effectiveTier, 'enterprise');
 
   useEffect(() => {
     if (tryoutQuery.data && user && !activeAssessor) {
@@ -187,8 +190,8 @@ export default function RosterScreen() {
   const tryout = tryoutQuery.data;
 
   const openAdd = () => {
-    if (isAtPlayerLimit(user?.planTier ?? 'free', tryout.roster.length)) {
-      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'players', 'players'));
+    if (isAtPlayerLimit(effectiveTier, tryout.roster.length)) {
+      setLimitMsg(buildLimitReachedMessage(effectiveTier, 'players', 'players'));
       return;
     }
     setShowAdd(true);
@@ -229,8 +232,19 @@ export default function RosterScreen() {
           onPress: async () => {
             setDeletingSelected(true);
             try {
-              await Promise.all(ids.map((pid) => deletePlayer.mutateAsync(pid)));
-              exitSelectMode();
+              const { deleted, failed } = await deletePlayers.mutateAsync(ids);
+              if (failed.length === 0) {
+                exitSelectMode();
+              } else {
+                // Keep only the players that are still on the roster selected,
+                // so a retry goes straight at what is left.
+                const gone = new Set(deleted);
+                setSelectedIds(new Set(ids.filter((pid) => !gone.has(pid))));
+                Alert.alert(
+                  'Some Players Were Not Deleted',
+                  `${deleted.length} of ${ids.length} deleted. ${failed.length} could not be removed: ${failed[0].message}`,
+                );
+              }
             } catch (e: any) {
               Alert.alert('Delete Failed', e?.message || 'Could not delete the selected players.');
             } finally {
@@ -265,7 +279,7 @@ export default function RosterScreen() {
       {hasPlayers ? (
         <View className="gap-2 px-4 pb-3">
           <UsageNudgeBanner
-            tier={user?.planTier ?? 'free'}
+            tier={effectiveTier}
             metric="players"
             count={tryout.roster.length}
             label="players in this roster"

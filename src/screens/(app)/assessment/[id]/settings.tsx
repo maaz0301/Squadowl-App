@@ -30,7 +30,9 @@ import {
 import { getDataSource } from '@/data';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { getDefaultRubrics } from '@/data/rubrics';
+import { END_BEFORE_START_MESSAGE, isEndAfterStart } from '@/data/timeRange';
 import { useUser } from '@/state/authStore';
+import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { isAtAssessmentLimit } from '@/data/plans';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { ASSESSOR_INVITE_URL } from '@/config/app';
@@ -60,6 +62,8 @@ export default function SettingsScreen() {
   const user = useUser();
   const welcomedRef = useRef(false);
   const tryoutQuery = useTryoutQuery(id);
+  // A team someone else owns is run on that team's plan, not the viewer's own.
+  const effectiveTier = useEffectivePlanTier(tryoutQuery.data?.teamId);
   // Only `.length` is read from this, for the plan-limit check — the full
   // read pulled every roster, evaluation and registration in the account to
   // get a number. See useTryoutSummariesQuery.
@@ -77,6 +81,7 @@ export default function SettingsScreen() {
   const [tryoutDate, setTryoutDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
+  const [endTimeError, setEndTimeError] = useState('');
   const [rink, setRink] = useState('');
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
 
@@ -100,11 +105,17 @@ export default function SettingsScreen() {
     setTryoutDate(tryout.tryoutDate ?? '');
     setStartTime(tryout.startTime ?? '');
     setEndTime(tryout.endTime ?? '');
+    setEndTimeError('');
     setRink(tryout.rink ?? '');
     setShowEdit(true);
   };
 
   const saveEdit = async () => {
+    if (!isEndAfterStart(startTime, endTime)) {
+      setEndTimeError(END_BEFORE_START_MESSAGE);
+      return;
+    }
+    setEndTimeError('');
     await updateTryout.mutateAsync({
       id: tryout.id,
       updates: {
@@ -234,8 +245,8 @@ export default function SettingsScreen() {
 
   const handleCopy = async () => {
     const count = tryoutsQuery.data?.length ?? 0;
-    if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
-      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'assessments', 'evaluations'));
+    if (isAtAssessmentLimit(effectiveTier, count)) {
+      setLimitMsg(buildLimitReachedMessage(effectiveTier, 'assessments', 'evaluations'));
       return;
     }
     const copy = await copyTryout.mutateAsync(tryout.id);
@@ -361,8 +372,25 @@ export default function SettingsScreen() {
         <View className="gap-3">
           <Input label="Name" value={name} onChangeText={setName} />
           <DateField label="Date" value={tryoutDate} onChange={setTryoutDate} placeholder="Select a date" />
-          <TimeField label="Start Time" value={startTime} onChange={setStartTime} placeholder="Select a time" />
-          <TimeField label="End Time" value={endTime} onChange={setEndTime} placeholder="Select a time" />
+          <TimeField
+            label="Start Time"
+            value={startTime}
+            onChange={(v) => {
+              setStartTime(v);
+              setEndTimeError('');
+            }}
+            placeholder="Select a time"
+          />
+          <TimeField
+            label="End Time"
+            value={endTime}
+            onChange={(v) => {
+              setEndTime(v);
+              setEndTimeError('');
+            }}
+            placeholder="Select a time"
+            error={endTimeError || undefined}
+          />
           <View>
             <Input
               label="Location"

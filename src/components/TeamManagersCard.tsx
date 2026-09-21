@@ -13,9 +13,9 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 
 /**
  * Delegation: hand this one team to another manager by email. They get the
- * team, its roster, schedule, and chat, its athletes' profiles, and that
- * team's payment records — but not its evaluations, and nothing else on the
- * account (other teams, org billing, org membership). The account's own
+ * team, its roster, schedule, and chat, its athletes' profiles, that team's
+ * payment records, and its evaluations (on the owning account's plan) — but
+ * nothing else on the account (other teams, org billing, org membership). The account's own
  * staff keep full access either way, which is why this list never affects
  * the inviter's own rights. A delegate can also manage this list themselves,
  * on this team only — they cannot delegate a team they don't already manage.
@@ -115,7 +115,7 @@ export function TeamManagersCard({ teamId, teamName, readOnly, tierOverride }: P
           </Text>
           <Text className="text-xs mt-1" style={{ color: colors.inkMuted }}>
             Give another manager access to run {teamName}. They'll see this team's roster, schedule,
-            and chat — but not evaluations, and nothing else on your account. You keep full access.
+            and chat, and can create and run its evaluations — but nothing else on your account. You keep full access.
           </Text>
         </View>
 

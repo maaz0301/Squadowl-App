@@ -9,6 +9,7 @@ import { useAssessmentId } from '@/features/useAssessmentId';
 import { buildRosterLibrary } from '@/data/extras';
 import { isAtPlayerLimit } from '@/data/plans';
 import { useUser } from '@/state/authStore';
+import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 
@@ -18,6 +19,8 @@ export default function RosterLibraryScreen() {
   const navigation = useNavigation<any>();
   const tryoutsQuery = useTryoutsQuery(true);
   const currentTryoutQuery = useTryoutQuery(id);
+  // A team someone else owns is run on that team's plan, not the viewer's own.
+  const effectiveTier = useEffectivePlanTier(currentTryoutQuery.data?.teamId);
   const user = useUser();
   const importPlayers = useImportLibraryPlayersMutation();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -53,8 +56,8 @@ export default function RosterLibraryScreen() {
       .map((e) => ({ first: e.first, last: e.last, jersey: e.jersey, pos: e.pos }));
     if (!entries.length) return;
 
-    if (isAtPlayerLimit(user?.planTier ?? 'free', (currentTryoutQuery.data?.roster.length ?? 0) + entries.length - 1)) {
-      setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'players', 'players'));
+    if (isAtPlayerLimit(effectiveTier, (currentTryoutQuery.data?.roster.length ?? 0) + entries.length - 1)) {
+      setLimitMsg(buildLimitReachedMessage(effectiveTier, 'players', 'players'));
       return;
     }
 

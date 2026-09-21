@@ -24,6 +24,7 @@ import { playerDisplayName } from '@/data/rubrics';
 import { type TeamBuilderState } from '@/data/teamBuilder';
 import { computePlayerResults } from '@/data/scoring';
 import { useUser } from '@/state/authStore';
+import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { canUseFeature, getPlanDefinition } from '@/data/plans';
 import { nextFrame } from '@/lib/nextFrame';
 
@@ -35,6 +36,8 @@ export default function TeamBuilderTeamScreen() {
   const navigation = useNavigation<any>();
   const user = useUser();
   const tryoutQuery = useTryoutQuery(id);
+  // A team someone else owns is run on that team's plan, not the viewer's own.
+  const effectiveTier = useEffectivePlanTier(tryoutQuery.data?.teamId);
   const resultsQuery = useTeamBuilderResultsQuery(id);
   const saveMut = useSaveTeamBuilderResultMutation(id!);
   const [saveModalVisible, setSaveModalVisible] = useState(false);
@@ -79,7 +82,7 @@ export default function TeamBuilderTeamScreen() {
     ? (teamPlayerResults.reduce((sum: number, r: any) => sum + r.overall, 0) / teamPlayerResults.length).toFixed(1)
     : null;
 
-  const tier = user?.planTier ?? 'free';
+  const tier = effectiveTier;
   const exportsAllowed = canUseFeature(tier, 'exports') || tier !== 'free';
   const allowedFormats = getPlanDefinition(tier).limits.exports;
 

@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { usePermissions, useUser } from '@/state/authStore';
+import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { canUseFeature } from '@/data/plans';
 import {
   Avatar,
@@ -53,6 +54,8 @@ export default function PlayerHubScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
+  // A team someone else owns is run on that team's plan, not the viewer's own.
+  const effectiveTier = useEffectivePlanTier(tryoutQuery.data?.teamId);
   const updatePlayer = useUpdatePlayerMutation(id!);
   const deletePlayer = useDeletePlayerMutation(id!);
   const uploadPhoto = useUploadPlayerPhotoMutation(id!);
@@ -86,7 +89,7 @@ export default function PlayerHubScreen() {
 
   const { canManageTeam, canAssess } = usePermissions();
   const user = useUser();
-  const canLinkGuardian = canUseFeature(user?.planTier ?? 'free', 'guardianPortal');
+  const canLinkGuardian = canUseFeature(effectiveTier, 'guardianPortal');
 
   // Extra family members beyond the one guardian on the athlete row — added
   // here or from the Edit Player form, and by the guardian themselves from

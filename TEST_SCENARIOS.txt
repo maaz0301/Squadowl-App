@@ -1,0 +1,1226 @@
+=====================================================================
+TRYOUTHQ - TEST SCENARIOS: BEFORE vs AFTER
+Fixes for Shawn's Slack feedback (Sept 18-19)
+=====================================================================
+
+HOW TO USE THIS FILE
+  1. Run every "BEFORE" step on the OLD build (current APK / main branch)
+     and write down what you see in the "Result" line.
+  2. Run the same steps on the NEW build (this branch, rebuilt APK)
+     and compare against "AFTER (expected)".
+  3. Then run the REGRESSION CHECKLIST (section 8) on the NEW build.
+  Mark each line: [PASS] / [FAIL] / [N/A]
+
+  NOTE: Shawn's APK does NOT contain these fixes until it is rebuilt.
+  For the iOS simulator: the debug build loads JS from Metro, so do a
+  reload (or restart the app) after pulling the changes.
+
+STATUS OF WHAT HAS ALREADY BEEN CHECKED (by Claude, iOS simulator)
+  Verified live in the app:
+    - Section 6 (edit pencil on evaluation tile)
+    - Section 4 (registrations: labels, sticky bar, "Add 2 Players" dialog)
+    - Section 5 (team roster: Select, Select All = 999)
+  Verified by script only (not yet in the app):
+    - Section 2 (Excel parsing), Section 3 (bulk import logic)
+  NOT verified (needs a device or a write to real data):
+    - Section 1 (Android nav bar), the actual add/delete/import writes
+
+
+=====================================================================
+TEST DATA TO PREPARE (ONCE)
+=====================================================================
+  A. roster.csv  - 20 players. Columns:
+       First Name, Last Name, Jersey, Position, Guardian Email
+     Include: 2 pairs of siblings sharing one guardian email,
+              1 row with a missing last name (should be flagged).
+  B. roster.xlsx - the same 20 names, saved from Excel.
+  C. roster_gsheets.xlsx - same names, saved from Google Sheets.
+  D. roster_numbers.xlsx - same names, saved from Apple Numbers.
+  E. roster_cover.xlsx   - 2 tabs: "Cover" (just a title) + "Roster" (20 rows).
+  F. roster_onecol.csv   - a single column headed "Name" with 20 names.
+  G. Accounts: one Pro/Club coach account; one Free account near the
+     player limit; one delegated club manager (no membership of their own).
+  H. Teams: one EMPTY team, one team with 25+ players (the "team for
+     testing" with 999 players works for select-all checks).
+  I. Evaluation with 25+ PENDING registrations (Dummy Data can make them).
+  J. Devices: Android phone with 3-BUTTON navigation, Android phone with
+     GESTURE navigation, an older Android (13/14), one iPhone.
+
+
+=====================================================================
+1. LOG OUT / DELETE ACCOUNT BLOCKED AT THE BOTTOM (Android)
+=====================================================================
+  Where: Profile screen (and other long scrolling screens)
+  Cause: no bottom padding for the Android system navigation bar.
+
+  BEFORE
+   1.1 Android, 3-button nav. Profile > scroll to very bottom.
+       Expected (bug): "Log Out" is partly/fully hidden by the nav bar.
+       Result: ______
+   1.2 Try to tap the bottom edge of Log Out and Delete Account.
+       Expected (bug): bottom edge is not tappable.
+       Result: ______
+
+  AFTER (expected)
+   1.3 Android 3-button nav: Log Out fully visible with clear space
+       below it, fully tappable.                                  ______
+   1.4 Android gesture nav: no large empty band at the bottom.    ______
+   1.5 Android 13/14 (no forced edge-to-edge): NO extra blank
+       space added.                                               ______
+   1.6 Font size 130-200%: Delete Account and Log Out still
+       reachable.                                                 ______
+   1.7 Landscape: nothing hidden behind the side nav bar.         ______
+   1.8 Guardian-only account (some cards hidden): Danger Zone and
+       Log Out still reachable.                                   ______
+   1.9 Delete Account: dialog appears; Cancel keeps you signed in.______
+   1.10 Log Out: shows loading state, ends on login screen.       ______
+   1.11 iPhone: Profile looks unchanged (no new gap).             ______
+   1.12 Other long scroll screens (season settings, team settings,
+        forms ending in Save): last button fully visible, no
+        double padding.                                           ______
+   1.13 Screens inside the bottom tab bar (evaluation Settings,
+        Export, Rubrics...): NO extra gap above the tab bar.      ______
+
+
+=====================================================================
+2. EXCEL (.xlsx) IMPORT ONLY IMPORTS ONE NAME
+=====================================================================
+  Where: Team > Players > Import Spreadsheet
+         Evaluation > Roster > Import
+  Cause: file's declared sheet size was trusted; a wrong size (e.g. A1:E2)
+         made the app read only 1 row. Also single-column sheets failed.
+
+  BEFORE
+   2.1 Pick roster.xlsx (or the customer's real file). Read the line
+       "N rows below the headings on line X".
+       Expected (bug): N = 1, or button says "Import 1 player".
+       Result: ______
+   2.2 Same names as .csv.
+       Expected: 20 rows (CSV always worked).            Result: ______
+   2.3 roster_onecol.csv / a single "Name" column xlsx.
+       Expected (bug): "No column headings found".       Result: ______
+   2.4 roster_cover.xlsx (Cover tab first).
+       Expected (bug): reads the empty Cover tab.        Result: ______
+
+  AFTER (expected)
+   2.5 roster.xlsx                       -> 20 rows, "Import 20 players". ___
+   2.6 roster_gsheets.xlsx               -> 20 rows.                      ___
+   2.7 roster_numbers.xlsx               -> 20 rows.                      ___
+   2.8 .xls (old Excel format)           -> 20 rows.                      ___
+   2.9 Single "Name" column (csv + xlsx) -> 20 rows, full names split
+       into first/last.                                                   ___
+   2.10 roster_cover.xlsx                -> opens on the "Roster" tab,
+        20 rows.                                                          ___
+   2.11 Title row + blank spacer above headings -> headings detected,
+        row numbers in errors match Excel line numbers.                   ___
+   2.12 Workbook with several tabs, roster on tab 2 -> tab chips shown,
+        switching tab reloads 20 rows.                                    ___
+   2.13 CSV with Windows line endings / BOM -> 20 rows.                   ___
+   2.14 Row with missing last name -> flagged, other 19 "Ready".          ___
+   2.15 Duplicate row in the file -> flagged "Same player as row N".      ___
+   2.16 PDF picked -> friendly "could not read" message.                  ___
+
+
+=====================================================================
+3. CSV / EXCEL IMPORT IS SLOW (20 NAMES)
+=====================================================================
+  Where: Team > Players > Import Spreadsheet
+  Cause: one player at a time, ~8-10 network calls each.
+  Fix:   guardians resolved once, athletes created 20 per request,
+         one roster write.
+
+  BEFORE
+   3.1 Import roster.csv (20 rows) into the EMPTY team on mobile data.
+       Time from tapping Import to the summary screen.
+       Expected (bug): slow (15-30s+).  Result: ______ seconds
+   3.2 Repeat with 5 rows and with 50 rows.
+       Expected (bug): time grows with row count.
+       Result: 5 rows ___s   50 rows ___s
+   3.3 Note DB counts afterwards: athletes created ___, team_roster ___.
+
+  AFTER (expected)
+   3.4 20 rows into empty team: at least ~3x faster than 3.1.  ______ s
+   3.5 5 / 50 rows: time barely grows.                          ______
+   3.6 Progress text "Adding X of 20..." moves and finishes;
+       summary says "20 players added".                          ______
+   3.7 DB counts identical to BEFORE: 20 athletes, 20 team_roster
+       rows, correct jersey + position + year of birth.          ______
+   3.8 Sibling rows (same guardian email) -> both imported, both linked
+       to the same guardian account, only ONE guardian invite email.___
+   3.9 Row with a bad value -> that row is reported, the other 19
+       still land (summary lists the failed row + reason).       ______
+   3.10 Airplane mode halfway -> clear failure; nothing half-hidden;
+        re-import works after reconnect.                          ______
+   3.11 Import the same file twice -> second import handled (no crash);
+        note whether duplicates are created (same as before).     ______
+   3.12 Portal invites are still sent for the imported players once,
+        and NOT re-sent to players already on the roster.         ______
+   3.13 Delegated club manager importing into the club's team ->
+        still works (uses the slower per-row path; athletes visible to
+        the club owner).                                          ______
+   3.14 Free account near the player limit -> limit message still shown
+        (add-players limit behaviour unchanged).                  ______
+   3.15 Evaluation roster import (not the team) -> still works, same
+        speed as before (NOT changed), and Excel fix from section 2
+        applies.                                                  ______
+
+
+=====================================================================
+4. REGISTRATIONS: SELECT MULTIPLE, "ADD" ONLY SENDS ONE PLAYER (HIGH)
+=====================================================================
+  Where: Evaluation > Regs tab > Pending
+  Cause: the "Add to Roster" button on a card only ever sent THAT card,
+         and the bulk button was far up the page.
+
+  BEFORE
+   4.1 Pending tab. Tap "Select" on 2 players (scroll down between).
+       Expected (bug): every card still says "Add to Roster";
+       no bar at the bottom; only the header button (far up) knows
+       about the selection.                        (seen in simulator)
+   4.2 Tap "Add to Roster" on one of the selected cards, pick a team.
+       Expected (bug): only that ONE player is added.
+       Result: ______
+
+  AFTER (expected)
+   4.3 Tick 2 players. Ticked cards read "Add 2 to Roster"; unticked
+       cards still read "Add to Roster". A bar at the bottom shows
+       "2 selected  [Clear]  [Add 2 to Roster]" and stays visible
+       while scrolling.                          (verified in simulator)
+   4.4 Tap the card's "Add 2 to Roster" -> dialog title "Add 2 Players".
+                                                 (verified in simulator)
+   4.5 Confirm to a TEAM: both players appear on the team roster;
+       team Players badge +2 without a manual refresh.            ______
+   4.6 Confirm to an EVALUATION: both appear on that roster.      ______
+   4.7 Select All (25) -> add to Team: all 25 land; progress bar
+       reaches 25 of 25; DB team_roster count +25.                ______
+   4.8 Same with destination Evaluation: +25.                     ______
+   4.9 Two siblings (same guardian email) ticked -> both added.   ______
+   4.10 Tick a player, DISMISS them, then add: count and result
+        exclude the dismissed player.                             ______
+   4.11 Tap "Add to Roster" on an UNTICKED card while others are
+        ticked -> adds only that one player (explicit choice).    ______
+   4.12 Single player, no selection: "Add to Roster" works as before.__
+   4.13 Registration profile popup > "Add to Roster" -> adds that one.__
+   4.14 Free-plan player limit: adding past the limit shows the limit
+        message; nothing partially added.                         ______
+   4.15 "Clear" empties the selection and hides the bar.          ______
+   4.16 Switch to the "All" / "Dismissed" tab -> bar is hidden.   ______
+   4.17 Registrations screen on Android 3-button nav: bar not covered
+        by the tab bar / nav bar.                                 ______
+   4.18 After adding, each placed registration moves out of Pending
+        and the Pending badge count drops by the right number.    ______
+
+
+=====================================================================
+5. SELECT ALL PLAYERS ON A ROSTER AND DELETE (HIGH)
+=====================================================================
+  5A. TEAM ROSTER  (Team > Players)
+  Cause: team roster had NO select mode, only a per-row Remove.
+
+  BEFORE
+   5.1 Open a team with 25+ players. Look for Select / Select All.
+       Expected (bug): not available; Remove one at a time only.
+       Result: ______
+  AFTER (expected)
+   5.2 "Select" button appears (only when the team has players).  ___
+   5.3 Tap Select -> Back / Select All / Delete Selected (disabled),
+       checkboxes on every row, per-row Remove hidden.
+                                                 (verified in simulator)
+   5.4 Select All with NO search -> "Delete Selected (N)" where N is
+       the WHOLE team (999 on the test team), not just loaded rows.
+                                                 (verified in simulator)
+   5.5 Tap Delete Selected -> confirmation shows the right count.  ___
+   5.6 Confirm -> all removed; list empties; Players badge 0; no
+       page refresh needed; DB team_roster rows gone.              ___
+   5.7 Tap individual rows to select 3, delete -> only those 3 go.  ___
+   5.8 Search "Smith" then Select All -> selects only the matches
+       shown; deleting removes only those.                          ___
+   5.9 Deselect All returns count to 0 and disables Delete.         ___
+   5.10 Back exits select mode with nothing deleted.                ___
+   5.11 Switch tab (Schedule/Evaluations) while in select mode, then
+        return -> select mode is off, nothing selected.             ___
+   5.12 Airplane mode during delete -> error message; players still
+        shown match what is really on the roster after refresh.     ___
+   5.13 Delete everyone, then add one player again -> works, empty
+        state shown in between.                                     ___
+   5.14 Old single "Remove" (outside select mode) still works with its
+        confirmation.                                               ___
+   5.15 Athletes are NOT erased from the account: after removing from
+        the team they can be added again via "Add Players from
+        Evaluations".                                               ___
+   5.16 Season/schedule screens (RSVP counts) refresh after removal.___
+
+  5B. EVALUATION ROSTER  (Evaluation > Roster > Select)
+  Cause: Delete fired every request at once; big batches could fail.
+
+  BEFORE
+   5.17 Roster of 25+: Select > Select All > Delete Selected.
+        Note whether all really go / any error. Result: ______
+  AFTER (expected)
+   5.18 Select All + Delete: all removed, requests run in small
+        groups (no freeze), loading state shown.                    ___
+   5.19 Filter by a position, Select All, delete -> only that
+        filtered group deleted.                                     ___
+   5.20 If some fail: message "X of Y deleted. Z could not be
+        removed: <reason>"; the remaining ones stay SELECTED so a
+        retry targets only them.                                    ___
+   5.21 Roster count, dashboard evaluation player count and
+        "Scored/Unscored" chips update after deletion.              ___
+   5.22 Single player delete from the player screen still works.    ___
+
+
+=====================================================================
+6. EDIT BUTTON ON THE EVALUATION TILE
+=====================================================================
+  Where: Home > Evaluations & Tryouts list
+  Before: only a trash icon; editing was buried in Evaluation Settings.
+
+  BEFORE
+   6.1 Evaluations list: look at a tile.
+       Expected: only trash icon, no way to edit from the tile.
+   6.2 To edit, open evaluation > Settings tab > "Edit Details".
+
+  AFTER (expected)
+   6.3 A pencil icon sits next to the trash icon on every evaluation
+       tile.                                     (verified in simulator)
+   6.4 Tap pencil -> "Edit Evaluation" dialog pre-filled with name,
+       date, start time, END time and location.  (verified in simulator)
+   6.5 Change the name + location, Save -> tile updates immediately;
+       opening the evaluation > Settings shows the same values.     ___
+   6.6 Pencil > Close/X without saving -> nothing changes.          ___
+   6.7 Tap the tile body -> still opens the evaluation.
+                                                 (verified in simulator)
+   6.8 Tap trash -> delete confirmation still works (cancel it).    ___
+   6.9 Open pencil on tile A, close, open on tile B -> dialog shows B's
+       values (no leftovers from A).                                ___
+   6.10 Airplane mode + Save -> error alert, dialog stays open.     ___
+   6.11 Combine Mode on: tapping tiles still selects for combine;
+        pencil does not break combine selection.                    ___
+   6.12 Pencil/trash tap targets are comfortable on a small phone
+        (no mis-taps between them).                                 ___
+   6.13 Evaluation Settings > "Edit Details" (old route) still works
+        and shows updated values.                                   ___
+   6.14 The "Assigned to me" tiles (evaluations where you are only the
+        assessor) - confirm with Shawn whether they need an edit
+        button; currently they do NOT have one.                     ___
+
+
+=====================================================================
+7. DATA / PERMISSION CHECKS (touching several fixes)
+=====================================================================
+   7.1 Owner coach account: all sections above work.               ___
+   7.2 Delegated club manager on a club team: add, remove, import,
+       select-all-delete all work and respect permissions.         ___
+   7.3 Assessor-only account: cannot see edit/delete controls they
+       could not before.                                           ___
+   7.4 Guardian account: no new controls appear.                   ___
+   7.5 Player limit on Free plan enforced for: single add, bulk add
+       from registrations, import.                                 ___
+   7.6 Row-level security: removing players you do not own is
+       refused with a clear message (not a silent success).        ___
+
+
+=====================================================================
+8. REGRESSION CHECKLIST (run on the NEW build)
+=====================================================================
+  IMPORT / ROSTER WRITES
+   8.1  "+ Add Player Manually" on a team still works.             ___
+   8.2  Add Players from Evaluations (tap-select + Select all)
+        still adds the right players, sends invites.               ___
+   8.3  Per-row Remove on the team roster still works.             ___
+   8.4  Evaluation roster: Add, Import, Select, Tools all work.    ___
+   8.5  Jersey and position values saved correctly after import.   ___
+   8.6  Season roster sync: a player added to a team with a season
+        shows in that season's roster / RSVP list.                 ___
+   8.7  Portal invites: sent once, no duplicates, none to players
+        already on the roster.                                     ___
+  REGISTRATIONS
+   8.8  Dismiss a registration; Simulate QR Reg; Export CSV;
+        Show QR; Share.                                            ___
+   8.9  Dummy Data / Clear Dummy Data still work.                  ___
+   8.10 Tabs Pending / All / Dismissed switch correctly and the
+        Pending badge is accurate.                                 ___
+  CACHES / REFRESH
+   8.11 After any add/delete: team roster, player count badge,
+        dashboard evaluation count, Regs badge all update without
+        pull-to-refresh.                                           ___
+   8.12 The friend-package picker / Team Builder still opens and
+        lists the roster correctly after roster changes.           ___
+  DASHBOARD
+   8.13 Combine Mode, Archived toggle, New Evaluation button.      ___
+   8.14 Team tiles: open team, delete team confirmation.           ___
+   8.15 Guardian view ("My Athletes") unaffected.                  ___
+  LAYOUT / PLATFORM
+   8.16 iPhone: no visual change on Profile or other scroll screens.___
+   8.17 Android 3-button + gesture: long forms end with the last
+        button visible; keyboard open on forms does not hide the
+        Save button or leave a big gap.                            ___
+   8.18 Dark and light mode: new checkboxes, pencil icon, bottom bar
+        and toolbar are readable in both.                          ___
+   8.19 Screens with a native header / team-colour background look
+        unchanged.                                                 ___
+   8.20 Screens too short to scroll do not become scrollable.      ___
+  PERFORMANCE
+   8.21 Team with 999 players: Players tab scrolls smoothly, Select
+        mode does not lag, Select All responds instantly.          ___
+   8.22 Evaluation with 941 players: roster list still smooth.     ___
+  GENERAL
+   8.23 Login / logout / delete-account flow end to end.           ___
+   8.24 App cold start with no console red-screens; note any new
+        yellow warnings vs the old build.                          ___
+
+
+=====================================================================
+9. KNOWN LIMITS / OPEN QUESTIONS
+=====================================================================
+   - Delegated managers importing into someone else's team use the
+     slower per-row path (no batch form exists on the server).
+   - Evaluation-roster import is not sped up (only the Excel fix applies).
+   - Non-scrolling Android screens that pin content to the bottom are
+     not covered by the nav-bar padding fix.
+   - Evaluation Settings "Edit Details" is a separate copy of the new
+     tile dialog (kept to avoid risk).
+   - Ask Shawn: (a) which roster he meant for "select all and delete"
+     (team vs evaluation), (b) whether "assigned to me" tiles need
+     edit, (c) send his failing .xlsx file.
+   - After reload, the iOS app showed a yellow "Open debugger to view
+     warnings" toast; not yet identified whether it is new.
+
+=====================================================================
+ADDENDUM (Shawn, Sept 19, 8:33pm and 8:57pm)  -  NEW ITEMS
+=====================================================================
+  STATUS: sections 10 and 11 are IMPLEMENTED. Lines tagged
+  "(verified in simulator)" were checked live on the iOS simulator; the
+  rest still need a run. Android is NOT verified for either item.
+
+  WHAT CHANGED
+   10: home Evaluations list + Evaluations tile count now show only
+       standalone evaluations (dashboard.tsx). The plan-limit nudge and
+       the limit check still count ALL evaluations. An evaluation whose
+       team is not in the user's team list stays visible (so nothing
+       becomes unreachable).
+   11: Team Builder shows a plain-language hint under Adjust; the
+       adjuster bins show each team's average score; holding a player
+       now locks the list's scroll so the drag reliably wins over the
+       list's own scroll (TeamAdjuster.tsx). Tap-to-move was already
+       there and is unchanged.
+
+=====================================================================
+10. EVALUATION SHOWS ON THE WRONG PLACES (team vs standalone)  (HIGH)
+=====================================================================
+  Shawn: "Created a volleyball evaluation. Created a team, the evaluation
+  automatically showed up on the team, which should not happen. When an
+  evaluation/tryout is created for a team it should only show for that
+  team; the Evaluations button should only show standalone evaluations."
+
+  EXPECTED RULES
+   R1. Standalone evaluation (no team)  -> shows ONLY in the home
+       "Evaluations & Tryouts" list. Never on any team.
+   R2. Evaluation created for a team (Team > Evaluations > Create, or a
+       team picked in New Evaluation)   -> shows ONLY on that team's
+       Evaluations tab. NOT in the home Evaluations list.
+   R3. Creating a NEW team never pulls existing evaluations onto it.
+   R4. "Attach Existing" (an explicit tap) moves a standalone evaluation
+       onto that team; afterwards it leaves the home list.
+   R5. Home "Evaluations" jump tile count = number of standalone
+       evaluations (same as the list under it).
+
+  WHAT THE CODE DOES TODAY (findings)
+   - The home Evaluations list is NOT filtered by team: it shows every
+     evaluation, including team-linked ones (dashboard.tsx).
+   - Creating a team does not link any evaluation (createTeam only
+     inserts the team). So "showed up on the team" is not explained by
+     team creation itself. Candidates to rule out while testing:
+       (a) the evaluation was created with the optional "Team" chip
+           selected on New Evaluation;
+       (b) the team's "Add Players from Evaluations" picker lists
+           players from ALL evaluations ("Athletes from all of your
+           evaluations"), which can look like the evaluation appeared;
+       (c) "Attach Existing" lists every standalone evaluation.
+   - Seen live on the test account: team "team for testing. 01" shows
+     Evaluations badge = 1 AND the home list also shows "Hello" (the only
+     evaluation) - the same evaluation appears in both places.
+   - Deleting a team sets its evaluations' team back to none, so they
+     would jump back into the home list (see 10.19).
+
+  BEFORE (old build)
+   10.1 Create evaluation "Volleyball sort out 1" with NO team chip.
+        Home list: shows it.                                 Result: ____
+   10.2 Create a NEW team afterwards. Open team > Evaluations tab.
+        Expected (bug per Shawn): the evaluation is listed / counted.
+        Note the badge count and list.                       Result: ____
+   10.3 Same team > Players > "Add Players from Evaluations": note
+        whether the evaluation and its players are offered.  Result: ____
+   10.4 Create an evaluation FROM the team (Team > Evaluations > Create).
+        Check the home list.
+        Expected (bug): it ALSO shows in the home Evaluations list.
+                                                             Result: ____
+   10.5 Create evaluation with the "Team (optional)" chip selected.
+        Check home list and team tab.
+        Expected (bug): shows in both.                       Result: ____
+   10.6 Home "Evaluations" jump tile number vs list length.  Result: ____
+
+  AFTER (expected)
+   10.7  Standalone evaluation: in home list; NOT in any team's
+         Evaluations tab; team badge unchanged.                    ____
+   10.8  Create a new team after that: team Evaluations tab is EMPTY
+         ("No evaluations linked"), badge 0.                       ____
+   10.9  Evaluation created from a team (Create button): appears on that
+         team's tab, badge +1; does NOT appear in the home list.   ____
+         (Team-linked "Hello" gone from home, still on its team:
+         verified in simulator; creating a NEW one not yet run.)
+   10.10 Evaluation created with the Team chip: same as 10.9.      ____
+   10.11 Two teams A and B: evaluation for A shows only on A, never on B.
+                                                                   ____
+   10.12 "Attach Existing" on team A: pick a standalone evaluation ->
+         it appears on A and disappears from the home list.        ____
+   10.13 Attach Existing modal lists ONLY standalone evaluations
+         (not ones already on another team).                       ____
+   10.14 Home "Evaluations" tile count equals the number of rows in the
+         home list (standalone only).       (verified in simulator: 0/0)
+   10.15 Open a team-linked evaluation from the team tab: opens normally
+         (roster, regs, results, settings all work).
+                                         (opened + Results verified in simulator)
+   10.16 Edit pencil (new tile edit) still works for standalone tiles.___
+   10.17 Empty state: if every evaluation is team-linked, home list shows
+         the "No evaluations yet" empty state, not a blank screen.
+                                         (verified in simulator)
+   10.18 Team Builder / Results / Export for a team-linked evaluation
+         still reachable from the team's tab.                       ____
+   10.19 Delete a team that owns evaluations: note where its evaluations
+         go (today they detach and would reappear in the home list).
+         Confirm the intended behaviour with Shawn.                 ____
+   10.20 Detach an evaluation from a team (if a control exists): it
+         returns to the home list.                                  ____
+   10.21 Archive a team-linked evaluation: it appears under the
+         "Archived" view consistently (decide: archived list shows all
+         or standalone only).                                       ____
+   10.22 Combine Mode: decide + verify whether team-linked evaluations
+         can be selected; standalone ones still can.                ____
+   10.23 Free-plan EVALUATION LIMIT still counts ALL evaluations
+         (standalone + team-linked). Creating one past the limit shows
+         the limit message.                                          ____
+   10.24 "Assigned to me" (assessor) evaluations are unaffected.    ____
+   10.25 Search screen still finds team-linked evaluations.         ____
+   10.26 Organization Dashboard (org-wide reporting) totals unchanged.__
+   10.27 Guardian / assessor-only accounts: nothing new appears or
+         disappears unexpectedly.                                    ____
+   10.28 Pull-to-refresh / app restart: lists stay correct (no
+         evaluation flickers into the wrong list).                   ____
+
+
+=====================================================================
+11. DRAG AND DROP / TRADE PLAYERS BETWEEN TEAMS ON THE APK  (HIGH)
+=====================================================================
+  Shawn: "APK - drag and drop player between teams. Expected: player
+  moves, scores update. Not available for APK, only on WEB. Place a
+  message on APK saying trading not available (only on WEB), or a way to
+  have a trade version between teams - kinda tough with small screen,
+  thoughts?"
+
+  WHAT THE CODE DOES TODAY (findings)
+   - The feature is Team Builder > generate teams > "Adjust".
+   - The mobile app ALREADY has it (TeamAdjuster, added Sept 8, commit
+     81475c3): long-press and drag a player onto another team, OR tap a
+     player and pick the destination from a sheet. Both use the same
+     move logic, so undo/redo works for both.
+   - So a "not available on APK" message would be wrong for a build that
+     contains it. Likely reasons Shawn did not see it:
+       (a) his APK was built before Sept 8 / before this branch;
+       (b) the "Adjust" button is only enabled AFTER teams are
+           generated, and is easy to miss;
+       (c) long-press drag may not work well on his Android device
+           (unconfirmed - needs a device test).
+
+  MY RECOMMENDATION (thoughts for Shawn)
+   1. Do NOT add a "web only" message. Rebuild the APK and confirm the
+      adjuster is present.
+   2. Keep BOTH ways: tap-to-move sheet is the reliable phone way; drag
+      is a bonus. This is exactly the small-screen answer he asked for.
+   3. Make it easier to find: hint text under the Adjust button
+      ("Long-press and drag a player, or tap one to move them") and a
+      clear "Move" affordance on each player row.
+   4. Only if long-press drag proves unreliable on Android: keep the
+      sheet as the documented method, and show a short hint instead of
+      hiding the feature.
+
+  BEFORE (old APK - the one Shawn tested)
+   11.1 Team Builder > Generate teams. Look for the "Adjust" button.
+        Result: present / missing: ______
+   11.2 If present: open Adjust. Long-press a player and drag to another
+        team. Result: works / does nothing / scrolls the list: ______
+   11.3 Tap a player. Result: move sheet opens / nothing: ______
+   11.4 Note Android version, device, and navigation mode.   ______
+
+  AFTER (rebuilt APK, expected)
+   11.5  "Adjust" button is visible after generating teams; disabled
+         only when no split exists.        (verified in simulator)
+   11.6  Adjust opens a full-screen panel with all teams + Unassigned.
+                                         (verified in simulator)
+   11.7  Long-press a player (about half a second), drag onto another
+         team -> highlights the drop target; release -> player moves.
+         BEFORE the scroll-lock fix the same gesture scrolled the list
+         instead (counts unchanged); AFTER it the player moved
+         470/471.                                (verified in simulator)
+   11.8  A quick tap does NOT start a drag; the list still scrolls
+         normally with a finger swipe.       (verified in simulator)
+   11.9  Tap a player -> sheet "Move Player" lists every team + Unassigned;
+         pick one -> player moves; Close/X leaves it unchanged.
+                                         (verified in simulator)
+   11.10 Team totals update immediately: player counts, and average /
+         overall scores for BOTH teams (the "scores update" part).  ____
+   11.11 Move a player to Unassigned and back.                      ____
+   11.12 Move a goalie (GTL): goalie rule respected, no team ends up
+         with an invalid goalie count without warning.              ____
+   11.13 Undo and Redo after a drag move, and after a sheet move.
+         (undo verified in simulator; redo button enables)
+   11.14 A fresh move after Undo clears the Redo history.           ____
+   11.15 Done -> back to Team Builder showing the adjusted teams.   ____
+   11.16 Save the adjusted result -> reopen it from saved drafts ->
+         moved players are where you left them.                     ____
+   11.17 Export (xlsx / pdf) contains the adjusted teams, not the
+         original generated split.                                  ____
+   11.18 Regenerate teams after adjusting: adjustments are replaced by
+         the new split (no stale edits).                            ____
+   11.19 Small phone (5.5"), 100+ players: panel is usable, sheet fits,
+         nothing hidden behind the Android nav bar (3-button + gesture).
+                                                                    ____
+   11.20 Dark and light mode: drop-target highlight and sheet readable.
+                                                                    ____
+   11.21 Large font size (130-200%): rows and buttons not cut off.  ____
+   11.22 Drop outside any team: player snaps back, no change.       ____
+   11.23 Move a player to the team they are already on: no-op, no
+         undo entry.                                                ____
+   11.24 Compare with WEB: same players moved on web and phone give the
+         same team averages.                                        ____
+   11.25 Friend packages: moving one member of a friend group - confirm
+         behaviour is the same as web (warn or allow).              ____
+   11.26 Assessor-only / free-plan accounts: Team Builder gating (plan
+         gate) unchanged.                                           ____
+   11.27 Hint under the Adjust row on Team Builder is visible:
+         "Adjust moves players between teams: hold a player to drag them
+         onto a team, or tap one and pick a team. Team averages update
+         as you go."                        (verified in simulator)
+   11.28 Team averages: with SCORED players, each bin shows
+         "N players - Avg X.X"; after a move BOTH teams' averages
+         change. Unscored players do not count as 0. (dummy data in the
+         simulator had no scores, so the average line was not shown -
+         needs a scored evaluation).                                ____
+   11.29 Scroll-lock safety: hold a player ~1s WITHOUT moving, release ->
+         list scrolls normally afterwards (never stays frozen).     ____
+   11.30 Hold a player, then a phone call / notification / app switch
+         interrupts -> back in the app the list still scrolls.       ____
+   11.31 Drag, drop, then immediately swipe-scroll: list scrolls
+         (verified after a drag + after tap and sheet, in simulator).
+   11.32 Drag with a real finger on Android (not just iOS simulator):
+         hold about a quarter second, then move -> lifts and moves.  ____
+   11.33 Drop onto Unassigned, then drag that player back to a team.___
+   11.34 Save the adjusted result, leave and reopen: adjustments kept.
+         Leave WITHOUT saving: adjustments are dropped (verified in
+         simulator - an earlier unsaved move was gone after reload).
+   11.35 Note: generating a split on a test evaluation saves a draft on
+         it; "New" hides it, generating again overwrites it.
+
+
+=====================================================================
+12. EXTRA REGRESSION CHECKS FOR SECTIONS 10 AND 11
+=====================================================================
+   12.1 New Evaluation: create with and without a team; plan limit;
+        rubrics required; invites to assessors still sent.          ____
+   12.2 Team > Evaluations tab: Create, Attach Existing, open, badge.___
+   12.3 Team Players tab (select mode, import, add from evaluations)
+        unchanged by the evaluation-visibility change.              ____
+   12.4 Roster copy: creating an evaluation for a team still copies the
+        team's players in (incl. the big-team "still setting up"
+        message).                                                   ____
+   12.5 Dashboard: Combine Mode, Archived, edit pencil, delete trash,
+        tab switching Evaluations/Teams, bottom nav.                ____
+   12.6 Team Builder: Generate (with and without prompt), friend
+        packages card, saved drafts, undo/redo, export, team detail
+        screen (team-builder-team).                                 ____
+   12.7 Evaluation Results and Rankings unaffected by any move made in
+        the adjuster (moves change the draft teams only, never scores
+        or the roster).                                             ____
+   12.8 No new red screens / warnings on cold start.                ____
+   12.9 iOS and Android both checked for every change above.        ____
+
+=====================================================================
+ADDENDUM 2 (Shawn, Sept 19 9:03pm - Sept 20 10:37pm)  -  NEW ITEMS
+=====================================================================
+  STATUS (updated): 13, 14, 15, 16, 17 and 18 are IMPLEMENTED.
+  19 is DEFERRED by the owner (skipped for now; not implemented).
+  Lines tagged "(verified in simulator)" were checked live on iOS.
+  ANDROID IS NOT VERIFIED for any of them - especially 17 (keyboard).
+
+  DECISIONS FROM THE OWNER
+   16: letters are for the EVALUATION only. So the team's Options tab has
+       a "Player Selection Letters" card that lists the team's linked
+       evaluations and opens that evaluation's Letters screen (where the
+       Offer Letter and Roster Decision Letter templates live).
+   18: end time must ALWAYS be greater than the start time; equal is
+       blocked. This also applies to events that end on a later date
+       (an overnight event cannot use an earlier end time).
+   15: export the team roster (Excel + PDF), WITHOUT medical information.
+
+  Items in Shawn's words:
+   13. "Instead of the word Team at top - have team name followed by
+        the word HUB"
+   14. "Change Settings button to 'Options'"
+   15. "Add export team button for PDF or Excel"
+   16. "Add both letter templates to 'Options' in the Team Hub screen"
+   17. Letter template editor: "Keyboard blocks out the letter, can't
+        scroll, add 'template saved' icon"                     (HIGH)
+   18. "Can have an end time prior to start time, but the date works,
+        can't put prior date"                                  (HIGH)
+   19. "Invite guardian by email from player profile ... player is
+        created but only shows under My Athletes, should also show
+        under Team tab"                                        (CRITICAL)
+
+  WHERE EACH LIVES TODAY (findings)
+   13/14: team screen header is the fixed word "Team" and the last tab is
+          labelled "Settings" (team/[id].tsx). The Settings tab holds:
+          Team Managers, Dummy Data, Danger Zone (Delete Team).
+   15:    there is NO team roster export today. Exports exist only for an
+          evaluation (results) and for Team Builder splits (XLSX/PDF).
+   16:    letter templates live in Evaluation > Results/Tools > "Player
+          Selection Letters". Two standard kinds: Offer Letter (made the
+          team) and Roster Decision Letter (not selected). The template
+          list is per account, so the same templates can be edited from a
+          team screen; SENDING a letter needs an evaluation + players.
+   17:    the template editor is the shared bottom-sheet Modal. On Android
+          the sheet does not shrink above the keyboard and the long Letter
+          box inside it cannot be scrolled clear of the keyboard. Saving
+          closes the sheet silently (no confirmation).
+   18:    end-time-after-start-time is checked NOWHERE: only "end DATE on or
+          after start date" exists. Affects team events, season schedule
+          events, New Evaluation, and Evaluation edit (Settings and the
+          new tile pencil).
+   19:    a guardian sees their child's team only through the season
+          roster (season_roster). Adding a player to a team with NO season
+          creates no season roster row, and a player invited from the
+          EVALUATION player profile is only an evaluation participant, not
+          on the team roster. Either leaves the child under "My
+          Athletes" with "No active seasons assigned yet" and no team.
+          Not confirmed - the scenarios below split the causes apart.
+
+
+=====================================================================
+13. TEAM SCREEN TITLE: "<TEAM NAME> HUB"
+=====================================================================
+  BEFORE
+   13.1 Home > Teams > open any team. Header at the top reads "Team".
+        Team name only appears in the card below.       Result: ______
+   13.2 Long team name (40+ characters).                Result: ______
+  AFTER (expected)
+   13.3 Header reads "<Team name> Hub" (e.g. "team for testing. 01 Hub").
+                                         (verified in simulator)
+   13.4 Long name WRAPS onto a second line ("Hub" is never cut off);
+        back arrow still tappable.          (verified in simulator)
+   13.5 Name with emoji / accents / very short name ("A").           ____
+   13.6 Rename the team (Edit) -> header updates immediately.        ____
+   13.7 While the team is still loading / on error the header does not
+        show "undefined Hub" (falls back to "Team Hub" or "Team").   ____
+   13.8 Team colour / branded background unchanged.                  ____
+   13.9 Other team screens (Player card, Season/Schedule, Chat) keep
+        their own titles - no accidental change.                     ____
+   13.10 Android small phone, large font: header fits in 2 lines max.___
+   13.11 iPhone and Android look the same.                           ____
+
+
+=====================================================================
+14. "SETTINGS" TAB RENAMED TO "OPTIONS"
+=====================================================================
+  BEFORE
+   14.1 Team screen tabs: Schedule / Players / Evaluations / Settings.
+        Last tab reads "Settings".                       Result: ______
+   14.2 Note every place the word "Settings" refers to the team tab
+        (alerts, onboarding text, links).                Result: ______
+  AFTER (expected)
+   14.3 Last tab reads "Options" (same position, same content:
+        Team Managers, Dummy Data, Danger Zone + new items below).
+                                         (verified in simulator)
+   14.4 The tab still fits on a small phone (tab strip scrolls; nothing
+        cut off).                                                     ____
+   14.5 Anything that used to deep-link to the team Settings tab (for
+        example after creating a team, or the Team Managers prompt) still
+        lands on Options.                                             ____
+   14.6 Text elsewhere that says "Settings" for a TEAM now says
+        "Options"; EVALUATION settings and Profile settings still say
+        "Settings" (do not rename those).                             ____
+   14.7 Delegated club manager: Options tab visible with the same
+        limited content as before.                                    ____
+   14.8 Team Managers card, Dummy Data, Delete Team all still work.  ____
+   14.9 Tab badge counts (Players, Schedule, Evaluations) unaffected.____
+
+
+=====================================================================
+15. EXPORT TEAM (PDF OR EXCEL)
+=====================================================================
+  BEFORE
+   15.1 Team > Settings tab: look for an export control.
+        Expected: none. Only Team Builder splits export XLSX/PDF.
+                                                         Result: ______
+  AFTER (expected)
+   15.2 Options tab has an "Export Team" card with Excel and PDF
+        buttons.                             (verified in simulator)
+   15.3 Excel: one row per player. Confirm the columns with Shawn
+        (suggested: Name, Jersey, Position, Year of birth, Guardian name,
+        guardian email/phone, player email, fee status, source
+        evaluation). Opens correctly in Excel / Google Sheets / Numbers.
+                                                                      ____
+   15.4 PDF: readable table with team name + season on top; page breaks
+        on long rosters; not cut off on the right.                    ____
+   15.5 Team of 999 players: export completes (progress or a spinner),
+        no freeze, file contains all 999 rows (not just the 50 loaded on
+        the Players tab).   (Excel: iOS share sheet showed
+        "team-for-testing-01-roster, 495 KB" - verified in simulator;
+        rows/columns/PDF pages verified by script.)
+   15.6 Empty team: friendly message ("no players to export"), no empty
+        file shared.                                                  ____
+   15.7 File name is sensible (team name + date), no illegal characters
+        for names with / : ? etc.                                     ____
+   15.8 Share sheet on Android and iOS: save to Files, email, Drive.  ____
+   15.9 Privacy: medical info is NOT included (verified by script);
+        guardian contact only visible to coach/manager roles.         ____
+   15.10 Permissions: delegated club manager - export allowed or
+         hidden (decide); guardian/assessor accounts never see it.    ____
+   15.11 Airplane mode: clear error, no half-written file.           ____
+   15.12 Data matches the Players tab: same names, jerseys, positions;
+         a player removed a minute ago is not in the file.            ____
+   15.13 Dummy players ("testing for delete" test team) export fine,
+         special characters (accents, apostrophes, commas in names)
+         are preserved and not broken across columns.                 ____
+   15.14 Team Builder XLSX/PDF export (existing) still works.        ____
+
+
+=====================================================================
+16. LETTER TEMPLATES IN THE TEAM'S OPTIONS
+=====================================================================
+  DECIDED: letters are for the evaluation only. The team's Options tab
+  gets a "Player Selection Letters" card listing the team's linked
+  evaluations; each button opens that evaluation's Letters screen (both
+  the Offer Letter and the Roster Decision Letter live there).
+
+  BEFORE
+   16.1 Team > Settings: no letters anywhere.            Result: ______
+   16.2 To reach templates today: open an evaluation > Results >
+        Player Selection Letters. Note taps needed.      Result: ______
+  AFTER (expected)
+   16.3 Options tab shows a "Player Selection Letters" card naming the
+        Offer Letter and Roster Decision Letter, with one button per
+        linked evaluation.                   (verified in simulator)
+   16.4 Tapping an evaluation opens ITS Letters screen with the same
+        templates.                           (verified in simulator)
+   16.5 Create / delete a template from Options works the same as from
+        the evaluation screen.                                        ____
+   16.6 Team with NO linked evaluation: Options explains how to send
+        (link/create an evaluation) instead of a dead button.         ____
+   16.7 Team with one linked evaluation: button reads "Open Letters -
+        <evaluation>" and opens that evaluation's Letters flow.       ____
+   16.8 Team with several linked evaluations: asks which one.        ____
+   16.9 Permissions: only coaches/managers see it; assessors and
+        guardians do not.                                             ____
+   16.10 The evaluation-side Letters screen is unchanged (regression).__
+   16.11 Free-plan limits for letters (if any) still apply.          ____
+   16.12 Sent letters still appear in the player's card and Sent
+         Letters list.                                                ____
+
+
+=====================================================================
+17. LETTER TEMPLATE EDITOR: KEYBOARD COVERS THE LETTER  (HIGH)
+=====================================================================
+  RECREATE (Android, 3-button nav, Gboard):
+   17.1 Evaluation > Results > Player Selection Letters > Edit (or New)
+        on a template.
+   17.2 Tap into the big "Letter" box near the bottom of the text.
+   17.3 Try to scroll the sheet / see the text you are typing.
+  BEFORE (expected bug, as in Shawn's screenshot)
+   17.4 Keyboard covers most of the letter; only 2-3 lines visible.
+        Cannot scroll to see the rest. "Save Template" sits right above
+        the keyboard.                                    Result: ______
+   17.5 Type a long paragraph: the caret line goes out of view.  ____
+   17.6 Save the template. The sheet just closes; nothing says it saved.
+                                                         Result: ______
+   17.7 iPhone: same test (likely fine - note it).       Result: ______
+        (the simulator uses a hardware keyboard, so no on-screen
+        keyboard appears there - test on a real iPhone too)
+   HOW THE FIX WORKS (Android only): the sheet measures where the keyboard
+   starts against where its window ends, lifts itself by the overlap and
+   shrinks to fit above the keyboard so its body scrolls. iOS keeps its
+   existing behaviour.
+  AFTER (expected)
+   17.8  With the keyboard open the sheet moves up/shrinks so the field
+         being typed in is fully visible; the sheet body scrolls.    ____
+   17.9  Long letter: caret line always stays visible while typing.  ____
+   17.10 Can scroll the letter text and the sheet (e.g. to reach the
+         placeholders list) while the keyboard is open.              ____
+   17.11 "Save Template" stays reachable (visible or one scroll away);
+         Done/return key does not lose typed text.                   ____
+   17.12 After Save: a green "check Template saved" pill appears at the
+         top of the Letters screen for ~2.5 seconds and the sheet
+         closes.                              (verified in simulator)
+   17.13 Save failure (airplane mode): error alert, sheet stays open,
+         text NOT lost, no false "saved" indicator.                  ____
+   17.14 Name empty: existing "Name required" alert still shown, no
+         saved indicator.                                            ____
+   17.15 3-button nav, gesture nav, small phone, large font, landscape,
+         split-screen: all usable.                                   ____
+   17.16 Dark and light mode.                                        ____
+   17.17 Tap a placeholder chip: it appends to the letter and the
+         cursor/scroll position stays sensible.                      ____
+   17.18 "Start from a standard letter" chips still fill subject/body.__
+  SAME BUG, OTHER SHEETS (this is the shared Modal): run 17.2-17.4 on
+   17.19 Edit Evaluation (tile pencil + Settings)                    ____
+   17.20 Add Player Manually / Edit player                           ____
+   17.21 Add / Edit event on a team                                  ____
+   17.22 Import players modal, Add Assessor, Save Team Set name      ____
+   17.23 Anything that had NO keyboard problem before must not get a
+         weird gap above the keyboard or jump.                       ____
+   17.24 iOS: keyboard behaviour of every sheet unchanged.           ____
+
+
+=====================================================================
+18. END TIME BEFORE START TIME IS ACCEPTED  (HIGH)
+=====================================================================
+  Rules to agree with Shawn (proposed):
+  DECIDED RULE:
+   - When both times are filled in, end time must ALWAYS be greater than
+     start time. Equal is blocked.
+   - This also applies when the end DATE is later (an overnight event can
+     no longer use an earlier end time).
+   - Only one of the two times filled: allowed (as today).
+   - The season Schedule screen has no End Time field, so nothing there.
+
+  RECREATE + BEFORE (all expected to be wrongly accepted today)
+   18.1 Team > Schedule > "+ Event": date today+1, Start 3:00 PM, End
+        1:00 PM, Save.   Expected bug: saves.            Result: ______
+   18.2 Same, but End date earlier than date: blocked with an error
+        (works today).                                   Result: ______
+   18.3 Edit an existing team event: set End before Start, Save.
+                                                         Result: ______
+   18.4 Season / Schedule screen (season/[id]/schedule): create an event
+        with End before Start.                           Result: ______
+   18.5 New Evaluation: Start 3:00 PM, End 1:00 PM, Create.
+                                                         Result: ______
+   18.6 Evaluation > Settings > Edit Details (and the new tile pencil):
+        End before Start, Save.                          Result: ______
+   18.7 Note which of these show ANY error today.        Result: ______
+
+  AFTER (expected)
+   18.8  Team event, same day, End earlier than Start -> save blocked with
+         a clear inline error on End Time ("End time must be after start
+         time"); nothing saved.                                       ____
+   18.9  End equal to Start -> blocked.   (verified in simulator: an
+         evaluation with 15:00-15:00 could not be saved)
+   18.10 End later than Start -> saves normally.                      ____
+   18.11 Multi-day event (End date after date) with End time earlier than
+         Start time -> ALSO blocked (per the decided rule).           ____
+   18.12 End time only, no Start time -> allowed / or asks for start
+         (per agreed rule).                                           ____
+   18.13 Start time only -> allowed as today.                         ____
+   18.14 Same validation on: team event (create + edit), New Evaluation,
+         Evaluation Settings edit, tile pencil edit. (Settings edit
+         verified in simulator; all forms verified by script.)        ____
+   18.15 The error appears under the End Time field (red outline +
+         "End time must be after the start time") and the form keeps
+         what was typed.                     (verified in simulator)
+   18.16 Changing Start time after picking End re-validates (clears the
+         error when they become consistent).                          ____
+   18.17 Existing past-date / past-start-time validation still works:
+         picking a past date is still blocked (regression).           ____
+   18.18 Existing events/evaluations that ALREADY have end before/equal
+         to start still open and display; the error shows only when the
+         user tries to save them (verified in simulator: opening was
+         fine, saving was blocked). They are never deleted or hidden.  ____
+   18.19 12-hour vs 24-hour display: 12:00 AM/PM, 12:30 PM, 11:59 PM
+         and midnight edge cases compare correctly ("12:00 AM" is the
+         earliest time of the day).                                   ____
+   18.20 Time zone / device 24h setting: same result on Android and
+         iPhone.                                                      ____
+   18.21 RSVP/Add-to-calendar/invite emails still show correct times
+         for valid events.                                            ____
+
+
+=====================================================================
+19. INVITED GUARDIAN: PLAYER ONLY IN "MY ATHLETES", NOT UNDER TEAM  (CRITICAL)
+=====================================================================
+  ANSWER SO FAR: "the background" - i.e. most likely his own COACH login
+  that is also the guardian (a coach home shows a "My Athletes" row).
+  STILL NEEDED before building: on that coach login, what exactly should
+  "under Team tab" show - (a) the child inside the team's own Players
+  list, or (b) the team appearing in the bottom "Teams" tab for a
+  coach who is only that child's guardian (a team he does not own)?
+  Which screen was the invite sent from (team player card or evaluation
+  player card)? DEFERRED - the owner said to skip #19 for now.
+
+  TEST MATRIX (write the result of every cell)
+   Invite from:  A = Team > Players > player card > Invite
+                 B = Evaluation > player profile > Guardian Access
+   Team has a season:  S1 = yes, S0 = no season yet
+   Guardian account:   N = brand new email, E = email already has an
+                       account
+
+  BEFORE (current build)
+   19.1  A + S1 + N: send invite; guardian accepts (opens email, signs
+         in / sets password). Note guardian's Home: My Athletes shows the
+         child? Team / seasons shown?                     Result: ______
+   19.2  A + S0 + N.                                      Result: ______
+   19.3  B + S1 + N (child is an evaluation participant AND on the team).
+                                                          Result: ______
+   19.4  B + S1 + N where the child is an evaluation participant only
+         (NOT on the team roster).                        Result: ______
+   19.5  A/B with E (existing account).                   Result: ______
+   19.6  For each: what does the COACH see on Team > Players for that
+         child (present / missing, guardian badge "Account Linked")?
+                                                          Result: ______
+   19.7  Expected bug: child is under My Athletes, with "No active
+         seasons assigned yet", and the team is not reachable from the
+         guardian's Team area.                            Result: ______
+
+  AFTER (expected)
+   19.8  After the guardian accepts: the child appears under My Athletes
+         AND the guardian can see the team (team card / Teams area,
+         schedule, chat) in every matrix cell.                       ____
+   19.9  Team with no season yet: guardian still sees the team (or gets
+         a clear "season not started" state), not a silent nothing.   ____
+   19.10 Coach's Team > Players shows the child once (no duplicate) with
+         "Account Linked".                                            ____
+   19.11 Inviting from the evaluation player card for a player who is not
+         on the team: outcome agreed with Shawn (add to team? prompt?)
+         and consistent.                                              ____
+   19.12 Guardian with two children on two teams: both teams visible.  ____
+   19.13 Guardian who is ALSO a coach: My Athletes + own Teams both work;
+         no team shown twice.                                          ____
+   19.14 Guardian leaves the team ("Leave Team"): child disappears from
+         the team area but the athlete record / evaluations history
+         are kept; coach roster unchanged or updated as designed.      ____
+   19.15 Coach removes the child from the team: guardian's team entry
+         disappears; My Athletes card behaviour matches the current
+         rule (hidden when nothing active is left).                    ____
+   19.16 Invite resend / re-invite (account was deleted): still works and
+         re-links to the same child.                                   ____
+   19.17 Emails: invite email content/links still correct; token can
+         only be used once; wrong email cannot claim the child.        ____
+   19.18 RLS: a different guardian cannot see this child or team.      ____
+   19.19 Schedule / RSVP / fee status for that child shown to the
+         guardian after acceptance.                                    ____
+   19.20 Already-working case (child added via registration flow) still
+         shows correctly.                                              ____
+
+
+=====================================================================
+20. REGRESSION CHECKLIST FOR ADDENDUM 2
+=====================================================================
+   20.1  Team screen: Schedule / Players / Evaluations / Options all
+         open, badges correct, no layout jump from the new header.    ____
+   20.2  Players tab: Select mode, Import, Add, Send Invites unchanged.___
+   20.3  Team Managers card + Dummy Data + Delete Team unchanged.      ____
+   20.4  Team event create/edit/delete, RSVPs, Add to calendar.        ____
+   20.5  Evaluation create/edit (date + time pickers), incl. the new
+         tile pencil dialog.                                           ____
+   20.6  Letters: create/edit/delete template, send to selected
+         players, sent list, player card shows the letter.            ____
+   20.7  Every bottom-sheet form still opens, scrolls and saves on
+         Android + iPhone (shared Modal change).                       ____
+   20.8  Invites: whole-roster send, single player send, resend.       ____
+   20.9  Guardian home: My Athletes, Schedule, Leave Team, chat.       ____
+   20.10 Exports: Team Builder XLSX/PDF, evaluation export unchanged.  ____
+   20.11 Plan gates (Free / Pro / Club) still hide/show the same items.___
+   20.12 Dark + light mode on every touched screen.                    ____
+   20.13 Cold start: no new red screens; note any new yellow warnings.___
+
+
+=====================================================================
+ADDENDUM 3 (Shawn, Sept 20-21)  -  PLAN UPGRADE + CREATE TEAM
+=====================================================================
+  STATUS: 21 and 22 are IMPLEMENTED (code). NOT verified against real
+  Stripe, and NOT verified on Android. iOS layout of New Team checked in
+  the simulator. Item 23 (manager on Coach mode) is built but needs a
+  second test account to verify.
+
+  DECIDED: downgrades stay exactly as they are - a downgrade is
+  scheduled and takes effect when the current subscription term ends.
+  Nothing is refunded or credited today.
+
+=====================================================================
+21. UPGRADE COACH -> COACH+ CHARGES THE FULL $69.99  (CRITICAL)
+=====================================================================
+  Cause: an upgrade with a live subscription opened a NEW full-price
+  Checkout (and forfeited the time already paid for). Now it opens the
+  Stripe portal, which swaps the plan on the existing subscription and
+  charges only the prorated difference.
+  Use a Stripe TEST-mode account. Never test on a real card.
+
+  BEFORE (old build)
+   21.1 Account on Coach (paid, active). Profile > Upgrade Plan > Coach+.
+        Confirm dialog says "charged CA$69.99 today... not credited".
+                                                          Result: ______
+   21.2 Continue: Stripe Checkout shows the FULL Coach+ price (69.99),
+        no credit for unused Coach time.                  Result: ______
+   21.3 After paying: Stripe shows the old Coach subscription cancelled
+        (superseded) and a new Coach+ one.                Result: ______
+  AFTER (expected)
+   21.4 Same account: dialog says you only pay the difference for the
+        time left on Coach, and the exact amount is shown in Stripe.___
+   21.5 Continue opens the Stripe PORTAL (not Checkout) with the switch
+        to Coach+ offered.                                          ____
+   21.6 The portal shows the PRORATED amount (well below 69.99 unless the
+        term just started), and confirming charges that amount only.___
+   21.7 After confirming: the app shows Coach+ (pull to refresh / reopen
+        Profile) and Coach+ limits/features unlock.                 ____
+   21.8 Stripe has ONE subscription for the customer (item swapped), not
+        two. No leftover Coach subscription.                        ____
+   21.9 Try the upgrade twice in a row / tap Upgrade again after it
+        finished: no second charge, no second subscription.         ____
+   21.10 Plan card note under the button reads "You only pay the
+         difference for the time left on your current plan."        ____
+   21.11 Coach -> Club and Coach+ -> Club behave the same way.        ____
+   21.12 Monthly vs yearly: upgrade from a monthly plan and from a
+         yearly plan; the amount shown in Stripe is sensible.        ____
+   21.13 Trialing account: upgrade goes through the portal too and
+         does not charge more than Stripe shows.                     ____
+   21.14 Account with NO live subscription (Free, or cancelled/lapsed):
+         Upgrade still opens ordinary Checkout at full price and
+         works (regression).                                         ____
+   21.15 Discount code / loyalty credit on a first purchase from Free
+         still applies at Checkout (regression).                     ____
+   21.16 Cancel in the portal (close it without confirming): plan and
+         charges unchanged; the app is unchanged.                    ____
+   21.17 Webhook: after the portal switch the account plan tier updates
+         (customer.subscription.updated) and no duplicate "upgraded"
+         emails or duplicate referral credit.                        ____
+   21.18 Add-on team licenses (Club) are untouched by an upgrade.     ____
+   21.19 Referral / loyalty credit and payment history screens still
+         show correct entries.                                       ____
+
+  DOWNGRADE (must be UNCHANGED - regression)
+   21.20 Coach+ -> Coach: confirm dialog, then Stripe portal; the change
+         is SCHEDULED for the end of the current term; nothing is
+         charged or refunded today; the app keeps Coach+ until then.___
+   21.21 The plan card note still reads "Takes effect when your current
+         term ends. Nothing changes today."                          ____
+   21.22 Downgrade to Free: cancels at period end, features kept until
+         then.                                                        ____
+   21.23 Pending downgrade shown in the app (pending plan change) still
+         displays correctly.                                          ____
+   21.24 Over-limit warnings in the downgrade dialog (teams, evaluations)
+         still list correctly.                                        ____
+
+
+=====================================================================
+22. CREATE TEAM BUTTON HIDDEN BY THE PHONE MENU BUTTONS (Android)
+=====================================================================
+  Cause: the New Team form scrolls, but its bottom padding did not
+  include the Android system navigation bar (3-button mode). Fixed by the
+  shared Screen bottom-inset change (same as item 1, Log Out).
+
+  RECREATE + BEFORE (Android, 3-button navigation)
+   22.1 Home > Teams > + New Team. Scroll to the very bottom.
+        Expected (bug): "Create Team" sits under / touching the
+        back-home-recents buttons.                        Result: ______
+   22.2 Try to tap the lower edge of Create Team.         Result: ______
+  AFTER (expected)
+   22.3 3-button nav: Create Team fully visible with clear space below,
+        fully tappable.                                             ____
+   22.4 Gesture nav: no big empty band below the form.               ____
+   22.5 Android 13/14: no extra blank space.                         ____
+   22.6 Keyboard open on Team Name / Email fields: the field being
+        typed in stays visible, and Create Team is reachable.        ____
+   22.7 Large font size 130-200%: Create Team still reachable.       ____
+   22.8 Below Create Team, the Testing Tools card (Dummy Data) is also
+        fully visible and tappable.                                  ____
+   22.9 iPhone: form looks the same as before, no new gap.
+                                        (verified in simulator)
+   22.10 Create a team with and without the "Invite a manager" email and
+         with fees Yes/No: still creates and lands on the team's
+         Options tab.                                                ____
+   22.11 Other long forms end with their button visible (New
+         Evaluation, Edit Profile, season settings).                ____
+   22.12 Dark and light mode.                                        ____
+
+
+=====================================================================
+23. NEW TEAM MANAGER ON "COACH MODE" FOR THAT TEAM ONLY  (IMPLEMENTED)
+=====================================================================
+  Shawn: "when a team is created and a manager is added, that new manager
+  of that team should be on Coach mode, to create assessments, however
+  the rest of that coach's profile stays free mode."
+
+  DECIDED / BUILT (app side; the database already allowed it):
+   - Every manager of a team now sees that team's Evaluations tab and can
+     create/edit evaluations for it (before: hidden for the "manager"
+     role, only the old "coach" role saw it). Existing managers get this
+     too.
+   - Plan limits and feature gates on the team's evaluations use the
+     team OWNER's plan (the team's "effective plan"), not the manager's
+     own. The manager's own account, plan badge, teams and limits are
+     untouched (still Free).
+   - Creating an evaluation on a managed team counts only THAT team's
+     evaluations against the limit.
+   - Wording updated on Team Managers card and New Team screen.
+   Screens now using the team's plan: New Evaluation, Evaluation
+   Settings (copy), Roster (add player), Registrations, Roster Library,
+   Player card (guardian link), Team Builder team screen.
+   Verified in the iOS simulator: OWNER view unchanged (Evaluations tab,
+   Create, Attach Existing). The manager view needs a SECOND account.
+
+  SETUP: owner account (Coach+ or Club) with a team; a second, brand-new
+  Free account (manager X).
+  BEFORE (old build)
+   23.1 Owner invites X to the team. X logs in: sees Schedule / Players /
+        Options but NO Evaluations tab.                Result: ______
+   23.2 X's own Profile plan is Free.                  Result: ______
+  AFTER (expected)
+   23.3 X sees the Evaluations tab on THAT team, with Create and Attach
+        Existing.                                                   ____
+   23.4 X creates an evaluation from the team: the evaluation appears
+        for X on the team tab AND for the owner (owner sees it on the
+        team tab too).                                              ____
+   23.5 X can score, add players, import, open registrations, run Team
+        Builder and letters on that evaluation, with NO upgrade wall
+        that the owner's plan would not show.                       ____
+   23.6 X's own Profile still says Free; X's own home list, own teams
+        and own limits unchanged (X creating an evaluation with NO team
+        still hits the Free limit).                                 ____
+   23.7 X cannot see the owner's other teams, other evaluations, billing,
+        organization members.                                       ____
+   23.8 Removing X from the team: Evaluations tab and the team's
+        evaluations disappear for X.                                ____
+   23.9 Existing managers (invited before this change) also see the
+        Evaluations tab now.                                        ____
+   23.10 Owner on a Free/Coach plan whose limits are lower: the manager
+         is limited by the OWNER's plan for that team's evaluations.___
+   23.11 Owner's evaluation/player counts and limits behave as before.___
+   23.12 Manager tries to create a second team / delete the team:
+         still not allowed (Danger Zone hidden for managed teams).  ____
+   23.13 A manager of two teams from two owners: each team uses its own
+         owner's plan.                                               ____
+   23.14 Team Managers card wording reads "...and can create and run its
+         evaluations - but nothing else on your account."             ____
+   23.15 Server rules (RLS): X cannot read/write evaluations of a team
+         they do not manage (try by id).                             ____
+
+
+=====================================================================
+24. REGRESSION CHECKLIST FOR ADDENDUM 3
+=====================================================================
+   24.1 Upgrade screen: plan cards, current plan badge, billing interval
+        toggle, referral/credit switch, Manage Subscription.         ____
+   24.2 Payment Dashboard and Stripe Connect screens unaffected.       ____
+   24.3 Buy extra team licenses (Club) still works.                    ____
+   24.4 Plan gates (Free / Coach / Coach+ / Club) show/hide features the
+        same as before after an upgrade completes.                   ____
+   24.5 Log Out / Delete Account (Profile) still fully visible on
+        Android after the shared padding change.                     ____
+   24.6 Screens inside the bottom tab bar (evaluation tabs): no extra
+        gap above the tab bar.                                       ____
+   24.7 No new red screens / warnings on cold start.                 ____
+
+=====================================================================
+SIGN-OFF
+=====================================================================
+  Tester: ____________   Date: __________   Build: ______________
+  Before-build result summary: _______________________________
+  After-build result summary:  _______________________________
+  Blocking failures: _________________________________________
+=====================================================================
