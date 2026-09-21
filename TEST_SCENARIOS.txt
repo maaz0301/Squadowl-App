@@ -1777,6 +1777,77 @@ MASTER FEATURE TEST SUITE  (sections 25-50)
          account; nothing orphaned or visible to others.                 ____
 
 =====================================================================
+51. WEB APP PARITY  (branch feat/shawn-feedback-web-parity)
+=====================================================================
+  Same fixes as the mobile app, applied to the Next.js web app. Run in
+  desktop Chrome, Safari and a phone browser. Web-only differences:
+   - no pencil on evaluation tiles: "Edit Details" is in the evaluation
+     actions dialog (trash icon) and opens Settings;
+   - the team export has no Fee Status column (web roster has no fees);
+   - Android nav-bar and keyboard fixes are mobile-only.
+  STATUS: built; unit tests + typecheck + production build pass. NOT yet
+  tested in a browser or against live Stripe.
+
+  REGISTRATIONS
+   51.1  Tick 2 pending players: ticked cards read "Add 2 to Roster";
+         a sticky bar shows "2 selected  [Clear]  [Add 2 to Roster]".   ____
+   51.2  Click the card's "Add 2 to Roster" -> dialog places BOTH, to a
+         team and to an evaluation; progress reaches 2 of 2.            ____
+   51.3  Select All selects pending only; Deselect All clears; dismissed
+         players are never counted or placed.                           ____
+   51.4  A single, unticked card still adds just that player.           ____
+  ROSTERS
+   51.5  Team > Players > Select: checkboxes, Select All = whole team
+         (999 on the test team), Delete Selected (N) with confirmation.  ____
+   51.6  With a search typed, Select All selects only the matches.       ____
+   51.7  Leaving the Players tab exits select mode.                      ____
+   51.8  Evaluation roster Select All + Delete Selected: all removed;
+         if some fail the message says "X of Y deleted" and the rest
+         stay selected.                                                 ____
+   51.9  Airplane mode / offline during delete: readable error.         ____
+  IMPORT
+   51.10 Excel with a wrong declared range imports every row (not 1);
+         single Name column; cover sheet first.                         ____
+   51.11 20-row CSV/XLSX into an empty team is much faster than before
+         and the summary matches (20 added, jersey/position saved).     ____
+   51.12 A bad row is reported while the others import; siblings share one
+         guardian account.                                              ____
+  TEAM HUB
+   51.13 Team page header reads "<Team name> Hub"; last tab reads
+         "Options"; ?tab=settings links still open it.                  ____
+   51.14 Options: Export Team Excel and PDF download; 999 players all in
+         the file; no medical info; special characters preserved.       ____
+   51.15 Options: letter templates listed with Edit / Delete / + New
+         Template; editing saves and a "Template saved" toast shows;
+         same templates on the evaluation Letters page.                 ____
+   51.16 "Send letters" buttons open that evaluation's Letters page.     ____
+  EVALUATIONS
+   51.17 Home Evaluations list and the tile count show standalone
+         evaluations only; team-linked ones are on their team tab.      ____
+   51.18 Plan limit still counts all evaluations (Free: 2nd blocked).    ____
+   51.19 Evaluation actions dialog: Edit Details opens Settings; Archive
+         and Delete still work.                                         ____
+   51.20 End time before/equal to start is blocked with "End time must be
+         after the start time": New Evaluation, Settings edit, team
+         event create and edit.                                         ____
+  MANAGERS
+   51.21 A delegated manager sees the team's Evaluations tab and can
+         create evaluations on the owner's plan; own account stays Free.___
+   51.22 Team Managers card and New Team copy read "...and can create and
+         run its evaluations - but nothing else on your account."       ____
+  BILLING
+   51.23 Coach -> Coach+ (live subscription) opens the Stripe PORTAL with a
+         prorated amount; dialog says "only pay the difference".        ____
+   51.24 Downgrade still scheduled for term end; Free -> paid still uses
+         Checkout.                                                      ____
+  REGRESSION
+   51.25 Team Builder (web) drag and drop unchanged; team detail page,
+         chat, schedule, RSVP unchanged.                                ____
+   51.26 Dark and light theme, mobile-width browser layout, keyboard use
+         of all new buttons.                                            ____
+   51.27 No console errors on the touched pages.                        ____
+
+=====================================================================
 SIGN-OFF
 =====================================================================
   Tester: ____________   Date: __________   Build: ______________
