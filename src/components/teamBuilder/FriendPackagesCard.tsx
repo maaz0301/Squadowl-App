@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { memo, useCallback, useMemo, useState } from 'react';
+import { Alert, FlatList, Pressable, Text, View } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Avatar, Badge, Button, Card, Input, Modal } from '@/components/ui';
 import { useUpdateTryoutMutation } from '@/features/queries';
+import { queryKeys } from '@/lib/queryClient';
 import { generateId, playerDisplayName } from '@/data/rubrics';
 import type { FriendPackage } from '@/data/teamBuilder';
 import type { Player, Tryout } from '@/data/types';
@@ -16,6 +18,62 @@ const MIN_MEMBERS = 2;
  * several of them stacked on a phone screen.
  */
 const PACKAGE_ACCENTS = ['#38bdf8', '#22c55e', '#a78bfa', '#f472b6', '#facc15', '#2dd4bf'] as const;
+
+/**
+ * One picker row. Memoised so ticking a player re-renders that row alone — the
+ * roster can run to a thousand players, and rebuilding every row on each tap
+ * was a large part of the modal feeling stuck.
+ */
+const PickerRow = memo(function PickerRow({
+  player,
+  selected,
+  claimedBy,
+  onToggle,
+}: {
+  player: Player;
+  selected: boolean;
+  claimedBy?: string;
+  onToggle: (playerId: string) => void;
+}) {
+  const colors = useThemeColors();
+  return (
+    <Pressable
+      onPress={() => !claimedBy && onToggle(player.id)}
+      disabled={!!claimedBy}
+      className="flex-row items-center gap-2 border-b px-3 py-2"
+      style={{
+        borderColor: colors.border,
+        opacity: claimedBy ? 0.5 : 1,
+        // Picked rows are tinted rather than only ticked: with a
+        // long roster the tick column alone is easy to lose
+        // track of while scrolling.
+        backgroundColor: selected ? 'rgba(255,107,43,0.10)' : 'transparent',
+      }}
+    >
+      <View
+        className="h-5 w-5 items-center justify-center rounded"
+        style={{
+          borderWidth: 1,
+          borderColor: selected ? colors.primary : colors.border,
+          backgroundColor: selected ? colors.primary : 'transparent',
+        }}
+      >
+        {selected ? <Text className="text-xs font-bold text-white">✓</Text> : null}
+      </View>
+      <Avatar first={player.first} last={player.last} pos={player.pos} uri={player.avatarUrl} size={26} />
+      <View className="flex-1">
+        <Text className="text-sm" style={{ color: colors.ink }} numberOfLines={1}>
+          {playerDisplayName(player)}
+        </Text>
+        {claimedBy ? (
+          <Text className="text-xs" style={{ color: colors.inkFaint }} numberOfLines={1}>
+            Already in &ldquo;{claimedBy}&rdquo;
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+});
 
 interface Props {
   tryout: Tryout;
@@ -36,6 +94,7 @@ interface Props {
 export function FriendPackagesCard({ tryout, disabled }: Props) {
   const colors = useThemeColors();
   const updateTryout = useUpdateTryoutMutation();
+  const qc = useQueryClient();
 
   const [editing, setEditing] = useState<FriendPackage | null>(null);
   const [isNew, setIsNew] = useState(false);
@@ -63,6 +122,8 @@ export function FriendPackagesCard({ tryout, disabled }: Props) {
     [tryout.roster],
   );
 
+  const selectedIds = useMemo(() => new Set(editing?.playerIds ?? []), [editing?.playerIds]);
+
   const visibleRoster = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return sortedRoster;
@@ -85,7 +146,7 @@ export function FriendPackagesCard({ tryout, disabled }: Props) {
     setEditing({ ...pkg, playerIds: [...pkg.playerIds] });
   };
 
-  const toggleMember = (playerId: string) => {
+  const toggleMember = useCallback((playerId: string) => {
     setEditing((cur) =>
       cur
         ? {
@@ -96,7 +157,7 @@ export function FriendPackagesCard({ tryout, disabled }: Props) {
           }
         : cur,
     );
-  };
+  }, []);
 
   const handleSave = async () => {
     if (!editing) return;
@@ -114,10 +175,21 @@ export function FriendPackagesCard({ tryout, disabled }: Props) {
     }
     const saved: FriendPackage = { ...editing, name };
     const next = isNew ? [...packages, saved] : packages.map((p) => (p.id === saved.id ? saved : p));
+    // Close and show the package straight away instead of holding the sheet open
+    // behind a spinner for the round trip (it reads and rewrites the tryout's
+    // stored data). If the save is refused the cache goes back to what it was and
+    // the coach is told, with the sheet reopened so nothing they picked is lost.
+    const key = queryKeys.tryout(tryout.id);
+    const previous = qc.getQueryData<Tryout>(key);
+    qc.setQueryData<Tryout | undefined>(key, (cur) => (cur ? { ...cur, friendPackages: next } : cur));
+    const draft = editing;
+    setEditing(null);
     try {
       await save(next);
-      setEditing(null);
     } catch (e: any) {
+      qc.setQueryData(key, previous);
+      setIsNew(isNew);
+      setEditing(draft);
       Alert.alert('Could not save', e?.message ?? 'The package was not saved.');
     }
   };
@@ -274,15 +346,18 @@ export function FriendPackagesCard({ tryout, disabled }: Props) {
         visible={!!editing}
         title={isNew ? 'Create Friend Package' : 'Edit Friend Package'}
         onClose={() => setEditing(null)}
+        // The picker owns its scrolling so the roster list virtualises; inside
+        // the Modal's own ScrollView every row mounted at once.
+        scroll={false}
         footer={
-          <View className="flex-row justify-end gap-2">
+          <View className="flex-row justify-end gap-2 pt-4">
             <Button label="Cancel" variant="ghost" onPress={() => setEditing(null)} />
-            <Button label="Save Package" onPress={handleSave} loading={updateTryout.isPending} />
+            <Button label="Save Package" onPress={handleSave} />
           </View>
         }
       >
         {editing ? (
-          <View className="gap-3">
+          <View className="flex-1 gap-3">
             <Input
               label="Package name"
               value={editing.name}
@@ -306,60 +381,31 @@ export function FriendPackagesCard({ tryout, disabled }: Props) {
               placeholder="Search the roster..."
             />
 
-            <ScrollView
+            <FlatList
               className="rounded-lg border"
-              style={{ borderColor: colors.border, maxHeight: 320 }}
-              nestedScrollEnabled
-            >
-              {visibleRoster.length === 0 ? (
+              style={{ borderColor: colors.border, flex: 1 }}
+              data={visibleRoster}
+              extraData={editing.playerIds}
+              keyExtractor={(p) => p.id}
+              keyboardShouldPersistTaps="handled"
+              initialNumToRender={12}
+              maxToRenderPerBatch={12}
+              windowSize={7}
+              removeClippedSubviews
+              ListEmptyComponent={
                 <Text className="p-3 text-xs" style={{ color: colors.inkMuted }}>
                   No players match &ldquo;{search}&rdquo;.
                 </Text>
-              ) : (
-                visibleRoster.map((p) => {
-                  const claimedBy = claimedElsewhere.get(p.id);
-                  const selected = editing.playerIds.includes(p.id);
-                  return (
-                    <Pressable
-                      key={p.id}
-                      onPress={() => !claimedBy && toggleMember(p.id)}
-                      disabled={!!claimedBy}
-                      className="flex-row items-center gap-2 border-b px-3 py-2"
-                      style={{
-                        borderColor: colors.border,
-                        opacity: claimedBy ? 0.5 : 1,
-                        // Picked rows are tinted rather than only ticked: with a
-                        // long roster the tick column alone is easy to lose
-                        // track of while scrolling.
-                        backgroundColor: selected ? 'rgba(255,107,43,0.10)' : 'transparent',
-                      }}
-                    >
-                      <View
-                        className="h-5 w-5 items-center justify-center rounded"
-                        style={{
-                          borderWidth: 1,
-                          borderColor: selected ? colors.primary : colors.border,
-                          backgroundColor: selected ? colors.primary : 'transparent',
-                        }}
-                      >
-                        {selected ? <Text className="text-xs font-bold text-white">✓</Text> : null}
-                      </View>
-                      <Avatar first={p.first} last={p.last} pos={p.pos} uri={p.avatarUrl} size={26} />
-                      <View className="flex-1">
-                        <Text className="text-sm" style={{ color: colors.ink }} numberOfLines={1}>
-                          {playerDisplayName(p)}
-                        </Text>
-                        {claimedBy ? (
-                          <Text className="text-xs" style={{ color: colors.inkFaint }} numberOfLines={1}>
-                            Already in &ldquo;{claimedBy}&rdquo;
-                          </Text>
-                        ) : null}
-                      </View>
-                    </Pressable>
-                  );
-                })
+              }
+              renderItem={({ item }) => (
+                <PickerRow
+                  player={item}
+                  selected={selectedIds.has(item.id)}
+                  claimedBy={claimedElsewhere.get(item.id)}
+                  onToggle={toggleMember}
+                />
               )}
-            </ScrollView>
+            />
           </View>
         ) : null}
       </Modal>

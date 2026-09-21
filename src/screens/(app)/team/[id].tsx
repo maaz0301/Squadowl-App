@@ -688,7 +688,7 @@ export default function TeamDetailScreen() {
       const [y, m, d] = data.date.split('-').map(Number);
       const [hour, min] = (data.startTime || '00:00').split(':').map(Number);
       if (new Date(y, m - 1, d, hour, min) < new Date()) {
-        const msg = 'Event must be scheduled from today onwards.';
+        const msg = 'The start time you picked has already passed. Choose a date and start time that are later than now.';
         eventForm.setError('date', { type: 'manual', message: msg });
         alertMsg('Validation Error', msg);
         return;

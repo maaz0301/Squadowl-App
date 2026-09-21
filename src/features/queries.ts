@@ -76,10 +76,14 @@ type TeamRosterPage = { players: TeamRosterPlayer[]; nextCursor?: TeamRosterCurs
 type TeamRosterCache =
   | TeamRosterPlayer[]
   | InfiniteData<TeamRosterPage>
+  | TeamRosterPlayer
   | string[]
+  | null
   | undefined;
 
-/** Removes an athlete from whichever of those shapes a cache entry holds. */
+/** Removes an athlete from whichever of those shapes a cache entry holds. The
+ * prefix also covers the single-player entry (useTeamRosterPlayerQuery), which
+ * has no `pages`; it is left alone here and dropped by the invalidate. */
 function dropRosterPlayer(cache: TeamRosterCache, athleteId: string): TeamRosterCache {
   if (Array.isArray(cache)) {
     // Either the flat roster or the athlete-id list, depending on the entry.
@@ -87,10 +91,10 @@ function dropRosterPlayer(cache: TeamRosterCache, athleteId: string): TeamRoster
       typeof p === 'string' ? p !== athleteId : (p as TeamRosterPlayer).athleteId !== athleteId,
     ) as TeamRosterCache;
   }
-  if (!cache) return cache;
+  if (!cache || !Array.isArray((cache as InfiniteData<TeamRosterPage>).pages)) return cache;
   return {
-    ...cache,
-    pages: cache.pages.map((page) => ({
+    ...(cache as InfiniteData<TeamRosterPage>),
+    pages: (cache as InfiniteData<TeamRosterPage>).pages.map((page) => ({
       ...page,
       players: page.players.filter((p) => p.athleteId !== athleteId),
     })),

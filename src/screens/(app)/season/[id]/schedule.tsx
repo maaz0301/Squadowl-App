@@ -131,7 +131,7 @@ export default function SeasonScheduleScreen() {
       const eventDate = new Date(y, m - 1, d, hour, min);
 
       if (eventDate < new Date()) {
-        const msg = 'Event must be scheduled from today onwards.';
+        const msg = 'The start time you picked has already passed. Choose a date and start time that are later than now.';
         setError('date', { type: 'manual', message: msg });
         notify('Validation Error', msg);
         return;
