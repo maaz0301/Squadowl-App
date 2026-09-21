@@ -242,7 +242,8 @@ export function DummyDataModal(props: DummyDataModalProps) {
 
         <Text className="text-xs" style={{ color: colors.inkMuted }}>
           Everything generated is tagged so it can be removed again with Clear Dummy Data. Guardian
-          emails use a reserved test domain and can never reach a real inbox.
+          emails use yopmail.com, a public disposable inbox: not a real person, but anyone can read
+          what is sent there, so don't send anything sensitive to them.
         </Text>
       </View>
     </Modal>

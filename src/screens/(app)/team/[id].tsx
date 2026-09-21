@@ -22,6 +22,7 @@ import { CreateEventFormSchema, type AddPlayerForm as AddPlayerFormValues, type 
 import { BottomNav } from '@/components/BottomNav';
 import { ChatIconButton } from '@/components/ChatIconButton';
 import { ImportPlayersModal } from '@/components/roster/ImportPlayersModal';
+import { DeleteProgressModal } from '@/components/DeleteProgressModal';
 import { RosterSelectToolbar } from '@/components/roster/RosterControls';
 import { LetterTemplatesManager } from '@/components/letters/LetterTemplatesManager';
 import { ChatUnreadBadge } from '@/components/ChatUnreadBadge';
@@ -167,7 +168,10 @@ export default function TeamDetailScreen() {
   const importPlayers = useImportTeamRosterPlayersMutation(id);
   const uploadTeamPlayerPhoto = useUploadTeamPlayerPhotoMutation(id);
   const removeRosterPlayer = useRemoveTeamRosterPlayerMutation(id);
-  const removeRosterPlayers = useRemoveTeamRosterPlayersMutation(id);
+  const [removeProgress, setRemoveProgress] = useState<{ done: number; total: number } | null>(null);
+  const removeRosterPlayers = useRemoveTeamRosterPlayersMutation(id, (done, total) =>
+    setRemoveProgress({ done, total }),
+  );
   // Which roster export is running (Options tab), so the buttons can't double-fire.
   const [exportingTeam, setExportingTeam] = useState<'xlsx' | 'pdf' | null>(null);
   // Players-tab select mode: pick several (or everyone) and remove them together.
@@ -627,11 +631,14 @@ export default function TeamDetailScreen() {
 
   const removeSelectedPlayers = async () => {
     const ids = [...selectedRosterIds];
+    setRemoveProgress({ done: 0, total: ids.length });
     try {
       await removeRosterPlayers.mutateAsync(ids);
       exitRosterSelect();
     } catch (e: any) {
       alertMsg('Remove Failed', e?.message || 'Could not remove the selected players.');
+    } finally {
+      setRemoveProgress(null);
     }
   };
 
@@ -1878,6 +1885,8 @@ export default function TeamDetailScreen() {
           </View>
         )}
       </Modal>
+
+      <DeleteProgressModal visible={removeRosterPlayers.isPending} progress={removeProgress} noun="players" />
 
       <ImportPlayersModal
         visible={showImportPlayers}

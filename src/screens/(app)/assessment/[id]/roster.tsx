@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, FlatList, Platform, Pressable, ScrollView, Te
 
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { DummyDataModal } from '@/components/DummyDataModal';
+import { DeleteProgressModal } from '@/components/DeleteProgressModal';
 import { ImportPlayersModal } from '@/components/roster/ImportPlayersModal';
 import { PlayerRow } from '@/components/roster/PlayerRow';
 import { ChevronIcon, PlusIcon } from '@/components/roster/icons';
@@ -56,7 +57,8 @@ export default function RosterScreen() {
   const inviteParticipant = useTryoutRosterInvitesMutation(id!);
   const uploadPhoto = useUploadPlayerPhotoMutation(id!);
   const importPlayers = useImportTryoutPlayersMutation(id!);
-  const deletePlayers = useDeletePlayersMutation(id!);
+  const [deleteProgress, setDeleteProgress] = useState<{ done: number; total: number } | null>(null);
+  const deletePlayers = useDeletePlayersMutation(id!, (done, total) => setDeleteProgress({ done, total }));
   const [dummyProgress, setDummyProgress] = useState<{ done: number; total: number } | null>(null);
   const genTest = useGenerateTestDataMutation(id!, (done, total) => setDummyProgress({ done, total }));
   // genTest.isPending flips false the instant generateTestData resolves —
@@ -67,6 +69,12 @@ export default function RosterScreen() {
   const clearTest = useClearTestDataMutation(id!);
   const rosterFilter = useSessionStore((s) => s.rosterFilter);
   const setRosterFilter = useSessionStore((s) => s.setRosterFilter);
+  // The filter lives in the persisted session store, so without this a
+  // "Scored" pick on one evaluation greets the next (or a fresh, all-unscored
+  // one) with "No players match".
+  useEffect(() => {
+    setRosterFilter('all');
+  }, [id, setRosterFilter]);
   const activeAssessor = useSessionStore((s) => s.activeAssessor);
   const setActiveAssessor = useSessionStore((s) => s.setActiveAssessor);
   const setCurrentPlayer = useSessionStore((s) => s.setCurrentPlayer);
@@ -230,6 +238,7 @@ export default function RosterScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            setDeleteProgress({ done: 0, total: ids.length });
             setDeletingSelected(true);
             try {
               const { deleted, failed } = await deletePlayers.mutateAsync(ids);
@@ -249,6 +258,7 @@ export default function RosterScreen() {
               Alert.alert('Delete Failed', e?.message || 'Could not delete the selected players.');
             } finally {
               setDeletingSelected(false);
+              setDeleteProgress(null);
             }
           },
         },
@@ -612,6 +622,8 @@ export default function RosterScreen() {
           return result;
         }}
       />
+
+      <DeleteProgressModal visible={deletingSelected} progress={deleteProgress} />
 
       <DummyDataModal
         variant="assessment"

@@ -392,6 +392,13 @@ const TEAM_ROSTER_REMOVE_CHUNK = 50;
  * unbounded fan-out over a whole roster is what a bulk delete used to do.
  */
 const PLAYER_DELETE_CONCURRENCY = 4;
+/** Participants soft-deleted per request, and share-release RPCs in flight, in a bulk delete. */
+const PLAYER_DELETE_CHUNK = 25;
+/** Batches in flight at once, and share-release RPCs in flight within each (2 x 4 = 8). */
+const PLAYER_DELETE_BATCH_CONCURRENCY = 2;
+const PLAYER_RELEASE_CONCURRENCY = 4;
+/** Athletes checked for "still on a roster?" per request; small so no read nears the row cap. */
+const GUARDIAN_CLEAR_CHUNK = 20;
 
 /**
  * Lookups in flight at once while assembling a roster read (the per-athlete fee
@@ -2432,7 +2439,11 @@ export class SupabaseDataSource implements DataSource {
     }
   }
 
-  async removeTeamRosterPlayers(teamId: string, athleteIds: string[]): Promise<void> {
+  async removeTeamRosterPlayers(
+    teamId: string,
+    athleteIds: string[],
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<void> {
     const unique = [...new Set(athleteIds.filter(Boolean))];
     if (unique.length === 0) return;
     // userCtx() for the same reason as removeTeamRosterPlayer above.
@@ -2443,11 +2454,15 @@ export class SupabaseDataSource implements DataSource {
       chunks.push(unique.slice(i, i + TEAM_ROSTER_REMOVE_CHUNK));
     }
     let deleted = 0;
+    let processed = 0;
+    onProgress?.(0, unique.length);
     await mapPool(chunks, ROSTER_WRITE_CONCURRENCY, async (chunk) => {
       const rows = unwrap(
         await supabase.from('team_roster').delete().eq('team_id', teamId).in('athlete_id', chunk).select('id'),
       ) as Row[] | null;
       deleted += rows?.length ?? 0;
+      processed += chunk.length;
+      onProgress?.(processed, unique.length);
     });
     if (deleted >= unique.length) return;
 
@@ -3852,17 +3867,97 @@ export class SupabaseDataSource implements DataSource {
   async deletePlayers(
     tryoutId: string,
     playerIds: string[],
+    onProgress?: (done: number, total: number) => void,
   ): Promise<{ deleted: string[]; failed: { id: string; message: string }[] }> {
+    const ids = [...new Set(playerIds)];
     const deleted: string[] = [];
     const failed: { id: string; message: string }[] = [];
-    await mapPool([...new Set(playerIds)], PLAYER_DELETE_CONCURRENCY, async (playerId) => {
+    if (ids.length === 0) return { deleted, failed };
+    const { supabase } = await this.ctx();
+
+    // deletePlayer() costs about four round trips per player, and this used to
+    // run it four players at a time — minutes for a full roster. It now works in
+    // batches: the share release stays one RPC per player (it carries its own
+    // permission check, so it is not replaced with a client-side write), the soft
+    // delete is one request per batch, and the guardian cleanup below is grouped.
+    // Progress is reported as each batch lands, so the count is players actually
+    // removed rather than a guess.
+    const freed = new Set<string>();
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += PLAYER_DELETE_CHUNK) chunks.push(ids.slice(i, i + PLAYER_DELETE_CHUNK));
+    onProgress?.(0, ids.length);
+    await mapPool(chunks, PLAYER_DELETE_BATCH_CONCURRENCY, async (chunk) => {
+      await mapPool(chunk, PLAYER_RELEASE_CONCURRENCY, async (playerId) => {
+        try {
+          await supabase.rpc('release_athlete_share_for_participant', { p_participant_id: playerId });
+        } catch {
+          // best-effort, same as deletePlayer()
+        }
+      });
       try {
-        await this.deletePlayer(tryoutId, playerId);
-        deleted.push(playerId);
-      } catch (e) {
-        failed.push({ id: playerId, message: e instanceof Error ? e.message : 'Could not delete this player.' });
+        const rows = unwrap(
+          await supabase
+            .from('tryout_participants')
+            .update({ removed_at: new Date().toISOString() })
+            .in('id', chunk)
+            .select('id, athlete_id'),
+        ) as Row[] | null;
+        const landed = new Set<string>();
+        for (const r of rows ?? []) {
+          landed.add(r.id as string);
+          deleted.push(r.id as string);
+          if (r.athlete_id) freed.add(r.athlete_id as string);
+        }
+        // RLS reports a refused UPDATE as zero rows rather than an error.
+        for (const id of chunk) {
+          if (!landed.has(id)) failed.push({ id, message: 'Could not delete this player.' });
+        }
+      } catch {
+        // The batch failed as a whole — fall back to one at a time so each
+        // player still gets its own outcome (and error message).
+        await mapPool(chunk, PLAYER_DELETE_CONCURRENCY, async (playerId) => {
+          try {
+            await this.deletePlayer(tryoutId, playerId);
+            deleted.push(playerId);
+          } catch (e) {
+            failed.push({ id: playerId, message: e instanceof Error ? e.message : 'Could not delete this player.' });
+          }
+        });
       }
+      onProgress?.(deleted.length + failed.length, ids.length);
     });
+
+    // Guardian contacts go once the athlete is on no roster anywhere, same rule
+    // as clearGuardianIfUnrostered(), evaluated for a group at a time. A failure
+    // here must not undo or hide deletions that already landed.
+    try {
+      const athleteIds = [...freed];
+      const groups: string[][] = [];
+      for (let i = 0; i < athleteIds.length; i += GUARDIAN_CLEAR_CHUNK) {
+        groups.push(athleteIds.slice(i, i + GUARDIAN_CLEAR_CHUNK));
+      }
+      await mapPool(groups, ROSTER_WRITE_CONCURRENCY, async (group) => {
+        const [participants, teamRoster, seasonRoster] = await Promise.all([
+          supabase.from('tryout_participants').select('athlete_id').in('athlete_id', group).is('removed_at', null),
+          supabase.from('team_roster').select('athlete_id').in('athlete_id', group),
+          supabase.from('season_roster').select('athlete_id').in('athlete_id', group),
+        ]);
+        // If any read failed, clear nobody: keeping a contact is the safe side.
+        if (participants.error || teamRoster.error || seasonRoster.error) return;
+        const still = new Set<string>();
+        for (const set of [participants.data, teamRoster.data, seasonRoster.data]) {
+          for (const r of (set ?? []) as Row[]) still.add(r.athlete_id as string);
+        }
+        const orphans = group.filter((a) => !still.has(a));
+        if (orphans.length === 0) return;
+        await supabase
+          .from('athletes')
+          .update({ guardian_name: null, guardian_email: null, guardian_phone: null, guardian_user_id: null })
+          .in('id', orphans);
+      });
+    } catch (e) {
+      console.error('Bulk guardian cleanup failed; players were still removed.', e);
+    }
     return { deleted, failed };
   }
 
@@ -6493,6 +6588,11 @@ export class SupabaseDataSource implements DataSource {
       await supabase.from('season_events').update(patch).eq('id', eventId).select().single(),
     ) as Row;
 
+    // Notifying the roster is deliberately not awaited. It needs the RSVP-token
+    // RPC and a recipient lookup across the whole roster, and awaiting it kept
+    // the edit sheet open for that long — 4-6 s at 22 players, growing with the
+    // roster — for a save that had already landed. Errors are logged inside.
+    void (async () => {
     try {
       const playerEmails = new Set<string>();
       const guardianEmails = new Set<string>();
@@ -6584,6 +6684,7 @@ export class SupabaseDataSource implements DataSource {
     } catch (e) {
       console.error('Failed to send update emails', e);
     }
+    })();
 
     return this.rowToSeasonEvent(row, {});
   }

@@ -1,0 +1,515 @@
+=====================================================================
+TRYOUTHQ - COMBINED QA RESULTS (all rounds, 2026-09-21)
+iOS simulator (iPhone 17 Pro), one signed-in account (Coach, Club plan)
+=====================================================================
+
+PART 1 - RETEST OF SHAWN'S SLACK FEEDBACK
+  Status: PASS / FAIL / BLOCKED (cannot do here) / NOT TESTED
+  No.  Shawn's item                                        Status       Note
+  ---  --------------------------------------------------  -----------  ------------------------------------------
+   1   Log Out / Delete Account hidden by Android nav bar   BLOCKED      Android only; iOS profile not affected
+   2   Excel import reads only one name                     NOT TESTED   needs the .xlsx files
+   3   CSV import slow (20 names)                           NOT TESTED   needs the .csv file
+   4   Registrations: multi-select Add sends one player     NOT TESTED
+   5   Select all players on a roster and delete            PASS         301 players, evaluation roster, live overlay
+   6   Edit button on the evaluation tile                   NOT TESTED   no standalone evaluation left to show a tile
+   7   Team evaluation showed under Evaluations list        PASS         create-from-team and Attach both leave the
+                                                                         standalone list empty
+   8   Drag and drop trade between teams (APK)              NOT TESTED   web feature / needs a design decision
+   9   Settings tab renamed Options + Export Team PDF/Excel PASS         both files opened, 25 rows each
+  10   Team screen title "<name> Hub"                       PASS
+  11   Both letter templates under Team Options             PASS         create, edit, delete, standard-letter chips
+  12   Template editor: keyboard covers the letter (Android) BLOCKED     Android; iOS keyboard did not cover Save
+       "template saved" icon                                 NOT VERIFIED no saved-confirmation icon seen
+  13   End time before start time accepted                  PASS         evaluation create, evaluation edit, event
+  14   Invited guardian only under My Athletes, not team    NOT TESTED   needs a guardian account/accept
+  15   Coach -> Coach+ charged the full $69.99              CODE-CHECKED create-portal-session uses
+                                                                         proration_behavior 'always_invoice'; no real
+                                                                         payment run (Stripe is off-limits for me)
+  16   Create Team button hidden by phone buttons (Android) BLOCKED      Android
+  17   New team manager gets Coach mode for that team only  BLOCKED      needs a second account
+  18   Web sidebar to match the APK sliding bar             OUT OF SCOPE web app
+
+PART 2 - THE OTHER AREAS YOU ASKED FOR
+  Combine Mode ................ NOT TESTED  needs 2+ standalone evaluations; all are team-linked now
+  Profile ..................... PASS        Role Coach, Plan Club, active, Edit Account / Change Password shown;
+                                             Plan Limits Evaluations/Players unlimited, Teams 7
+  Billing / plans (view) ...... PASS        Upgrade Plan: loyalty credit toggle, Add Teams (6 included + 1 purchased
+                                             = cap 7, matches Profile), Manage Subscription & Bills, Free plan card
+                                             (1 team, 1 assessment, 15 players)
+  Billing (purchase/downgrade)  BLOCKED     Stripe payments are off-limits for me
+  Team Chat ................... NOT TESTED  the app reloaded on its own ("Loading..." then "Refreshing...") and
+                                             landed on Search when I tried; not retried
+  Forgot password ............. PARTIAL     validation only; reset itself needs an account
+
+PART 3 - BUGS FIXED (all uncommitted; typecheck clean)
+  1  settings.tsx      Rubric card showed 0 skater + 0 goalie for a saved rubric
+  2  roster.tsx        Stale "Scored" filter hid players in a new evaluation
+  3  settings.tsx      Assessor email not validated ("not" was saved); blank submit silent
+  4  settings.tsx      Copy Evaluation left tabs on two different evaluations
+  5  TemplateEditor    Standard-letter chip kept the previous letter's name
+  6  SupabaseDataSource updateSeasonEvent awaited notifications (4-6 s edit)
+  7  SupabaseDataSource deletePlayers rewritten in batches + onProgress (untimed at 1,000)
+  8  DeleteProgressModal (new) + wiring in roster.tsx, team/[id].tsx, queries.ts, datasource.ts
+  9  DummyDataModal    Wrong "can never reach a real inbox" claim about yopmail.com
+
+PART 4 - STILL BLOCKED FOR ME (need accounts/passwords/Stripe, which I cannot do)
+  Sign-up, email verification, login/logout, password reset, account deletion,
+  assessor login/accept/decline, guardian login, team-manager role, Free-account
+  limits, any plan purchase / upgrade / downgrade.
+
+PART 5 - DETAILED RESULTS BY AREA (rounds 1-4, unchanged below)
+
+=====================================================================
+TRYOUTHQ - QA TEST RESULTS (iOS simulator, iPhone 17 Pro, iOS 26.5)
+Date: 2026-09-21   Branch: bare/feat/setup   Tester: Claude
+Source of truth: TEST_SCENARIOS.txt (section numbers referenced below)
+Signed-in account used: "Me alone" (owner / admin of org "Me me")
+=====================================================================
+
+ENVIRONMENT / LIMITS (read first)
+  - The live Supabase project in .env was used. Everything created is either
+    tagged dummy data or a QA-named record.
+  - NOT DONE (I cannot do these, even when asked): creating accounts, typing
+    passwords, deleting an account, Stripe purchases / plan changes.
+    => Sign-up, email verification, login/logout, forgot password,
+       assessor login, accept/decline invite, guardian login, Free-account
+       limit tests, upgrade/downgrade and loyalty are BLOCKED until the
+       user creates the accounts and signs in.
+  - Android-only checks (sections 1, 22, parts of 11) cannot run on iOS.
+  - No automated tests exist in the repo; `npm run typecheck` is clean.
+
+STATUS KEY:  PASS / FAIL / BLOCKED / NOT TESTED / NOTE (observation)
+
+---------------------------------------------------------------------
+A. DASHBOARD AND HOME  (section 26)
+---------------------------------------------------------------------
+ 26.1  Home tiles vs Dashboard counts ........................ PASS
+       Path: Home > Dashboard > Overview / Actions / Members
+       Evidence: 941+896+25 = 1862 unscored = Overview; 22 scored.
+ 26.3  Teams tab lists every team, count matches ............. PASS
+ Dashboard arithmetic after create + delete + dummy data ..... PASS
+       Before: 1884 players / 22 scored / 1862 unscored / 3 evals
+       After you deleted "dghgf" (25 players) and I generated 2 dummy teams
+       (50 players, 50 scores): 1909 / 72 / 1837 / 4 evals / 4 teams /
+       4 seasons. All deltas are exact (-25 +50).
+ Dashboard after deleting my QA-001 evaluation ............... PASS
+       Returned exactly to baseline (1884 / 22 / 3 evals). No ghost counts.
+ Dashboard while an evaluation is archived ................... PASS
+       Archived: 1884 players / 22 scored. Restored: 1885 / 23.
+ 26.12 Loading time .......................................... NOTE
+       Dashboard ~8 s ("Loading org..."), no hang or error.
+ Dashboard wording ........................................... NOTE
+       Header badge "4 evaluations" = evaluation events; stat tile
+       "145 Evaluations" = individual scores. Two meanings, same word.
+       File: src/screens/(app)/enterprise.tsx:311
+
+---------------------------------------------------------------------
+B. EVALUATION CREATE / EDIT / ARCHIVE / DELETE  (section 27)
+---------------------------------------------------------------------
+ 27.1  Required fields (empty name, 1-char name, no rubric) .. PASS
+       Path: Home > New Evaluation > Create Evaluation
+       Nothing was created on error.
+ 27.3  Date picker, start time, end time ..................... PASS
+ 27.4  Location + "Preview on map" hint ...................... PASS
+ 27.6  Add rubric (weight 150 rejected, 50 accepted) ......... PASS
+ 18.x  End time before start time rejected (create + edit) ... PASS
+       Inline "End time must be after the start time", Save/Create blocked.
+ 27.9  After create lands on Evaluation Settings ............. PASS
+ 27.10 Edit Details (name, end time) shows on Settings ....... PASS
+ 27.13 Settings rubric count / View Reference ................ FAIL -> FIXED
+       BUG 1: card said "0 skater + 0 goalie categories" although the
+       evaluation had a saved rubric (Rubrics tab showed it). Cause:
+       getDefaultRubrics() returns empty lists since templates were removed.
+       Fix: read tryout.settings.customRubrics.
+       File: src/screens/(app)/assessment/[id]/settings.tsx
+       Retest: card shows "1 rubric", reference lists "Skating"  -> PASS
+ 27.15 Archive / Archived list / Restore ..................... PASS
+ 27.16 Delete (Delete Permanently) ........................... PASS (data)
+       NOTE: no second confirmation step after "Delete Permanently".
+       Scenario 27.16 asks for a strong confirmation.
+ Evaluation Settings bottom of screen (Danger Zone visible) .. PASS
+
+---------------------------------------------------------------------
+C. ROSTER AND PLAYERS  (sections 28, 37)
+---------------------------------------------------------------------
+ Empty roster empty-state (Add / Import buttons) ............. PASS
+ Add player: invalid guardian email blocked .................. PASS
+       NOTE: error shows twice (inline + alert).
+ Add player: Cancel leaves no phantom player ................. PASS
+ Add player: save with no guardian ........................... PASS
+       NOTE: button says "Save Player & Send Invite"; result alert says
+       "No Invites Sent - No email on file". Label is misleading.
+ Roster filter carried over from another evaluation .......... FAIL -> FIXED
+       BUG 2: a new evaluation opened on "No players match" because the
+       "Scored" filter is persisted in sessionStore.
+       Fix: reset filter to 'all' when a roster opens.
+       File: src/screens/(app)/assessment/[id]/roster.tsx
+       Retest: player shows under All (1)  -> PASS
+       (A hot reload crashed once with "Cannot read property getSnapshot of
+       null" - a dev hot-reload artefact; a cold relaunch was clean.)
+ Roster load time (918 players) .............................. NOTE ~15 s
+ Scored chip 22 but filtered list once showed 2 rows ......... NOTE
+       Seen once, not reproducible on retry.
+
+---------------------------------------------------------------------
+D. SCORING AND RESULTS  (sections 30, 31)
+---------------------------------------------------------------------
+ Score a player 4/5 + recommendation "Make" .................. PASS
+       Path: Roster > Score Players. Overall 4.0 updated instantly.
+ Save & Next on last player -> "Finished" dialog ............. PASS
+ Counts update immediately (Scored 1 / Unscored 0 / "1 EVAL") PASS
+ Persist after app restart ................................... PASS
+ Results screen: rank 1, 4.0, Make, "1 Skaters" .............. PASS
+
+---------------------------------------------------------------------
+E. TEAMS  (sections 35, 38, 15, 13, 14)
+---------------------------------------------------------------------
+ Create team (name, default season) .......................... PASS
+ Team Hub title "<NAME> Hub" ................................. PASS (13)
+ Options tab (renamed from Settings) ......................... PASS (14)
+ Edit team: change name + colour, Save ....................... PASS
+       Title, header, description and colour bar all updated.
+       (Typed "QA Team 001": first attempt lost the digits; that was an
+       input-automation artefact - the edit accepted them. Not an app bug.)
+ Team logo initials .......................................... NOTE
+       Edit modal shows "TM" while the header shows "Q".
+ Export Team on an EMPTY team ................................ PASS
+       Alert "Nothing to Export - This team has no players yet."
+ Teams list shows both teams + colour ........................ PASS
+ Dummy Teams generator (2 teams x 25 players, scoring on) .... PASS
+       Path: Teams > New Team > Testing Tools > Dummy Data
+       Result: "Created 2 teams with 2 linked assessments, 50 players and
+       50 evaluations." Progress bar 25/50 -> done.
+ RSVP tally vs roster size ................................... OPEN
+       Team "team for testing. 01": 2+1+2+962 = 967 responses, roster 999.
+       Only players with an availability row are counted. Cause not
+       confirmed (needs DB access). Code: SupabaseDataSource.ts ~6400-6450
+       (failed insert chunks are skipped silently).
+
+---------------------------------------------------------------------
+F. SEARCH  (section 46)
+---------------------------------------------------------------------
+ Search finds an existing evaluation ......................... PASS
+ Search after delete: deleted player not found ............... PASS
+ Search with no match ........................................ NOTE
+       Blank screen, no "no results" message.
+
+---------------------------------------------------------------------
+E2. EXPORT  (section 15 and 31)  - iOS share sheet, files opened + inspected
+---------------------------------------------------------------------
+ Excel export, 25-player dummy team ......................... PASS
+       Path: Teams > Northside Falcons > Options > Export Team > Excel
+       File: northside-falcons-roster.xlsx (28.5 KB), sheet "Roster".
+       Header: Jersey, First Name, Last Name, Position, Year of Birth,
+       Player Email, Guardian Name, Guardian Email, Guardian Phone,
+       Fee Status, Evaluation.  25 player rows.  No medical column (correct,
+       the screen promises none).  Share sheet offers Copy / Save to Files.
+ PDF export, same team ....................................... PASS
+       File: northside-falcons-roster.pdf (8 KB, PDF 1.7). Title
+       "Northside Falcons (2026-27) / Roster - 25 players", same 25 rows.
+       Preview thumbnail renders in the share sheet.
+ PDF long emails are cut with "..." ......................... NOTE
+       Emails such as "isabella.rossi.v7s59a@yopm..." are truncated in the
+       PDF table, so the full address cannot be read from the PDF.
+       Excel has the full value.
+ Duplicate names in dummy data ............................... NOTE
+       "Marcus Chen" x2 differing in jersey; "Isabella Rossi" x2;
+       "Yuki Tanaka" x2 - dummy generator can create same-name players.
+       Excel 25 rows / 24 unique names by first+last (cosmetic).
+ Evaluation Export tab (results) ............................. NOT TESTED
+ Assessor cannot see Export ................................. BLOCKED
+       needs an assessor login.
+
+---------------------------------------------------------------------
+E3. ASSESSORS  (sections 27.12, 26.8)  - Northside Falcons Tryout
+---------------------------------------------------------------------
+ Assessor list shows owner as "lead" ........................ PASS
+ Add assessor: blank submit ................................. FAIL -> FIXED
+       BUG 3a: tapping Add with a blank name/email did nothing at all
+       (silent return in addAssessor).
+       Fix: "Missing Info - An assessor needs both a name and an email
+       address." File: src/screens/(app)/assessment/[id]/settings.tsx
+       Retest: message shows                                     -> PASS
+ Add assessor: invalid email "not" ........................... FAIL -> FIXED
+       BUG 3b (data integrity): Settings saved an assessor whose email was
+       "not" (Assessors went 1 -> 2, status "Invite pending"), then the
+       invite email failed ("Email Failed... Falling back to share menu").
+       New Evaluation form already validated this; Settings did not.
+       Fix: same z.string().email() check + "Invalid Email" alert.
+       File: same as above.
+       Retest: '"not" is not a valid email address', list stays at 1 -> PASS
+ Remove assessor ............................................ PASS (see note)
+       Removed the bad "not" record; count returned to 1.
+       NOTE: no confirmation prompt and no spinner - about 4 s of nothing
+       before the row disappears, so a user can tap it twice.
+ Add assessor with yopmail address .......................... PASS
+       tryouthq-regression-001@yopmail.com  (name "QA Assessor")
+       "Invitation Sent" dialog, count 2, status "Invite pending".
+ Invite email received in Yopmail ........................... PASS
+       From noreply@tryouthq.ca, 13:57, subject "You've been invited to
+       assess Northside Falcons Tryout". Body: "You're Invited to Assess",
+       role Assessor, "Accept Invitation" button, sign-up hint with the
+       address.  Logo hidden by Yopmail's "Show pictures" default.
+ Duplicate assessor email guard ............................. PASS
+       Same address in UPPER CASE -> "Already Invited" (case-insensitive).
+ Resend Invite ............................................... NOT TESTED
+ Copy Evaluation (27.14) ..................................... FAIL -> FIXED
+       BUG 4: after Copy, only the Roster tab switched to the copy. The
+       Settings, Export, Results and Rubrics tabs kept the ORIGINAL's id,
+       so the tab bar showed two different evaluations. Seen on device:
+       after the first Copy, Settings still listed the original's pending
+       "QA Assessor" and Export still said "Northside Falcons Tryout".
+       (I first misread that as the copy inheriting the assessor - wrong.)
+       Cause: handleCopy used navigation.navigate('AssessmentRoster', ...).
+       Fix: navigation.replace('AssessmentFlow', {screen:'AssessmentRoster',
+       params:{id: copy.id}}) like the create flow does.
+       File: src/screens/(app)/assessment/[id]/settings.tsx
+       Retest (cold relaunch, second Copy): Settings shows
+       "Northside Falcons Tryout (Copy)", 1 assessor (lead only),
+       6 rubrics                                                  -> PASS
+       Copy keeps 25 players, 6 rubrics, 0 scores; does NOT re-send
+       assessor invites (Yopmail inbox still 1 mail).             -> PASS
+       Copy carries no assessors except the lead (reasonable, unconfirmed
+       against the spec).
+ Evaluation Export tab (formats present) ..................... PASS (UI)
+       Export CSV / PDF / XLSX, "View Results Instantly", Create Share
+       Link (7-day read-only). Files themselves NOT yet opened.
+ Accept / decline invite ..................................... BLOCKED
+       needs the assessor to sign up / sign in (account creation).
+ Assessor HUB, scoring as assessor, Complete Assessing,
+ restricted screens (Export / Settings), ?assessor=1 bypass .. BLOCKED
+       needs an assessor login.
+
+---------------------------------------------------------------------
+E4. COPY OF DATA LEFT IN THE LIVE ACCOUNT (please clean up)
+---------------------------------------------------------------------
+ Teams: "QA Team 001", "Northside Falcons", "Eastport Thunder" (dummy).
+ Evaluations: two "Northside Falcons Tryout (Copy)" records, one pending
+ assessor "QA Assessor" (tryouthq-regression-001@yopmail.com) on the
+ original. Dummy players use @yopmail.com guardian emails (public inbox).
+ Use Teams > (team) > Options / Roster > Tools > "Clear Dummy Data".
+
+---------------------------------------------------------------------
+G. INCIDENTS / RETRACTIONS
+---------------------------------------------------------------------
+ - "dghgf" evaluation vanished from Evaluations: NOT a bug. The user
+   deleted it. Finding withdrawn.
+ - An in-app browser sheet opened once from a mis-aimed tap; closed it
+   without interacting. No data changed.
+
+---------------------------------------------------------------------
+H. STILL TO DO / BLOCKED  (updated as testing continues)
+---------------------------------------------------------------------
+ BLOCKED (cannot do): 25.1-25.11 auth lifecycle, account deletion,
+   assessor login / accept / decline, guardian login, plan upgrade /
+   downgrade / loyalty, Free-account limits.
+ TO DO next: add/remove assessor with Yopmail address (invite email),
+   PDF + Excel export with players, team manager grant, evaluation Copy,
+   registrations/QR, team builder, letters, schedule/events, chat,
+   profile, guardian portal (as owner), combine mode.
+
+=====================================================================
+ROUND 3 (same day, later)  - team players, events, letters, timing
+=====================================================================
+
+---------------------------------------------------------------------
+I. TEAM PLAYERS: REMOVE  (sections 37, 28)   Team "Eastport Thunder"
+---------------------------------------------------------------------
+ Remove one player: confirm dialog, Cancel keeps 25 ......... PASS
+ Remove one player: confirm -> 24 ............................ PASS
+ Select mode: tick 2 players, Delete, confirm -> 22 ......... PASS
+ Players tab / Schedule counts follow the roster ............. PASS
+       After the removals the event shows 22 pending = 22 players
+       (removed players were correctly left out of the RSVP tally).
+
+---------------------------------------------------------------------
+J. EVENTS  (section 36)   Team "Eastport Thunder"
+---------------------------------------------------------------------
+ Add Event: empty save -> "Title is required" + "Date is
+   required" inline and an alert ............................. PASS
+       NOTE: the alert text is generic ("Please check the required
+       fields") and repeats the inline errors.
+ Add Event: past dates greyed out in the picker .............. PASS
+ Add Event: end 8:00 before start 9:00 -> inline
+   "End time must be after the start time", save blocked ..... PASS
+ Add Event: 9:00-11:00 + location saves; card shows date, time,
+   location link, "Event" chip, 22 pending ................... PASS
+ RSVP panel: 22 players, "No reply" ......................... PASS
+ Set one RSVP to Yes: tally 1 yes / 21 pending immediately ... PASS
+ Edit Event: title change, RSVP counts preserved ............. PASS
+ Delete Event: confirm names the event; delete -> empty state  PASS
+ Event with no time / location on an empty team (QA Team 001)  PASS
+
+---------------------------------------------------------------------
+K. EVENT EDIT IS SLOW  (reported by user)         FIXED, NOT RE-MEASURED
+---------------------------------------------------------------------
+ Measured with a pixel poller on the simulator (time from tapping
+ "Update Event" until the sheet closes):
+   QA Team 001 (0 players):  edit A ~2.7 s (dim onset), edit B ~4.2 s
+   Eastport (22 players):    edit A 4.2 s, edit B 5.8 s, edit C 4.6 s
+ => No consistent "second edit is slower" trend (B was the outlier),
+    but every edit takes 4-6 s at 22 players.
+ Cause: SupabaseDataSource.updateSeasonEvent() awaited the
+   issue_event_rsvp_tokens RPC and a recipient lookup across the whole
+   roster BEFORE returning, so the sheet stayed open for that long even
+   for a title-only change. Cost grows with roster size.
+ Fix: the notification block (tokens + emails + push) now runs in a
+   fire-and-forget async block; the save returns as soon as the row is
+   updated. Emails still go out; errors are still logged.
+   File: src/data/supabase/SupabaseDataSource.ts (updateSeasonEvent)
+ Retest: NOT DONE - the app was signed out on relaunch (see L) and I
+   cannot type the password. Please re-time an edit after signing in.
+ Not verified after the fix: that the schedule-update emails still
+   arrive (needs a Yopmail check on an event edit).
+
+---------------------------------------------------------------------
+L. SESSION LOST ON RELAUNCH                                     NEW
+---------------------------------------------------------------------
+ 25.6 / 25.7  Earlier cold relaunches (roughly 13:40-14:15) kept the
+ session. The relaunch at 14:37 landed on the LOGIN screen.
+ Cause not established - could be normal token expiry (session was
+ about 2 h old) or a refresh failure. The app recovered to a clean
+ login screen with no red screen/crash.   Status: NOTE / NOT INVESTIGATED
+
+---------------------------------------------------------------------
+M. LETTER TEMPLATES  (sections 16, 17, 33)   Team Options tab
+---------------------------------------------------------------------
+ Options tab lists the two seeded templates + "+ New Template" .. PASS
+ New Template: blank save -> "Name required" ................... PASS
+ New Template: type chips, "Start from a standard letter"
+   fills subject + body with {{placeholders}} ................... PASS
+ Save -> new row appears with type badge ........................ PASS
+ Close without saving adds nothing ............................... PASS
+ Edit template: values load, "standard letter" chips hidden,
+   rename saves and the list updates ............................ PASS
+ Delete template: confirm names it and explains sent letters
+   are kept; delete removes the row ............................. PASS
+ Switching Offer -> Decision standard chip ...................... FAIL -> FIXED
+       BUG 5: the first chip filled the name; the second kept it
+       (name: draft.name || t.name), so decision wording and type were
+       saved under "Offer Letter (Made the Team)". Fix: replace the
+       name when it is empty or is another standard letter's name;
+       keep a name the coach typed.
+       File: src/components/letters/TemplateEditor.tsx
+       Retest: NOT DONE - session lost before I could rebuild; typecheck
+       clean. The same file is used by the team Options tab; the
+       evaluation Letters screen (letters.tsx) has its own buttons that
+       set the whole draft, so it is not affected.
+ NOTE: the seeded template is literally named "Offer Letter (Made
+ t..." but has type "Roster Decision Letter" and decision wording -
+ the name and type disagree (looks like the same bug already saved
+ once, in existing data).
+
+---------------------------------------------------------------------
+N. OTHER
+---------------------------------------------------------------------
+ Delete Evaluation (Northside "(Copy)"): confirm dialog, delete,
+   lands on Home; team Evaluations count 3 -> 2 ................. PASS
+ Forgot Password screen (code-based reset) ..................... PARTIAL
+   Blank submit -> "Please enter a valid email address" ......... PASS
+   Invalid address "notanemail" -> same inline error ............ PASS
+   Sending a real reset code / entering it / new password ....... BLOCKED
+   (needs an account and a password entry).
+ Team Managers card (Options tab): email field + "Grant Access".
+   Grant Access on a new address auto-creates an account and emails
+   sign-in details, so it was NOT exercised ................... BLOCKED
+ Duplicate identical "(Copy)" names on Copy Evaluation .......... NOTE
+   Two copies show identical names; hard to tell apart.
+
+---------------------------------------------------------------------
+O. CREDENTIALS PASTED IN CHAT
+---------------------------------------------------------------------
+ The user supplied two logins in chat. They were NOT used (signing in
+ means typing a password, which I do not do). Both passwords are now
+ in the conversation history - consider rotating them.
+
+---------------------------------------------------------------------
+P. STILL NOT DONE (needs a signed-in session or an account)
+---------------------------------------------------------------------
+ Items 1, 2 (full), 3, 7 (1000 players + billing/plans), 4 (profile
+ compare), 5 (messages/chat), 9 (evaluation letters), registrations,
+ QR, team builder, combine, guardian portal, Stripe, push, loyalty.
+
+FILES CHANGED IN THIS SESSION (all uncommitted)
+  src/screens/(app)/assessment/[id]/settings.tsx   rubric count, assessor validation, Copy navigation
+  src/screens/(app)/assessment/[id]/roster.tsx     reset persisted roster filter
+  src/components/DummyDataModal.tsx                correct yopmail wording
+  src/components/letters/TemplateEditor.tsx        standard-letter name handling
+  src/data/supabase/SupabaseDataSource.ts          event edit no longer waits on notifications
+
+---------------------------------------------------------------------
+Q. BULK DELETE: SPEED + LIVE PROGRESS                 UNTESTED ON DEVICE
+---------------------------------------------------------------------
+ Request: how long does Select All -> delete take at 1,000 players, and
+ make it fast with a visible progress loader.
+ Estimate from code (NOT measured - app was signed out):
+   Team > Players > Select all > delete:   ~20 requests, a few seconds
+                                           (already batched, unchanged).
+   Evaluation > Roster > Select all:       BEFORE ~6,000 requests, roughly
+                                           2-4 min (4 players at a time,
+                                           ~4 round trips each).
+                                           AFTER  ~1,000 release RPCs +
+                                           ~40 batched writes, roughly
+                                           20-30 s.
+ Changes:
+   SupabaseDataSource.deletePlayers(): 25-player batches, 2 batches in
+     flight; soft delete is one request per batch; guardian cleanup
+     grouped 20 athletes at a time (clears nobody if any read fails);
+     release RPC stays per player (own permission check). A failed batch
+     falls back to the old per-player path.
+     BEHAVIOUR CHANGE: a delete the database refuses is now reported as
+     failed (before it silently counted as deleted).
+   New src/components/DeleteProgressModal.tsx: blocking overlay with
+     spinner, bar, "X of N players (P%)", "Finishing up..." at 100%.
+   onProgress threaded through datasource.ts, queries.ts
+     (useDeletePlayersMutation, useRemoveTeamRosterPlayersMutation) and
+     shown from assessment/[id]/roster.tsx and team/[id].tsx.
+ TO VERIFY after sign-in: make a 1,000-player evaluation (Dummy Data),
+   Select all -> Delete; check the overlay counts up smoothly, the total
+   time, the Dashboard count drops by 1,000, and guardians of the removed
+   players no longer appear under Members. Repeat on a team roster.
+ Remaining cost: the per-player share-release RPC. A single DB function
+   that releases shares for a list would bring the evaluation delete
+   under ~10 s (needs a migration).
+
+=====================================================================
+ROUND 4 - bulk delete overlay verified, evaluation <-> team
+=====================================================================
+
+R. BULK DELETE PROGRESS OVERLAY  (section 37 / 28)      VERIFIED ON DEVICE
+ Setup: new evaluation "Testing the evolutions", 1 added player + Dummy
+   Data "Roster players", 300, scoring on -> "Created 300 roster players,
+   300 evaluations". Roster counts All 301 = Scored 300 + Unscored 1.
+ Select -> Select All -> "Delete Selected (301)" -> confirm dialog
+   "301 players will be permanently removed from this roster."
+ Overlay (src/components/DeleteProgressModal.tsx), redesigned after
+   feedback that text was too small: large spinner, 24pt title, 56pt
+   percentage, 14pt bar, bold "X of N players", 16pt hint.
+   Observed live: 0 % / "0 of 301" -> 33 % / "100 of 301 players".   PASS
+ Roster ended on the empty state ("Add your players to get started"). PASS
+ Total time: NOT captured precisely (timer was killed). Finished within
+   ~104 s of tapping Delete for 301 players; overlay showed 100 players
+   after roughly the first several seconds. Please time a 1,000 run.
+ Dummy Data generator progress ("Created 80 of 300 records...")     PASS
+   300 players + scores took about 2 minutes end to end; bar reached
+   100 % ~90 s in and the roster refetch took ~20 s more.
+ NOTE: the "Scoring data" toggle did not respond to my taps in the
+   Dummy Data sheet (stayed on) - could be tap-target size; not confirmed.
+
+S. EVALUATION CREATED FROM A TEAM, AND ATTACH EXISTING  (sections 10, 27.5)
+ Team "QA Team 001" (0 players) > Evaluations > Create:
+   New Evaluation opens with the team chip pre-selected ..................... PASS
+   Name + Skating rubric, Create -> lands on Evaluation Settings, shows
+   1 rubric, lead assessor .................................................. PASS
+   Back on the team: Evaluations tab shows it ("QA Team - Hockey - Tryout
+   - 0 players"), badge 1 ................................................... PASS
+ Attach Existing: sheet lists only standalone evaluations ("Testing the
+   evolutions"); tapping it attaches -> badge 2, both listed ................ PASS
+ Home > Evaluations: both team-linked evaluations are gone from the
+   standalone list (empty state, count 0) ................................... PASS
+ NOTE: attach shows no confirmation, and I did not test detaching.
+ NOT TESTED: attach an evaluation that already has players (roster copy),
+   detach, delete a team that has linked evaluations.
+
+Files changed this round: src/components/DeleteProgressModal.tsx (redesign)

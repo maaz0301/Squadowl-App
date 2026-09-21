@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Button } from './Button';
 
@@ -58,6 +59,7 @@ function useKeyboardOverlap(visible: boolean, windowHeight: number): number {
 
 export function Modal({ visible, title, onClose, children, footer, scroll = true }: ModalProps) {
   const colors = useThemeColors();
+  const insets = useSafeAreaInsets();
   const [windowHeight, setWindowHeight] = useState(0);
   const overlap = useKeyboardOverlap(visible, windowHeight);
   // Once lifted, the sheet has to fit in what is left above the keyboard, or its
@@ -83,10 +85,14 @@ export function Modal({ visible, title, onClose, children, footer, scroll = true
       >
         <Pressable className="flex-1" onPress={onClose} />
         <View
-          className={`rounded-t-xl border-t px-5 pt-5 pb-8 ${scroll ? 'max-h-[90%]' : ''}`}
+          className={`rounded-t-xl border-t px-5 pt-5 ${scroll ? 'max-h-[90%]' : ''}`}
           style={{
             backgroundColor: colors.card,
             borderColor: colors.border,
+            // The sheet is its own window and draws under the Android navigation
+            // bar / iOS home indicator, so its footer buttons must clear it.
+            // Lifted above the keyboard the bar is already covered, so use plain padding.
+            paddingBottom: overlap > 0 ? 32 : Math.max(32, insets.bottom + 16),
             ...(scroll ? null : { height: '85%' }),
             ...(overlap > 0 ? { marginBottom: overlap, ...(scroll ? { maxHeight: liftedMaxHeight } : { height: liftedMaxHeight }) } : null),
           }}

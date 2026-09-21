@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Share, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
+import { z } from 'zod';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { MapLink, MapLocationHint } from '@/components/MapLink';
@@ -29,7 +30,6 @@ import {
 } from '@/features/queries';
 import { getDataSource } from '@/data';
 import { useAssessmentId } from '@/features/useAssessmentId';
-import { getDefaultRubrics } from '@/data/rubrics';
 import { END_BEFORE_START_MESSAGE, isEndAfterStart } from '@/data/timeRange';
 import { useUser } from '@/state/authStore';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
@@ -98,7 +98,8 @@ export default function SettingsScreen() {
   }
 
   const tryout = tryoutQuery.data;
-  const rubrics = getDefaultRubrics(tryout.sport);
+  // Templates were removed — every rubric is custom, so this is the whole set.
+  const rubrics = tryout.settings.customRubrics ?? [];
 
   const openEdit = () => {
     setName(tryout.name);
@@ -161,12 +162,17 @@ export default function SettingsScreen() {
   };
 
   const addAssessor = async () => {
-    if (!assessorName.trim()) return;
-    
     const emailToInvite = assessorEmail.trim();
 
-    if (!emailToInvite) {
-      Alert.alert('Email Required', 'You must provide a valid email address for the assessor.');
+    // Was a silent return for a blank name, which looks like a dead button.
+    if (!assessorName.trim() || !emailToInvite) {
+      Alert.alert('Missing Info', 'An assessor needs both a name and an email address.');
+      return;
+    }
+    // Same rule as the New Evaluation form. Without it a value like "not" was
+    // saved as an assessor and the invite email then failed.
+    if (!z.string().email().safeParse(emailToInvite).success) {
+      Alert.alert('Invalid Email', `"${emailToInvite}" is not a valid email address.`);
       return;
     }
 
@@ -250,7 +256,10 @@ export default function SettingsScreen() {
       return;
     }
     const copy = await copyTryout.mutateAsync(tryout.id);
-    navigation.navigate('AssessmentRoster', { id: copy.id });
+    // Rebuild the whole tab set for the copy. Navigating to the Roster tab alone
+    // only gave that tab the new id; Settings/Export/Results/Rubrics kept the
+    // original's, so the tab bar was split across two evaluations.
+    navigation.replace('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: copy.id } });
   };
 
   const handleArchive = async () => {
@@ -347,7 +356,7 @@ export default function SettingsScreen() {
           Rubrics
         </Text>
         <Text className="text-sm" style={{ color: colors.inkMuted }}>
-          {rubrics.skater.length} skater + {rubrics.goalie.length} goalie categories
+          {rubrics.length} {rubrics.length === 1 ? 'rubric' : 'rubrics'}
         </Text>
         <Button label="Open Rubric Builder" variant="secondary" size="sm" onPress={() => navigation.navigate('AssessmentRubrics', { id: id })} />
         <Button label="View Reference" variant="ghost" size="sm" onPress={() => setShowRubrics(true)} />
@@ -408,36 +417,23 @@ export default function SettingsScreen() {
           one nested inside that collapses and clips the tail of the content. */}
       <Modal visible={showRubrics} title="Rubric Reference" onClose={() => setShowRubrics(false)}>
         <>
-          <Text className="text-sm font-bold mb-2" style={{ color: colors.primary }}>
-            Skater Categories
-          </Text>
-          {rubrics.skater.map((r) => (
+          {rubrics.length === 0 ? (
+            <Text className="text-sm" style={{ color: colors.inkMuted }}>
+              No rubrics yet. Open the Rubric Builder to add some.
+            </Text>
+          ) : null}
+          {rubrics.map((r) => (
             <View key={r.key} className="mb-2">
               <Text className="text-base" style={{ color: colors.ink }}>
                 {r.label}
               </Text>
-              <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                {r.subskills.map((s) => s.label).join(', ')}
-              </Text>
+              {r.category ? (
+                <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                  {r.category}
+                </Text>
+              ) : null}
             </View>
           ))}
-          {rubrics.goalie.length > 0 ? (
-            <>
-              <Text className="text-sm font-bold mt-4 mb-2" style={{ color: colors.primary }}>
-                Goalie Categories
-              </Text>
-              {rubrics.goalie.map((r) => (
-                <View key={r.key} className="mb-2">
-                  <Text className="text-base" style={{ color: colors.ink }}>
-                    {r.label}
-                  </Text>
-                  <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                    {r.subskills.map((s) => s.label).join(', ')}
-                  </Text>
-                </View>
-              ))}
-            </>
-          ) : null}
         </>
       </Modal>
 
