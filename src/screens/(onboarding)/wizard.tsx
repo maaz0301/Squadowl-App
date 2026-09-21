@@ -1,6 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Card, Header, Screen } from '@/components/ui';
 import { useCreateTeamMutation, useCreateTryoutMutation, useTeamsQuery, useTryoutSummariesQuery, useUpdateProfileMutation } from '@/features/queries';
@@ -34,6 +35,7 @@ const STEPS = [
 
 export default function WizardScreen() {
   const colors = useThemeColors();
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const user = useUser();
   const [createdTeamId, setCreatedTeamId] = useState<string | null>(null);
@@ -236,7 +238,7 @@ export default function WizardScreen() {
           ))}
         </View>
       </Card>
-      <View className="flex-1 justify-end pb-4 gap-3">
+      <View className="flex-1 justify-end gap-3" style={{ paddingBottom: Math.max(16, insets.bottom + 8) }}>
         <Button
           label={current.action}
           onPress={handleAction}

@@ -1,7 +1,7 @@
 import { Pressable, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useBottomInset } from '@/hooks/useBottomInset';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { usePermissions } from '@/state/authStore';
@@ -33,7 +33,7 @@ interface BottomNavProps {
 
 export function BottomNav({ active, onTabPress }: BottomNavProps) {
   const colors = useThemeColors();
-  const insets = useSafeAreaInsets();
+  const bottomInset = useBottomInset();
   const navigation = useNavigation<any>();
   const { isGuardian, role } = usePermissions();
 
@@ -56,7 +56,7 @@ export function BottomNav({ active, onTabPress }: BottomNavProps) {
         backgroundColor: colors.card,
         borderTopWidth: 1,
         borderTopColor: colors.border,
-        paddingBottom: Math.max(12, insets.bottom),
+        paddingBottom: bottomInset,
         paddingTop: 8,
         paddingHorizontal: 16,
       }}

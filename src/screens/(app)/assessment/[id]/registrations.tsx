@@ -355,76 +355,100 @@ export default function RegistrationsScreen() {
             message="Share the QR code with athletes and guardians to register."
           />
         }
-        renderItem={({ item }) => (
-          <Card className="mb-3 gap-2">
-            {/* Only the identity block opens the profile — the action buttons
-                below stay independently tappable. */}
-            <Pressable className="gap-2" onPress={() => setViewingId(item.id)}>
-              <View className="flex-row justify-between">
-                <Text className="text-lg font-bold" style={{ color: colors.ink }}>
-                  {item.firstName} {item.lastName}
-                </Text>
-                <View className="items-end gap-1">
-                  <Badge
-                    label={item.status}
-                    variant={item.status === 'pending' ? 'warning' : item.status === 'added' ? 'success' : 'info'}
-                  />
-                  {item.paymentStatus ? (
-                    <Badge
-                      label={item.paymentStatus}
-                      variant={item.paymentStatus === 'paid' ? 'success' : 'warning'}
-                    />
-                  ) : null}
+        renderItem={({ item }) => {
+          const pending = item.status === 'pending';
+          const isSelected = pending && selected.has(item.id);
+          return (
+            <Card className="mb-3 gap-3" accent={isSelected}>
+              <View className="flex-row items-start gap-3">
+                {/* The tick is its own big tap target, so picking a player never
+                    opens the profile and opening the profile never picks. */}
+                {pending ? (
+                  <Pressable
+                    onPress={() => toggleSelect(item.id)}
+                    hitSlop={10}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: isSelected }}
+                    accessibilityLabel={`Select ${item.firstName} ${item.lastName}`}
+                    style={{
+                      width: 28,
+                      height: 28,
+                      marginTop: 2,
+                      borderRadius: 8,
+                      borderWidth: 2,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderColor: isSelected ? colors.primary : colors.border,
+                      backgroundColor: isSelected ? colors.primary : 'transparent',
+                    }}
+                  >
+                    {isSelected ? <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800' }}>✓</Text> : null}
+                  </Pressable>
+                ) : null}
+
+                <Pressable className="flex-1 gap-1" onPress={() => setViewingId(item.id)}>
+                  <View className="flex-row items-center justify-between gap-2">
+                    <Text className="flex-1 text-xl font-bold" numberOfLines={1} style={{ color: colors.ink }}>
+                      {item.firstName} {item.lastName}
+                    </Text>
+                    <View className="items-end gap-1">
+                      <Badge
+                        label={item.status}
+                        variant={item.status === 'pending' ? 'warning' : item.status === 'added' ? 'success' : 'info'}
+                      />
+                      {item.paymentStatus ? (
+                        <Badge
+                          label={item.paymentStatus}
+                          variant={item.paymentStatus === 'paid' ? 'success' : 'warning'}
+                        />
+                      ) : null}
+                    </View>
+                  </View>
+                  <Text className="text-base" numberOfLines={1} style={{ color: colors.inkMuted }}>
+                    {item.guardianName}
+                  </Text>
+                  <Text className="text-sm" numberOfLines={1} style={{ color: colors.inkFaint }}>
+                    {item.guardianEmail}
+                  </Text>
+                </Pressable>
+              </View>
+
+              {pending ? (
+                <View className="flex-row items-center gap-2">
+                  {/* With a group ticked the bar below does the adding; repeating
+                      "Add 9 to Roster" on every card only made them look alike. */}
+                  {selectedIds.length === 0 ? (
+                    <View className="flex-1">
+                      <Button label="Add to Roster" onPress={() => addFromCard(item.id)} />
+                    </View>
+                  ) : (
+                    <View className="flex-1" />
+                  )}
+                  <Button label="Dismiss" variant="ghost" onPress={() => dismissReg.mutate(item.id)} />
                 </View>
-              </View>
-              <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                {item.guardianName} · {item.guardianEmail}
-              </Text>
-              <Text className="text-xs" style={{ color: colors.inkFaint }}>
-                Tap to view profile
-              </Text>
-            </Pressable>
-            {item.status === 'pending' ? (
-              <View className="flex-row flex-wrap gap-2 mt-2">
-                <Button
-                  label={selected.has(item.id) ? 'Selected' : 'Select'}
-                  size="sm"
-                  variant={selected.has(item.id) ? 'primary' : 'secondary'}
-                  onPress={() => toggleSelect(item.id)}
-                />
-                <Button
-                  label={
-                    selected.has(item.id) && selectedIds.length > 1
-                      ? `Add ${selectedIds.length} to Roster`
-                      : 'Add to Roster'
-                  }
-                  size="sm"
-                  onPress={() => addFromCard(item.id)}
-                />
-                <Button
-                  label="Dismiss"
-                  size="sm"
-                  variant="ghost"
-                  onPress={() => dismissReg.mutate(item.id)}
-                />
-              </View>
-            ) : null}
-          </Card>
-        )}
+              ) : null}
+            </Card>
+          );
+        }}
       />
 
       {/* Outside the list, so the group action stays on screen however far down
           the coach has scrolled while ticking players. */}
       {tab === 'pending' && selectedIds.length > 0 ? (
         <View
-          className="flex-row items-center gap-2 border-t px-4 py-3"
+          className="flex-row items-center gap-3 border-t px-4 py-4"
           style={{ borderColor: colors.border, backgroundColor: colors.card }}
         >
-          <Text className="flex-1 text-sm font-bold" style={{ color: colors.ink }}>
-            {selectedIds.length} selected
-          </Text>
-          <Button label="Clear" variant="ghost" size="sm" onPress={() => setSelected(new Set())} />
-          <Button label={`Add ${selectedIds.length} to Roster`} size="sm" onPress={() => setPlacing(selectedIds)} />
+          <View className="flex-1">
+            <Text className="text-xl font-display font-bold" style={{ color: colors.ink }}>
+              {selectedIds.length} selected
+            </Text>
+            <Text className="text-sm" style={{ color: colors.inkMuted }}>
+              of {pendingIds.length} pending
+            </Text>
+          </View>
+          <Button label="Clear" variant="ghost" onPress={() => setSelected(new Set())} />
+          <Button label={`Add ${selectedIds.length}`} onPress={() => setPlacing(selectedIds)} />
         </View>
       ) : null}
 
