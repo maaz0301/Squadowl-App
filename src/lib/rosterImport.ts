@@ -150,6 +150,9 @@ function parseSheetOf(workbook: XLSX.WorkBook, sheetName?: string): ParsedSheet 
   const sheet = workbook.Sheets[name];
   const range = sheet ? occupiedRange(sheet) : null;
   if (!sheet || !range) throw new Error('No column headings found in that sheet.');
+  // sheet_to_json answers nothing at all for a sheet without a declared range,
+  // whatever `range` it is handed, so the one measured above becomes the declared one.
+  if (!sheet['!ref']) sheet['!ref'] = XLSX.utils.encode_range(range);
   // raw:false so dates and numbers arrive as the text the coach sees in Excel.
   // blankrows:true so a row's index in the grid is still its line in the file —
   // a blank spacer dropped here would shift every row number reported after it.
