@@ -1954,43 +1954,75 @@ export class SupabaseDataSource implements DataSource {
     const limit = opts?.limit ?? TEAM_ROSTER_SCREEN_PAGE;
     const search = likeTerm(opts?.search ?? '');
 
-    let q = supabase
-      .from('team_roster')
-      .select(teamRosterSelect())
-      .eq('team_id', teamId)
-      // Total order, so pages can neither overlap nor skip rows, and the same
-      // order listTeamRoster sorts into so the list doesn't reshuffle when a
-      // caller reads it the other way.
-      .order('created_at', { ascending: true })
-      .order('id', { ascending: true })
-      .limit(limit);
-    if (opts?.after) {
-      const { createdAt, id } = opts.after;
-      // "strictly after (created_at, id)": a later timestamp, or the same
-      // timestamp and a later id. Quoted because a timestamptz carries `+` and
-      // `:`, which the filter grammar would otherwise read as syntax.
-      q = q.or(`created_at.gt."${createdAt}",and(created_at.eq."${createdAt}",id.gt.${id})`);
-    }
+    let rows: Row[];
+
     if (search) {
-      // Jersey number too, not just name — same fix as the evaluation roster's
-      // client-side search (assessment/[id]/roster.tsx). `jersey` lives on
-      // `team_roster` itself, so a single or() can't reach both it and the
-      // embedded athletes' name columns: mixing a top-level column into an
-      // or() scoped to an embedded resource isn't something PostgREST accepts
-      // as one cheap plan — against the 1000+-player QA roster it came back
-      // as a hard timeout on every attempt, not an occasional slow one. Name
-      // is resolved to athlete ids first instead, so the roster query itself
-      // stays a single plain or() over columns on team_roster alone.
-      const { data: nameMatches } = await supabase
-        .from('athletes')
-        .select('id')
-        .eq('account_id', accountId)
-        .or(`first_name.ilike.*${search}*,last_name.ilike.*${search}*`)
-        .limit(500);
-      const idList = (nameMatches ?? []).map((a) => a.id as string).join(',');
-      q = q.or(`jersey.ilike.*${search}*,athlete_id.in.(${idList})`);
+      const parts = search.split(/\s+/).filter(Boolean);
+      const nameFilter =
+        parts.length > 1
+          ? `and(first_name.ilike.*${parts[0]}*,last_name.ilike.*${parts[1]}*),and(first_name.ilike.*${parts[1]}*,last_name.ilike.*${parts[0]}*),first_name.ilike.*${search}*,last_name.ilike.*${search}*`
+          : `first_name.ilike.*${search}*,last_name.ilike.*${search}*`;
+
+      let nameQ = supabase
+        .from('team_roster')
+        .select(teamRosterSelect(true))
+        .eq('team_id', teamId)
+        .or(nameFilter, { foreignTable: 'athletes' })
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(limit);
+
+      let jerseyQ = supabase
+        .from('team_roster')
+        .select(teamRosterSelect(false))
+        .eq('team_id', teamId)
+        .ilike('jersey', `*${search}*`)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(limit);
+
+      if (opts?.after) {
+        const { createdAt, id } = opts.after;
+        const afterFilter = `created_at.gt."${createdAt}",and(created_at.eq."${createdAt}",id.gt.${id})`;
+        nameQ = nameQ.or(afterFilter);
+        jerseyQ = jerseyQ.or(afterFilter);
+      }
+
+      const [nameRes, jerseyRes] = await Promise.all([nameQ, jerseyQ]);
+      const nameRows = (unwrap(nameRes) ?? []) as Row[];
+      const jerseyRows = (unwrap(jerseyRes) ?? []) as Row[];
+
+      const seen = new Set<string>();
+      const combined: Row[] = [];
+      for (const r of [...nameRows, ...jerseyRows]) {
+        const rowId = String(r.id);
+        if (!seen.has(rowId)) {
+          seen.add(rowId);
+          combined.push(r);
+        }
+      }
+      combined.sort(
+        (a, b) =>
+          String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')) ||
+          String(a.id ?? '').localeCompare(String(b.id ?? '')),
+      );
+      rows = combined.slice(0, limit);
+    } else {
+      let q = supabase
+        .from('team_roster')
+        .select(teamRosterSelect())
+        .eq('team_id', teamId)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(limit);
+
+      if (opts?.after) {
+        const { createdAt, id } = opts.after;
+        q = q.or(`created_at.gt."${createdAt}",and(created_at.eq."${createdAt}",id.gt.${id})`);
+      }
+
+      rows = (unwrap(await q) ?? []) as Row[];
     }
-    const rows = (unwrap(await q) ?? []) as Row[];
 
     // Scoped to this page's players rather than the team's whole roster: both
     // of these render per row, and neither is worth a read over everyone.
