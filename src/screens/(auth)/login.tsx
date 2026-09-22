@@ -6,12 +6,12 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { LoginFormSchema } from '@/data/types';
 import { useAuthStore } from '@/state/authStore';
-import { useThemeColors } from '@/theme/ThemeProvider';
+import { useTheme } from '@/theme/ThemeProvider';
 import { Button, Input, Screen, ThemeToggle } from '@/components/ui';
 import { APP_CONFIG } from '@/config/app';
 
 export default function LoginScreen() {
-  const colors = useThemeColors();
+  const { colors, isDark } = useTheme();
   const navigation = useNavigation<any>();
   const login = useAuthStore((s) => s.login);
   const sessionExpired = useAuthStore((s) => s.sessionExpired);
@@ -50,7 +50,11 @@ export default function LoginScreen() {
       {/* Brand Hero Banner */}
       <View className="items-center mb-6 pt-6">
         <Image
-          source={require('../../../assets/TryoutHQ--full-logo.png')}
+          source={
+            isDark
+              ? require('../../../assets/TryoutHQ--full-logo.png')
+              : require('../../../assets/TryoutHQ-logo-light-full.png')
+          }
           style={{ width: '100%', height: 120, resizeMode: 'contain' }}
         />
         <Text className="text-base text-center mt-2 font-medium" style={{ color: colors.inkMuted }}>

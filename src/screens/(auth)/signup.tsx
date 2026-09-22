@@ -6,12 +6,12 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { SignupFormSchema } from '@/data/types';
 import { useAuthStore } from '@/state/authStore';
-import { useThemeColors } from '@/theme/ThemeProvider';
+import { useTheme } from '@/theme/ThemeProvider';
 import { Button, Input, Screen, Header, ThemeToggle } from '@/components/ui';
 import { flushPendingReferralCode, savePendingReferralCode } from '@/lib/pendingReferral';
 
 export default function SignupScreen() {
-  const colors = useThemeColors();
+  const { colors, isDark } = useTheme();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const signup = useAuthStore((s) => s.signup);
@@ -65,7 +65,11 @@ export default function SignupScreen() {
       {/* Brand Hero Banner */}
       <View className="items-center my-4">
         <Image
-          source={require('../../../assets/TryoutHQ-logo.png')}
+          source={
+            isDark
+              ? require('../../../assets/TryoutHQ--full-logo.png')
+              : require('../../../assets/TryoutHQ-logo-light-full.png')
+          }
           style={{ width: '100%', height: 90, resizeMode: 'contain' }}
         />
       </View>
