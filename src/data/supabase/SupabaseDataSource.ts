@@ -24,6 +24,7 @@ import {
   parseTiersFromPrompt,
 } from '../teamBuilder';
 import { computePlayerResults } from '../scoring';
+import { deriveAccountAccess, isExpiredTrial } from '@/lib/accountAccess';
 import type { LetterKind } from '../letters';
 import {
   POSITIONS_BY_SPORT,
@@ -1400,6 +1401,11 @@ export class SupabaseDataSource implements DataSource {
       avatarUrl: profile.avatar_url ?? undefined,
       planTier: (account?.plan_tier as UserProfile['planTier']) ?? 'free',
       subscriptionStatus: account?.subscription_status,
+      // Guardians have no account, and nothing to suspend.
+      accessStatus: account ? deriveAccountAccess(account) : undefined,
+      suspendedReason: account?.suspended_reason ?? undefined,
+      trialEndsAt: account?.trial_ends_at ? toMs(account.trial_ends_at as string) : undefined,
+      trialExpired: account && isExpiredTrial(account) ? true : undefined,
       extraTeamLicenses: account?.extra_team_licenses ?? 0,
       connectChargesEnabled: !!account?.stripe_connect_charges_enabled,
       connectPayoutsEnabled: !!account?.stripe_connect_payouts_enabled,
@@ -1950,7 +1956,7 @@ export class SupabaseDataSource implements DataSource {
 
     let q = supabase
       .from('team_roster')
-      .select(teamRosterSelect(!!search))
+      .select(teamRosterSelect())
       .eq('team_id', teamId)
       // Total order, so pages can neither overlap nor skip rows, and the same
       // order listTeamRoster sorts into so the list doesn't reshuffle when a
@@ -1966,9 +1972,23 @@ export class SupabaseDataSource implements DataSource {
       q = q.or(`created_at.gt."${createdAt}",and(created_at.eq."${createdAt}",id.gt.${id})`);
     }
     if (search) {
-      q = q.or(`first_name.ilike.*${search}*,last_name.ilike.*${search}*`, {
-        referencedTable: 'athletes',
-      });
+      // Jersey number too, not just name — same fix as the evaluation roster's
+      // client-side search (assessment/[id]/roster.tsx). `jersey` lives on
+      // `team_roster` itself, so a single or() can't reach both it and the
+      // embedded athletes' name columns: mixing a top-level column into an
+      // or() scoped to an embedded resource isn't something PostgREST accepts
+      // as one cheap plan — against the 1000+-player QA roster it came back
+      // as a hard timeout on every attempt, not an occasional slow one. Name
+      // is resolved to athlete ids first instead, so the roster query itself
+      // stays a single plain or() over columns on team_roster alone.
+      const { data: nameMatches } = await supabase
+        .from('athletes')
+        .select('id')
+        .eq('account_id', accountId)
+        .or(`first_name.ilike.*${search}*,last_name.ilike.*${search}*`)
+        .limit(500);
+      const idList = (nameMatches ?? []).map((a) => a.id as string).join(',');
+      q = q.or(`jersey.ilike.*${search}*,athlete_id.in.(${idList})`);
     }
     const rows = (unwrap(await q) ?? []) as Row[];
 
@@ -2305,6 +2325,51 @@ export class SupabaseDataSource implements DataSource {
     }
     await this.addTeamRosterPlayers(teamId, [{ athleteId, jersey: form.jersey, pos: form.pos }]);
     return { athleteId };
+  }
+
+  /**
+   * Edit an existing team-roster player — the athlete's own fields (name,
+   * contact, guardian, medical) plus this team's jersey/position, which live
+   * on team_roster rather than the athlete.
+   *
+   * Both tables carry `for all` policies for the team's owner and its
+   * delegated managers (see team_manager_full_access.sql), so this writes
+   * directly rather than routing through the owner/RPC dance
+   * _addManualTeamPlayer needs for creating a brand new athlete row.
+   */
+  async updateTeamRosterPlayer(teamId: string, athleteId: string, form: AddPlayerForm): Promise<void> {
+    const { supabase } = await this.ctx();
+
+    const athletePatch: Row = {
+      first_name: form.first,
+      last_name: form.last,
+      year_of_birth: form.yearOfBirth ? Number(form.yearOfBirth) : null,
+      guardian_name: form.guardianName || null,
+      guardian_email: form.guardianEmail || null,
+      guardian_phone: form.guardianPhone || null,
+      player_email: form.playerEmail || null,
+      avatar_url: form.avatarUrl || null,
+    };
+    // `about` is deliberately left untouched: AddPlayerForm renders no field
+    // for it and the team-roster read (TeamRosterPlayerSchema) never carries
+    // it, so there is no reliable value here to round-trip — writing it would
+    // just blank out whatever an assessment roster set.
+    // Only touched when the caller explicitly sent it. The roster read omits
+    // medical_info entirely for anyone without canViewMedical (see
+    // TeamRosterPlayerSchema.medicalInfo), so a delegated manager editing just
+    // a jersey number never has it in the form and must not blank out a field
+    // their own read never showed them.
+    if (form.medicalInfo !== undefined) athletePatch.medical_info = form.medicalInfo || null;
+
+    unwrap(await supabase.from('athletes').update(athletePatch).eq('id', athleteId));
+
+    unwrap(
+      await supabase
+        .from('team_roster')
+        .update({ jersey: form.jersey || null, position: form.pos || null })
+        .eq('team_id', teamId)
+        .eq('athlete_id', athleteId),
+    );
   }
 
   /**

@@ -391,15 +391,31 @@ function RowPreview({
 }) {
   // Bad rows first: they are the ones the coach has to decide about, and a
   // wrong column mapping shows up in them before anywhere else.
+  const [showAll, setShowAll] = useState(false);
   const ordered = [...rows].sort((a, b) => Number(b.errors.length > 0) - Number(a.errors.length > 0));
-  const shown = ordered.slice(0, PREVIEW_ROWS);
+  const shown = showAll ? ordered : ordered.slice(0, PREVIEW_ROWS);
   const incomplete = rows.filter((r) => r.errors.length > 0);
 
   return (
     <View>
-      <Text className="mb-2 text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>
-        What will be added
-      </Text>
+      <View className="mb-2 flex-row items-center justify-between">
+        <Text className="text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>
+          What will be added
+        </Text>
+        {rows.length > PREVIEW_ROWS ? (
+          <Pressable
+            disabled={disabled}
+            onPress={() => setShowAll((prev) => !prev)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={showAll ? 'Show fewer rows' : `Show all ${rows.length} rows`}
+          >
+            <Text className="text-xs font-semibold" style={{ color: colors.primary }}>
+              {showAll ? 'Show fewer' : `Show all ${rows.length} rows`}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       {shown.length === 0 ? (
         <Text className="py-4 text-center text-sm" style={{ color: colors.inkMuted }}>
@@ -446,10 +462,23 @@ function RowPreview({
         ))
       )}
 
-      {rows.length > shown.length ? (
-        <Text className="mt-1 text-xs" style={{ color: colors.inkFaint }}>
-          Showing {shown.length} of {rows.length} rows.
-        </Text>
+      {rows.length > PREVIEW_ROWS ? (
+        <View className="mt-1.5 flex-row items-center justify-between">
+          <Text className="text-xs" style={{ color: colors.inkFaint }}>
+            {showAll
+              ? `Showing all ${rows.length} rows (${rows.filter((r) => r.errors.length === 0).length} ready to import)`
+              : `Previewing ${shown.length} of ${rows.length} rows — all ${rows.filter((r) => r.errors.length === 0).length} ready rows will be imported`}
+          </Text>
+          <Pressable
+            disabled={disabled}
+            onPress={() => setShowAll((prev) => !prev)}
+            hitSlop={8}
+          >
+            <Text className="text-xs font-semibold" style={{ color: colors.primary }}>
+              {showAll ? 'Show fewer' : `Show all ${rows.length}`}
+            </Text>
+          </Pressable>
+        </View>
       ) : null}
 
       <View className="mt-2 flex-row flex-wrap gap-2">

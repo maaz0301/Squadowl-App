@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 
+import { normalizePosition } from '@/data/positions';
 import { AddPlayerFormSchema, type AddPlayerForm } from '@/data/types';
 
 /**
@@ -20,7 +21,6 @@ export interface ImportField {
 }
 
 export type ImportFieldKey =
-  | 'fullName'
   | 'first'
   | 'last'
   | 'jersey'
@@ -40,11 +40,6 @@ export type ImportFieldKey =
 export const IMPORT_FIELDS: ImportField[] = [
   { key: 'first', label: 'First Name', synonyms: ['first name', 'firstname', 'first', 'given name', 'fname'] },
   { key: 'last', label: 'Last Name', synonyms: ['last name', 'lastname', 'last', 'surname', 'family name', 'lname'] },
-  {
-    key: 'fullName',
-    label: 'Full Name (split into first/last)',
-    synonyms: ['player name', 'athlete name', 'full name', 'name', 'player', 'athlete'],
-  },
   { key: 'jersey', label: 'Jersey #', synonyms: ['jersey number', 'jersey', 'sweater', 'number', 'no', '#'] },
   { key: 'pos', label: 'Position', synonyms: ['position', 'pos', 'primary position'] },
   {
@@ -139,10 +134,13 @@ function occupiedRange(sheet: XLSX.WorkSheet): XLSX.Range | null {
 /**
  * Shape an already-read workbook into a heading row plus data rows.
  *
- * The heading row is the first row with two or more filled cells, not simply
- * the first row: exported rosters routinely open with a title line, a club
- * name, or a blank spacer above the real headings. A sheet with only one
- * column has no such row, so it falls back to the first row with anything in it.
+ * The heading row is the first row that fills a majority of the sheet's
+ * columns, not simply the first row: exported rosters routinely open with a
+ * title line, a club name, a blank spacer, or a row of section labels
+ * ("Player Information" / "Guardian Information") above the real headings —
+ * all of which fill only a cell or two. Failing that, it falls back to the
+ * first row with two filled cells, then the first row with anything in it at
+ * all, for the sheets too narrow to ever have a majority-filled row.
  */
 function parseSheetOf(workbook: XLSX.WorkBook, sheetName?: string): ParsedSheet {
   if (workbook.SheetNames.length === 0) throw new Error('That file has no sheets in it.');
@@ -168,7 +166,17 @@ function parseSheetOf(workbook: XLSX.WorkBook, sheetName?: string): ParsedSheet 
   const firstLine = range.s.r + 1;
 
   const filled = (row: unknown[]) => row.filter((c) => cellText(c) !== '').length;
-  let headerIndex = grid.findIndex((row) => filled(row) >= 2);
+  // A row of section labels above the real headings ("Player Information" /
+  // "Guardian Information", each spanning several merged columns) fills just as
+  // many cells as the ">= 2" bar below asks for, so it would otherwise win over
+  // the real per-column header row underneath it. A row that fills a majority
+  // of the sheet's columns is what an actual header row looks like, so it gets
+  // first refusal; only when nothing clears that bar do we fall back to the
+  // looser thresholds for title lines and single-column sheets.
+  const sheetWidth = range.e.c - range.s.c + 1;
+  const majority = Math.max(2, Math.ceil(sheetWidth * 0.5));
+  let headerIndex = grid.findIndex((row) => filled(row) >= majority);
+  if (headerIndex === -1) headerIndex = grid.findIndex((row) => filled(row) >= 2);
   if (headerIndex === -1) headerIndex = grid.findIndex((row) => filled(row) >= 1);
   if (headerIndex === -1) throw new Error('No column headings found in that sheet.');
 
@@ -238,15 +246,22 @@ export function guessMapping(headers: string[]): ColumnMapping {
     taken.add(index);
   };
 
+  const isSummaryHeader = (header: string) =>
+    /\b(total|count|summary|breakdown|average|avg|statistics|stats)\b/i.test(header) ||
+    header.startsWith('number of');
+
   const findColumn = (field: ImportField, loose: boolean): number | undefined => {
     for (const synonym of field.synonyms) {
-      const index = normalized.findIndex(
-        (header, i) =>
-          !taken.has(i) &&
-          header !== '' &&
-          (loose ? header.includes(synonym) || synonym.includes(header) : header === synonym),
-      );
-      if (index !== -1) return index;
+      const index = normalized.findIndex((header, i) => {
+        if (taken.has(i) || header === '') return false;
+        if (!loose) return header === synonym;
+        // In loose mode, skip summary/count headers for name fields
+        if (['first', 'last', 'guardianName'].includes(field.key) && isSummaryHeader(header)) {
+          return false;
+        }
+        return header.includes(synonym) || (header.length >= 3 && synonym.includes(header));
+      });
+      if (index !== undefined && index !== -1) return index;
     }
     return undefined;
   };
@@ -254,10 +269,6 @@ export function guessMapping(headers: string[]): ColumnMapping {
   for (const loose of [false, true]) {
     for (const field of IMPORT_FIELDS) {
       if (mapping[field.key] != null) continue;
-      // A sheet with real first/last columns has no use for a full-name split,
-      // and a sheet with one "Name" column has no use for the halves.
-      if (field.key === 'fullName' && mapping.first != null && mapping.last != null) continue;
-      if ((field.key === 'first' || field.key === 'last') && mapping.fullName != null) continue;
       const index = findColumn(field, loose);
       if (index !== undefined) claim(field.key, index);
     }
@@ -273,19 +284,6 @@ export interface ImportRow {
   display: { name: string; email: string };
   /** Blocking problems. A row with any is left out of the import. */
   errors: string[];
-}
-
-/** "Khan, Maaz" and "Maaz Khan" are both common; the comma decides which. */
-function splitFullName(value: string): { first: string; last: string } {
-  const trimmed = value.trim().replace(/\s+/g, ' ');
-  if (!trimmed) return { first: '', last: '' };
-  if (trimmed.includes(',')) {
-    const [last, ...rest] = trimmed.split(',');
-    return { first: rest.join(' ').trim(), last: last.trim() };
-  }
-  const parts = trimmed.split(' ');
-  if (parts.length === 1) return { first: parts[0], last: '' };
-  return { first: parts.slice(0, -1).join(' '), last: parts[parts.length - 1] };
 }
 
 /** A birth *year*, however the sheet writes the birthday — "2011-04-02", "04/02/2011", "2011". */
@@ -311,15 +309,14 @@ export function buildImportRows(sheet: ParsedSheet, mapping: ColumnMapping): Imp
   const seen = new Map<string, number>();
 
   return sheet.rows.map(({ line, cells: row }) => {
-    const named = mapping.fullName != null ? splitFullName(at(row, 'fullName')) : null;
-    const first = named ? named.first : at(row, 'first');
-    const last = named ? named.last : at(row, 'last');
+    const first = at(row, 'first');
+    const last = at(row, 'last');
 
     const form: AddPlayerForm = {
       first,
       last,
       jersey: at(row, 'jersey'),
-      pos: at(row, 'pos').toUpperCase(),
+      pos: normalizePosition(at(row, 'pos')),
       yearOfBirth: extractYear(at(row, 'yearOfBirth')),
       playerEmail: at(row, 'playerEmail'),
       guardianName: at(row, 'guardianName'),

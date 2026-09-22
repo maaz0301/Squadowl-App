@@ -2,6 +2,8 @@ import { Image, Text, View } from 'react-native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { playerInitials } from '@/data/rubrics';
 
+import { normalizePosition } from '@/data/positions';
+
 interface AvatarProps {
   first: string;
   last: string;
@@ -14,6 +16,20 @@ const posColors: Record<string, string> = {
   FWD: '#ff6b2b',
   DEF: '#6366f1',
   GTL: '#f59e0b',
+  G: '#f59e0b',
+  GK: '#f59e0b',
+  LW: '#ff6b2b',
+  RW: '#ff6b2b',
+  C: '#ff6b2b',
+  LD: '#6366f1',
+  RD: '#6366f1',
+  CB: '#6366f1',
+  FB: '#6366f1',
+  ST: '#ff6b2b',
+  W: '#ff6b2b',
+  CM: '#10b981',
+  CDM: '#10b981',
+  CAM: '#10b981',
 };
 
 /**
@@ -22,7 +38,9 @@ const posColors: Record<string, string> = {
  * the pairing that makes a position readable at a glance.
  */
 export function positionColor(pos: string | undefined, fallback: string): string {
-  return pos ? (posColors[pos.toUpperCase()] ?? fallback) : fallback;
+  if (!pos) return fallback;
+  const normalized = normalizePosition(pos);
+  return posColors[normalized] ?? posColors[pos.toUpperCase()] ?? fallback;
 }
 
 export function Avatar({ first, last, size = 44, pos, uri }: AvatarProps) {

@@ -1,13 +1,23 @@
+import { useState } from 'react';
 import { useRoute } from '@react-navigation/native';
 import { Alert, Platform, ScrollView, Text, View } from 'react-native';
 
-import { Avatar, Badge, Button, Card, EmptyState, Header, LoadingState, Screen } from '@/components/ui';
-import { useTeamRosterPlayerQuery, useTeamRosterInvitesMutation, useTeamsQuery, useTryoutsQuery } from '@/features/queries';
+import { Avatar, Badge, Button, Card, EmptyState, Header, LoadingState, Modal, Screen } from '@/components/ui';
+import {
+  useTeamRosterPlayerQuery,
+  useTeamRosterInvitesMutation,
+  useTeamsQuery,
+  useTryoutsQuery,
+  useUpdateTeamRosterPlayerMutation,
+  useUploadTeamPlayerPhotoMutation,
+} from '@/features/queries';
+import type { AddPlayerForm as AddPlayerFormType } from '@/data/types';
 import { usePermissions } from '@/state/authStore';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { TeamBanner } from '@/components/TeamBanner';
 import { teamBrandSurfaces } from '@/lib/teamBrand';
 import { BottomNav } from '@/components/BottomNav';
+import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 
 function Row({ label, value, colors }: { label: string; value?: string; colors: any }) {
   return (
@@ -27,6 +37,9 @@ export default function TeamPlayerScreen() {
 
   const rosterPlayerQuery = useTeamRosterPlayerQuery(teamId, playerId);
   const sendInvite = useTeamRosterInvitesMutation(teamId);
+  const updateRosterPlayer = useUpdateTeamRosterPlayerMutation(teamId);
+  const uploadPhoto = useUploadTeamPlayerPhotoMutation(teamId);
+  const [showEdit, setShowEdit] = useState(false);
   const { canManageTeam } = usePermissions();
   // The team_roster row carries everything that lives on the athlete itself —
   // guardian contact, medical notes and the photo included — and the team
@@ -98,6 +111,45 @@ export default function TeamPlayerScreen() {
   // fallback for the case where only it resolved.
   const guardianLinked = !!(rosterEntry?.linkedGuardianId ?? fullPlayer?.linkedGuardianId);
 
+  const editDefaultValues: Partial<AddPlayerFormType> = {
+    athleteId: playerId,
+    first,
+    last,
+    jersey: jersey || '',
+    pos: pos || '',
+    yearOfBirth: yearOfBirth || '',
+    playerEmail: rosterEntry?.playerEmail ?? fullPlayer?.playerEmail ?? '',
+    guardianName: rosterEntry?.guardianName ?? fullPlayer?.guardianName ?? '',
+    guardianEmail: rosterEntry?.guardianEmail ?? fullPlayer?.guardianEmail ?? '',
+    guardianPhone: rosterEntry?.guardianPhone ?? fullPlayer?.guardianPhone ?? '',
+    // Left undefined rather than '' when the viewer can't see it, so saving
+    // other fields never blanks out medical info this account isn't shown.
+    medicalInfo: rosterEntry?.canViewMedical ? rosterEntry.medicalInfo : undefined,
+    avatarUrl: rosterEntry?.avatarUrl ?? fullPlayer?.avatarUrl ?? '',
+  };
+
+  const submitEdit = async (data: AddPlayerFormType) => {
+    try {
+      if (data.avatarUrl && data.avatarUrl.startsWith('file://')) {
+        try {
+          const publicUrl = await uploadPhoto.mutateAsync({
+            athleteId: playerId,
+            fileUri: data.avatarUrl,
+            fileType: 'image/jpeg',
+          });
+          data.avatarUrl = publicUrl;
+        } catch (e: any) {
+          alertMsg('Upload Error', 'Failed to upload profile picture: ' + e.message);
+        }
+      }
+      if (!rosterEntry?.canViewMedical) delete (data as any).medicalInfo;
+      await updateRosterPlayer.mutateAsync({ athleteId: playerId, form: data });
+      setShowEdit(false);
+    } catch (e: any) {
+      alertMsg('Save Error', 'Failed to update player: ' + (e?.message || 'Unknown error.'));
+    }
+  };
+
   return (
     <Screen padded={false} backgroundColor={brand.screenBg}>
       <ScrollView
@@ -108,6 +160,7 @@ export default function TeamPlayerScreen() {
         <Header
           title={`${first} ${last}`.trim() || 'Player'}
           showBack
+          right={canManageTeam ? <Button label="Edit" variant="primary" size="sm" onPress={() => setShowEdit(true)} /> : null}
         />
         {team ? <TeamBanner team={team} className="mb-3" /> : null}
 
@@ -169,6 +222,21 @@ export default function TeamPlayerScreen() {
         ) : null}
 
       </ScrollView>
+
+      <Modal
+        visible={showEdit}
+        title="Edit Player"
+        onClose={() => {
+          if (updateRosterPlayer.isPending || uploadPhoto.isPending) return;
+          setShowEdit(false);
+        }}
+      >
+        <AddPlayerForm
+          defaultValues={editDefaultValues}
+          loading={updateRosterPlayer.isPending || uploadPhoto.isPending}
+          onSubmit={submitEdit}
+        />
+      </Modal>
 
       <BottomNav active="teams" />
     </Screen>

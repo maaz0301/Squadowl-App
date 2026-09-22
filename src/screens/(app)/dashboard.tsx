@@ -405,7 +405,11 @@ export default function DashboardScreen() {
   const ownedTeamCount = (teamsQuery.data ?? []).filter((t) => !t.managed).length;
 
   return (
-    <Screen padded={false}>
+    // No text field lives on this screen (the edit/action sheets are their own
+    // windows and handle the keyboard themselves), so the Screen's Android
+    // KeyboardAvoidingView has nothing to do here. Left on, it can stay shrunk
+    // after a sheet has opened and closed, leaving a dead strip under the bottom bar.
+    <Screen padded={false} keyboardAvoiding={false}>
       <FlatList
         key={isGuardianOnly ? 'guardian' : 'coach'}
         ref={listRef}

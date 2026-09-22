@@ -5,6 +5,7 @@ import AppNavigator from './AppNavigator';
 import WelcomeScreen from '../screens/(onboarding)/welcome';
 import WizardScreen from '../screens/(onboarding)/wizard';
 import VerifyEmailScreen from '../screens/(auth)/verify-email';
+import SuspendedAccountScreen from '../screens/(auth)/suspended';
 import { useAuthStore } from '@/state/authStore';
 import { SplashScreen } from '@/components/ui';
 
@@ -27,12 +28,17 @@ export default function RootNavigator() {
   }
 
   const isEmailUnverified = session?.user && session.user.emailVerified === false;
+  // The founder console and "view as" only exist on web — every mobile session
+  // is a real member, so a suspended account always blocks here, no exemption.
+  const isSuspended = session?.user?.accessStatus === 'suspended';
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {session ? (
         isEmailUnverified ? (
           <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
+        ) : isSuspended ? (
+          <Stack.Screen name="SuspendedAccount" component={SuspendedAccountScreen} />
         ) : (
           <>
             <Stack.Screen name="App" component={AppNavigator} />

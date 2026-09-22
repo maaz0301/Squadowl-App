@@ -430,6 +430,8 @@ export interface DataSource {
     onProgress?: (done: number) => void,
   ): Promise<PlayerImportResult>;
   addManualTeamPlayer(teamId: string, form: AddPlayerForm): Promise<{ athleteId: string }>;
+  /** Edits an existing team-roster player's details — the athlete's own fields plus this team's jersey/position. */
+  updateTeamRosterPlayer(teamId: string, athleteId: string, form: AddPlayerForm): Promise<void>;
   removeTeamRosterPlayer(teamId: string, athleteId: string): Promise<void>;
   /**
    * Remove many players from a team roster in a few chunked statements rather

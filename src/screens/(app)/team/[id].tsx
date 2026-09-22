@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Text, View, Alert, Pressable, Platform, ScrollView, ActivityIndicator, FlatList } from 'react-native';
+import {
+  Text,
+  View,
+  Alert,
+  Pressable,
+  Platform,
+  ScrollView,
+  ActivityIndicator,
+  FlatList,
+  Keyboard,
+  LayoutAnimation,
+  type KeyboardEvent,
+} from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { useForm, Controller } from 'react-hook-form';
@@ -148,6 +160,33 @@ export default function TeamDetailScreen() {
   useFocusEffect(() => {
     setNavigatingId(null);
   });
+
+  // Same pattern as assessment/new.tsx, feedback.tsx and the scoring screen:
+  // Screen's default KeyboardAvoidingView relies on a runtime view measurement
+  // that's unreliable under the New Architecture, so on this screen it left the
+  // keyboard simply overlapping the Players tab's virtualized roster list
+  // instead of shrinking it — the list never resized to stay visible above the
+  // keyboard while typing a search. Tracking the keyboard's own height from the
+  // OS event and applying it as padding ourselves needs no view measurement.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const applyHeight = (e: KeyboardEvent) => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setKeyboardHeight(e.endCoordinates.height);
+    };
+    const hide = () => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setKeyboardHeight(0);
+    };
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, applyHeight);
+    const hideSub = Keyboard.addListener(hideEvent, hide);
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Server-side, so it searches the whole roster rather than only the pages
   // already pulled down — debounced because every distinct term is a read.
@@ -965,7 +1004,7 @@ export default function TeamDetailScreen() {
   );
 
   return (
-    <Screen padded={false} backgroundColor={brand.screenBg}>
+    <Screen padded={false} keyboardAvoiding={false} backgroundColor={brand.screenBg}>
       {tab === 'players' ? (
         // Players can number in the hundreds (dummy data goes up to 1000), so this
         // tab renders as a virtualized FlatList instead of the plain ScrollView the
@@ -973,7 +1012,14 @@ export default function TeamDetailScreen() {
         // row at once and visibly freezes the tab switch. The header/search/add
         // controls live outside the FlatList (not in ListHeaderComponent) so they
         // stay fixed on screen instead of scrolling away with the roster.
-        <View className="flex-1">
+        //
+        // Screen's own keyboardAvoiding is off above for the same reason it's off
+        // on the scoring/feedback/new-assessment screens: its KeyboardAvoidingView
+        // couldn't be trusted to actually shrink this view, so the keyboard just
+        // sat on top of the roster instead. keyboardHeight (tracked from the raw
+        // OS event above) is applied as bottom padding here instead, which shrinks
+        // the FlatList itself so search results stay visible above the keyboard.
+        <View className="flex-1" style={{ paddingBottom: keyboardHeight }}>
           <View className="px-4">
             {headerBlock}
             {rosterSelectMode ? (
@@ -1037,7 +1083,7 @@ export default function TeamDetailScreen() {
               <Input
                 value={playerSearch}
                 onChangeText={setPlayerSearch}
-                placeholder="Search players by name"
+                placeholder="Search players by name or jersey #"
                 autoCapitalize="none"
                 containerClassName="mb-3"
               />

@@ -493,6 +493,17 @@ export const UserProfileSchema = z.object({
   avatarUrl: z.string().optional(),
   planTier: z.enum(PLAN_TIERS).default('coach'),
   subscriptionStatus: z.string().optional(),
+  /**
+   * Access state of the working account — see src/lib/accountAccess.ts. A
+   * suspended account's data is already cut off by RLS; this only lets the app
+   * say so instead of failing every read.
+   */
+  accessStatus: z.enum(['active', 'trial', 'suspended']).optional(),
+  suspendedReason: z.string().optional(),
+  /** End of a founder-granted trial, in ms. */
+  trialEndsAt: z.number().optional(),
+  /** Suspended because that trial ran out, not by a founder action. */
+  trialExpired: z.boolean().optional(),
   /** Add-on team licenses purchased beyond the plan's included teams (Club: CAD$10/team/year). */
   extraTeamLicenses: z.number().int().min(0).default(0),
   /** Whether the account's Stripe Connect account can accept registration-fee charges/payouts. */

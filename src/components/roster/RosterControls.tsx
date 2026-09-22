@@ -177,7 +177,7 @@ export function RosterSearch({ value, onChange }: { value: string; onChange: (v:
       <TextInput
         value={value}
         onChangeText={onChange}
-        placeholder="Search players by name"
+        placeholder="Search players by name or jersey #"
         placeholderTextColor={colors.placeholder}
         autoCapitalize="none"
         autoCorrect={false}

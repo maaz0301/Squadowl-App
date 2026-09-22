@@ -1848,6 +1848,103 @@ MASTER FEATURE TEST SUITE  (sections 25-50)
    51.27 No console errors on the touched pages.                        ____
 
 =====================================================================
+52. SLACK BUG FIXES  (branch bare/feat/setup)
+=====================================================================
+  Fixes for two issues reported in Slack: a TryoutHQ-template Excel import
+  that added only 1 of 25 players, and the on-screen keyboard hiding the
+  Players tab's search results. Mobile app only.
+  STATUS: built; typecheck passes. NOT yet tested on a device.
+
+  IMPORT
+   52.1  A workbook whose real column headings sit under a row of section
+         labels ("Player Information" / "Guardian Information", each
+         spanning several columns) still finds the real headings and
+         imports every row, instead of reading the section-label row as
+         the headings and leaving every field "not in this file".       ____
+  ROSTERS
+   52.2  Team > Players: typing in the search field keeps the matching
+         players' list visible above the keyboard instead of hidden
+         behind it, on both iOS and Android.                            ____
+  ACCOUNT ACCESS
+   52.3  Mobile now matches web: a founder-suspended organization sees a
+         full "Your organization is suspended" screen (reason shown if
+         given, email founder / sign out) instead of broken/empty
+         screens; an expired founder trial reads "Your trial has ended".
+         The founder role and "view as" do not exist on mobile, so there
+         is no exemption to check there.                                ____
+  SEARCH
+   52.4  Evaluation roster search ("Search players by name or jersey #")
+         also matches jersey number, not just name. Confirmed live on the
+         1001-player "Testing evaluation" (QA Team 001, Ringette):
+         searching "59" now returns all three players wearing #59
+         (Rachel Bergström, Aisha Okonkwo, Dylan Chen) instead of "No
+         players match". Was client-side name-only filtering
+         (assessment/[id]/roster.tsx) over the fully-loaded roster, not a
+         pagination/scale bug — the "only searches the first 50" framing
+         was a red herring; the roster was always loaded in full.       [PASS]
+
+=====================================================================
+53. LOYALTY / REFERRAL PROGRAM  (Slack: "Loyalty code used when new
+    account opened, sender account was not accredited the $1")
+=====================================================================
+  Audited the referral code -> attribution -> $1 credit path end to end in
+  both apps' client code and the shared Supabase schema
+  (20260901120000_loyalty_referral_program.sql), then verified it against
+  live production data (found and read the actual stripe-webhook Edge
+  Function source via the Supabase dashboard — it is not in either app's
+  repo — and queried the accounts/referral_credits tables directly).
+  RESULT: NOT A BUG. Entering a code at signup or on the Upgrade screen
+  only ATTRIBUTES the referral (accounts.referred_by_account_id); the
+  referrer is not credited until the referred account completes its FIRST
+  PAID checkout — "Nothing is earned for a signup that never subscribes"
+  is stated outright on the Loyalty page. A code applied at signup with no
+  purchase afterward is expected to show $0 credited, which matches what
+  Shawn described. Across the whole production accounts table there is
+  exactly one referred account that has ever converted to paid, and it WAS
+  correctly credited: attributed 2026-09-01 19:43:40, $1 credited
+  2026-09-01 19:47:16 (~4 min later, referral_credits row
+  bef89fbc-8f15-4f22-9b08-d41775e5faa6). Zero broken payouts exist.
+  STATUS: verified against live production data. 53.4 and 53.5 confirmed
+  correct; the rest below (self-referral, cap, redemption, parity) are
+  still only code-audited, not individually run.
+
+  ATTRIBUTION
+   53.1  Sign up with a valid referral code (typed, or prefilled from a
+         ?ref=CODE loyalty share link): Loyalty page for the code's owner
+         shows Referred count +1, Converted count unchanged, "signed up
+         but not subscribed yet" note.                                  ____
+   53.2  A code can also be entered later, on the Upgrade Plan screen,
+         any time before the account's first paid subscription.         ____
+   53.3  Rejected with a clear message: your own code (self-referral), a
+         code already applied to this account (one-time), an unknown
+         code, and a code entered after the account is already on a live
+         paid plan.                                                     ____
+  CREDITING  (verified against live production data — see note above)
+   53.4  A brand-new account that only signs up with a code, never
+         subscribing, credits its referrer $0 — this is the exact
+         scenario Shawn reported, and $0 here is correct, not a bug.     [PASS]
+   53.5  The referred account completes its FIRST paid checkout: referrer's
+         Loyalty balance and ledger show +$1, Converted count +1. Confirmed
+         via the accounts/referral_credits tables directly — production's
+         one referred-and-converted account was credited $1 within
+         4 minutes of its checkout.                                     [PASS]
+   53.6  That same referred account's next renewal or plan change earns
+         nothing further — one payout per referral, ever.               ____
+   53.7  Referring 61 people who each convert only pays out $60 total in
+         any rolling 365-day window; the 61st stays uncredited.         ____
+  REDEMPTION
+   53.8  A referrer with balance applies it at checkout (Upgrade Plan):
+         Stripe total is discounted by the lesser of the balance or the
+         plan price; completing the purchase debits the ledger by the
+         amount actually used.                                          ____
+   53.9  Abandoning a checkout that had credit applied does not debit the
+         balance — it's only spent once Stripe confirms the payment.    ____
+  PARITY
+   53.10 Loyalty page (code, balance, referred/converted counts, ledger)
+         reads identically on web and the mobile app for the same
+         account.                                                       ____
+
+=====================================================================
 SIGN-OFF
 =====================================================================
   Tester: ____________   Date: __________   Build: ______________
