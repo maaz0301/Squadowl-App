@@ -77,8 +77,8 @@ export interface DataSource {
   listTeamManagers(teamId: string): Promise<import('./types').TeamManager[]>;
   /**
    * Delegates `teamId` to the account behind `email`. When no account exists for
-   * that address yet, one is created first (mirroring createAndInviteUser) so a
-   * club can hand a team to a coach who has never opened the app.
+   * that address yet, nothing is created: they are emailed to sign up themselves
+   * and this throws so the club knows to grant access again afterwards.
    */
   inviteTeamManager(
     teamId: string,

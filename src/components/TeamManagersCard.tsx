@@ -178,8 +178,8 @@ export function TeamManagersCard({ teamId, teamName, readOnly, tierOverride }: P
               onPress={handleInvite}
             />
             <Text className="text-xs" style={{ color: colors.inkMuted }}>
-              If they don't have a TryoutHQ account yet, one is created and their sign-in details are
-              emailed to them.
+              They'll get an email with an Accept Invitation button. If they don't have a TryoutHQ
+              account yet, the email asks them to create one first.
             </Text>
           </View>
         )}

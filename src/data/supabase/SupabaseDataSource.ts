@@ -1404,6 +1404,13 @@ export class SupabaseDataSource implements DataSource {
       avatarUrl: profile.avatar_url ?? undefined,
       planTier: (account?.plan_tier as UserProfile['planTier']) ?? 'free',
       subscriptionStatus: account?.subscription_status,
+      subscriptionCancelAt: account?.subscription_cancel_at
+        ? toMs(account.subscription_cancel_at as string)
+        : undefined,
+      pendingPlanTier: (account?.pending_plan_tier as UserProfile['planTier']) ?? undefined,
+      pendingPlanChangeAt: account?.pending_plan_change_at
+        ? toMs(account.pending_plan_change_at as string)
+        : undefined,
       // Guardians have no account, and nothing to suspend.
       accessStatus: account ? deriveAccountAccess(account) : undefined,
       suspendedReason: account?.suspended_reason ?? undefined,
@@ -2721,7 +2728,6 @@ export class SupabaseDataSource implements DataSource {
     teamId: string,
     email: string,
     role: import('../types').TeamManagerRole = 'manager',
-    name?: string,
   ): Promise<import('../types').TeamManager> {
     const { supabase } = await this.ctx();
 
@@ -2740,47 +2746,34 @@ export class SupabaseDataSource implements DataSource {
         manager_role: role,
       });
 
-    let { data, error } = await invite();
-    let password: string | undefined;
+    const { data, error } = await invite();
 
-    // The invitee may not have an account yet. Stand one up the same way staff
-    // invites do (create-user edge function -> real GoTrue password hash), then
-    // retry the delegation once so the club isn't blocked on the coach signing
-    // up first.
+    // No account yet: nothing is created for them and no password is sent. They
+    // get an email asking them to create their own account; once they have one
+    // the club grants access again and it goes through the normal path.
     if (error && error.message.includes('User not found')) {
-      // Same shape the guardian auto-invite uses at line ~1747: 8 random chars
-      // plus a fixed suffix so it always clears GoTrue's complexity rules.
-      password = Math.random().toString(36).slice(-8) + 'Aa1!';
-      const { data: created, error: fnError } = await supabase.functions.invoke('create-user', {
-        body: {
-          email: email.trim(),
-          password,
-          display_name: name?.trim() || email.trim().split('@')[0],
-          account_type: 'coach',
-        },
-      });
-      if (fnError) {
-        let msg = fnError.message;
-        try {
-          const body = await (fnError as any).context.json();
-          if (body?.error) msg = body.error;
-        } catch {}
-        throw new Error(msg || 'Could not create an account for that email address');
+      try {
+        await this.sendEmail('team_manager_invite', email.trim(), {
+          teamName,
+          role,
+          newUser: true,
+          inviteUrl: `https://www.tryouthq.ca/signup`,
+        });
+      } catch (e) {
+        console.log('Failed to send team manager invite email:', e);
       }
-      if ((created as any)?.error) throw new Error((created as any).error);
-
-      ({ data, error } = await invite());
-      if (error) throw error;
-    } else if (error) {
-      throw error;
+      throw new Error(
+        `${email.trim()} doesn't have a TryoutHQ account yet. We've emailed them asking to create one — once they have, grant access again.`,
+      );
     }
+    if (error) throw error;
 
-    // Sent either way now: an existing coach getting handed a team is exactly
-    // as much "you now have access to this" as one who needed an account
-    // created for them — only the credentials block differs (password is
-    // undefined on the existing-user path, so tplTeamManagerInvite omits it).
     try {
-      await this.sendEmail('team_manager_invite', email.trim(), { teamName, role, password });
+      await this.sendEmail('team_manager_invite', email.trim(), {
+        teamName,
+        role,
+        inviteUrl: `https://www.tryouthq.ca/login`,
+      });
     } catch (e) {
       console.log('Failed to send team manager invite email:', e);
     }

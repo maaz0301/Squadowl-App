@@ -493,6 +493,11 @@ export const UserProfileSchema = z.object({
   avatarUrl: z.string().optional(),
   planTier: z.enum(PLAN_TIERS).default('coach'),
   subscriptionStatus: z.string().optional(),
+  /** When a scheduled cancellation takes effect, in ms; undefined when it renews normally. */
+  subscriptionCancelAt: z.number().optional(),
+  /** A downgrade chosen but not yet applied: the tier and the date (ms) it takes effect. */
+  pendingPlanTier: z.enum(PLAN_TIERS).optional(),
+  pendingPlanChangeAt: z.number().optional(),
   /**
    * Access state of the working account — see src/lib/accountAccess.ts. A
    * suspended account's data is already cut off by RLS; this only lets the app

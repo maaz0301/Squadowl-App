@@ -22,6 +22,7 @@ import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { EditEvaluationModal } from '@/components/assessment/EditEvaluationModal';
 import type { TryoutSummary } from '@/data/types';
 import { UsageNudgeBanner } from '@/components/UsageNudgeBanner';
+import { SubscriptionEndingBanner } from '@/components/SubscriptionEndingBanner';
 import { useAuthStore, useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import {
@@ -547,6 +548,8 @@ export default function DashboardScreen() {
                 </View>
               </View>
             )}
+
+            {!isGuardianOnly ? <SubscriptionEndingBanner /> : null}
 
             {!isGuardianOnly ? (
               tab === 'teams' ? (
