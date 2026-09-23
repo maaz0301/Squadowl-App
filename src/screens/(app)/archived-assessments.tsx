@@ -49,10 +49,15 @@ export default function ArchivedAssessmentsScreen() {
   // The mutations are shared across rows, so track which card fired one.
   const [restoringId, setRestoringId] = useState<string | null>(null);
 
-  if (tryoutsQuery.isLoading || archivedTeamsQuery.isLoading || teamsQuery.isLoading) {
+  if (
+    tryoutsQuery.isLoading ||
+    activeTryoutsQuery.isLoading ||
+    archivedTeamsQuery.isLoading ||
+    teamsQuery.isLoading
+  ) {
     return <LoadingState message="Loading archived..." />;
   }
-  if (tryoutsQuery.isError || archivedTeamsQuery.isError || teamsQuery.isError) {
+  if (tryoutsQuery.isError || activeTryoutsQuery.isError || archivedTeamsQuery.isError || teamsQuery.isError) {
     return (
       <Screen padded>
         <Header title="Archived" showBack />
@@ -60,6 +65,7 @@ export default function ArchivedAssessmentsScreen() {
           message="Could not load archived items."
           onRetry={() => {
             void tryoutsQuery.refetch();
+            void activeTryoutsQuery.refetch();
             void archivedTeamsQuery.refetch();
             void teamsQuery.refetch();
           }}
