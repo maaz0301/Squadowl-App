@@ -14,7 +14,12 @@ import {
   Screen,
 } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
-import { useTryoutQuery, useExportTryoutMutation, useShareLinkMutation } from '@/features/queries';
+import {
+  useTryoutQuery,
+  useExportTryoutMutation,
+  useShareLinkMutation,
+  usePlatformBlockedFeaturesQuery,
+} from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { canUseFeature, getPlanDefinition } from '@/data/plans';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
@@ -28,6 +33,8 @@ export default function ExportScreen() {
   const tryoutQuery = useTryoutQuery(id);
   const exportMut = useExportTryoutMutation(id!);
   const shareMut = useShareLinkMutation(id!);
+  const { data: platformBlockedFeatures } = usePlatformBlockedFeaturesQuery();
+  const billingBlocked = (platformBlockedFeatures ?? []).includes('billing');
   const [isExporting, setIsExporting] = useState<string | null>(null);
   // Hook, so it runs before the loading/error guards below — skipping it on
   // the loading render would change hook order. A delegated team's tryout
@@ -65,7 +72,7 @@ export default function ExportScreen() {
       <Text style={{ color: colors.inkMuted }}>
         Requires the {requiredPlan} plan or higher. You're on {tier}.
       </Text>
-      <Button label="View Plans" onPress={() => navigation.navigate('Upgrade')} />
+      {!billingBlocked ? <Button label="View Plans" onPress={() => navigation.navigate('Upgrade')} /> : null}
     </Card>
   );
 

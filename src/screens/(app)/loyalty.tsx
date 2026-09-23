@@ -4,8 +4,9 @@ import { useNavigation } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
+import { FeatureBlockGate } from '@/components/FeatureBlockGate';
 import { formatCad } from '@/data/plans';
-import { useReferralSummaryQuery } from '@/features/queries';
+import { useReferralSummaryQuery, usePlatformBlockedFeaturesQuery } from '@/features/queries';
 import type { ReferralLedgerEntry } from '@/data/types';
 
 const REFERRAL_BONUS_CENTS = 100;
@@ -47,6 +48,16 @@ export default function LoyaltyScreen() {
   const navigation = useNavigation<any>();
   const summaryQuery = useReferralSummaryQuery();
   const [showHowItWorks, setShowHowItWorks] = useState(false);
+  const { data: platformBlockedFeatures } = usePlatformBlockedFeaturesQuery();
+
+  if ((platformBlockedFeatures ?? []).includes('loyalty')) {
+    return (
+      <Screen scroll>
+        <Header title="Loyalty Program" showBack />
+        <FeatureBlockGate feature="loyalty" />
+      </Screen>
+    );
+  }
 
   if (summaryQuery.isLoading) return <LoadingState message="Loading your loyalty program..." />;
   if (summaryQuery.isError) {
@@ -142,7 +153,7 @@ export default function LoyaltyScreen() {
             ? ` · ${formatCad(remainingCents)} still available to earn this year.`
             : ' · you have reached this year’s maximum.'}
         </Text>
-        {balanceCents > 0 ? (
+        {balanceCents > 0 && !(platformBlockedFeatures ?? []).includes('billing') ? (
           <Button
             label="Redeem on a Subscription"
             className="mt-1"

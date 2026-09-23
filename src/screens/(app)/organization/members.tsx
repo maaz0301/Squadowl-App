@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { Alert, FlatList, Platform, Text, View } from 'react-native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Header, Input, Screen, Tabs, Modal } from '@/components/ui';
+import { FeatureBlockGate } from '@/components/FeatureBlockGate';
 import {
   useOrgMembersQuery,
   useInviteMemberMutation,
   useUpdateMemberRoleMutation,
   useRemoveMemberMutation,
+  usePlatformBlockedFeaturesQuery,
 } from '@/features/queries';
 import { ORG_ROLES, type OrgRole, type OrgMember } from '@/data/types';
 import { usePermissions } from '@/state/authStore';
@@ -32,6 +34,7 @@ export default function OrganizationMembersScreen() {
   const inviteMut = useInviteMemberMutation();
   const updateRoleMut = useUpdateMemberRoleMutation();
   const removeMut = useRemoveMemberMutation();
+  const { data: platformBlockedFeatures } = usePlatformBlockedFeaturesQuery();
 
   // Matches the helper the team screens use: RN's Alert is a no-op on web,
   // where this app also runs, so every message here has to fall back to the
@@ -101,6 +104,17 @@ export default function OrganizationMembersScreen() {
   const filteredMembers = members.filter((m) =>
     tab === 'staff' ? m.role !== 'guardian' : m.role === 'guardian',
   );
+
+  if ((platformBlockedFeatures ?? []).includes('organization')) {
+    return (
+      <Screen scroll={false} padded={false}>
+        <View className="px-4">
+          <Header title="Manage Organization" showBack />
+          <FeatureBlockGate feature="organization" />
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen scroll={false} padded={false}>

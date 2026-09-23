@@ -5,6 +5,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, ErrorState, Header, LoadingState, Modal, Screen, Tabs } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
+import { FeatureBlockGate } from '@/components/FeatureBlockGate';
 import {
   useOrgQuery,
   useEnterprisePaymentsQuery,
@@ -16,6 +17,7 @@ import {
   usePrefetchTryout,
   useArchiveTryoutMutation,
   useDeleteTryoutMutation,
+  usePlatformBlockedFeaturesQuery,
 } from '@/features/queries';
 import type { OrgMember, Tryout } from '@/data/types';
 import { usePermissions } from '@/state/authStore';
@@ -90,6 +92,7 @@ export default function EnterpriseScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const { canManageOrganization } = usePermissions();
+  const { data: platformBlockedFeatures } = usePlatformBlockedFeaturesQuery();
   const setAssessorOnlyTryout = useSessionStore((s) => s.setAssessorOnlyTryout);
   const [tab, setTab] = useState<EntTab>('overview');
   const orgQuery = useOrgQuery();
@@ -268,6 +271,17 @@ export default function EnterpriseScreen() {
     setAssessorOnlyTryout(null);
     navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id } });
   };
+
+  if ((platformBlockedFeatures ?? []).includes('dashboard')) {
+    return (
+      <Screen padded={false}>
+        <View className="px-4">
+          <Header title="Dashboard" showBack />
+          <FeatureBlockGate feature="dashboard" />
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen padded={false}>

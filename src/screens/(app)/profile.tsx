@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Text, View, Alert, Pressable, Switch } from 'react-native';
+import { Text, View, Alert, Pressable, Switch, ScrollView } from 'react-native';
 import { InAppBrowser } from 'react-native-inappbrowser-reborn';
 import { useNavigation } from '@react-navigation/native';
 
 import { useThemeColors, useTheme } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Header, Input, Screen, Avatar } from '@/components/ui';
+import { BottomNav } from '@/components/BottomNav';
+import { FeatureBlockGate } from '@/components/FeatureBlockGate';
 import { useThemeStore } from '@/state/themeStore';
 import { useUser, useAuthStore, usePermissions } from '@/state/authStore';
 import { getPlanDefinition, canUseFeature, formatLimit, getTeamAllowance } from '@/data/plans';
@@ -16,6 +18,7 @@ import {
   useSeasonsQuery,
   useUploadCoachPhotoMutation,
   useIsFeedbackReviewerQuery,
+  usePlatformBlockedFeaturesQuery,
 } from '@/features/queries';
 import { getDataSource } from '@/data';
 import { launchImageLibrary } from 'react-native-image-picker';
@@ -38,6 +41,8 @@ export default function ProfileScreen() {
   const guardianQuery = useGuardianRostersQuery();
   const teamsQuery = useTeamsQuery();
   const seasonsQuery = useSeasonsQuery();
+  const { data: platformBlockedFeatures } = usePlatformBlockedFeaturesQuery();
+  const profileBlocked = (platformBlockedFeatures ?? []).includes('profile');
 
 
   const isGuardianOnly = isGuardian;
@@ -176,8 +181,13 @@ export default function ProfileScreen() {
   };
 
   return (
-    <Screen scroll>
+    <Screen padded={false}>
+      <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
       <Header title="Profile" showBack />
+      {profileBlocked ? (
+        <FeatureBlockGate feature="profile" allowSignOut />
+      ) : (
+      <>
       <Card accent className="mb-4 gap-2 items-center py-4">
         <Pressable onPress={selectPhoto} disabled={uploadPhoto.isPending} className="items-center mb-2">
           <Avatar
@@ -278,7 +288,9 @@ export default function ProfileScreen() {
               </Text>
             ) : null}
             <View className="flex-row gap-2 mt-2">
-              <Button label="Upgrade Plan" variant="secondary" onPress={() => navigation.navigate('Upgrade')} className="flex-1" />
+              {!(platformBlockedFeatures ?? []).includes('billing') ? (
+                <Button label="Upgrade Plan" variant="secondary" onPress={() => navigation.navigate('Upgrade')} className="flex-1" />
+              ) : null}
               {user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'trialing' ? (
                 <Button label="Manage Subscription" variant="secondary" onPress={openPortal} loading={loadingPortal} className="flex-1" />
               ) : null}
@@ -298,7 +310,9 @@ export default function ProfileScreen() {
               Quick Links
             </Text>
             <Button label="Search" variant="ghost" onPress={() => navigation.navigate('Search')} />
-            <Button label="Manage Organization Members" variant="ghost" onPress={() => navigation.navigate('OrganizationMembers')} />
+            {!(platformBlockedFeatures ?? []).includes('organization') ? (
+              <Button label="Manage Organization Members" variant="ghost" onPress={() => navigation.navigate('OrganizationMembers')} />
+            ) : null}
             <Button label="Shared Athletes" variant="ghost" onPress={() => navigation.navigate('SharedAthletes')} />
             <Button label="Archived Assessments" variant="ghost" onPress={() => navigation.navigate('ArchivedAssessments')} />
             <Button label="Send Feedback" variant="ghost" onPress={() => navigation.navigate('Feedback')} />
@@ -312,7 +326,9 @@ export default function ProfileScreen() {
                 onPress={() => navigation.navigate('FeedbackReports')}
               />
             ) : null}
-            <Button label="Loyalty Program" variant="ghost" onPress={() => navigation.navigate('Loyalty')} />
+            {!(platformBlockedFeatures ?? []).includes('loyalty') ? (
+              <Button label="Loyalty Program" variant="ghost" onPress={() => navigation.navigate('Loyalty')} />
+            ) : null}
           </Card>
 
           <Card className="mb-4 gap-2">
@@ -361,6 +377,10 @@ export default function ProfileScreen() {
           }
         }}
       />
+      </>
+      )}
+      </ScrollView>
+      <BottomNav active="profile" />
     </Screen>
   );
 }

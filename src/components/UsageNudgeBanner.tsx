@@ -6,6 +6,7 @@ import { Card, Button } from '@/components/ui';
 import { getNextTier, sellsExtraTeams, usageFraction } from '@/data/plans';
 import type { PlanTier } from '@/data/types';
 import { useUser } from '@/state/authStore';
+import { usePlatformBlockedFeaturesQuery } from '@/features/queries';
 import {
   NUDGE_THRESHOLD,
   buildNudgeMessage,
@@ -30,6 +31,8 @@ export function UsageNudgeBanner({ tier, metric, count, label }: Props) {
   const navigation = useNavigation<any>();
   const user = useUser();
   const [dismissed, setDismissed] = useState(false);
+  const { data: platformBlockedFeatures } = usePlatformBlockedFeaturesQuery();
+  const billingBlocked = (platformBlockedFeatures ?? []).includes('billing');
 
   const extraTeamLicenses = user?.extraTeamLicenses ?? 0;
   const limit = effectiveLimit(tier, metric, extraTeamLicenses);
@@ -58,7 +61,7 @@ export function UsageNudgeBanner({ tier, metric, count, label }: Props) {
         {message}
       </Text>
       <View className="gap-2">
-        {ctaLabel ? (
+        {ctaLabel && !billingBlocked ? (
           <Button label={ctaLabel} size="sm" onPress={() => navigation.navigate('Upgrade')} />
         ) : null}
         <Pressable onPress={() => setDismissed(true)} hitSlop={8}>
