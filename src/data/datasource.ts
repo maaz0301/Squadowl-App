@@ -77,8 +77,8 @@ export interface DataSource {
   listTeamManagers(teamId: string): Promise<import('./types').TeamManager[]>;
   /**
    * Delegates `teamId` to the account behind `email`. When no account exists for
-   * that address yet, nothing is created: they are emailed to sign up themselves
-   * and this throws so the club knows to grant access again afterwards.
+   * that address yet, the invite is saved (team_manager_invites) and they are
+   * emailed to sign up themselves; access is granted when the account is created.
    */
   inviteTeamManager(
     teamId: string,
