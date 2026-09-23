@@ -17,6 +17,7 @@ import {
   Screen,
 } from '@/components/ui';
 import { BottomNav } from '@/components/BottomNav';
+import { FeatureBlockGate } from '@/components/FeatureBlockGate';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { EditEvaluationModal } from '@/components/assessment/EditEvaluationModal';
 import type { TryoutSummary } from '@/data/types';
@@ -35,6 +36,7 @@ import {
   useDeleteTryoutMutation,
   useArchiveTryoutMutation,
   usePrefetchTryout,
+  usePlatformBlockedFeaturesQuery,
 } from '@/features/queries';
 import { APP_CONFIG } from '@/config/app';
 import { canUseFeature, isAtAssessmentLimit, isAtTeamLimit } from '@/data/plans';
@@ -74,6 +76,10 @@ export default function DashboardScreen() {
 
   const { isGuardian } = usePermissions();
   const isGuardianOnly = isGuardian;
+  // Hub sections the founder has turned off — either for this account, or for
+  // the whole platform at once (see src/lib/blockableFeatures.ts).
+  const { data: platformBlockedFeatures } = usePlatformBlockedFeaturesQuery();
+  const blockedFeatures = new Set(platformBlockedFeatures ?? []);
 
   const [combineMode, setCombineMode] = useState(false);
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
@@ -203,6 +209,21 @@ export default function DashboardScreen() {
             tryoutsQuery.refetch();
           }}
         />
+      );
+    }
+  }
+
+  if (!isGuardianOnly) {
+    const currentTabFeature = tab === 'teams' ? 'teams' : 'evaluations';
+    if (blockedFeatures.has(currentTabFeature)) {
+      return (
+        <Screen padded={false} keyboardAvoiding={false}>
+          <View className="flex-1 px-4 pt-2">
+            <Header title={APP_CONFIG.appName} subtitle={`Hi, ${user?.displayName ?? 'Coach'}`} />
+            <FeatureBlockGate feature={currentTabFeature} />
+          </View>
+          <BottomNav active={tab} onTabPress={handleTabChange} />
+        </Screen>
       );
     }
   }
@@ -455,7 +476,7 @@ export default function DashboardScreen() {
 
             {/* Enterprise entry point — full width above the jump-point row, which
                 scrolls horizontally and would push a fourth card off-screen. */}
-            {!isGuardianOnly && canUseFeature(user?.planTier ?? 'free', 'enterprise') ? (
+            {!isGuardianOnly && !blockedFeatures.has('dashboard') && canUseFeature(user?.planTier ?? 'free', 'enterprise') ? (
               <Pressable onPress={() => navigation.navigate('Enterprise')} className="mb-4">
                 <Card accent className="flex-row items-center gap-3 p-4">
                   <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
@@ -486,39 +507,43 @@ export default function DashboardScreen() {
                   Overview & Jump Points
                 </Text>
                 <View className="flex-row gap-3">
-                  <Pressable onPress={() => handleTabChange('assessments')} className="flex-1">
-                    <Card accent={tab === 'assessments'} className="gap-1 p-3">
-                      <View className="flex-row justify-between items-center">
-                        <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-                          <Path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" stroke={colors.primary} strokeWidth={2} strokeLinecap="round" />
-                        </Svg>
-                        <Badge label={`${evalCount}`} variant={tab === 'assessments' ? 'brand' : 'default'} />
-                      </View>
-                      <Text className="font-bold text-sm mt-1" style={{ color: colors.ink }}>
-                        Evaluations
-                      </Text>
-                      <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                        Tryouts & Tests
-                      </Text>
-                    </Card>
-                  </Pressable>
+                  {!blockedFeatures.has('evaluations') ? (
+                    <Pressable onPress={() => handleTabChange('assessments')} className="flex-1">
+                      <Card accent={tab === 'assessments'} className="gap-1 p-3">
+                        <View className="flex-row justify-between items-center">
+                          <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                            <Path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" stroke={colors.primary} strokeWidth={2} strokeLinecap="round" />
+                          </Svg>
+                          <Badge label={`${evalCount}`} variant={tab === 'assessments' ? 'brand' : 'default'} />
+                        </View>
+                        <Text className="font-bold text-sm mt-1" style={{ color: colors.ink }}>
+                          Evaluations
+                        </Text>
+                        <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                          Tryouts & Tests
+                        </Text>
+                      </Card>
+                    </Pressable>
+                  ) : null}
 
-                  <Pressable onPress={() => handleTabChange('teams')} className="flex-1">
-                    <Card accent={tab === 'teams'} className="gap-1 p-3">
-                      <View className="flex-row justify-between items-center">
-                        <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-                          <Path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" stroke={colors.primary} strokeWidth={2} strokeLinecap="round" />
-                        </Svg>
-                        <Badge label={`${teamCount}`} variant={tab === 'teams' ? 'brand' : 'default'} />
-                      </View>
-                      <Text className="font-bold text-sm mt-1" style={{ color: colors.ink }}>
-                        Teams
-                      </Text>
-                      <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                        Rosters & Schedules
-                      </Text>
-                    </Card>
-                  </Pressable>
+                  {!blockedFeatures.has('teams') ? (
+                    <Pressable onPress={() => handleTabChange('teams')} className="flex-1">
+                      <Card accent={tab === 'teams'} className="gap-1 p-3">
+                        <View className="flex-row justify-between items-center">
+                          <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                            <Path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" stroke={colors.primary} strokeWidth={2} strokeLinecap="round" />
+                          </Svg>
+                          <Badge label={`${teamCount}`} variant={tab === 'teams' ? 'brand' : 'default'} />
+                        </View>
+                        <Text className="font-bold text-sm mt-1" style={{ color: colors.ink }}>
+                          Teams
+                        </Text>
+                        <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                          Rosters & Schedules
+                        </Text>
+                      </Card>
+                    </Pressable>
+                  ) : null}
                 </View>
               </View>
             )}
@@ -607,7 +632,7 @@ export default function DashboardScreen() {
             ) : null}
 
             {/* Guardian View */}
-            {guardianQuery.data && guardianQuery.data.length > 0 ? (
+            {guardianQuery.data && guardianQuery.data.length > 0 && !blockedFeatures.has('myAthletes') ? (
               <View className="mb-4">
                 <Pressable
                   onPress={() => setMyAthletesExpanded(!myAthletesExpanded)}

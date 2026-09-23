@@ -6,7 +6,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/queryClient';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Header, Input, Screen } from '@/components/ui';
-import { useApplyReferralCodeMutation, useReferralSummaryQuery } from '@/features/queries';
+import { FeatureBlockGate } from '@/components/FeatureBlockGate';
+import {
+  useApplyReferralCodeMutation,
+  useReferralSummaryQuery,
+  usePlatformBlockedFeaturesQuery,
+  usePlatformBlockedPlanTiersQuery,
+} from '@/features/queries';
 import {
   PLAN_DEFINITIONS,
   formatCad,
@@ -47,6 +53,8 @@ export default function UpgradeScreen() {
   const user = useUser();
   const restoreSession = useAuthStore((s) => s.restoreSession);
   const qc = useQueryClient();
+  const { data: platformBlockedFeatures } = usePlatformBlockedFeaturesQuery();
+  const { data: blockedPlanTiers } = usePlatformBlockedPlanTiersQuery();
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
   const [loadingPortal, setLoadingPortal] = useState(false);
   const [extraTeams, setExtraTeams] = useState(1);
@@ -68,7 +76,11 @@ export default function UpgradeScreen() {
   const [applyCredits, setApplyCredits] = useState(true);
 
   const creditCents = referralQuery.data?.balanceCents ?? 0;
-  const hasCredit = creditCents > 0;
+  // Loyalty program is a platform-wide block: while it's off, existing credit
+  // is neither shown nor spendable — the founder turning it off means turning
+  // it off everywhere, not just hiding the referral/redeem screens.
+  const loyaltyBlocked = (platformBlockedFeatures ?? []).includes('loyalty');
+  const hasCredit = creditCents > 0 && !loyaltyBlocked;
   // The discount is sized server-side against the real line total; this is only
   // whether to ask for it at all.
   const useCredits = hasCredit && applyCredits;
@@ -310,6 +322,17 @@ export default function UpgradeScreen() {
     }
   };
 
+  if ((platformBlockedFeatures ?? []).includes('billing')) {
+    return (
+      <Screen scroll padded={false}>
+        <View className="px-4 pb-8">
+          <Header title="Plans & Billing" showBack />
+          <FeatureBlockGate feature="billing" />
+        </View>
+      </Screen>
+    );
+  }
+
   return (
     <Screen scroll padded={false}>
       <View className="px-4 pb-8">
@@ -341,7 +364,8 @@ export default function UpgradeScreen() {
 
         {/* Referral code entry — only meaningful before the first paid plan, and
             only once, so it disappears as soon as one has been attached. */}
-        {referralQuery.data &&
+        {!loyaltyBlocked &&
+        referralQuery.data &&
         !referralQuery.data.redeemedByCode &&
         user?.subscriptionStatus !== 'active' &&
         user?.subscriptionStatus !== 'trialing' ? (
@@ -426,6 +450,7 @@ export default function UpgradeScreen() {
 
         {PLAN_DEFINITIONS.map((item) => {
           const isCurrent = user?.planTier === item.tier;
+          const isTierBlocked = !isCurrent && (blockedPlanTiers ?? []).includes(item.tier);
           // Legacy tiers ('pro'/'association') retired from the hierarchy still
           // exist on un-migrated accounts; getTierRank() ranks anything it
           // doesn't recognise as Free, so every real tier still reads as a step
@@ -513,6 +538,13 @@ export default function UpgradeScreen() {
                   disabled
                   style={{ borderColor: colors.primary, backgroundColor: 'rgba(255,107,43,0.10)', opacity: 1 }}
                 />
+              ) : isTierBlocked ? (
+                <View className="gap-2">
+                  <Button label="Currently unavailable" variant="secondary" disabled />
+                  <Text className="text-xs text-center" style={{ color: colors.inkFaint }}>
+                    Not open for new signups or upgrades right now.
+                  </Text>
+                </View>
               ) : (
                 <View className="gap-2">
                   {/* Direction and price change read together, above the button:

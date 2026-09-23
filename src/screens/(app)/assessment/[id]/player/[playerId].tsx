@@ -37,6 +37,7 @@ import {
   useRemoveFamilyContactMutation,
   usePlayerLettersForParticipantQuery,
   useResendPlayerLetterMutation,
+  usePlatformBlockedFeaturesQuery,
 } from '@/features/queries';
 import { useAssessmentId, useAssessorMode } from '@/features/useAssessmentId';
 import { playerDisplayName, weightedOverall, getPlayerCategories, isGoaliePosition } from '@/data/rubrics';
@@ -90,6 +91,8 @@ export default function PlayerHubScreen() {
   const { canManageTeam, canAssess } = usePermissions();
   const user = useUser();
   const canLinkGuardian = canUseFeature(effectiveTier, 'guardianPortal');
+  const { data: platformBlockedFeatures } = usePlatformBlockedFeaturesQuery();
+  const billingBlocked = (platformBlockedFeatures ?? []).includes('billing');
 
   // Extra family members beyond the one guardian on the athlete row — added
   // here or from the Edit Player form, and by the guardian themselves from
@@ -231,7 +234,7 @@ export default function PlayerHubScreen() {
           {player.linkedGuardianId ? (
             <View className="flex-row items-center gap-2">
               <Badge label="Linked" variant="success" />
-              {canManageTeam && player.guardianEmail && !canLinkGuardian && (
+              {canManageTeam && player.guardianEmail && !canLinkGuardian && !billingBlocked && (
                 <Button
                   label="Upgrade to Resend"
                   variant="secondary"
@@ -320,7 +323,7 @@ export default function PlayerHubScreen() {
               size="sm"
               onPress={() => setShowGuardianLink(true)}
             />
-          ) : canManageTeam ? (
+          ) : canManageTeam && !billingBlocked ? (
             <Button
               label="Upgrade to Link"
               variant="secondary"
