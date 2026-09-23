@@ -24,7 +24,7 @@ import { AddToCalendar } from '@/components/AddToCalendar';
 import { MapLink, MapLocationHint } from '@/components/MapLink';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
-import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
+import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useArchiveTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit } from '@/data/plans';
@@ -106,6 +106,7 @@ export default function TeamDetailScreen() {
   const qc = useQueryClient();
   const updateTeam = useUpdateTeamMutation();
   const deleteTeam = useDeleteTeamMutation();
+  const archiveTeam = useArchiveTeamMutation();
   const updateTryout = useUpdateTryoutMutation();
   const uploadLogo = useUploadTeamLogoMutation();
   const user = useUser();
@@ -937,6 +938,27 @@ export default function TeamDetailScreen() {
     setEditing(false);
   };
 
+  const handleArchive = () => {
+    Alert.alert(
+      'Archive Team',
+      'Archive this team? It moves to the Archived page with its roster and schedule, and you can restore it any time your plan has room.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Archive',
+          onPress: async () => {
+            try {
+              await archiveTeam.mutateAsync(team.id);
+              navigation.replace('DashboardMain', { tab: 'teams' });
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'Could not archive this team.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleDelete = () => {
     Alert.alert(
       'Delete Team',
@@ -1649,8 +1671,9 @@ export default function TeamDetailScreen() {
                   Danger Zone
                 </Text>
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                  Deleting a team removes its roster, schedule, and links to evaluations.
+                  Archiving hides a team and keeps everything so you can restore it later. Deleting removes its roster, schedule, and links to evaluations for good.
                 </Text>
+                <Button label="Archive Team" variant="secondary" size="sm" onPress={handleArchive} loading={archiveTeam.isPending} />
                 <Button label="Delete Team" variant="danger" size="sm" onPress={handleDelete} loading={deleteTeam.isPending} />
               </Card>
             )}

@@ -314,7 +314,7 @@ export default function ProfileScreen() {
               <Button label="Manage Organization Members" variant="ghost" onPress={() => navigation.navigate('OrganizationMembers')} />
             ) : null}
             <Button label="Shared Athletes" variant="ghost" onPress={() => navigation.navigate('SharedAthletes')} />
-            <Button label="Archived Assessments" variant="ghost" onPress={() => navigation.navigate('ArchivedAssessments')} />
+            <Button label="Archived" variant="ghost" onPress={() => navigation.navigate('ArchivedAssessments')} />
             <Button label="Send Feedback" variant="ghost" onPress={() => navigation.navigate('Feedback')} />
             {/* The portal is limited to an email allowlist held in the database
                 (`feedback_reviewers`), not to a plan or a role — so whether to

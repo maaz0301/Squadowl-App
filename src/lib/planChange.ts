@@ -89,10 +89,10 @@ const FEATURE_LABELS: [keyof PlanDefinition['limits'], string][] = [
  *
  * Two kinds of line come out of this: capabilities the lower tier doesn't have
  * at all, and limits the account is *already* over. The second kind is worded
- * as "you keep what you have, you just can't add more" because that is what the
- * app actually does — every limit is checked at creation time (isAtTeamLimit and
- * friends are called from the create paths only), so nothing existing is deleted
- * or hidden when the tier drops.
+ * as what the database does when the switch lands: it archives whatever is over
+ * the new cap and keeps the oldest one(s) live — see
+ * 20260924120000_archive_on_plan_downgrade.sql. Nothing is deleted, and the
+ * archived items can be restored once the plan has room for them.
  *
  * Returns an empty list when the switch costs nothing, which is a real case:
  * Free and Coach both cap teams at 1, so a Coach account with one team and no
@@ -161,6 +161,6 @@ function overLimitLine(
   if (limit === 'unlimited' || count == null) return [];
   if (count <= limit) return [];
   return [
-    `You have ${count} ${noun} and ${next.name} includes ${formatLimit(limit)}. Nothing is deleted — you keep them, but you won't be able to create another ${noun.replace(/s$/, '')} until you're back under the limit.`,
+    `You have ${count} ${noun} and ${next.name} includes ${formatLimit(limit)}. When the change takes effect, your oldest ${limit === 1 ? noun.replace(/s$/, '') : `${limit} ${noun}`} stay${limit === 1 ? 's' : ''} active and the other ${count - limit} ${count - limit === 1 ? noun.replace(/s$/, '') : noun} are archived — nothing is deleted, and you can restore them after upgrading.`,
   ];
 }

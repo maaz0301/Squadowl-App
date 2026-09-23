@@ -41,6 +41,27 @@ export function useTeamsQuery() {
   });
 }
 
+/** Teams a plan downgrade archived, for the restore screen. */
+export function useArchivedTeamsQuery() {
+  return useQuery({
+    queryKey: queryKeys.archivedTeams,
+    queryFn: () => getDataSource().listArchivedTeams(),
+  });
+}
+
+export function useRestoreTeamMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => getDataSource().restoreTeam(id),
+    onSuccess: () => {
+      // Prefix match: the active list and the archived list both hang off ['teams'].
+      qc.invalidateQueries({ queryKey: queryKeys.teams });
+      // The team's season comes back with it.
+      qc.invalidateQueries({ queryKey: queryKeys.seasons });
+    },
+  });
+}
+
 export function useCreateTeamMutation() {
   const qc = useQueryClient();
   return useMutation({
@@ -2323,6 +2344,19 @@ export function useUpdateTeamMutation() {
       return team;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teams }),
+  });
+}
+
+export function useArchiveTeamMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => getDataSource().archiveTeam(id),
+    onSuccess: () => {
+      // Prefix match: refreshes the active list and the archived list.
+      qc.invalidateQueries({ queryKey: queryKeys.teams });
+      // Its schedule is archived with it.
+      qc.invalidateQueries({ queryKey: queryKeys.seasons });
+    },
   });
 }
 

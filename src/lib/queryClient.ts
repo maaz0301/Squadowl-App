@@ -50,6 +50,8 @@ export const queryKeys = {
   session: ['session'] as const,
   profile: ['profile'] as const,
   teams: ['teams'] as const,
+  /** Teams a plan downgrade archived — under ['teams'] so every team write refreshes it. */
+  archivedTeams: ['teams', 'archived'] as const,
   teamManagers: (teamId?: string) =>
     teamId ? (['teamManagers', teamId] as const) : (['teamManagers'] as const),
   tryouts: (archived?: boolean) => ['tryouts', { archived }] as const,

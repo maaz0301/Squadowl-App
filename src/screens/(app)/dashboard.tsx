@@ -33,6 +33,7 @@ import {
   useRejectAssignmentMutation,
   useGuardianRostersQuery,
   useProfileQuery,
+  useArchiveTeamMutation,
   useDeleteTeamMutation,
   useDeleteTryoutMutation,
   useArchiveTryoutMutation,
@@ -107,6 +108,7 @@ export default function DashboardScreen() {
   const assignedQuery = useAssignedTryoutSummariesQuery();
   const guardianQuery = useGuardianRostersQuery();
   const deleteTeam = useDeleteTeamMutation();
+  const archiveTeam = useArchiveTeamMutation();
   const deleteTryout = useDeleteTryoutMutation();
   const archiveTryout = useArchiveTryoutMutation();
   const acceptAssignment = useAcceptAssignmentMutation();
@@ -114,6 +116,29 @@ export default function DashboardScreen() {
   const prefetchTryout = usePrefetchTryout();
   const [decliningId, setDecliningId] = useState<string | null>(null);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
+
+  const handleArchiveTeam = (id: string, name: string) => {
+    Alert.alert(
+      'Archive Team',
+      `Archive "${name}"? It moves to the Archived page with its roster and schedule, and you can restore it any time your plan has room.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Archive',
+          onPress: async () => {
+            setBusyId(id);
+            try {
+              await archiveTeam.mutateAsync(id);
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'Could not archive this team.');
+            } finally {
+              setBusyId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const handleDeleteTeam = (id: string, name: string) => {
     Alert.alert(
@@ -323,15 +348,28 @@ export default function DashboardScreen() {
               {isNavigating || isDeleting ? (
                 <ActivityIndicator size="small" color={isDeleting ? colors.danger : colors.primary} />
               ) : item.managed ? null : (
-                <Pressable
-                  onPress={() => handleDeleteTeam(item.id, item.name)}
-                  hitSlop={8}
-                  className="p-1"
-                >
-                  <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-                    <Path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" stroke={colors.danger} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                  </Svg>
-                </Pressable>
+                <View className="flex-row items-center gap-2">
+                  <Pressable
+                    onPress={() => handleArchiveTeam(item.id, item.name)}
+                    hitSlop={8}
+                    className="p-1"
+                    accessibilityLabel="Archive team"
+                  >
+                    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                      <Path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" stroke={colors.inkMuted} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                    </Svg>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => handleDeleteTeam(item.id, item.name)}
+                    hitSlop={8}
+                    className="p-1"
+                    accessibilityLabel="Delete team"
+                  >
+                    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                      <Path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" stroke={colors.danger} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                    </Svg>
+                  </Pressable>
+                </View>
               )}
             </View>
           </Card>
