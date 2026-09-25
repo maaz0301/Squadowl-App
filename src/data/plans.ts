@@ -278,6 +278,38 @@ export function isAtTeamLimit(tier: PlanTier, count: number, extraTeamLicenses =
   return count >= limit;
 }
 
+/**
+ * TEMPORARY, for the testing period: the dummy-data tools were Association-only.
+ * While this is true they are offered on every plan — but never beyond what the
+ * plan itself allows (see the *Room helpers below, which the dummy dialogs use
+ * to cap how much they will create). Set to false to put the Association-only
+ * gate back; nothing else needs to change.
+ */
+export const DUMMY_DATA_ALL_PLANS = true;
+
+export function canUseDummyData(tier: PlanTier): boolean {
+  return DUMMY_DATA_ALL_PLANS || canUseFeature(tier, 'enterprise');
+}
+
+function roomUnder(limit: number | 'unlimited', used: number): number {
+  return limit === 'unlimited' ? Number.POSITIVE_INFINITY : Math.max(0, limit - used);
+}
+
+/** How many more players one roster (an evaluation's, or a team's) can take on this plan. */
+export function playerRoom(tier: PlanTier, currentPlayers: number): number {
+  return roomUnder(getPlanDefinition(tier).limits.players, currentPlayers);
+}
+
+/** How many more evaluations this plan allows. */
+export function assessmentRoom(tier: PlanTier, currentAssessments: number): number {
+  return roomUnder(getPlanDefinition(tier).limits.assessments, currentAssessments);
+}
+
+/** How many more teams this plan allows, counting purchased team licenses. */
+export function teamRoom(tier: PlanTier, currentTeams: number, extraTeamLicenses = 0): number {
+  return roomUnder(getTeamAllowance(tier, extraTeamLicenses), currentTeams);
+}
+
 export function formatLimit(limit: number | 'unlimited'): string {
   return limit === 'unlimited' ? 'Unlimited' : String(limit);
 }

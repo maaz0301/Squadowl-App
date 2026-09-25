@@ -5,7 +5,7 @@ import { DummyDataModal } from '@/components/DummyDataModal';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { PlanGate } from '@/components/PlanGate';
 import { Badge, Button, Card, EmptyState, ErrorState, Header, LoadingState, Modal, Screen, Tabs } from '@/components/ui';
-import { canUseFeature, isAtPlayerLimit } from '@/data/plans';
+import { isAtPlayerLimit, canUseDummyData, playerRoom } from '@/data/plans';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import type { DummyDataOptions } from '@/data/testDataGenerator';
 import {
@@ -75,7 +75,7 @@ export default function RegistrationsScreen() {
   // Registration whose submitted profile is open. Non-null == profile open.
   const [viewingId, setViewingId] = useState<string | null>(null);
 
-  const isAssociation = canUseFeature(effectiveTier, 'enterprise');
+  const showDummyTools = canUseDummyData(effectiveTier);
 
   const showAlert = (title: string, message: string) => {
     if (Platform.OS === 'web') alert(`${title}\n\n${message}`);
@@ -321,7 +321,7 @@ export default function RegistrationsScreen() {
               </View>
             </View>
 
-            {isAssociation ? (
+            {showDummyTools ? (
               <Card className="mb-2 gap-2">
                 <Text className="text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
                   Testing Tools
@@ -474,6 +474,7 @@ export default function RegistrationsScreen() {
 
       <DummyDataModal
         variant="assessment"
+        maxPlayers={playerRoom(effectiveTier, tryout.roster.length)}
         visible={showTestGen}
         loading={genTest.isPending}
         progress={dummyProgress ?? undefined}

@@ -4,7 +4,7 @@ import { InAppBrowser } from 'react-native-inappbrowser-reborn';
 import { useNavigation } from '@react-navigation/native';
 
 import { useThemeColors, useTheme } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, Header, Input, Screen, Avatar } from '@/components/ui';
+import { Badge, Button, Card, Header, Input, Screen, Avatar, Modal } from '@/components/ui';
 import { BottomNav } from '@/components/BottomNav';
 import { FeatureBlockGate } from '@/components/FeatureBlockGate';
 import { useThemeStore } from '@/state/themeStore';
@@ -59,6 +59,9 @@ export default function ProfileScreen() {
   // press on top of the first.
   const [signingOut, setSigningOut] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteText, setDeleteText] = useState('');
+  const deleteConfirmed = deleteText.trim().toLowerCase() === 'delete';
 
   const plan = getPlanDefinition(user?.planTier ?? 'free');
   const extraTeamLicenses = user?.extraTeamLicenses ?? 0;
@@ -111,27 +114,23 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete Account',
-      'Are you sure you want to permanently delete your account? This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setDeletingAccount(true);
-            try {
-              await deleteAccount();
-            } catch (e: any) {
-              Alert.alert('Error', e?.message || 'Could not delete your account.');
-              setDeletingAccount(false);
-            }
-          },
-        },
-      ],
-    );
+  const closeDeleteModal = () => {
+    if (deletingAccount) return;
+    setDeleteOpen(false);
+    setDeleteText('');
+  };
+
+  // Typing "delete" is the confirmation — a bare OK/Cancel alert is too easy to
+  // tap through for something that cannot be undone.
+  const handleDeleteAccount = async () => {
+    if (!deleteConfirmed || deletingAccount) return;
+    setDeletingAccount(true);
+    try {
+      await deleteAccount();
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not delete your account.');
+      setDeletingAccount(false);
+    }
   };
 
   const openPortal = async () => {
@@ -357,8 +356,41 @@ export default function ProfileScreen() {
         <Text className="text-xs" style={{ color: colors.inkMuted }}>
           Deleting your account permanently removes your login and profile. This cannot be undone.
         </Text>
-        <Button label="Delete Account" variant="danger" size="sm" onPress={handleDeleteAccount} loading={deletingAccount} />
+        <Button label="Delete Account" variant="danger" size="sm" onPress={() => setDeleteOpen(true)} />
       </Card>
+
+      <Modal
+        visible={deleteOpen}
+        title="Delete Account"
+        onClose={closeDeleteModal}
+        footer={
+          <View className="mt-4 gap-2">
+            <Button
+              label="Delete Account"
+              variant="danger"
+              disabled={!deleteConfirmed}
+              loading={deletingAccount}
+              onPress={handleDeleteAccount}
+            />
+            <Button label="Cancel" variant="secondary" disabled={deletingAccount} onPress={closeDeleteModal} />
+          </View>
+        }
+      >
+        <Text className="text-sm mb-3" style={{ color: colors.inkMuted }}>
+          This permanently deletes your account, login and profile. This cannot be undone.
+        </Text>
+        <Input
+          label="Type delete to confirm"
+          value={deleteText}
+          onChangeText={setDeleteText}
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholder="delete"
+          editable={!deletingAccount}
+          returnKeyType="done"
+          onSubmitEditing={handleDeleteAccount}
+        />
+      </Modal>
 
       <Button
         label="Log Out"

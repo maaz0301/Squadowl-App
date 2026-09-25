@@ -1,8 +1,8 @@
 import type { AddPlayerForm, PlayerImportResult } from './types';
 
 /**
- * Importing a spreadsheet onto a team roster in a handful of requests instead of
- * a dozen per player.
+ * Importing a spreadsheet onto a team roster or an evaluation in a handful of
+ * requests instead of a dozen per player.
  *
  * Kept free of any data-source code — everything it touches arrives as `deps` —
  * so the part that is easy to get subtly wrong (batching, and what happens to a
@@ -24,10 +24,18 @@ export interface BulkImportDeps {
   resolveGuardians(forms: AddPlayerForm[]): Promise<Map<string, string>>;
   /** Create athletes in one request. Must answer with one id per payload, in order. */
   createAthletes(payloads: Record<string, unknown>[]): Promise<string[]>;
-  /** Put already-created athletes on the roster in one request. */
-  addToRoster(entries: { athleteId: string; jersey?: string; pos?: string }[]): Promise<void>;
+  /**
+   * Put already-created athletes on the roster in one request. `form` is the
+   * row they came from, for rosters that carry more than a jersey and position
+   * (an evaluation's shoots / current team / friends). A roster keyed by its own
+   * row id — an evaluation invites by `tryout_participants.id` — answers with
+   * athleteId -> that id, so the caller can invite exactly what landed.
+   */
+  addToRoster(
+    entries: { athleteId: string; jersey?: string; pos?: string; form: AddPlayerForm }[],
+  ): Promise<void | Map<string, string>>;
   /** The one-player path (create + roster), used to isolate a failure. */
-  addOne(form: AddPlayerForm): Promise<{ athleteId: string }>;
+  addOne(form: AddPlayerForm): Promise<{ athleteId: string; participantId?: string }>;
   chunkSize?: number;
 }
 
@@ -64,9 +72,10 @@ export async function bulkImportPlayers(
   if (rows.length === 0) return result;
   const size = Math.max(1, deps.chunkSize ?? IMPORT_CREATE_CHUNK);
 
-  const landed = (athleteId: string | undefined) => {
+  const landed = (athleteId: string | undefined, participantId?: string) => {
     result.added++;
     if (athleteId) result.athleteIds!.push(athleteId);
+    if (participantId) result.participantIds!.push(participantId);
   };
   const failed = (line: number, form: AddPlayerForm, e: unknown) =>
     result.failed.push({ line, name: nameOf(form), message: messageOf(e, 'Could not add this player.') });
@@ -95,7 +104,8 @@ export async function bulkImportPlayers(
       // Find out which rows are the problem by adding them one at a time.
       for (const { line, form } of chunk) {
         try {
-          landed((await deps.addOne(form)).athleteId);
+          const one = await deps.addOne(form);
+          landed(one.athleteId, one.participantId);
         } catch (e) {
           failed(line, form, e);
         }
@@ -106,16 +116,21 @@ export async function bulkImportPlayers(
   }
 
   if (created.length > 0) {
-    const entry = (c: (typeof created)[number]) => ({ athleteId: c.athleteId, jersey: c.form.jersey, pos: c.form.pos });
+    const entry = (c: (typeof created)[number]) => ({
+      athleteId: c.athleteId,
+      jersey: c.form.jersey,
+      pos: c.form.pos,
+      form: c.form,
+    });
     try {
-      await deps.addToRoster(created.map(entry));
-      for (const c of created) landed(c.athleteId);
+      const ids = await deps.addToRoster(created.map(entry));
+      for (const c of created) landed(c.athleteId, ids?.get(c.athleteId));
     } catch {
       // The upsert is idempotent, so retrying players that did make it is harmless.
       for (const c of created) {
         try {
-          await deps.addToRoster([entry(c)]);
-          landed(c.athleteId);
+          const ids = await deps.addToRoster([entry(c)]);
+          landed(c.athleteId, ids?.get(c.athleteId));
         } catch (e) {
           failed(c.line, c.form, e);
         }

@@ -21,7 +21,7 @@ import {
   Modal,
   Screen,
 } from '@/components/ui';
-import { canUseFeature, isAtPlayerLimit } from '@/data/plans';
+import { isAtPlayerLimit, canUseDummyData, playerRoom } from '@/data/plans';
 import { isInPositionGroup, rosterPositionGroups } from '@/data/positions';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
@@ -94,7 +94,7 @@ export default function RosterScreen() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deletingSelected, setDeletingSelected] = useState(false);
 
-  const isAssociation = canUseFeature(effectiveTier, 'enterprise');
+  const showDummyTools = canUseDummyData(effectiveTier);
 
   useEffect(() => {
     if (tryoutQuery.data && user && !activeAssessor) {
@@ -556,7 +556,7 @@ export default function RosterScreen() {
                 go: () => navigation.navigate('AssessmentFlow', { screen: 'AssessmentLetters', params: { id: id, isAssessorOnly } }),
               },
             ]),
-            ...(isAssociation ? [
+            ...(showDummyTools ? [
               {
                 label: 'Dummy Data Generator',
                 desc: 'Generate batch of realistic dummy players with optional scoring data across rubrics.',
@@ -632,6 +632,7 @@ export default function RosterScreen() {
 
       <DummyDataModal
         variant="assessment"
+        maxPlayers={playerRoom(effectiveTier, tryout.roster.length)}
         visible={showTestGen}
         loading={genTest.isPending || refetchingAfterDummy}
         progress={dummyProgress ?? undefined}
