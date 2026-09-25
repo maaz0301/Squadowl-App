@@ -9,6 +9,7 @@ import { HubIcon } from '@/components/teamHub/HubIcon';
 import { HUB_ICONS } from '@/components/teamHub/hubTheme';
 import { useTryoutsQuery, useTryoutSummariesQuery } from '@/features/queries';
 import { useSessionStore } from '@/state/sessionStore';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import {
   buildReportSummary,
   REPORT_RECOMMENDATIONS,
@@ -37,6 +38,8 @@ export default function ReportsScreen() {
   // lands. Waiting on the heavy one alone left a blank spinner for many seconds.
   const summariesQuery = useTryoutSummariesQuery(false);
   const tryoutsQuery = useTryoutsQuery(false);
+
+  const refreshControl = usePullToRefresh(() => Promise.all([summariesQuery.refetch(), tryoutsQuery.refetch()]));
 
   const scoresReady = !!tryoutsQuery.data;
   const summary = useMemo(() => buildReportSummary(tryoutsQuery.data ?? []), [tryoutsQuery.data]);
@@ -250,7 +253,7 @@ export default function ReportsScreen() {
         </Text>
         <Text className="text-sm" style={{ color: colors.inkMuted }}>
           {item.sport} · {item.eventType}
-          {item.date ? ` · ${item.date}` : ''} · {item.players} players
+          {item.date ? ` · ${item.date}` : ''} · {item.players} {item.players === 1 ? 'player' : 'players'}
         </Text>
       </View>
       <Text className="text-xs" style={{ color: colors.inkMuted }}>
@@ -281,7 +284,7 @@ export default function ReportsScreen() {
         </View>
         <View className="flex-row justify-between">
           <Text className="text-xs" style={{ color: colors.inkMuted }}>
-            {item.scoredPlayers} of {item.players} players scored · {pct(item.completion)}
+            {item.scoredPlayers} of {item.players} {item.players === 1 ? 'player' : 'players'} scored · {pct(item.completion)}
           </Text>
           {item.unscored > 0 ? (
             <Text className="text-xs font-bold" style={{ color: colors.warning }}>
@@ -319,6 +322,7 @@ export default function ReportsScreen() {
       ) : (
         <FlatList
           data={rows}
+          refreshControl={refreshControl}
           keyExtractor={(r) => r.id}
           renderItem={renderRow}
           ListHeaderComponent={header}

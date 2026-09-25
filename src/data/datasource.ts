@@ -107,6 +107,12 @@ export interface DataSource {
    * listTryoutSummaries(): same reasoning, one level further down.
    */
   listAssessmentAthletes(): Promise<AssessmentAthlete[]>;
+  /**
+   * Every active player across the visible, non-archived evaluations — just the
+   * columns search draws, with no evaluations or scores. What global search
+   * runs on instead of the full listTryouts() read.
+   */
+  listSearchPlayers(): Promise<import('./search').SearchPlayer[]>;
   /** Tryouts the current user is invited to as an assessor (not owned by their account). */
   listAssignedTryouts(): Promise<Tryout[]>;
   /** listAssignedTryouts() in the light shape — see listTryoutSummaries(). */

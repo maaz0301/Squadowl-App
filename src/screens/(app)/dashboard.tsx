@@ -18,6 +18,8 @@ import {
 import { BottomNav } from '@/components/BottomNav';
 import { HomeHero } from '@/components/home/HomeHero';
 import { HomeTopBar } from '@/components/home/HomeTopBar';
+import { HubIcon } from '@/components/teamHub/HubIcon';
+import { HUB_ICONS } from '@/components/teamHub/hubTheme';
 import { HomeEmptyCard } from '@/components/home/HomeEmptyCard';
 import { HomePanel, PanelRow } from '@/components/home/HomePanel';
 import { QuickAccessGrid, type QuickAccessItem } from '@/components/home/QuickAccessGrid';
@@ -46,6 +48,7 @@ import {
   usePlatformBlockedFeaturesQuery,
 } from '@/features/queries';
 import { APP_CONFIG } from '@/config/app';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { canUseFeature, isAtAssessmentLimit, isAtTeamLimit } from '@/data/plans';
 import { teamBrandSurfaces } from '@/lib/teamBrand';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
@@ -124,6 +127,11 @@ export default function DashboardScreen() {
   const prefetchTryout = usePrefetchTryout();
   const [decliningId, setDecliningId] = useState<string | null>(null);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
+
+  // Pull down to re-read everything this screen shows.
+  const refreshControl = usePullToRefresh(() =>
+    Promise.all([teamsQuery.refetch(), tryoutsQuery.refetch(), assignedQuery.refetch(), guardianQuery.refetch()]),
+  );
 
   const handleArchiveTeam = (id: string, name: string) => {
     Alert.alert(
@@ -393,6 +401,12 @@ export default function DashboardScreen() {
       <Pressable onPress={() => openTryout(item.id)} disabled={isBusy}>
         <Card accent={selected || combineMode} className="mb-3" style={isBusy ? { opacity: 0.5 } : undefined}>
           <View className="flex-row justify-between items-start">
+            <View
+              className="items-center justify-center rounded-md"
+              style={{ width: 36, height: 36, marginRight: 12, backgroundColor: 'rgba(255,107,43,0.12)' }}
+            >
+              <HubIcon d={HUB_ICONS.clipboard} size={20} color={colors.primary} />
+            </View>
             <View className="flex-1 pr-2">
               <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
                 {item.name}
@@ -408,7 +422,7 @@ export default function DashboardScreen() {
             </View>
             <View className="items-end gap-2">
               <View className="flex-row items-center gap-2">
-                <Badge label={`${item.playerCount} players`} />
+                <Badge label={`${item.playerCount} ${item.playerCount === 1 ? 'player' : 'players'}`} />
                 {isNavigating || isBusy ? (
                   <ActivityIndicator size="small" color={isBusy ? colors.danger : colors.primary} />
                 ) : (
@@ -523,6 +537,7 @@ export default function DashboardScreen() {
       <FlatList
         key={isGuardianOnly ? 'guardian' : 'coach'}
         ref={listRef}
+        refreshControl={refreshControl}
         // The evaluation/team cards render inside the section panel in the header
         // (see below), so the list itself has no rows of its own.
         data={[] as any[]}

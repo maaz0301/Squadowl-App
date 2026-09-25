@@ -2,6 +2,7 @@
 import { getSupabase } from '@/lib/supabase';
 import { type Session, type SupabaseClient, isAuthRetryableFetchError } from '@supabase/supabase-js';
 import type { DataSource } from '../datasource';
+import type { SearchPlayer } from '../search';
 import { PLAN_TIERS } from '../types';
 import { bulkImportPlayers, IMPORT_CREATE_CHUNK } from '../bulkTeamImport';
 import type { FeedbackAttachment, FeedbackReport, FeedbackSubmission } from '../extras';
@@ -3118,6 +3119,38 @@ export class SupabaseDataSource implements DataSource {
         pos: r.position ?? undefined,
         yearOfBirth: a.year_of_birth != null ? String(a.year_of_birth) : undefined,
         guardianEmail: a.guardian_email ?? undefined,
+        tryoutId: r.tryout_id,
+        tryoutName: nameById.get(r.tryout_id) ?? '',
+      });
+    }
+    return out;
+  }
+
+  async listSearchPlayers(): Promise<SearchPlayer[]> {
+    const tryoutRows = await this.fetchVisibleTryoutRows(false);
+    if (tryoutRows.length === 0) return [];
+    const nameById = new Map(tryoutRows.map((t) => [t.id as string, t.name as string]));
+
+    const rows = await this.fetchAllByIn(
+      'tryout_participants',
+      'id, tryout_id, jersey, position, removed_at, athletes(first_name, last_name)',
+      'tryout_id',
+      [...nameById.keys()],
+      PARTICIPANTS_PAGE,
+    );
+
+    const out: SearchPlayer[] = [];
+    for (const r of rows) {
+      // Soft-removed players are off the active roster (see deletePlayer).
+      if (r.removed_at) continue;
+      const raw = r.athletes;
+      const a = (Array.isArray(raw) ? raw[0] : raw) ?? {};
+      out.push({
+        id: r.id,
+        first: a.first_name ?? '',
+        last: a.last_name ?? '',
+        jersey: r.jersey ?? undefined,
+        pos: r.position ?? undefined,
         tryoutId: r.tryout_id,
         tryoutName: nameById.get(r.tryout_id) ?? '',
       });

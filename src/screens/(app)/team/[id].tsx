@@ -33,6 +33,7 @@ import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { capImportRows, dropExistingPlayers, withSkippedRows } from '@/data/bulkTeamImport';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { CreateEventFormSchema, type AddPlayerForm as AddPlayerFormValues, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { TeamHubHeader } from '@/components/teamHub/TeamHubHeader';
 import { TeamHubTabs } from '@/components/teamHub/TeamHubTabs';
 import { TeamHubNav } from '@/components/teamHub/TeamHubNav';
@@ -414,6 +415,18 @@ export default function TeamDetailScreen() {
   const availableCount = useMemo(
     () => filteredCandidates.filter((c) => !c.alreadyOnTeam).length,
     [filteredCandidates],
+  );
+
+  // Pull down to re-read the team, its schedule and its roster.
+  const refreshControl = usePullToRefresh(() =>
+    Promise.all([
+      teamsQuery.refetch(),
+      tryoutsQuery.refetch(),
+      seasonsQuery.refetch(),
+      seasonQuery.refetch(),
+      rosterAthleteIdsQuery.refetch(),
+      rosterPages.refetch(),
+    ]),
   );
 
   if (teamsQuery.isLoading || tryoutsQuery.isLoading) return <LoadingState message="Loading team..." />;
@@ -1158,6 +1171,7 @@ export default function TeamDetailScreen() {
           </View>
           <FlatList
             className="flex-1 px-4"
+            refreshControl={refreshControl}
             contentContainerStyle={{ paddingBottom: 24 }}
             keyboardShouldPersistTaps="handled"
             data={rosterPages.isLoading ? [] : listedPlayers}
@@ -1318,6 +1332,7 @@ export default function TeamDetailScreen() {
           </View>
           <FlatList
             className="flex-1 px-4"
+            refreshControl={refreshControl}
             contentContainerStyle={{ paddingBottom: 24 }}
             data={linkedTryouts}
             keyExtractor={(t) => t.id}
@@ -1344,9 +1359,15 @@ export default function TeamDetailScreen() {
                   navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: t.id } });
                 }}
               >
-                <Card className="mb-2 flex-row items-center justify-between">
+                <Card className="mb-2 flex-row items-center gap-3">
+                  <View
+                    className="items-center justify-center rounded-md"
+                    style={{ width: 36, height: 36, backgroundColor: 'rgba(255,107,43,0.12)' }}
+                  >
+                    <HubIcon d={HUB_ICONS.clipboard} size={20} color={colors.primary} />
+                  </View>
                   <View className="flex-1 pr-2">
-                    <Text className="font-bold" style={{ color: colors.ink }}>{t.name}</Text>
+                    <Text className="font-bold text-base" style={{ color: colors.ink }} numberOfLines={1}>{t.name}</Text>
                     <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
                       {t.sport} · {t.eventType} · {t.playerCount} players
                     </Text>
@@ -1364,6 +1385,7 @@ export default function TeamDetailScreen() {
       ) : (
       <ScrollView
         className="flex-1 px-4"
+        refreshControl={refreshControl}
         contentContainerStyle={{ paddingBottom: 24 }}
         keyboardShouldPersistTaps="handled"
       >
