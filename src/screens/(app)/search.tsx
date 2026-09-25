@@ -213,7 +213,7 @@ export default function SearchScreen() {
           returnKeyType="search"
           rightAccessory={
             query ? (
-              <Pressable onPress={() => setQuery('')} hitSlop={10} accessibilityLabel="Clear search">
+              <Pressable onPress={() => { setQuery(''); setLimit(PAGE); }} hitSlop={10} accessibilityLabel="Clear search">
                 <HubIcon d={HUB_ICONS.close} size={18} color={colors.inkMuted} />
               </Pressable>
             ) : undefined

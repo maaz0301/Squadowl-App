@@ -423,7 +423,9 @@ export default function TeamDetailScreen() {
       teamsQuery.refetch(),
       tryoutsQuery.refetch(),
       seasonsQuery.refetch(),
-      seasonQuery.refetch(),
+      // refetch() ignores `enabled`, so a team with no season would run the
+      // read with an undefined id.
+      teamSeasonId ? seasonQuery.refetch() : Promise.resolve(),
       rosterAthleteIdsQuery.refetch(),
       rosterPages.refetch(),
     ]),
@@ -1369,7 +1371,7 @@ export default function TeamDetailScreen() {
                   <View className="flex-1 pr-2">
                     <Text className="font-bold text-base" style={{ color: colors.ink }} numberOfLines={1}>{t.name}</Text>
                     <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
-                      {t.sport} · {t.eventType} · {t.playerCount} players
+                      {t.sport} · {t.eventType} · {t.playerCount} {t.playerCount === 1 ? 'player' : 'players'}
                     </Text>
                   </View>
                   {navigatingId === t.id ? (

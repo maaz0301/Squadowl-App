@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, View, Alert } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
@@ -107,9 +107,14 @@ export default function DashboardScreen() {
   // was flaky here because the modal closes (and re-renders the list) in the same
   // tick mutate() fires, before its pending state has propagated.
   const [busyId, setBusyId] = useState<string | null>(null);
-  useFocusEffect(() => {
-    setNavigatingId(null);
-  });
+  // Memoised: useFocusEffect re-runs whenever the callback changes, and an inline
+  // one would clear navigatingId on the very render that set it, so the card's
+  // spinner never showed.
+  useFocusEffect(
+    useCallback(() => {
+      setNavigatingId(null);
+    }, []),
+  );
 
   const teamsQuery = useTeamsQuery();
   // Summaries, not full tryouts: these cards show a name, a sport, a date and a
@@ -657,7 +662,7 @@ export default function DashboardScreen() {
                             {t.name}
                           </Text>
                           <Text className="text-sm mt-1" style={{ color: colors.inkMuted }}>
-                            {t.sport} · {t.playerCount} players
+                            {t.sport} · {t.playerCount} {t.playerCount === 1 ? 'player' : 'players'}
                           </Text>
                         </View>
                         <Badge label="Score" variant="brand" />
