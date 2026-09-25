@@ -141,3 +141,34 @@ export async function bulkImportPlayers(
   result.failed.sort((a, b) => a.line - b.line);
   return result;
 }
+
+/**
+ * Plan player cap for a spreadsheet import. A spreadsheet is a faster way onto a
+ * roster, not a way around the cap, so only the first `room` rows go through and
+ * the rest come back as "not added" for the import summary to list — the same
+ * shape a row the server rejected has.
+ */
+export function capImportRows<T extends { line: number; form: AddPlayerForm }>(
+  rows: T[],
+  room: number,
+): { allowed: T[]; skipped: PlayerImportResult['failed'] } {
+  if (!(room < rows.length)) return { allowed: rows, skipped: [] };
+  const keep = Math.max(0, Math.floor(room));
+  return {
+    allowed: rows.slice(0, keep),
+    skipped: rows.slice(keep).map(({ line, form }) => ({
+      line,
+      name: nameOf(form),
+      message: "Not added: your plan's player limit was reached.",
+    })),
+  };
+}
+
+/** Folds the rows capImportRows held back into an import's own result. */
+export function withSkippedRows(
+  result: PlayerImportResult,
+  skipped: PlayerImportResult['failed'],
+): PlayerImportResult {
+  if (skipped.length === 0) return result;
+  return { ...result, failed: [...result.failed, ...skipped].sort((a, b) => a.line - b.line) };
+}

@@ -23,6 +23,7 @@ import {
 } from '@/components/ui';
 import { isAtPlayerLimit, canUseDummyData, playerRoom } from '@/data/plans';
 import { isInPositionGroup, rosterPositionGroups } from '@/data/positions';
+import { capImportRows, withSkippedRows } from '@/data/bulkTeamImport';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import {
@@ -94,7 +95,10 @@ export default function RosterScreen() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deletingSelected, setDeletingSelected] = useState(false);
 
-  const showDummyTools = canUseDummyData(effectiveTier);
+  // An invited assessor scores; they don't seed data into the owner's evaluation.
+  // Their own plan tier says nothing about that, so the tier alone must not
+  // decide it now that the tools are no longer Association-only.
+  const showDummyTools = canUseDummyData(effectiveTier) && !isAssessorOnly;
 
   useEffect(() => {
     if (tryoutQuery.data && user && !activeAssessor) {
@@ -208,6 +212,16 @@ export default function RosterScreen() {
       return;
     }
     setShowAdd(true);
+  };
+
+  // Same plan gate as adding one by hand — a spreadsheet is a faster way onto
+  // the roster, not a way around the cap.
+  const openImport = () => {
+    if (isAtPlayerLimit(effectiveTier, tryout.roster.length)) {
+      setLimitMsg(buildLimitReachedMessage(effectiveTier, 'players', 'players'));
+      return;
+    }
+    setShowImport(true);
   };
 
   const openPlayer = (playerId: string) => {
@@ -329,7 +343,7 @@ export default function RosterScreen() {
           ) : (
             <RosterActions
               onAdd={openAdd}
-              onImport={() => setShowImport(true)}
+              onImport={openImport}
               onSelect={() => setSelectMode(true)}
               onTools={() => setShowTools(true)}
               onCompleteAssessing={canComplete ? () => complete() : undefined}
@@ -440,7 +454,7 @@ export default function RosterScreen() {
               <Button
                 label="Import from a spreadsheet"
                 variant="secondary"
-                onPress={() => setShowImport(true)}
+                onPress={openImport}
                 className="mt-2 w-full"
               />
             </View>
@@ -606,7 +620,13 @@ export default function RosterScreen() {
         onClose={() => setShowImport(false)}
         target={tryout.name}
         onImport={async (rows, onProgress) => {
-          const result = await importPlayers.mutateAsync({ rows, onProgress });
+          // A spreadsheet is a faster way onto the roster, not a way around the
+          // plan's player cap: import what fits and list the rest as not added.
+          const { allowed, skipped } = capImportRows(rows, playerRoom(effectiveTier, tryout.roster.length));
+          if (allowed.length === 0) {
+            return withSkippedRows({ added: 0, failed: [], athleteIds: [], participantIds: [] }, skipped);
+          }
+          const result = withSkippedRows(await importPlayers.mutateAsync({ rows: allowed, onProgress }), skipped);
           // Same rule as adding one by hand above, and as the team import: the
           // import is what earns the portal invite, so a spreadsheet of players
           // with guardian emails links them all without anyone opening thirty

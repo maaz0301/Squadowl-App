@@ -29,6 +29,7 @@ import { useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit, canUseDummyData, playerRoom, assessmentRoom } from '@/data/plans';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
+import { capImportRows, withSkippedRows } from '@/data/bulkTeamImport';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { CreateEventFormSchema, type AddPlayerForm as AddPlayerFormValues, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
 import { BottomNav } from '@/components/BottomNav';
@@ -504,6 +505,17 @@ export default function TeamDetailScreen() {
   const dummyMax = Math.min(DUMMY_LIMITS.count.max, dummyRoom);
   const dummyCount = clampOption(dummyPlayerCount, { min: 1, max: Math.max(1, dummyMax) }, 25);
   const dummyNoRoom = dummyMax < 1 || dummyBlocked;
+
+  // Same plan gate as adding a player by hand — a spreadsheet is a faster way
+  // onto the roster, not a way around the cap. The roster's cap is the owning
+  // club's for a delegated team (effectiveTier), as for every other add path.
+  const openImportPlayers = () => {
+    if (isAtPlayerLimit(effectiveTier, playerCount)) {
+      setLimitMsg(buildLimitReachedMessage(effectiveTier, 'players', 'players'));
+      return;
+    }
+    setShowImportPlayers(true);
+  };
 
   const addPickedPlayers = async () => {
     const picked = candidates.filter((c) => pickedAthletes.has(c.athleteId));
@@ -1096,7 +1108,7 @@ export default function TeamDetailScreen() {
                   label="Import Spreadsheet"
                   size="sm"
                   variant="secondary"
-                  onPress={() => setShowImportPlayers(true)}
+                  onPress={() => openImportPlayers()}
                 />
                 {playerCount > 0 ? (
                   <Button
@@ -1978,7 +1990,13 @@ export default function TeamDetailScreen() {
         onClose={() => setShowImportPlayers(false)}
         target={team.name}
         onImport={async (rows, onProgress) => {
-          const result = await importPlayers.mutateAsync({ rows, onProgress });
+          // A spreadsheet is a faster way onto the roster, not a way around the
+          // plan's player cap: import what fits and list the rest as not added.
+          const { allowed, skipped } = capImportRows(rows, playerRoom(effectiveTier, playerCount));
+          if (allowed.length === 0) {
+            return withSkippedRows({ added: 0, failed: [], athleteIds: [], participantIds: [] }, skipped);
+          }
+          const result = withSkippedRows(await importPlayers.mutateAsync({ rows: allowed, onProgress }), skipped);
           // Same rule as every other way onto this roster: the import is what
           // earns the portal invite. Scoped to the athletes the import actually
           // landed, so a re-import doesn't re-mail the players already there.
