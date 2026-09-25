@@ -54,11 +54,20 @@ export function ImportPlayersModal({
   onClose,
   target,
   onImport,
+  atLimit = false,
+  onLimitReached,
 }: {
   visible: boolean;
   onClose: () => void;
   /** Names what the players are being added to, for the copy. */
   target: string;
+  /**
+   * The roster is at the plan's player cap. "Import more" then closes the dialog
+   * and hands over to `onLimitReached` (the limit message) instead of reopening
+   * the file picker — same rule as the screen's own import button.
+   */
+  atLimit?: boolean;
+  onLimitReached?: () => void;
   onImport: (
     rows: { line: number; form: AddPlayerForm }[],
     onProgress: (done: number) => void,
@@ -215,7 +224,15 @@ export function ImportPlayersModal({
       }
     >
       {result ? (
-        <ImportSummary result={result} onDone={close} onAgain={reset} colors={colors} />
+        <ImportSummary result={result} onDone={close}
+          onAgain={() => {
+            if (atLimit) {
+              close();
+              onLimitReached?.();
+            } else {
+              reset();
+            }
+          }} colors={colors} />
       ) : !sheet ? (
         <View className="gap-4">
           <Pressable

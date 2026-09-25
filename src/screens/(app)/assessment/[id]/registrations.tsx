@@ -5,7 +5,8 @@ import { DummyDataModal } from '@/components/DummyDataModal';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { PlanGate } from '@/components/PlanGate';
 import { Badge, Button, Card, EmptyState, ErrorState, Header, LoadingState, Modal, Screen, Tabs } from '@/components/ui';
-import { isAtPlayerLimit, canUseDummyData, playerRoom } from '@/data/plans';
+import { isAtPlayerLimit, playerRoom } from '@/data/plans';
+import { useCanUseDummyData } from '@/features/useCanUseDummyData';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import type { DummyDataOptions } from '@/data/testDataGenerator';
 import {
@@ -75,7 +76,7 @@ export default function RegistrationsScreen() {
   // Registration whose submitted profile is open. Non-null == profile open.
   const [viewingId, setViewingId] = useState<string | null>(null);
 
-  const showDummyTools = canUseDummyData(effectiveTier);
+  const showDummyTools = useCanUseDummyData(effectiveTier);
 
   const showAlert = (title: string, message: string) => {
     if (Platform.OS === 'web') alert(`${title}\n\n${message}`);

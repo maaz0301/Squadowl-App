@@ -9,7 +9,8 @@ import { DummyDataModal } from '@/components/DummyDataModal';
 import { TeamColorPicker } from '@/components/TeamColorPicker';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { Button, Card, Chip, ErrorState, Header, Input, LoadingState, Screen, Avatar, Badge } from '@/components/ui';
-import { canUseFeature, isAtTeamLimit, canUseDummyData, playerRoom, teamRoom, assessmentRoom } from '@/data/plans';
+import { canUseFeature, isAtTeamLimit, playerRoom, teamRoom, assessmentRoom } from '@/data/plans';
+import { useCanUseDummyData } from '@/features/useCanUseDummyData';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import type { DummyTeamOptions } from '@/data/testDataGenerator';
 import type { Team } from '@/data/types';
@@ -69,7 +70,7 @@ export default function NewTeamScreen() {
   const updateTeam = useUpdateTeamMutation();
   const uploadLogo = useUploadTeamLogoMutation();
 
-  const showDummyTools = canUseDummyData(user?.planTier ?? 'free');
+  const showDummyTools = useCanUseDummyData(user?.planTier ?? 'free');
   // Every dummy team also gets a linked evaluation, so the batch is capped by
   // whichever of the two allowances runs out first. Until the evaluations have
   // loaded nothing is offered, rather than guessing a count of zero.

@@ -8001,9 +8001,11 @@ export class SupabaseDataSource implements DataSource {
         .maybeSingle()
     ) as Row | null;
 
+    // Throw rather than return: the caller has already shown the answer as
+    // saved, and a silent return leaves it looking recorded when nothing was
+    // written. The mutation rolls the button back and the screen shows this.
     if (!rosterRow) {
-      console.warn('Cannot set availability: player is not in roster');
-      return;
+      throw new Error("This player isn't on this season's roster, so the response couldn't be saved.");
     }
 
     unwrap(
@@ -8486,6 +8488,19 @@ export class SupabaseDataSource implements DataSource {
     const { data, error } = await supabase.rpc('platform_blocked_plan_tiers');
     if (error) {
       console.warn('Could not check platform plan-tier blocks:', error.message);
+      return [];
+    }
+    const tiers: readonly string[] = PLAN_TIERS;
+    return ((data as string[] | null) ?? []).filter((t): t is PlanTier => tiers.includes(t));
+  }
+
+  async getDummyDataBlockedPlanTiers(): Promise<PlanTier[]> {
+    const supabase = getSupabase();
+    const { data, error } = await supabase.rpc('platform_dummy_data_blocked_plan_tiers');
+    // A missing function (the migration not yet applied) reads as "nothing
+    // blocked": the tools stay available rather than vanishing for everyone.
+    if (error) {
+      console.warn('Could not check dummy-data blocks:', error.message);
       return [];
     }
     const tiers: readonly string[] = PLAN_TIERS;

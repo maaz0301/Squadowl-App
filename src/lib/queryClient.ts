@@ -134,6 +134,8 @@ export const queryKeys = {
   platformBlockedFeatures: ['platform', 'blockedFeatures'] as const,
   /** Plan tiers hidden from checkout/upgrade platform-wide. */
   platformBlockedPlanTiers: ['platform', 'blockedPlanTiers'] as const,
+  /** Plan tiers the founder switched the dummy-data tools off for — see useCanUseDummyData. */
+  dummyDataBlockedPlanTiers: ['platform', 'dummyDataBlockedPlanTiers'] as const,
   feedbackSubmissions: ['feedback', 'submissions'] as const,
   /** Letter templates hang off the account, not one tryout — see letters.ts. */
   letterTemplates: ['letterTemplates'] as const,

@@ -279,16 +279,15 @@ export function isAtTeamLimit(tier: PlanTier, count: number, extraTeamLicenses =
 }
 
 /**
- * TEMPORARY, for the testing period: the dummy-data tools were Association-only.
- * While this is true they are offered on every plan — but never beyond what the
- * plan itself allows (see the *Room helpers below, which the dummy dialogs use
- * to cap how much they will create). Set to false to put the Association-only
- * gate back; nothing else needs to change.
+ * The dummy-data testing tools are offered on every plan, and only the founder
+ * can switch them off — for all plans or for individual ones — from the founder
+ * console (`platform_settings.dummy_data_blocked_plan_tiers`). Callers pass the
+ * tiers the platform reports as blocked; nothing reported, including the setting
+ * being unreachable, means available. Whatever is on, generation still stops at
+ * the plan's own limits (see the *Room helpers below).
  */
-export const DUMMY_DATA_ALL_PLANS = true;
-
-export function canUseDummyData(tier: PlanTier): boolean {
-  return DUMMY_DATA_ALL_PLANS || canUseFeature(tier, 'enterprise');
+export function canUseDummyData(tier: PlanTier, blockedTiers: readonly PlanTier[] = []): boolean {
+  return !blockedTiers.includes(tier);
 }
 
 function roomUnder(limit: number | 'unlimited', used: number): number {

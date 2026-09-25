@@ -221,8 +221,12 @@ export function DummyDataModal(props: DummyDataModalProps) {
         <Input
           label={
             isTeam
-              ? `Players per team (1–${Math.max(1, countMax)})`
-              : `How many players (1–${Math.max(1, countMax)})`
+              ? countMax < 1
+                ? 'Players per team (none available)'
+                : `Players per team (1–${countMax})`
+              : countMax < 1
+                ? 'How many players (none available)'
+                : `How many players (1–${countMax})`
           }
           value={count}
           onChangeText={setCount}
@@ -238,7 +242,9 @@ export function DummyDataModal(props: DummyDataModalProps) {
                 : props.variant === 'team' && props.teamsBlockedBy === 'evaluations'
                   ? "Every dummy team comes with its own new evaluation, and your plan's evaluation limit is already used up — an evaluation you created yourself counts. Archive or delete one to make room."
                   : "Your plan's team limit is already used up, so no more dummy teams can be created."
-              : "This roster is already at your plan's player limit, so no more dummy players can be created."}
+              : !isTeam && target === 'both' && props.variant === 'assessment' && props.maxPlayers >= 1
+                ? '"Both" needs room for at least 2 players (one pending, one on the roster). Pick Registrations or Roster players instead.'
+                : "This roster is already at your plan's player limit, so no more dummy players can be created."}
           </Text>
         ) : Number.isFinite(playerRoom) || teamsMax < DUMMY_LIMITS.teams.max ? (
           <Text className="text-xs" style={{ color: colors.inkMuted }}>

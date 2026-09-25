@@ -28,8 +28,9 @@ import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, use
 import { useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit, canUseDummyData, playerRoom, assessmentRoom } from '@/data/plans';
+import { useDummyDataBlockedTiers } from '@/features/useCanUseDummyData';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
-import { capImportRows, withSkippedRows } from '@/data/bulkTeamImport';
+import { capImportRows, dropExistingPlayers, withSkippedRows } from '@/data/bulkTeamImport';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { CreateEventFormSchema, type AddPlayerForm as AddPlayerFormValues, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
 import { BottomNav } from '@/components/BottomNav';
@@ -92,6 +93,7 @@ export default function TeamDetailScreen() {
   // and headcounts, so they run off this light read — see
   // useTryoutSummariesQuery.
   const tryoutsQuery = useTryoutSummariesQuery(false);
+  const dummyBlockedTiers = useDummyDataBlockedTiers();
   // Dummy data generation writes onto a linked evaluation, so it targets this
   // team's first one — auto-created on demand below if there isn't one yet.
   // Computed off route params (not `team.id`, which isn't resolved yet) so
@@ -452,7 +454,7 @@ export default function TeamDetailScreen() {
   // Gates against the owning club's tier for a delegated team, not the
   // viewer's own — the club already pays for this team.
   const effectiveTier = effectiveTierForTeam(team, user?.planTier ?? 'free');
-  const showDummyTools = canUseDummyData(effectiveTier);
+  const showDummyTools = canUseDummyData(effectiveTier, dummyBlockedTiers);
 
   /**
    * Dummy roster players write onto a linked evaluation even though this flow
@@ -1989,14 +1991,28 @@ export default function TeamDetailScreen() {
         visible={showImportPlayers}
         onClose={() => setShowImportPlayers(false)}
         target={team.name}
+        atLimit={isAtPlayerLimit(effectiveTier, playerCount)}
+        onLimitReached={() => setLimitMsg(buildLimitReachedMessage(effectiveTier, 'players', 'players'))}
         onImport={async (rows, onProgress) => {
           // A spreadsheet is a faster way onto the roster, not a way around the
-          // plan's player cap: import what fits and list the rest as not added.
-          const { allowed, skipped } = capImportRows(rows, playerRoom(effectiveTier, playerCount));
+          // plan's player cap: players already here are set aside first (they add
+          // nobody, so they shouldn't spend the cap), then what fits goes in and
+          // the rest is listed as not added.
+          const { fresh, duplicates } = dropExistingPlayers(rows, listedPlayers);
+          const capped = capImportRows(fresh, playerRoom(effectiveTier, playerCount));
+          const allowed = capped.allowed;
+          const skipped = [...duplicates, ...capped.skipped];
           if (allowed.length === 0) {
             return withSkippedRows({ added: 0, failed: [], athleteIds: [], participantIds: [] }, skipped);
           }
           const result = withSkippedRows(await importPlayers.mutateAsync({ rows: allowed, onProgress }), skipped);
+          // The mutation only marks the roster stale; on a capped plan, wait for
+          // the fresh count so the "Import more" check that follows never runs
+          // against the old one. Unlimited plans have no such check, so they
+          // don't wait on a full roster re-read (a thousand players is seconds).
+          if (Number.isFinite(playerRoom(effectiveTier, 0))) {
+            await rosterAthleteIdsQuery.refetch({ cancelRefetch: false });
+          }
           // Same rule as every other way onto this roster: the import is what
           // earns the portal invite. Scoped to the athletes the import actually
           // landed, so a re-import doesn't re-mail the players already there.

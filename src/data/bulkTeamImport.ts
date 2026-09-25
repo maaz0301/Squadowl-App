@@ -172,3 +172,57 @@ export function withSkippedRows(
   if (skipped.length === 0) return result;
   return { ...result, failed: [...result.failed, ...skipped].sort((a, b) => a.line - b.line) };
 }
+
+/** The bits of a player already on a roster that decide whether an import row is the same person. */
+export interface ExistingPlayer {
+  first: string;
+  last: string;
+  yearOfBirth?: string | number;
+  guardianEmail?: string;
+}
+
+const norm = (v: string | number | null | undefined) => String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+/** Same name, and birth year / guardian email agree wherever both sides have one. */
+function isSamePlayer(form: AddPlayerForm, p: ExistingPlayer): boolean {
+  if (norm(form.first) !== norm(p.first) || norm(form.last) !== norm(p.last)) return false;
+  const yobA = norm(form.yearOfBirth);
+  const yobB = norm(p.yearOfBirth);
+  if (yobA && yobB && yobA !== yobB) return false;
+  const gA = norm(form.guardianEmail);
+  const gB = norm(p.guardianEmail);
+  if (gA && gB && gA !== gB) return false;
+  return true;
+}
+
+/**
+ * Sets aside the import rows that are already on the roster, so a re-import
+ * neither files a second copy of them nor spends the plan's player cap on people
+ * who wouldn't add anyone. Only what is on screen can be compared, so a roster
+ * that has not fully loaded lets a few through rather than dropping a real new
+ * player.
+ */
+export function dropExistingPlayers<T extends { line: number; form: AddPlayerForm }>(
+  rows: T[],
+  existing: ExistingPlayer[],
+): { fresh: T[]; duplicates: PlayerImportResult['failed'] } {
+  if (existing.length === 0) return { fresh: rows, duplicates: [] };
+  const byName = new Map<string, ExistingPlayer[]>();
+  for (const p of existing) {
+    const key = `${norm(p.first)}|${norm(p.last)}`;
+    const list = byName.get(key);
+    if (list) list.push(p);
+    else byName.set(key, [p]);
+  }
+  const fresh: T[] = [];
+  const duplicates: PlayerImportResult['failed'] = [];
+  for (const row of rows) {
+    const candidates = byName.get(`${norm(row.form.first)}|${norm(row.form.last)}`) ?? [];
+    if (candidates.some((c) => isSamePlayer(row.form, c))) {
+      duplicates.push({ line: row.line, name: nameOf(row.form), message: 'Already on this roster.' });
+    } else {
+      fresh.push(row);
+    }
+  }
+  return { fresh, duplicates };
+}
