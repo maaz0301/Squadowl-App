@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
@@ -5,8 +6,9 @@ import { useBottomInset } from '@/hooks/useBottomInset';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { usePermissions } from '@/state/authStore';
+import { Modal } from '@/components/ui';
 
-export type BottomNavKey = 'assessments' | 'teams' | 'profile';
+export type BottomNavKey = 'assessments' | 'teams' | 'profile' | 'more';
 
 const ICONS: Record<BottomNavKey, string> = {
   assessments:
@@ -14,13 +16,23 @@ const ICONS: Record<BottomNavKey, string> = {
   teams:
     'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z',
   profile: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
 };
 
 const LABELS: Record<BottomNavKey, string> = {
   assessments: 'Evaluations',
   teams: 'Teams',
   profile: 'Profile',
+  more: 'More',
 };
+
+/** Screens the More sheet opens — the secondary destinations that have no tab of their own. */
+const MORE_LINKS: { label: string; hint: string; route: string }[] = [
+  { label: 'Archived', hint: 'Past evaluations and teams', route: 'ArchivedAssessments' },
+  { label: 'Shared Athletes', hint: 'Profiles shared with you', route: 'SharedAthletes' },
+  { label: 'Plans & Upgrade', hint: 'Your plan and what it includes', route: 'Upgrade' },
+  { label: 'Send Feedback', hint: 'Tell us how it is going', route: 'Feedback' },
+];
 
 interface BottomNavProps {
   active: BottomNavKey;
@@ -36,6 +48,7 @@ export function BottomNav({ active, onTabPress }: BottomNavProps) {
   const bottomInset = useBottomInset();
   const navigation = useNavigation<any>();
   const { isGuardian, role } = usePermissions();
+  const [moreOpen, setMoreOpen] = useState(false);
 
   if (isGuardian || role === 'guardian') {
     return null;
@@ -46,7 +59,11 @@ export function BottomNav({ active, onTabPress }: BottomNavProps) {
       navigation.navigate('Profile');
       return;
     }
-    if (onTabPress) onTabPress(key);
+    if (key === 'more') {
+      setMoreOpen(true);
+      return;
+    }
+    if (onTabPress) onTabPress(key as 'assessments' | 'teams');
     else navigation.navigate('DashboardMain', { tab: key });
   };
 
@@ -76,7 +93,7 @@ export function BottomNav({ active, onTabPress }: BottomNavProps) {
                 <Path
                   d={ICONS[key]}
                   stroke={tint}
-                  strokeWidth={2}
+                  strokeWidth={key === 'more' ? 3 : 2}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
@@ -88,6 +105,28 @@ export function BottomNav({ active, onTabPress }: BottomNavProps) {
           );
         })}
       </View>
+      <Modal visible={moreOpen} title="More" onClose={() => setMoreOpen(false)}>
+        <View className="gap-2">
+          {MORE_LINKS.map((l) => (
+            <Pressable
+              key={l.route}
+              onPress={() => {
+                setMoreOpen(false);
+                navigation.navigate(l.route);
+              }}
+              className="rounded-xl border px-4 py-3"
+              style={{ backgroundColor: colors.tile, borderColor: colors.border }}
+            >
+              <Text className="text-base font-bold" style={{ color: colors.ink }}>
+                {l.label}
+              </Text>
+              <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                {l.hint}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </Modal>
     </View>
   );
 }

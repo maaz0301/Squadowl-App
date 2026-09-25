@@ -60,10 +60,13 @@ export function AddToCalendar({
   event,
   teamName,
   size = 'md',
+  renderTrigger,
 }: {
   event: CalendarSource;
   teamName?: string;
   size?: 'sm' | 'md';
+  /** Draws the button that opens the picker, for screens with their own styling. */
+  renderTrigger?: (open: () => void) => React.ReactNode;
 }) {
   const colors = useThemeColors();
   const [open, setOpen] = useState(false);
@@ -109,6 +112,9 @@ export function AddToCalendar({
 
   return (
     <>
+      {renderTrigger ? (
+        renderTrigger(() => setOpen(true))
+      ) : (
       <Pressable
         onPress={() => setOpen(true)}
         // min-h/justify-center at sm matches Button's own sm sizing (see
@@ -125,6 +131,7 @@ export function AddToCalendar({
           📅 Add to calendar
         </Text>
       </Pressable>
+      )}
 
       <Modal visible={open} title="Add to calendar" onClose={() => setOpen(false)}>
         <View className="gap-2">

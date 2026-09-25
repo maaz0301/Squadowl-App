@@ -23,7 +23,7 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { AddToCalendar } from '@/components/AddToCalendar';
 import { MapLink, MapLocationHint } from '@/components/MapLink';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
-import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, Tabs, TimeField } from '@/components/ui';
+import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, TimeField } from '@/components/ui';
 import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useArchiveTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
@@ -33,15 +33,22 @@ import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { capImportRows, dropExistingPlayers, withSkippedRows } from '@/data/bulkTeamImport';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { CreateEventFormSchema, type AddPlayerForm as AddPlayerFormValues, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
-import { BottomNav } from '@/components/BottomNav';
-import { ChatIconButton } from '@/components/ChatIconButton';
+import { TeamHubHeader } from '@/components/teamHub/TeamHubHeader';
+import { TeamHubTabs } from '@/components/teamHub/TeamHubTabs';
+import { TeamHubNav } from '@/components/teamHub/TeamHubNav';
+import { HubSectionLabel } from '@/components/teamHub/HubSection';
+import { HubRowCard } from '@/components/teamHub/HubRowCard';
+import { HubActionTile } from '@/components/teamHub/HubActionTile';
+import { HubEventCard } from '@/components/teamHub/HubEventCard';
+import { HubIcon } from '@/components/teamHub/HubIcon';
+import { TeamStatusTiles } from '@/components/teamHub/TeamStatusTiles';
+import { HUB_ICONS } from '@/components/teamHub/hubTheme';
 import { ImportPlayersModal } from '@/components/roster/ImportPlayersModal';
 import { DeleteProgressModal } from '@/components/DeleteProgressModal';
 import { RosterSelectToolbar } from '@/components/roster/RosterControls';
 import { LetterTemplatesManager } from '@/components/letters/LetterTemplatesManager';
 import { ChatUnreadBadge } from '@/components/ChatUnreadBadge';
 import { PlanGate } from '@/components/PlanGate';
-import { TeamBanner } from '@/components/TeamBanner';
 import { teamBrandSurfaces } from '@/lib/teamBrand';
 import { TeamColorPicker } from '@/components/TeamColorPicker';
 import { TeamManagersCard } from '@/components/TeamManagersCard';
@@ -150,6 +157,9 @@ export default function TeamDetailScreen() {
   const [showAddEvent, setShowAddEvent] = useState(false);
   const [tab, setTab] = useState(route.params?.tab === 'settings' ? 'settings' : 'schedule');
   const [openRsvpEventId, setOpenRsvpEventId] = useState<string | null>(null);
+  // The event Team Status, RSVPs and the action row are pointed at.
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [showAllEvents, setShowAllEvents] = useState(false);
   const [rsvpVisible, setRsvpVisible] = useState(RSVP_PAGE);
   const [rsvpSearch, setRsvpSearch] = useState('');
   const [rsvpPending, setRsvpPending] = useState(false);
@@ -732,6 +742,16 @@ export default function TeamDetailScreen() {
   const allTeamEvents = [...(teamSeason?.events ?? [])].sort((a, b) => a.date.localeCompare(b.date));
   const upcomingEvents = allTeamEvents.filter((e) => (e.endDate || e.date) >= todayStr);
   const pastEvents = allTeamEvents.filter((e) => (e.endDate || e.date) < todayStr);
+  // The hub leads with what's coming; "View All" opens the whole season, past
+  // events included, so nothing that used to be reachable here is lost.
+  const shownEvents = showAllEvents ? allTeamEvents : upcomingEvents.slice(0, 3);
+  const selectedEvent = shownEvents.find((e) => e.id === selectedEventId) ?? shownEvents[0];
+  const hasHiddenEvents = allTeamEvents.length > upcomingEvents.slice(0, 3).length;
+  const evaluatorCount = new Set(
+    linkedTryouts.flatMap((t) =>
+      (t.assessors ?? []).map((a) => (a.userId ?? a.email ?? '').toLowerCase()).filter(Boolean),
+    ),
+  ).size;
 
   // Availability is stored per invited season-roster player; the coach sees it
   // as a Yes/Maybe/No tally that expands into the actual names. On a big roster
@@ -1011,46 +1031,36 @@ export default function TeamDetailScreen() {
     );
   };
 
+  const openTeamChat = () =>
+    navigation.navigate('TeamChat', {
+      seasonId: teamSeasonId,
+      title: `${team.name} Chat`,
+      subtitle: team.season || undefined,
+      noSeasonMessage:
+        "This team doesn't have a season yet. Add an event under Schedule, and the chat opens for everyone on the roster and their guardians.",
+    });
+
   const headerBlock = (
     <>
-      <Header title={`${team.name} Hub`} showBack />
-
-      {/* The team's own branding leads every tab, and the same banner repeats on
-          the schedule/roster/player screens below it. linkToHub is off here —
-          this is the hub. */}
-      <TeamBanner
-        team={team}
-        linkToHub={false}
-        className="mb-3"
-        right={
-          <View className="flex-row items-center gap-1">
-            <ChatIconButton
-              badge={<ChatUnreadBadge seasonId={teamSeasonId} />}
-              onPress={() =>
-                navigation.navigate('TeamChat', {
-                  seasonId: teamSeasonId,
-                  title: `${team.name} Chat`,
-                  subtitle: team.season || undefined,
-                  noSeasonMessage:
-                    "This team doesn't have a season yet. Add an event under Schedule, and the chat opens for everyone on the roster and their guardians.",
-                })
-              }
-            />
-            {canEditTeam ? <Button label="Edit" variant="primary" size="sm" onPress={startEdit} /> : null}
-          </View>
-        }
+      <TeamHubHeader
+        name={team.name}
+        subtitle={team.season || undefined}
+        logoUrl={team.logoUrl}
+        chatBadge={<ChatUnreadBadge seasonId={teamSeasonId} />}
+        onChat={openTeamChat}
+        onEdit={canEditTeam ? startEdit : undefined}
       />
 
-      <Tabs
+      <TeamHubTabs
         tabs={[
-          { key: 'schedule', label: 'Schedule', badge: allTeamEvents.length || undefined },
-          { key: 'players', label: 'Players', badge: playerCount },
-          ...(canViewEvaluations ? [{ key: 'assessments', label: 'Evaluations', badge: linkedTryouts.length }] : []),
-          { key: 'settings', label: 'Options' },
+          { key: 'schedule', label: 'Schedule', icon: HUB_ICONS.calendar, badge: allTeamEvents.length || undefined },
+          { key: 'players', label: 'Players', icon: HUB_ICONS.players, badge: playerCount },
+          ...(canViewEvaluations
+            ? [{ key: 'assessments', label: 'Evaluations', icon: HUB_ICONS.clipboard, badge: linkedTryouts.length }]
+            : []),
         ]}
         activeKey={tab}
         onChange={setTab}
-        className="mt-2 mb-4"
       />
     </>
   );
@@ -1357,100 +1367,131 @@ export default function TeamDetailScreen() {
         {tab === 'schedule' ? (
           <PlanGate feature="seasonHub" title="Season Hub" tierOverride={effectiveTier}>
           <View>
-            <Text className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: colors.inkMuted }}>
-              Season Hub
-            </Text>
-            <View className="flex-row flex-wrap gap-2 mb-3">
-              <Button label="+ Event" size="sm" onPress={() => openEventModal('Event')} />
-            </View>
-
             {seasonsQuery.isLoading || (teamSeasonId ? seasonQuery.isLoading : false) ? (
               <View className="items-center py-6 gap-2">
                 <ActivityIndicator size="small" color={colors.primary} />
                 <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading events...</Text>
               </View>
-            ) : allTeamEvents.length === 0 ? (
-              <Card className="items-center py-6 gap-1">
-                <Text className="font-bold" style={{ color: colors.ink }}>No upcoming events</Text>
-                <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
-                  Add an event — everyone on the roster is invited and their guardians can RSVP from
-                  the portal.
-                </Text>
-              </Card>
             ) : (
-              allTeamEvents.map((ev) => {
-                const rsvp = rsvpByEvent.get(ev.id) ?? EMPTY_RSVP;
-                const expanded = openRsvpEventId === ev.id;
-                // Only the open card pays for filtering/slicing its roster.
-                const q = expanded ? rsvpSearch.trim().toLowerCase() : '';
-                const matchedRows = !expanded
-                  ? EMPTY_RSVP.rows
-                  : q
-                    ? rsvp.rows.filter((r) => r.name.toLowerCase().includes(q))
-                    : rsvp.rows;
-                const shownRows = expanded ? matchedRows.slice(0, rsvpVisible) : EMPTY_RSVP.rows;
-                const remaining = matchedRows.length - shownRows.length;
-                return (
-                  <Card key={ev.id} className="mb-3 gap-2">
-                    <View className="flex-row justify-between items-start">
-                      <View className="flex-1 pr-2">
-                        <Text className="font-bold text-base" style={{ color: colors.ink }}>
-                          {ev.date}
-                          {ev.startTime ? ` · ${ev.startTime}${ev.endTime ? `–${ev.endTime}` : ''}` : ''}
-                          {ev.location ? (
-                            <>
-                              {' · '}
-                              <MapLink location={ev.location} label={ev.title} variant="inline" />
-                            </>
-                          ) : null}
-                        </Text>
-                        <Text className="text-sm mt-0.5" style={{ color: colors.inkMuted }}>
-                          {ev.title}
-                        </Text>
-                      </View>
-                      <Badge label={ev.type} variant={ev.type === 'Game' ? 'brand' : 'info'} />
-                    </View>
-
-                    {/* The event lands a round trip or two before its RSVPs do
-                        (see getSeason's staged read) — a tally of zeroes in the
-                        meantime would read as "nobody answered". */}
-                    {ev.availabilityPending ? (
-                      <View className="flex-row items-center gap-2 py-1">
-                        <ActivityIndicator size="small" color={colors.primary} />
-                        <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading RSVPs...</Text>
-                      </View>
-                    ) : (
-                      <View className="flex-row items-center gap-2 py-1 flex-wrap">
-                        <Badge label={`${rsvp.counts.yes} yes`} variant="success" size="lg" />
-                        <Badge label={`${rsvp.counts.maybe} maybe`} variant="warning" size="lg" />
-                        <Badge label={`${rsvp.counts.no} no`} variant="danger" size="lg" />
-                        {rsvp.counts.pending > 0 ? (
-                          <Badge label={`${rsvp.counts.pending} pending`} variant="info" size="lg" />
-                        ) : null}
-                      </View>
-                    )}
-
-                    <Pressable
-                      onPress={() => toggleRsvp(ev.id)}
-                      className="flex-row items-center justify-between rounded-md px-3 py-2.5 border"
-                      style={{
-                        backgroundColor: expanded ? colors.tile : 'rgba(255,107,43,0.08)',
-                        borderColor: colors.primary,
+              <>
+                <HubSectionLabel
+                  icon={HUB_ICONS.calendar}
+                  label="Upcoming Events"
+                  actionLabel={showAllEvents ? 'Show Less' : hasHiddenEvents ? 'View All' : undefined}
+                  onAction={() => setShowAllEvents((v) => !v)}
+                />
+                {shownEvents.length === 0 ? (
+                  <Card className="items-center py-6 gap-1 mb-2">
+                    <Text className="font-bold" style={{ color: colors.ink }}>No upcoming events</Text>
+                    <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
+                      Add an event — everyone on the roster is invited and their guardians can RSVP from
+                      the portal.
+                    </Text>
+                  </Card>
+                ) : (
+                  shownEvents.map((ev) => (
+                    <HubEventCard
+                      key={ev.id}
+                      event={ev}
+                      selected={selectedEvent?.id === ev.id}
+                      playerCount={playerCount}
+                      evaluatorCount={evaluatorCount}
+                      onPress={() => {
+                        setSelectedEventId(ev.id);
+                        setOpenRsvpEventId(null);
                       }}
-                      hitSlop={6}
-                    >
-                      <Text className="text-sm font-bold" style={{ color: colors.primary }}>
-                        {expanded ? 'Hide RSVPs' : 'Who’s coming? Set RSVPs'}
-                      </Text>
-                      {expanded && rsvpPending ? (
-                        <ActivityIndicator size="small" color={colors.primary} />
-                      ) : (
-                        <Text style={{ color: colors.primary, fontSize: 14 }}>{expanded ? '▴' : '▾'}</Text>
+                    />
+                  ))
+                )}
+
+                {selectedEvent ? (
+                  <View className="mb-6">
+                    <AddToCalendar
+                      event={selectedEvent}
+                      teamName={team.name}
+                      renderTrigger={(open) => (
+                        <HubRowCard
+                          icon={HUB_ICONS.calendar}
+                          title="Add to Calendar"
+                          caption="Sync this event with your calendar"
+                          onPress={open}
+                        />
                       )}
-                    </Pressable>
+                    />
+                  </View>
+                ) : (
+                  <View className="mb-3" />
+                )}
+
+                <HubSectionLabel icon={HUB_ICONS.calendar} label="Season Hub" />
+                <Pressable
+                  onPress={() => openEventModal('Event')}
+                  className="flex-row items-center gap-3 rounded-xl px-3 mb-6"
+                  style={{
+                    height: 50,
+                    backgroundColor: colors.primary,
+                    shadowColor: colors.primary,
+                    shadowOpacity: 0.4,
+                    shadowRadius: 10,
+                    shadowOffset: { width: 0, height: 4 },
+                    elevation: 4,
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add event"
+                >
+                  <HubIcon d={HUB_ICONS.calendarPlus} size={22} color="#ffffff" />
+                  <Text className="flex-1 text-base font-bold" style={{ color: '#ffffff' }}>
+                    + Event
+                  </Text>
+                  <HubIcon d={HUB_ICONS.chevron} size={18} color="#ffffff" strokeWidth={2.5} />
+                </Pressable>
+
+                {selectedEvent ? (
+                  (() => {
+                    const ev = selectedEvent;
+                    const rsvp = rsvpByEvent.get(ev.id) ?? EMPTY_RSVP;
+                    const expanded = openRsvpEventId === ev.id;
+                    // Only the open panel pays for filtering/slicing its roster.
+                    const q = expanded ? rsvpSearch.trim().toLowerCase() : '';
+                    const matchedRows = !expanded
+                      ? EMPTY_RSVP.rows
+                      : q
+                        ? rsvp.rows.filter((r) => r.name.toLowerCase().includes(q))
+                        : rsvp.rows;
+                    const shownRows = expanded ? matchedRows.slice(0, rsvpVisible) : EMPTY_RSVP.rows;
+                    const remaining = matchedRows.length - shownRows.length;
+                    return (
+                      <>
+                        <HubSectionLabel icon={HUB_ICONS.chart} label="Team Status" />
+                        {/* The event lands a round trip or two before its RSVPs do
+                            (see getSeason's staged read) — a tally of zeroes in the
+                            meantime would read as "nobody answered". */}
+                        <View className="mb-3">
+                          <TeamStatusTiles counts={rsvp.counts} loading={!!ev.availabilityPending} />
+                        </View>
+
+                        <HubRowCard
+                          tone="orange"
+                          icon={HUB_ICONS.players}
+                          title={expanded ? 'Hide RSVPs' : 'Who’s coming? Set RSVPs'}
+                          caption="Get a quick view of your team’s availability"
+                          onPress={() => toggleRsvp(ev.id)}
+                          trailing={
+                            expanded && rsvpPending ? (
+                              <ActivityIndicator size="small" color={colors.primary} />
+                            ) : (
+                              <HubIcon
+                                d={expanded ? 'M6 15l6-6 6 6' : 'M9 5l7 7-7 7'}
+                                size={16}
+                                color={colors.primary}
+                                strokeWidth={2.5}
+                              />
+                            )
+                          }
+                        />
 
                     {expanded ? (
-                      <View className="rounded-md border overflow-hidden" style={{ borderColor: colors.border }}>
+                      <View className="rounded-md border overflow-hidden mt-2" style={{ borderColor: colors.border }}>
                         {rsvpPending || ev.availabilityPending ? (
                           <View className="items-center py-6 gap-2">
                             <ActivityIndicator size="small" color={colors.primary} />
@@ -1534,26 +1575,35 @@ export default function TeamDetailScreen() {
                       </View>
                     ) : null}
 
-                    <View className="flex-row flex-wrap gap-2 items-center">
-                      {/* No size="sm" here: Button's own text stays text-base at every
-                          size (see Button.tsx), so its "sm" already renders taller than
-                          MapLink's text-xs "sm" chip. MapLink's default (md) size lands
-                          at the same actual height as Button's "sm" — this is the match,
-                          not a mismatch to fix later. */}
-                      <AddToCalendar event={ev} teamName={team.name} />
-                      <MapLink location={ev.location} label={ev.title} />
-                      <Button label="Edit" variant="secondary" size="sm" onPress={() => openEditEventModal(ev)} />
-                      <Button
-                        label="Delete"
-                        variant="danger"
-                        size="sm"
-                        loading={deleteEvent.isPending && deleteEvent.variables === ev.id}
-                        onPress={() => confirmDeleteEvent(ev.id, ev.title)}
-                      />
-                    </View>
-                  </Card>
-                );
-              })
+                        <View className="flex-row gap-2 mt-3">
+                          <AddToCalendar
+                            event={ev}
+                            teamName={team.name}
+                            renderTrigger={(open) => (
+                              <HubActionTile icon={HUB_ICONS.calendar} label="Add to calendar" onPress={open} />
+                            )}
+                          />
+                          <MapLink
+                            location={ev.location}
+                            label={ev.title}
+                            renderTrigger={(open) => (
+                              <HubActionTile icon={HUB_ICONS.pin} label="Directions" onPress={open} />
+                            )}
+                          />
+                          <HubActionTile icon={HUB_ICONS.edit} label="Edit" onPress={() => openEditEventModal(ev)} />
+                          <HubActionTile
+                            icon={HUB_ICONS.trash}
+                            label="Delete"
+                            danger
+                            loading={deleteEvent.isPending && deleteEvent.variables === ev.id}
+                            onPress={() => confirmDeleteEvent(ev.id, ev.title)}
+                          />
+                        </View>
+                      </>
+                    );
+                  })()
+                ) : null}
+              </>
             )}
           </View>
           </PlanGate>
@@ -2311,7 +2361,23 @@ export default function TeamDetailScreen() {
 
       <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
 
-      <BottomNav active="teams" />
+      <TeamHubNav
+        activeKey={tab}
+        items={[
+          {
+            key: 'home',
+            label: 'Home',
+            icon: HUB_ICONS.home,
+            onPress: () => navigation.navigate('DashboardMain', { tab: 'teams' }),
+          },
+          { key: 'schedule', label: 'Schedule', icon: HUB_ICONS.calendar, onPress: () => setTab('schedule') },
+          { key: 'players', label: 'Players', icon: HUB_ICONS.players, onPress: () => setTab('players') },
+          ...(canViewEvaluations
+            ? [{ key: 'assessments', label: 'Evaluations', icon: HUB_ICONS.clipboard, onPress: () => setTab('assessments') }]
+            : []),
+          { key: 'settings', label: 'More', icon: HUB_ICONS.more, onPress: () => setTab('settings') },
+        ]}
+      />
     </Screen>
   );
 }

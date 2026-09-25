@@ -33,6 +33,7 @@ export function MapLink({
   label,
   size = 'md',
   variant = 'chip',
+  renderTrigger,
 }: {
   location?: string | null;
   /** Venue or event name, used to name the pin. */
@@ -44,6 +45,8 @@ export function MapLink({
    * tight for another button.
    */
   variant?: 'chip' | 'inline';
+  /** Draws the button that opens the picker, for screens with their own styling. */
+  renderTrigger?: (open: () => void) => React.ReactNode;
 }) {
   const colors = useThemeColors();
   const [open, setOpen] = useState(false);
@@ -91,6 +94,15 @@ export function MapLink({
       </View>
     </Modal>
   );
+
+  if (renderTrigger) {
+    return (
+      <>
+        {renderTrigger(() => setOpen(true))}
+        {picker}
+      </>
+    );
+  }
 
   if (variant === 'inline') {
     return (
