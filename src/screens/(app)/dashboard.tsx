@@ -495,18 +495,13 @@ export default function DashboardScreen() {
           onPress: () => handleTabChange('teams'),
         }
       : null,
-    // Comparisons live in Combine Mode, so this jumps to the evaluations list
-    // with it switched on — pick two or more, then "View Combined".
     !blockedFeatures.has('evaluations')
       ? {
           key: 'reports',
           label: 'Reports',
           caption: 'View comparisons, analytics and export results',
           icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
-          onPress: () => {
-            handleTabChange('assessments');
-            setCombineMode(true);
-          },
+          onPress: () => navigation.navigate('Reports'),
         }
       : null,
     {

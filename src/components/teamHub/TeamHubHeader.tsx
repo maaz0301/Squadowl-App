@@ -14,13 +14,15 @@ interface TeamHubHeaderProps {
   chatBadge?: React.ReactNode;
   /** Omitted for people who can't edit the team. */
   onEdit?: () => void;
+  /** e.g. the "Managed" badge for a club-delegated team. */
+  extra?: React.ReactNode;
 }
 
 /**
  * The hub's top row: back, crest, "<Team> Hub" with its season, then the two
  * pill actions. One compact line instead of a title bar plus a banner card.
  */
-export function TeamHubHeader({ name, subtitle, logoUrl, onChat, chatBadge, onEdit }: TeamHubHeaderProps) {
+export function TeamHubHeader({ name, subtitle, logoUrl, onChat, chatBadge, onEdit, extra }: TeamHubHeaderProps) {
   const colors = useThemeColors();
   const s = useHubSurfaces();
   const navigation = useNavigation<any>();
@@ -60,6 +62,8 @@ export function TeamHubHeader({ name, subtitle, logoUrl, onChat, chatBadge, onEd
           </Text>
         ) : null}
       </View>
+
+      {extra}
 
       <Pressable
         onPress={onChat}

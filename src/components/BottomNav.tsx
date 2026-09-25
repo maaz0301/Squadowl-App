@@ -6,6 +6,7 @@ import { useBottomInset } from '@/hooks/useBottomInset';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { usePermissions } from '@/state/authStore';
+import { usePlatformBlockedFeaturesQuery } from '@/features/queries';
 import { Modal } from '@/components/ui';
 
 export type BottomNavKey = 'assessments' | 'teams' | 'profile' | 'more';
@@ -27,10 +28,10 @@ const LABELS: Record<BottomNavKey, string> = {
 };
 
 /** Screens the More sheet opens — the secondary destinations that have no tab of their own. */
-const MORE_LINKS: { label: string; hint: string; route: string }[] = [
+const MORE_LINKS: { label: string; hint: string; route: string; feature?: 'billing' }[] = [
   { label: 'Archived', hint: 'Past evaluations and teams', route: 'ArchivedAssessments' },
   { label: 'Shared Athletes', hint: 'Profiles shared with you', route: 'SharedAthletes' },
-  { label: 'Plans & Upgrade', hint: 'Your plan and what it includes', route: 'Upgrade' },
+  { label: 'Plans & Upgrade', hint: 'Your plan and what it includes', route: 'Upgrade', feature: 'billing' },
   { label: 'Send Feedback', hint: 'Tell us how it is going', route: 'Feedback' },
 ];
 
@@ -49,6 +50,8 @@ export function BottomNav({ active, onTabPress }: BottomNavProps) {
   const navigation = useNavigation<any>();
   const { isGuardian, role } = usePermissions();
   const [moreOpen, setMoreOpen] = useState(false);
+  // Sections the founder has turned off platform-wide stay out of the sheet.
+  const { data: blockedFeatures } = usePlatformBlockedFeaturesQuery();
 
   if (isGuardian || role === 'guardian') {
     return null;
@@ -107,7 +110,7 @@ export function BottomNav({ active, onTabPress }: BottomNavProps) {
       </View>
       <Modal visible={moreOpen} title="More" onClose={() => setMoreOpen(false)}>
         <View className="gap-2">
-          {MORE_LINKS.map((l) => (
+          {MORE_LINKS.filter((l) => !l.feature || !(blockedFeatures ?? []).includes(l.feature)).map((l) => (
             <Pressable
               key={l.route}
               onPress={() => {

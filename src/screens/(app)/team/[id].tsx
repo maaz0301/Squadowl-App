@@ -749,7 +749,10 @@ export default function TeamDetailScreen() {
   const hasHiddenEvents = allTeamEvents.length > upcomingEvents.slice(0, 3).length;
   const evaluatorCount = new Set(
     linkedTryouts.flatMap((t) =>
-      (t.assessors ?? []).map((a) => (a.userId ?? a.email ?? '').toLowerCase()).filter(Boolean),
+      (t.assessors ?? [])
+        .filter((a) => a.status !== 'declined')
+        .map((a) => (a.userId ?? a.email ?? '').toLowerCase())
+        .filter(Boolean),
     ),
   ).size;
 
@@ -1046,6 +1049,8 @@ export default function TeamDetailScreen() {
         name={team.name}
         subtitle={team.season || undefined}
         logoUrl={team.logoUrl}
+        // A delegated team says so, so a club-owned team is never mistaken for one of the coach's own.
+        extra={team.managed ? <Badge label="Managed" variant="info" /> : undefined}
         chatBadge={<ChatUnreadBadge seasonId={teamSeasonId} />}
         onChat={openTeamChat}
         onEdit={canEditTeam ? startEdit : undefined}
