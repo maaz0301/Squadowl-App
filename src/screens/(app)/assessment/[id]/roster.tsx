@@ -92,6 +92,11 @@ export default function RosterScreen() {
   // player run looks exactly like an assessment nobody has added anyone to.
   const bulkWriting = useIsMutating({ mutationKey: tryoutBulkWriteKey(id ?? '') }) > 0;
   const [playerSearch, setPlayerSearch] = useState('');
+  // 'recent' leaves the roster in whatever order the read returned (the order
+  // players were added); 'name'/'age' sort it client-side — the whole roster
+  // is already in memory here, unlike the paginated team roster, so no extra
+  // read is needed.
+  const [rosterSort, setRosterSort] = useState<'recent' | 'name' | 'age'>('recent');
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deletingSelected, setDeletingSelected] = useState(false);
@@ -182,8 +187,24 @@ export default function RosterScreen() {
         (p) => `${p.first} ${p.last}`.toLowerCase().includes(search) || p.jersey?.toLowerCase().includes(search),
       );
     }
+    if (rosterSort === 'name') {
+      result = [...result].sort((a, b) => a.last.localeCompare(b.last) || a.first.localeCompare(b.first));
+    } else if (rosterSort === 'age') {
+      // Oldest first, the usual reading order for a roster sorted "by age". A
+      // missing/unparseable birth year sinks to the bottom on either sort
+      // rather than being guessed at as oldest.
+      result = [...result].sort((a, b) => {
+        const ayRaw = parseInt(a.yearOfBirth ?? '', 10);
+        const byRaw = parseInt(b.yearOfBirth ?? '', 10);
+        const ay = Number.isFinite(ayRaw) ? ayRaw : null;
+        const by = Number.isFinite(byRaw) ? byRaw : null;
+        if (ay == null) return by == null ? 0 : 1;
+        if (by == null) return -1;
+        return ay - by;
+      });
+    }
     return result;
-  }, [tryoutQuery.data, activeFilter, playerSearch, scoredIds, positionGroups]);
+  }, [tryoutQuery.data, activeFilter, playerSearch, rosterSort, scoredIds, positionGroups]);
 
   // Every filter's count, whichever one is showing: a chip that says how many
   // players it would leave answers "how much is left to score?" without the
@@ -398,6 +419,12 @@ export default function RosterScreen() {
             positionGroups={positionGroups}
             onSelect={setRosterFilter}
           />
+
+          <View className="flex-row flex-wrap -mb-2">
+            <Chip label="Recent" active={rosterSort === 'recent'} onPress={() => setRosterSort('recent')} />
+            <Chip label="A–Z" active={rosterSort === 'name'} onPress={() => setRosterSort('name')} />
+            <Chip label="Age" active={rosterSort === 'age'} onPress={() => setRosterSort('age')} />
+          </View>
         </View>
       ) : null}
 
