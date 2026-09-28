@@ -32,7 +32,7 @@ export function HubRowCard({
   return (
     <Pressable
       onPress={onPress}
-      className="flex-row items-center gap-3 rounded-xl px-3"
+      className="flex-row items-center gap-3 rounded-lg px-3"
       style={{
         minHeight: 56,
         backgroundColor: orange ? s.orangeBg : s.blueBg,

@@ -1456,7 +1456,7 @@ export default function TeamDetailScreen() {
                 <HubSectionLabel icon={HUB_ICONS.calendar} label="Season Hub" />
                 <Pressable
                   onPress={() => openEventModal('Event')}
-                  className="flex-row items-center gap-3 rounded-xl px-3 mb-6"
+                  className="flex-row items-center gap-3 rounded-lg px-3 mb-6"
                   style={{
                     height: 50,
                     backgroundColor: colors.primary,

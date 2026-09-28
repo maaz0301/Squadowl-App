@@ -46,7 +46,7 @@ export function HubEventCard({
   return (
     <Pressable
       onPress={onPress}
-      className="flex-row items-center gap-3 rounded-xl mb-2 pr-3 py-3"
+      className="flex-row items-center gap-3 rounded-lg mb-2 pr-3 py-3"
       style={{
         backgroundColor: s.panelBg,
         borderWidth: 1,

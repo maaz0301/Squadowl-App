@@ -77,7 +77,7 @@ export function TeamHubHeader({ name, subtitle, logoUrl, onChat, chatBadge, onEd
         <Pressable
           onPress={onChat}
           hitSlop={6}
-          className="flex-row items-center gap-1.5 rounded-full px-3"
+          className="flex-row items-center gap-1.5 rounded-lg px-3"
           style={{ height: 32, backgroundColor: s.panelBg, borderWidth: 1, borderColor: s.panelBorder }}
           accessibilityRole="button"
           accessibilityLabel="Team chat"
@@ -97,7 +97,7 @@ export function TeamHubHeader({ name, subtitle, logoUrl, onChat, chatBadge, onEd
           <Pressable
             onPress={onEdit}
             hitSlop={6}
-            className="items-center justify-center rounded-full px-4"
+            className="items-center justify-center rounded-lg px-4"
             style={{ height: 32, backgroundColor: s.orangeBg, borderWidth: 1, borderColor: colors.primary }}
             accessibilityRole="button"
             accessibilityLabel="Edit team"
