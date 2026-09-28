@@ -561,7 +561,6 @@ export default function DashboardScreen() {
           <View className="pt-2">
             <HomeTopBar
               onSearch={isGuardianOnly ? undefined : () => navigation.navigate('Search')}
-              onSettings={() => navigation.navigate('Profile')}
               avatar={
                 <Pressable
                   onPress={() => navigation.navigate('Profile')}
