@@ -1674,7 +1674,7 @@ export default function TeamDetailScreen() {
                       </View>
                     ) : null}
 
-                        <View className="flex-row gap-2 mt-3">
+                        <View className="flex-row flex-wrap justify-between gap-2 mt-3">
                           <AddToCalendar
                             event={ev}
                             teamName={team.name}
