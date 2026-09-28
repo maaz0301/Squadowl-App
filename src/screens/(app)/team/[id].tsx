@@ -24,7 +24,7 @@ import { AddToCalendar } from '@/components/AddToCalendar';
 import { MapLink, MapLocationHint } from '@/components/MapLink';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, TimeField } from '@/components/ui';
-import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useArchiveTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
+import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useArchiveTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterQuery, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit, canUseDummyData, playerRoom, assessmentRoom } from '@/data/plans';
@@ -171,6 +171,10 @@ export default function TeamDetailScreen() {
     current: Rsvp;
   } | null>(null);
   const [playerSearch, setPlayerSearch] = useState('');
+  // 'recent' is the default, unsorted (server created_at) order the paginated
+  // read already gives. 'name'/'age' need the whole roster in memory to sort
+  // correctly — see rosterSort below — so they switch off pagination.
+  const [rosterSort, setRosterSort] = useState<'recent' | 'name' | 'age'>('recent');
   const [navigatingId, setNavigatingId] = useState<string | null>(null);
   useFocusEffect(() => {
     setNavigatingId(null);
@@ -216,6 +220,10 @@ export default function TeamDetailScreen() {
   // flags actually need. One column over one statement, so it stays cheap on a
   // roster the Players tab only ever shows 50 of at a time.
   const rosterAthleteIdsQuery = useTeamRosterAthleteIdsQuery(id);
+  // Only reads when a real sort is picked (see rosterSort) — an alphabetical or
+  // age order has to be correct across the *whole* roster, not just the pages
+  // already paged in, so those two modes read everyone once instead of paging.
+  const fullRosterQuery = useTeamRosterQuery(id, rosterSort !== 'recent');
   const [addPlayersProgress, setAddPlayersProgress] = useState<{ done: number; total: number } | null>(null);
   const addRosterPlayers = useAddTeamRosterPlayersMutation(id, (done, total) => setAddPlayersProgress({ done, total }));
   const addManualPlayer = useAddManualTeamPlayerMutation(id);
@@ -399,6 +407,42 @@ export default function TeamDetailScreen() {
     () => rosterPages.data?.pages.flatMap((page) => page.players) ?? [],
     [rosterPages.data],
   );
+
+  // What the Players tab actually renders. 'recent' is listedPlayers as-is —
+  // paginated, server-searched, in the order the roster was built. 'name' and
+  // 'age' instead sort the *whole* roster (fullRosterQuery), because sorting
+  // only the pages already paged in would put e.g. "Aaron" from page 4 below
+  // "Zach" from page 1 until the coach scrolled far enough to load page 4 —
+  // search here is applied client-side to match, since the full read doesn't
+  // take a search param.
+  const displayedPlayers = useMemo(() => {
+    if (rosterSort === 'recent') return listedPlayers;
+    const term = debouncedPlayerSearch.trim().toLowerCase();
+    const all = fullRosterQuery.data ?? [];
+    const matched = term
+      ? all.filter(
+          (p) =>
+            `${p.first} ${p.last}`.toLowerCase().includes(term) ||
+            (p.jersey ?? '').toLowerCase().includes(term),
+        )
+      : all;
+    const sorted = [...matched];
+    if (rosterSort === 'name') {
+      sorted.sort(
+        (a, b) => a.last.localeCompare(b.last) || a.first.localeCompare(b.first),
+      );
+    } else {
+      // Oldest first, the usual reading order for a roster sorted "by age".
+      // A missing birth year (never required to add a player) sinks to the
+      // bottom on either sort rather than being guessed at as oldest.
+      sorted.sort((a, b) => {
+        if (a.yearOfBirth == null) return b.yearOfBirth == null ? 0 : 1;
+        if (b.yearOfBirth == null) return -1;
+        return a.yearOfBirth - b.yearOfBirth;
+      });
+    }
+    return sorted;
+  }, [rosterSort, listedPlayers, fullRosterQuery.data, debouncedPlayerSearch]);
 
   // "Select all" and its available-count must track the ACTIVE assessment
   // filter, not the full cross-assessment candidate pool — otherwise picking
@@ -1148,7 +1192,14 @@ export default function TeamDetailScreen() {
                     label="Select"
                     size="sm"
                     variant="secondary"
-                    onPress={() => setRosterSelectMode(true)}
+                    // "Select all" targets the paginated list (see
+                    // selectableRosterIds below), so entering select mode drops
+                    // back to that order rather than leaving it out of step with
+                    // whatever's actually on screen under a name/age sort.
+                    onPress={() => {
+                      setRosterSort('recent');
+                      setRosterSelectMode(true);
+                    }}
                   />
                 ) : null}
                 {canEditTeam && playerCount > 0 ? (
@@ -1171,13 +1222,24 @@ export default function TeamDetailScreen() {
                 containerClassName="mb-3"
               />
             ) : null}
+            {playerCount > 0 && !rosterSelectMode ? (
+              <View className="flex-row flex-wrap -mb-2">
+                <Chip label="Recent" active={rosterSort === 'recent'} onPress={() => setRosterSort('recent')} />
+                <Chip label="A–Z" active={rosterSort === 'name'} onPress={() => setRosterSort('name')} />
+                <Chip label="Age" active={rosterSort === 'age'} onPress={() => setRosterSort('age')} />
+              </View>
+            ) : null}
           </View>
           <FlatList
             className="flex-1 px-4"
             refreshControl={refreshControl}
             contentContainerStyle={{ paddingBottom: 24 }}
             keyboardShouldPersistTaps="handled"
-            data={rosterPages.isLoading ? [] : listedPlayers}
+            data={
+              (rosterSort === 'recent' ? rosterPages.isLoading : fullRosterQuery.isLoading)
+                ? []
+                : displayedPlayers
+            }
             keyExtractor={(p) => p.id}
             extraData={[navigatingId, rosterSelectMode, selectedRosterIds]}
             // See the assessment roster's list: cap how much of a large roster
@@ -1188,14 +1250,16 @@ export default function TeamDetailScreen() {
             removeClippedSubviews
             // Scrolling to the end pulls the next 50 in on its own; the footer
             // button below is for anyone who stops short of the very bottom.
+            // Only relevant to 'recent' — a name/age sort already read the
+            // whole roster up front, so there is nothing left to page in.
             onEndReachedThreshold={0.5}
             onEndReached={() => {
-              if (rosterPages.hasNextPage && !rosterPages.isFetchingNextPage) {
+              if (rosterSort === 'recent' && rosterPages.hasNextPage && !rosterPages.isFetchingNextPage) {
                 void rosterPages.fetchNextPage();
               }
             }}
             ListFooterComponent={
-              rosterPages.hasNextPage ? (
+              rosterSort === 'recent' && rosterPages.hasNextPage ? (
                 <View className="pt-1 pb-3">
                   <Button
                     label={`Load ${TEAM_ROSTER_PAGE} more players`}
@@ -1208,12 +1272,12 @@ export default function TeamDetailScreen() {
               ) : null
             }
             ListEmptyComponent={
-              rosterPages.isLoading ? (
+              (rosterSort === 'recent' ? rosterPages.isLoading : fullRosterQuery.isLoading) ? (
                 <View className="items-center py-6 gap-2">
                   <ActivityIndicator size="small" color={colors.primary} />
                   <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading roster...</Text>
                 </View>
-              ) : rosterPages.isError ? (
+              ) : (rosterSort === 'recent' ? rosterPages.isError : fullRosterQuery.isError) ? (
                 // Distinct from "No players yet" below: an errored fetch was
                 // silently rendering as a genuinely empty roster, which reads as
                 // "this team has no players" when it may well have hundreds —
@@ -1224,7 +1288,12 @@ export default function TeamDetailScreen() {
                   <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
                     This team's players couldn't be loaded. They're still on the roster, reload to try again.
                   </Text>
-                  <Button label="Retry" variant="secondary" size="sm" onPress={() => rosterPages.refetch()} />
+                  <Button
+                    label="Retry"
+                    variant="secondary"
+                    size="sm"
+                    onPress={() => (rosterSort === 'recent' ? rosterPages.refetch() : fullRosterQuery.refetch())}
+                  />
                 </Card>
               ) : !playerSearch.trim() ? (
                 <Card className="items-center py-6 gap-1">
