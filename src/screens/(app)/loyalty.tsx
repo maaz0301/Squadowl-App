@@ -6,6 +6,7 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
 import { FeatureBlockGate } from '@/components/FeatureBlockGate';
 import { formatCad } from '@/data/plans';
+import { APP_CONFIG } from '@/config/app';
 import { useReferralSummaryQuery, usePlatformBlockedFeaturesQuery } from '@/features/queries';
 import type { ReferralLedgerEntry } from '@/data/types';
 
@@ -80,17 +81,15 @@ export default function LoyaltyScreen() {
   const shareCode = async () => {
     if (!code) return;
     try {
-      // The deep link only auto-fills the signup field if TryoutHQ is already
-      // installed (aastryout:// is a bare custom scheme, not a universal/app
-      // link) — the plain code is included too so it still works as a manual
-      // fallback for someone installing fresh from the app store.
-      const deepLink = `aastryout://signup?ref=${encodeURIComponent(code)}`;
+      // A real https:// link to the web signup (which reads ?ref=), so it
+      // linkifies in Gmail, Messages, etc. A bare aastryout:// custom scheme
+      // shows up as plain text in most clients. The plain code stays as a
+      // manual fallback for someone installing the app fresh.
+      const signupLink = `${APP_CONFIG.webUrl}/signup?ref=${encodeURIComponent(code)}`;
       await Share.share({
         message:
-          `Join me on TryoutHQ, tap to sign up with my referral code applied: ${deepLink}\n\n` +
-          `Or enter this code by hand when you sign up: ${code}\n\n` +
-          `Once you subscribe, I get ${formatCad(REFERRAL_BONUS_CENTS)} of account credit, ` +
-          `and you get the same evaluation and team-building tools I use.`,
+          `Join me on TryoutHQ, sign up with my referral code applied: ${signupLink}\n\n` +
+          `Or enter this code by hand when you sign up: ${code}`,
       });
     } catch (e: any) {
       Alert.alert('Share Error', e?.message ?? 'Could not open the share sheet.');

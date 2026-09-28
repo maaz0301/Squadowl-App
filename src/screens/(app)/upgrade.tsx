@@ -284,7 +284,7 @@ export default function UpgradeScreen() {
     return ok;
   };
 
-  // Extra teams are an add-on subscription on top of the current plan (Club only), so
+  // Extra teams are an add-on subscription on top of the current plan (Coach+ and Club), so
   // this checkout must not go through `switchPlan` — that one switches the plan tier.
   const buyTeams = async () => {
     try {
@@ -395,45 +395,6 @@ export default function UpgradeScreen() {
           </Card>
         ) : null}
 
-        {canBuyTeams ? (
-          <Card className="mb-4 gap-2">
-            <Text className="font-display font-bold text-lg" style={{ color: colors.ink }}>
-              Add Teams
-            </Text>
-            <Text className="text-xs" style={{ color: colors.inkMuted }}>
-              Your plan includes {currentPlan.limits.teams} teams. Additional teams are{' '}
-              {formatCad(extraTeamPrice)} each per year.
-              {currentLicenses > 0
-                ? ` You've purchased ${currentLicenses} so far, for a cap of ${getTeamAllowance(currentTier, currentLicenses)} teams.`
-                : ''}
-            </Text>
-            <View className="flex-row items-center justify-between mt-2">
-              <View className="flex-row items-center gap-4">
-                <Pressable onPress={() => setExtraTeams((n) => Math.max(1, n - 1))} hitSlop={8}>
-                  <Text className="text-2xl" style={{ color: colors.primary }}>
-                    −
-                  </Text>
-                </Pressable>
-                <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
-                  {extraTeams}
-                </Text>
-                <Pressable onPress={() => setExtraTeams((n) => Math.min(50, n + 1))} hitSlop={8}>
-                  <Text className="text-2xl" style={{ color: colors.primary }}>
-                    +
-                  </Text>
-                </Pressable>
-              </View>
-              <Text className="font-display font-bold" style={{ color: colors.primary }}>
-                {formatCad(extraTeamPrice * extraTeams)}/yr
-              </Text>
-            </View>
-            <Button
-              label={`Add ${extraTeams} team${extraTeams === 1 ? '' : 's'}`}
-              onPress={buyTeams}
-              loading={buyingTeams}
-            />
-          </Card>
-        ) : null}
         {user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'trialing' ? (
           <View className="mb-2">
             <Button
@@ -530,6 +491,51 @@ export default function UpgradeScreen() {
                 <Text style={{ color: colors.success }}>green ✓</Text> included on all plans ·{' '}
                 <Text style={{ color: colors.warning }}>orange</Text> fees applied to this tier
               </Text>
+
+              {/* Extra teams are an add-on to the plan in force, so the stepper
+                  lives on the current Coach+/Club card rather than its own tile. */}
+              {isCurrent && canBuyTeams ? (
+                <View
+                  className="gap-2 mt-2 pt-3"
+                  style={{ borderTopWidth: 1, borderTopColor: colors.border }}
+                >
+                  <Text className="font-display font-bold" style={{ color: colors.ink }}>
+                    Add Teams
+                  </Text>
+                  <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                    Your plan includes {currentPlan.limits.teams} teams. Additional teams are{' '}
+                    {formatCad(extraTeamPrice)} each per year.
+                    {currentLicenses > 0
+                      ? ` You've purchased ${currentLicenses} so far, for a cap of ${getTeamAllowance(currentTier, currentLicenses)} teams.`
+                      : ''}
+                  </Text>
+                  <View className="flex-row items-center justify-between mt-1">
+                    <View className="flex-row items-center gap-4">
+                      <Pressable onPress={() => setExtraTeams((n) => Math.max(1, n - 1))} hitSlop={8}>
+                        <Text className="text-2xl" style={{ color: colors.primary }}>
+                          −
+                        </Text>
+                      </Pressable>
+                      <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
+                        {extraTeams}
+                      </Text>
+                      <Pressable onPress={() => setExtraTeams((n) => Math.min(50, n + 1))} hitSlop={8}>
+                        <Text className="text-2xl" style={{ color: colors.primary }}>
+                          +
+                        </Text>
+                      </Pressable>
+                    </View>
+                    <Text className="font-display font-bold" style={{ color: colors.primary }}>
+                      {formatCad(extraTeamPrice * extraTeams)}/yr
+                    </Text>
+                  </View>
+                  <Button
+                    label={`Add ${extraTeams} team${extraTeams === 1 ? '' : 's'}`}
+                    onPress={buyTeams}
+                    loading={buyingTeams}
+                  />
+                </View>
+              ) : null}
 
               {isCurrent ? (
                 <Button

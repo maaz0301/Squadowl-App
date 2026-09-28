@@ -76,11 +76,11 @@ serve(async (req) => {
     const account = Array.isArray(membership.accounts) ? membership.accounts[0] : membership.accounts;
     let customerId = account?.stripe_customer_id;
 
-    // Extra teams are a Club-only add-on. Selling them to a lower tier would hand out
-    // teams the plan's cap ignores anyway (getTeamAllowance only counts licenses on
+    // Extra teams are a Coach+ and Club add-on. Selling them to a lower tier would hand
+    // out teams the plan's cap ignores anyway (getTeamAllowance only counts licenses on
     // tiers with extraTeamPriceCents), i.e. the customer would pay for nothing.
-    if (isTeamLicense && account?.plan_tier !== 'club') {
-      throw new Error('Additional teams are only available on the Club plan. Upgrade to Club first.');
+    if (isTeamLicense && account?.plan_tier !== 'club' && account?.plan_tier !== 'coach_plus') {
+      throw new Error('Additional teams are only available on the Coach+ and Club plans. Upgrade first.');
     }
 
     if (!customerId) {
