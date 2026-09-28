@@ -24,7 +24,7 @@ import { AddToCalendar } from '@/components/AddToCalendar';
 import { MapLink, MapLocationHint } from '@/components/MapLink';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, TimeField } from '@/components/ui';
-import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useArchiveTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterQuery, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
+import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useArchiveTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterQuery, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useAddAthletesToEventsMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit, canUseDummyData, playerRoom, assessmentRoom } from '@/data/plans';
@@ -289,6 +289,8 @@ export default function TeamDetailScreen() {
     // who just saved a player.
     if (!athleteId) return;
 
+    offerAddToUpcomingEvents([athleteId]);
+
     try {
       const result = await sendInvites.mutateAsync([athleteId]);
       if (inviteNeedsAttention(result)) {
@@ -331,6 +333,29 @@ export default function TeamDetailScreen() {
   const updateEvent = useUpdateSeasonEventMutation(teamSeasonId ?? '');
   const deleteEvent = useDeleteSeasonEventMutation(teamSeasonId ?? '');
   const setAvailability = useSetAvailabilityMutation(teamSeasonId ?? '');
+  const addAthletesToEvents = useAddAthletesToEventsMutation(teamSeasonId ?? '');
+
+  // Offered right after a player lands on the roster, when the team already
+  // has upcoming events — adding to team_roster/season_roster never touches
+  // event_availability, so without this a player added after an event exists
+  // stays invisible on that event's RSVP list and invite emails forever (see
+  // addAthletesToEvents on DataSource). null = no prompt open; a non-null
+  // (always non-empty) array is the athlete ids waiting on a yes/no.
+  const [pendingEventInviteAthleteIds, setPendingEventInviteAthleteIds] = useState<string[] | null>(null);
+  const [selectedInviteEventIds, setSelectedInviteEventIds] = useState<Set<string>>(new Set());
+  // The import modal shows its own per-row summary before closing, so its
+  // athlete ids are held here and the prompt is offered on close instead of
+  // the moment the import call resolves — see the ImportPlayersModal wiring
+  // below. Accumulates across "Import more players" rounds within one open
+  // of the modal, since onClose (and this prompt) only fires once at the end.
+  const [pendingImportAthleteIds, setPendingImportAthleteIds] = useState<string[]>([]);
+
+  const offerAddToUpcomingEvents = (athleteIds: string[]) => {
+    const ids = athleteIds.filter(Boolean);
+    if (ids.length === 0 || upcomingEvents.length === 0) return;
+    setSelectedInviteEventIds(new Set(upcomingEvents.map((e) => e.id)));
+    setPendingEventInviteAthleteIds(ids);
+  };
 
   const eventForm = useForm<CreateEventForm>({
     resolver: zodResolver(CreateEventFormSchema),
@@ -663,6 +688,7 @@ export default function TeamDetailScreen() {
       setPickedAthletes(new Set());
       setCandidateTryoutFilter(null);
       setShowAddPlayers(false);
+      offerAddToUpcomingEvents(picked.map((c) => c.athleteId));
 
       // Landing on the roster is what earns the portal invite, so it goes out
       // here rather than waiting for someone to press Send Invites afterwards.
@@ -2138,7 +2164,13 @@ export default function TeamDetailScreen() {
 
       <ImportPlayersModal
         visible={showImportPlayers}
-        onClose={() => setShowImportPlayers(false)}
+        onClose={() => {
+          setShowImportPlayers(false);
+          if (pendingImportAthleteIds.length > 0) {
+            offerAddToUpcomingEvents(pendingImportAthleteIds);
+            setPendingImportAthleteIds([]);
+          }
+        }}
         target={team.name}
         atLimit={isAtPlayerLimit(effectiveTier, playerCount)}
         onLimitReached={() => setLimitMsg(buildLimitReachedMessage(effectiveTier, 'players', 'players'))}
@@ -2177,6 +2209,10 @@ export default function TeamDetailScreen() {
             } catch (e) {
               console.warn('Portal invites failed after a roster import:', e);
             }
+            // Held until the modal actually closes (its own summary screen is
+            // still ahead of this) and merged across "Import more players"
+            // rounds — see pendingImportAthleteIds above.
+            setPendingImportAthleteIds((prev) => [...prev, ...(result.athleteIds ?? [])]);
           }
           return result;
         }}
@@ -2195,6 +2231,85 @@ export default function TeamDetailScreen() {
           onSubmit={submitManualPlayer}
           submitLabel="Save Player & Send Invite"
         />
+      </Modal>
+
+      <Modal
+        visible={pendingEventInviteAthleteIds != null}
+        title={pendingEventInviteAthleteIds && pendingEventInviteAthleteIds.length > 1 ? 'Add to Upcoming Events?' : 'Add to Upcoming Event?'}
+        onClose={() => {
+          if (addAthletesToEvents.isPending) return;
+          setPendingEventInviteAthleteIds(null);
+        }}
+        footer={
+          <View style={{ gap: 8 }}>
+            <Button
+              label={
+                selectedInviteEventIds.size === 0
+                  ? 'Select events to add to'
+                  : `Add to ${selectedInviteEventIds.size} ${selectedInviteEventIds.size === 1 ? 'event' : 'events'}`
+              }
+              disabled={selectedInviteEventIds.size === 0}
+              loading={addAthletesToEvents.isPending}
+              onPress={async () => {
+                if (!pendingEventInviteAthleteIds || !teamSeasonId) return;
+                try {
+                  await addAthletesToEvents.mutateAsync({
+                    eventIds: [...selectedInviteEventIds],
+                    athleteIds: pendingEventInviteAthleteIds,
+                  });
+                } catch (e: any) {
+                  Alert.alert('Error', e?.message || 'Could not add this player to those events.');
+                  return;
+                }
+                setPendingEventInviteAthleteIds(null);
+              }}
+            />
+            <Button
+              label="Not Now"
+              variant="ghost"
+              disabled={addAthletesToEvents.isPending}
+              onPress={() => setPendingEventInviteAthleteIds(null)}
+            />
+          </View>
+        }
+      >
+        <Text className="text-sm mb-3" style={{ color: colors.inkMuted }}>
+          {pendingEventInviteAthleteIds && pendingEventInviteAthleteIds.length > 1
+            ? `These ${pendingEventInviteAthleteIds.length} players were just added to the team, which already has ${upcomingEvents.length === 1 ? 'an upcoming event' : `${upcomingEvents.length} upcoming events`}. Add them to:`
+            : `This player was just added to the team, which already has ${upcomingEvents.length === 1 ? 'an upcoming event' : `${upcomingEvents.length} upcoming events`}. Add them to:`}
+        </Text>
+        {upcomingEvents.map((ev) => {
+          const selected = selectedInviteEventIds.has(ev.id);
+          return (
+            <Pressable
+              key={ev.id}
+              onPress={() =>
+                setSelectedInviteEventIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(ev.id)) next.delete(ev.id);
+                  else next.add(ev.id);
+                  return next;
+                })
+              }
+              className="flex-row items-center gap-3 py-3 px-2 rounded-md border mb-2"
+              style={{
+                borderColor: selected ? colors.primary : colors.border,
+                backgroundColor: selected ? 'rgba(255,107,43,0.12)' : 'transparent',
+              }}
+            >
+              <View className="flex-1">
+                <Text className="font-bold" style={{ color: colors.ink }}>
+                  {ev.title}
+                </Text>
+                <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
+                  {ev.date}
+                  {ev.startTime ? ` · ${ev.startTime}` : ''}
+                </Text>
+              </View>
+              {selected ? <Badge label="Selected" variant="brand" /> : null}
+            </Pressable>
+          );
+        })}
       </Modal>
 
       <Modal
