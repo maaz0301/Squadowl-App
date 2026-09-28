@@ -429,7 +429,7 @@ export default function TeamDetailScreen() {
     const sorted = [...matched];
     if (rosterSort === 'name') {
       sorted.sort(
-        (a, b) => a.last.localeCompare(b.last) || a.first.localeCompare(b.first),
+        (a, b) => a.first.localeCompare(b.first) || a.last.localeCompare(b.last),
       );
     } else {
       // Oldest first, the usual reading order for a roster sorted "by age".
