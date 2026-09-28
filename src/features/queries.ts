@@ -88,6 +88,39 @@ export function useUploadTeamLogoMutation() {
   });
 }
 
+/**
+ * A player's name, photo, birth year, position, guardian/contact info and
+ * medical info all live on one canonical `athletes` row (see updatePlayer,
+ * updateTeamRosterPlayer and uploadPlayerPhoto in SupabaseDataSource) — but
+ * that same athlete can be showing on this team's roster, any *other* team's
+ * roster, a season roster, any tryout roster the account has them on
+ * (including ones nothing else in this session has open), the player profile
+ * screen, the athlete history read and the cross-assessment "Add Players from
+ * Evaluations" candidate list.
+ *
+ * Every write to that canonical row calls this instead of invalidating only
+ * the one query for the screen the edit was made on, so an edit made from an
+ * assessment shows up on the team roster (and vice versa) without whoever's
+ * looking at it having to navigate away and back or pull to refresh.
+ * `['tryout']`/`['tryouts']`/`['season']`/`['teams']` are prefixes, not full
+ * keys — see tryoutSummaries above for the same trick: react-query matches a
+ * query key by prefix, so invalidating the root reaches every id-specific
+ * entry under it (every open tryout, tryout list/summary, season and team
+ * roster) in one call.
+ */
+function invalidateAthleteEverywhere(qc: ReturnType<typeof useQueryClient>, athleteId?: string) {
+  qc.invalidateQueries({ queryKey: ['tryout'] });
+  qc.invalidateQueries({ queryKey: ['tryouts'] });
+  qc.invalidateQueries({ queryKey: ['season'] });
+  qc.invalidateQueries({ queryKey: queryKeys.teams });
+  qc.invalidateQueries({ queryKey: queryKeys.assessmentAthletes });
+  qc.invalidateQueries({ queryKey: ['athletes'] });
+  if (athleteId) {
+    qc.invalidateQueries({ queryKey: queryKeys.playerProfile(athleteId) });
+    qc.invalidateQueries({ queryKey: ['athleteHistory', athleteId] });
+  }
+}
+
 // ---- Team roster ----
 const teamRosterKey = (teamId: string) => ['teams', teamId, 'roster'] as const;
 
@@ -268,7 +301,10 @@ export function useUpdateTeamRosterPlayerMutation(teamId: string) {
   return useMutation({
     mutationFn: ({ athleteId, form }: { athleteId: string; form: AddPlayerForm }) =>
       getDataSource().updateTeamRosterPlayer(teamId, athleteId, form),
-    onSuccess: () => qc.invalidateQueries({ queryKey: teamRosterKey(teamId) }),
+    onSuccess: (_data, { athleteId }) => {
+      qc.invalidateQueries({ queryKey: teamRosterKey(teamId) });
+      invalidateAthleteEverywhere(qc, athleteId);
+    },
   });
 }
 
@@ -277,7 +313,10 @@ export function useUploadTeamPlayerPhotoMutation(teamId: string) {
   return useMutation({
     mutationFn: ({ athleteId, fileUri, fileType }: { athleteId: string; fileUri: string; fileType: string }) =>
       getDataSource().uploadPlayerPhoto(athleteId, fileUri, fileType),
-    onSuccess: () => qc.invalidateQueries({ queryKey: teamRosterKey(teamId) }),
+    onSuccess: (_data, { athleteId }) => {
+      qc.invalidateQueries({ queryKey: teamRosterKey(teamId) });
+      invalidateAthleteEverywhere(qc, athleteId);
+    },
   });
 }
 
@@ -777,7 +816,10 @@ export function useUpdatePlayerMutation(tryoutId: string) {
   return useMutation({
     mutationFn: ({ playerId, updates }: { playerId: string; updates: Partial<import('@/data/types').Player> }) =>
       withTimeout(getDataSource().updatePlayer(tryoutId, playerId, updates), 15000),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
+      invalidateAthleteEverywhere(qc, data.athleteId);
+    },
   });
 }
 
@@ -1222,7 +1264,10 @@ export function useUploadPlayerPhotoMutation(tryoutId: string) {
   return useMutation({
     mutationFn: ({ athleteId, fileUri, fileType }: { athleteId: string; fileUri: string; fileType: string }) =>
       withTimeout(getDataSource().uploadPlayerPhoto(athleteId, fileUri, fileType), 15000, 'Uploading photo timed out. Please check your connection.'),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) }),
+    onSuccess: (_data, { athleteId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
+      invalidateAthleteEverywhere(qc, athleteId);
+    },
   });
 }
 
