@@ -194,7 +194,7 @@ export default function RubricsScreen() {
             {unweightedCount > 0
               ? ` · the remaining ${unweightedCount} split ${formatPct(Math.max(0, 100 - explicitTotal))} evenly`
               : ''}
-            {explicitTotal > 100 ? ' · over 100% — weights are scaled to their share of the total.' : ''}
+            {explicitTotal > 100 ? ' · over 100%, weights are scaled to their share of the total.' : ''}
           </Text>
         ) : null}
 
@@ -270,7 +270,7 @@ export default function RubricsScreen() {
             label="2. Category (optional)"
             value={category}
             onChangeText={setCategory}
-            placeholder="e.g. Skating — groups several drills under one heading"
+            placeholder="e.g. Skating, groups several drills under one heading"
           />
           {existingCategories.length > 0 ? (
             <View className="flex-row flex-wrap gap-2">
@@ -299,7 +299,7 @@ export default function RubricsScreen() {
                 <Badge label={binaryLabels(scoringType)[1]} />
               </View>
               <Text className="text-xs italic" style={{ color: colors.inkMuted }}>
-                Assessors tap {binaryLabels(scoringType)[0]} / {binaryLabels(scoringType)[1]} — or flip the switch.{' '}
+                Assessors tap {binaryLabels(scoringType)[0]} / {binaryLabels(scoringType)[1]}, or flip the switch.{' '}
                 {binaryLabels(scoringType)[0]} scores 5.0, {binaryLabels(scoringType)[1]} scores 1.0.
               </Text>
             </View>
@@ -420,7 +420,7 @@ export default function RubricsScreen() {
               value={weightStr}
               onChangeText={setWeightStr}
               keyboardType="numeric"
-              placeholder="e.g. 25 — leave blank for an even share"
+              placeholder="e.g. 25, leave blank for an even share"
             />
             {!weightValid ? (
               <Text className="text-xs font-bold" style={{ color: colors.danger }}>

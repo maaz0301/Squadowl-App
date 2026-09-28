@@ -747,7 +747,7 @@ export default function DashboardScreen() {
             ) : null}
 
             {/* Section panel: header, actions and — when there's nothing to list
-                yet — the empty state, all inside one container. Items follow as
+                yet, the empty state, all inside one container. Items follow as
                 their own cards below. */}
             {!isGuardianOnly && (
               <View className="mb-3">

@@ -14,7 +14,7 @@ function Row({ label, value, colors }: { label: string; value?: string; colors: 
         className="text-sm font-medium flex-1 text-right"
         style={{ color: value ? colors.ink : colors.inkFaint }}
       >
-        {value || '—'}
+        {value || '-'}
       </Text>
     </View>
   );

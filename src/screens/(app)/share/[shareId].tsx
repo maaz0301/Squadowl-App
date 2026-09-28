@@ -215,7 +215,7 @@ export default function ShareDetailScreen() {
 
       {/* Coach side only. The receiving coach sees the snapshot frozen at share
           time, since their account has no RLS access to query the original
-          account's evaluations live — see the migration comment on
+          account's evaluations live, see the migration comment on
           athlete_shares.athlete_assessments. The guardian who shared the
           athlete does not see scores here: assessment results stay with the
           coaches running the assessments, the same rule the guardian portal

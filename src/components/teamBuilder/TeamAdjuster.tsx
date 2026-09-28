@@ -211,7 +211,7 @@ export function TeamAdjuster({
 
       <View className="flex-row items-center justify-between mt-3 mb-1">
         <Text className="text-sm font-display font-bold" style={{ color: focusedZone?.accent ?? colors.ink }}>
-          {focusedZone?.name ?? '—'}
+          {focusedZone?.name ?? '-'}
         </Text>
         <Badge label={`${focusedZone?.playerIds.length ?? 0} players`} />
       </View>
@@ -510,7 +510,7 @@ function DraggableRow({
             {name}
           </Text>
           <Text className="text-xs" style={{ color: colors.inkMuted }}>
-            {[player?.jersey ? `#${player.jersey}` : null, player?.pos || null].filter(Boolean).join(' · ') || '—'}
+            {[player?.jersey ? `#${player.jersey}` : null, player?.pos || null].filter(Boolean).join(' · ') || '-'}
           </Text>
         </View>
         {overall != null && overall > 0 ? <Badge label={overall.toFixed(1)} variant="success" /> : null}

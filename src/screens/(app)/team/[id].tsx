@@ -1078,6 +1078,7 @@ export default function TeamDetailScreen() {
           ...(canViewEvaluations
             ? [{ key: 'assessments', label: 'Evaluations', icon: HUB_ICONS.clipboard, badge: linkedTryouts.length }]
             : []),
+          { key: 'settings', label: 'Options', icon: HUB_ICONS.sliders },
         ]}
         activeKey={tab}
         onChange={setTab}
@@ -1221,7 +1222,7 @@ export default function TeamDetailScreen() {
                 <Card className="items-center py-6 gap-2">
                   <Text className="font-bold" style={{ color: colors.warning }}>Couldn't load the roster</Text>
                   <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
-                    This team's players couldn't be loaded. They're still on the roster — reload to try again.
+                    This team's players couldn't be loaded. They're still on the roster, reload to try again.
                   </Text>
                   <Button label="Retry" variant="secondary" size="sm" onPress={() => rosterPages.refetch()} />
                 </Card>
@@ -1413,7 +1414,7 @@ export default function TeamDetailScreen() {
                   <Card className="items-center py-6 gap-1 mb-2">
                     <Text className="font-bold" style={{ color: colors.ink }}>No upcoming events</Text>
                     <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
-                      Add an event — everyone on the roster is invited and their guardians can RSVP from
+                      Add an event, everyone on the roster is invited and their guardians can RSVP from
                       the portal.
                     </Text>
                   </Card>
@@ -1493,7 +1494,7 @@ export default function TeamDetailScreen() {
                       <>
                         <HubSectionLabel icon={HUB_ICONS.chart} label="Team Status" />
                         {/* The event lands a round trip or two before its RSVPs do
-                            (see getSeason's staged read) — a tally of zeroes in the
+                            (see getSeason's staged read), a tally of zeroes in the
                             meantime would read as "nobody answered". */}
                         <View className="mb-3">
                           <TeamStatusTiles counts={rsvp.counts} loading={!!ev.availabilityPending} />
@@ -1528,7 +1529,7 @@ export default function TeamDetailScreen() {
                           </View>
                         ) : rsvp.rows.length === 0 && ev.availabilityUnavailable ? (
                           <Text className="text-xs p-3" style={{ color: colors.warning }}>
-                            RSVPs couldn’t be loaded for this event. Everyone invited is still invited —
+                            RSVPs couldn’t be loaded for this event. Everyone invited is still invited,
                             reload to try again.
                           </Text>
                         ) : rsvp.rows.length === 0 ? (
@@ -1640,7 +1641,7 @@ export default function TeamDetailScreen() {
           <View>
             {/* CLUB mode: hand this one team to another coach/manager. A
                 delegate of this team can now manage the list too (see
-                can_delegate_team() in 20260827120000_team_manager_full_access.sql) —
+                can_delegate_team() in 20260827120000_team_manager_full_access.sql),
                 readOnly no longer applies to a viewer who reached this screen
                 as this team's own manager. */}
             <View className="mb-3">
@@ -1697,7 +1698,7 @@ export default function TeamDetailScreen() {
                   </Text>
                   {linkedTryouts.length === 0 ? (
                     <Text className="text-xs" style={{ color: colors.inkFaint }}>
-                      Sending is done from an evaluation. No evaluations are linked to this team yet — create or
+                      Sending is done from an evaluation. No evaluations are linked to this team yet, create or
                       attach one on the Evaluations tab.
                     </Text>
                   ) : (
@@ -1834,7 +1835,7 @@ export default function TeamDetailScreen() {
                   />
                   <Text className="text-xs" style={{ color: colors.inkMuted }}>
                     Saving this creates (or reuses) this team's season and adds everyone currently on
-                    the roster to it — each player's guardian will then be asked to pay this fee, plus
+                    the roster to it, each player's guardian will then be asked to pay this fee, plus
                     TryoutHQ's 0.5% platform fee, from their portal.
                   </Text>
                 </Card>
@@ -1960,7 +1961,7 @@ export default function TeamDetailScreen() {
           </Text>
         ) : candidates.length === 0 ? (
           <Text className="text-sm py-3" style={{ color: colors.inkMuted }}>
-            No evaluations have players yet — add players to an evaluation roster first.
+            No evaluations have players yet, add players to an evaluation roster first.
           </Text>
         ) : (
           <View className="flex-1">

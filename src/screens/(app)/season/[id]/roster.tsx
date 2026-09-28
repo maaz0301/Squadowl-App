@@ -202,7 +202,7 @@ export default function SeasonRosterScreen() {
                   {item.firstName} {item.lastName}
                 </Text>
                 <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                  #{item.jersey ?? '—'} · {item.playerEmail ?? item.guardianEmail ?? 'No email'}
+                  #{item.jersey ?? '-'} · {item.playerEmail ?? item.guardianEmail ?? 'No email'}
                 </Text>
               </View>
               {item.portalInviteSentAt ? (

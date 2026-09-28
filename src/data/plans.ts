@@ -66,7 +66,7 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
   {
     tier: 'free',
     name: 'Free',
-    tagline: 'Try it out — no credit card needed',
+    tagline: 'Try it out, no credit card needed',
     pricing: null,
     features: [
       { label: 'Team Chat Messenger', included: true, allPlans: true },

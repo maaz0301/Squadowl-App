@@ -71,7 +71,7 @@ function RatingRow({
               onPress={() => onChange(n)}
               accessibilityRole="radio"
               accessibilityState={{ selected: active }}
-              accessibilityLabel={`${label}: ${n} out of 5 — ${RATING_WORDS[n]}`}
+              accessibilityLabel={`${label}: ${n} out of 5, ${RATING_WORDS[n]}`}
               className="flex-1 items-center justify-center py-3"
               style={{ backgroundColor: active ? tone : 'transparent' }}
             >
@@ -128,7 +128,7 @@ export default function FeedbackScreen() {
     if (oversized.length > 0) {
       Alert.alert(
         'File too large',
-        `${oversized.map((a) => a.fileName ?? 'A screenshot').join(', ')} — attachments are limited to ${formatBytes(MAX_ATTACHMENT_BYTES)}.`,
+        `${oversized.map((a) => a.fileName ?? 'A screenshot').join(', ')}, attachments are limited to ${formatBytes(MAX_ATTACHMENT_BYTES)}.`,
       );
     }
 

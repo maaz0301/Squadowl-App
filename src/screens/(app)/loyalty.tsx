@@ -87,9 +87,9 @@ export default function LoyaltyScreen() {
       const deepLink = `aastryout://signup?ref=${encodeURIComponent(code)}`;
       await Share.share({
         message:
-          `Join me on TryoutHQ — tap to sign up with my referral code applied: ${deepLink}\n\n` +
+          `Join me on TryoutHQ, tap to sign up with my referral code applied: ${deepLink}\n\n` +
           `Or enter this code by hand when you sign up: ${code}\n\n` +
-          `Once you subscribe, I get ${formatCad(REFERRAL_BONUS_CENTS)} of account credit — ` +
+          `Once you subscribe, I get ${formatCad(REFERRAL_BONUS_CENTS)} of account credit, ` +
           `and you get the same evaluation and team-building tools I use.`,
       });
     } catch (e: any) {
@@ -182,7 +182,7 @@ export default function LoyaltyScreen() {
         {pending > 0 ? (
           <Text className="text-xs" style={{ color: colors.inkFaint }}>
             {pending} {pending === 1 ? 'person has' : 'people have'} signed up but not subscribed
-            yet — credit lands when they do.
+            yet, credit lands when they do.
           </Text>
         ) : null}
       </Card>
@@ -219,7 +219,7 @@ export default function LoyaltyScreen() {
                 3. You earn {formatCad(REFERRAL_BONUS_CENTS)} per subscriber
               </Text>
               <Text style={{ color: colors.inkMuted }}>
-                Credit lands automatically once their payment goes through — up to{' '}
+                Credit lands automatically once their payment goes through, up to{' '}
                 {formatCad(capCents)} per year. Nothing is earned for a signup that never
                 subscribes.
               </Text>

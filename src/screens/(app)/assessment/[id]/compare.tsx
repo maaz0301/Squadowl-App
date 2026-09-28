@@ -124,7 +124,7 @@ export default function CompareScreen() {
                       >
                         <Text className="text-xs" style={{ color: colors.inkMuted }}>
                           {unscoredSelected.map((r) => playerDisplayName(r.player)).join(', ')}{' '}
-                          {unscoredSelected.length === 1 ? "hasn't" : "haven't"} been scored yet — the AI will call this out instead of guessing.
+                          {unscoredSelected.length === 1 ? "hasn't" : "haven't"} been scored yet, the AI will call this out instead of guessing.
                         </Text>
                       </View>
                     ) : null}

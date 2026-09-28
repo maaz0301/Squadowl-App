@@ -23,7 +23,7 @@ const ASSESSMENT_TARGETS: { key: DummyTarget; label: string; hint: string }[] = 
   {
     key: 'registrations',
     label: 'Registrations',
-    hint: 'Pending registrations with guardian details — land in the Pending tab so you can test approve/dismiss.',
+    hint: 'Pending registrations with guardian details, land in the Pending tab so you can test approve/dismiss.',
   },
   {
     key: 'roster',
@@ -176,7 +176,7 @@ export function DummyDataModal(props: DummyDataModalProps) {
         {isTeam ? (
           <Text className="text-sm" style={{ color: colors.inkMuted }}>
             Teams hold no roster of their own, so each dummy team is created with a linked
-            evaluation — seeded with rubrics covering skill, time, distance, and speed — and the
+            evaluation, seeded with rubrics covering skill, time, distance, and speed, and the
             players are added there.
           </Text>
         ) : (
@@ -240,7 +240,7 @@ export function DummyDataModal(props: DummyDataModalProps) {
               ? props.variant === 'team' && props.teamsBlockedBy === 'loading'
                 ? 'Checking how much of your plan is already used…'
                 : props.variant === 'team' && props.teamsBlockedBy === 'evaluations'
-                  ? "Every dummy team comes with its own new evaluation, and your plan's evaluation limit is already used up — an evaluation you created yourself counts. Archive or delete one to make room."
+                  ? "Every dummy team comes with its own new evaluation, and your plan's evaluation limit is already used up, an evaluation you created yourself counts. Archive or delete one to make room."
                   : "Your plan's team limit is already used up, so no more dummy teams can be created."
               : !isTeam && target === 'both' && props.variant === 'assessment' && props.maxPlayers >= 1
                 ? '"Both" needs room for at least 2 players (one pending, one on the roster). Pick Registrations or Roster players instead.'
@@ -258,7 +258,7 @@ export function DummyDataModal(props: DummyDataModalProps) {
           <View className="gap-2">
             <Text className="text-sm" style={{ color: colors.ink }}>
               Players are scored against this evaluation's rubrics, but none are defined yet. Add at
-              least one rubric to generate scoring data — or continue to create unscored players.
+              least one rubric to generate scoring data, or continue to create unscored players.
             </Text>
             <Button label="Add Rubrics" variant="secondary" size="sm" onPress={props.onAddRubrics} />
           </View>

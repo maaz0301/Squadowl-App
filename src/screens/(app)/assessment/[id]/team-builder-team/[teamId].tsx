@@ -127,7 +127,7 @@ export default function TeamBuilderTeamScreen() {
               {playerDisplayName(p)}
             </Text>
             <Text className="text-sm" style={{ color: colors.inkMuted }}>
-              #{p.jersey ?? '—'} · {p.pos ?? '—'}
+              #{p.jersey ?? '-'} · {p.pos ?? '-'}
             </Text>
           </View>
           {overall != null && <Badge label={overall.toFixed(1)} variant="success" />}

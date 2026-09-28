@@ -305,7 +305,7 @@ export default function TeamBuilderScreen() {
 
   return (
     <Screen scroll insideTabBar>
-      <Header title="Team Builder" subtitle="Sort Out — balanced teams" showBack onBack={() => navigation.navigate('AssessmentResults')} />
+      <Header title="Team Builder" subtitle="Sort Out: balanced teams" showBack onBack={() => navigation.navigate('AssessmentResults')} />
 
       <PlanGate feature="teamBuilder" title="Team Builder" tierOverride={tier}>
         <Card accent className="gap-3 mb-4">

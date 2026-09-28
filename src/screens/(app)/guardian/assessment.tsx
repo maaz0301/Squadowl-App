@@ -12,7 +12,7 @@ function DetailRow({ label, value, colors }: { label: string; value?: string; co
     <View className="flex-row justify-between gap-3 border-b py-2 last:border-0" style={{ borderBottomColor: colors.border }}>
       <Text className="text-sm" style={{ color: colors.inkMuted }}>{label}</Text>
       <Text className="flex-1 text-right text-sm font-medium" style={{ color: value ? colors.ink : colors.inkFaint }}>
-        {value || '—'}
+        {value || '-'}
       </Text>
     </View>
   );

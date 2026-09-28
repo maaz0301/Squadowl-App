@@ -11,7 +11,7 @@ export interface PickedRosterFile {
 export class DocumentPickerUnavailable extends Error {
   constructor() {
     super(
-      'Choosing a file needs a newer build of the app. Update to the latest version and try again — ' +
+      'Choosing a file needs a newer build of the app. Update to the latest version and try again, ' +
         'if you built this one yourself, reinstall it after `npm install` so the file picker is included.',
     );
     this.name = 'DocumentPickerUnavailable';

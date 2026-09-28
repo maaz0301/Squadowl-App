@@ -539,7 +539,7 @@ export function buildTeams(tryout: Tryout, config: TeamBuilderConfig): TeamBuild
       const target = weakestFor(members);
       if (!target) {
         warnings.push(
-          `A friend group could not be kept together within the requested team sizes — those players were placed individually.`,
+          `A friend group could not be kept together within the requested team sizes, those players were placed individually.`,
         );
         continue;
       }
@@ -581,7 +581,7 @@ export function buildTeams(tryout: Tryout, config: TeamBuilderConfig): TeamBuild
       for (const r of rated) {
         if (!myIds.has(r.player.id) || assigned.has(r.player.id)) continue;
         const target = weakestFor([r.player.id]);
-        if (!target) continue; // No legal seat — reported as unassigned below.
+        if (!target) continue; // No legal seat, reported as unassigned below.
         place(target, r.player.id);
         assigned.add(r.player.id);
       }
@@ -617,7 +617,7 @@ export function buildTeams(tryout: Tryout, config: TeamBuilderConfig): TeamBuild
     const needed = quota * teamCount;
     if (available < needed) {
       warnings.push(
-        `You asked for ${quota} ${pos} on every team, but the roster only has ${available} of them — ${needed} would be needed for ${teamCount} teams.`,
+        `You asked for ${quota} ${pos} on every team, but the roster only has ${available} of them, ${needed} would be needed for ${teamCount} teams.`,
       );
     }
   }
@@ -625,7 +625,7 @@ export function buildTeams(tryout: Tryout, config: TeamBuilderConfig): TeamBuild
   if (config.splitGoalies) {
     for (const team of allTeams) {
       if (team.goalies.length > 1) {
-        warnings.push(`${team.name} has ${team.goalies.length} goalies — consider redistributing.`);
+        warnings.push(`${team.name} has ${team.goalies.length} goalies, consider redistributing.`);
       }
     }
   }

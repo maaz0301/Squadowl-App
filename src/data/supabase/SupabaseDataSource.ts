@@ -1214,7 +1214,7 @@ export class SupabaseDataSource implements DataSource {
       }
     } catch (e) {
       console.warn(
-        'get_evaluations_for_tryouts unavailable — falling back to the embedded read.',
+        'get_evaluations_for_tryouts unavailable, falling back to the embedded read.',
         e,
       );
       return this.fetchAllByIn('evaluations', EVALUATION_SELECT, 'tryout_id', ids, EVALUATIONS_PAGE);
@@ -2693,7 +2693,7 @@ export class SupabaseDataSource implements DataSource {
       .eq('athlete_id', athleteId)
       .limit(1);
     if (left && left.length > 0) {
-      console.log('removeTeamRosterPlayer: the roster row survived the delete — RLS most likely refused it.');
+      console.log('removeTeamRosterPlayer: the roster row survived the delete, RLS most likely refused it.');
       throw new Error(
         'Could not remove this player. You may not have permission to change this team’s roster.',
       );
@@ -3201,7 +3201,7 @@ export class SupabaseDataSource implements DataSource {
       });
       return byTryout;
     } catch (error) {
-      console.warn('Counting participants per tryout failed — falling back to the paged read.', error);
+      console.warn('Counting participants per tryout failed, falling back to the paged read.', error);
     }
 
     // `id` rides along only because keyset paging orders by it; nothing here
@@ -3621,7 +3621,7 @@ export class SupabaseDataSource implements DataSource {
       if (deleted.length < toDelete.length) {
         console.error(
           `syncAssessors: asked to remove ${toDelete.length} assessor row(s) from tryout ${tryoutId}, ` +
-            `the delete took ${deleted.length} — the tryout_assessors DELETE policy most likely refused the rest.`,
+            `the delete took ${deleted.length}, the tryout_assessors DELETE policy most likely refused the rest.`,
         );
         throw new Error(
           'Could not remove this assessor. You may not have permission to change who assesses this evaluation.',
@@ -3820,7 +3820,7 @@ export class SupabaseDataSource implements DataSource {
     if (error) {
       if (error.code === 'PGRST202' || error.code === '42883') {
         console.warn(
-          `${fn}() not deployed — apply 20260911120000_create_athlete_in_owning_account.sql. ` +
+          `${fn}() not deployed, apply 20260911120000_create_athlete_in_owning_account.sql. ` +
             'Until then only staff on the owning account can add players.',
         );
         throw new Error(
@@ -3880,7 +3880,7 @@ export class SupabaseDataSource implements DataSource {
     if (error) {
       if (error.code === 'PGRST202' || error.code === '42883') {
         console.warn(
-          `${fn}() not deployed — apply 20260911130000_create_portal_invite_in_owning_account.sql. ` +
+          `${fn}() not deployed, apply 20260911130000_create_portal_invite_in_owning_account.sql. ` +
             'Until then an assessor or delegated manager cannot send this invite.',
         );
       }
@@ -4111,7 +4111,7 @@ export class SupabaseDataSource implements DataSource {
       });
       if (error) {
         if (error.code === 'PGRST202' || error.code === '42883') {
-          console.warn('update_tryout_player() not deployed — an assessor cannot save player edits.');
+          console.warn('update_tryout_player() not deployed, an assessor cannot save player edits.');
           throw new Error(
             'Your account does not have permission to edit this player. Ask the coach who owns this evaluation to make the change.',
           );
@@ -6005,7 +6005,7 @@ export class SupabaseDataSource implements DataSource {
         // paths — and only from the first page, since a function that existed
         // a moment ago cannot vanish mid-scan.
         if (rpcRows.length > 0) return { rows: rpcRows, failed: true };
-        console.warn('get_event_availability() not deployed — trying the embedded read.');
+        console.warn('get_event_availability() not deployed, trying the embedded read.');
         break;
       }
 
@@ -6109,7 +6109,7 @@ export class SupabaseDataSource implements DataSource {
       } catch (e) {
         if (isStatementTimeout(e)) {
           console.error(
-            'event_availability read hit the statement timeout. This is a database-side problem — ' +
+            'event_availability read hit the statement timeout. This is a database-side problem, ' +
               'the row-level policy runs before the season_event_id filter. Deploy ' +
               'get_event_availability() and the event_availability indexes.',
           );
@@ -6756,7 +6756,7 @@ export class SupabaseDataSource implements DataSource {
     if (rpc.error.code !== 'PGRST202' && rpc.error.code !== '42883') {
       throw new Error(rpc.error.message);
     }
-    console.warn('create_season_event_for_caller() not deployed — falling back to the chunked write.');
+    console.warn('create_season_event_for_caller() not deployed, falling back to the chunked write.');
 
     const row = unwrap(
       await supabase
@@ -8856,7 +8856,7 @@ export class SupabaseDataSource implements DataSource {
       // included — and belongs in front of the user unchanged.
       const missingFunction = error.code === 'PGRST202' || error.code === '42883';
       if (!missingFunction) throw new Error(error.message);
-      console.log('remove_org_member() not deployed — falling back to direct deletes.');
+      console.log('remove_org_member() not deployed, falling back to direct deletes.');
 
       await this.removeOrgMemberDirect(memberId, identity);
     }
@@ -9016,7 +9016,7 @@ export class SupabaseDataSource implements DataSource {
     if (identity.accountId !== accountId) throw new Error('Member not found in this organization.');
 
     const blocked = (what: string) => {
-      console.log(`removeOrgMember: ${what} survived the delete — RLS most likely refused it.`);
+      console.log(`removeOrgMember: ${what} survived the delete, RLS most likely refused it.`);
       return new Error(
         'Could not remove this member. You may not have permission to remove them from this organization.',
       );
@@ -9309,7 +9309,7 @@ export class SupabaseDataSource implements DataSource {
     if (!error) return ((data ?? []) as Row[]).map((r) => this.rowToFamilyContact(r));
 
     if (error.code !== 'PGRST202' && error.code !== '42883') throw unwrap({ data: null, error });
-    console.log('list_athlete_family_contacts() not deployed — falling back to a direct read (staff only).');
+    console.log('list_athlete_family_contacts() not deployed, falling back to a direct read (staff only).');
 
     const rows = unwrap(
       await supabase
@@ -9357,7 +9357,7 @@ export class SupabaseDataSource implements DataSource {
       });
       if (error) {
         if (error.code === 'PGRST202' || error.code === '42883') {
-          console.log('add_athlete_family_contact() not deployed — this account cannot add a family contact.');
+          console.log('add_athlete_family_contact() not deployed, this account cannot add a family contact.');
           throw new Error('Your account does not have permission to add a family contact for this player.');
         }
         throw unwrap({ data: null, error });
@@ -9381,7 +9381,7 @@ export class SupabaseDataSource implements DataSource {
     const { error } = await supabase.rpc('remove_athlete_family_contact', { p_contact_id: id });
     if (error) {
       if (error.code === 'PGRST202' || error.code === '42883') {
-        console.log('remove_athlete_family_contact() not deployed — this account cannot remove a family contact.');
+        console.log('remove_athlete_family_contact() not deployed, this account cannot remove a family contact.');
         throw new Error('Your account does not have permission to remove this family contact.');
       }
       throw unwrap({ data: null, error });
@@ -9669,7 +9669,7 @@ export class SupabaseDataSource implements DataSource {
       console.error('Failed to fetch guardian rosters:', rpcError);
       return [];
     }
-    console.warn('get_guardian_rosters() not deployed — falling back to the nested query.');
+    console.warn('get_guardian_rosters() not deployed, falling back to the nested query.');
 
     // 1. Fetch the actual logged-in user's email to bypass misaligned UUIDs
     const { data: userData } = await supabase.auth.getUser();

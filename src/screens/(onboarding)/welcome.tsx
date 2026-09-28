@@ -20,7 +20,7 @@ export default function WelcomeScreen() {
           </Text>
           <Text className="text-base leading-relaxed" style={{ color: colors.inkMuted }}>
             Run athlete tryouts and evaluations from your phone. Score players rinkside, manage
-            rosters, and share results — all in one place.
+            rosters, and share results, all in one place.
           </Text>
         </View>
 

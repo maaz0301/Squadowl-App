@@ -81,7 +81,7 @@ export const PlayerRow = memo(function PlayerRow({
         </Text>
         <View className="mt-1 flex-row items-center gap-1.5">
           <Text className="font-mono text-xs" style={{ color: colors.inkMuted }}>
-            #{player.jersey ?? '—'}
+            #{player.jersey ?? '-'}
           </Text>
           {player.pos ? (
             <View
@@ -127,7 +127,7 @@ export const PlayerRow = memo(function PlayerRow({
           style={{ borderColor: colors.border, backgroundColor: 'transparent' }}
         >
           <Text className="text-sm font-extrabold" style={{ color: colors.inkFaint }}>
-            —
+            -
           </Text>
           <Text
             className="text-[10px] font-bold uppercase"

@@ -252,7 +252,7 @@ export default function SeasonScheduleScreen() {
               <Badge label={item.type} variant={item.type === 'Game' ? 'brand' : 'default'} />
             </View>
             <Text style={{ color: colors.inkMuted }}>
-              {item.date} · {item.startTime ?? '—'}–{item.endTime ?? '—'}
+              {item.date} · {item.startTime ?? '-'}–{item.endTime ?? '-'}
             </Text>
             {item.location ? (
               <Text style={{ color: colors.inkFaint }}>
@@ -263,7 +263,7 @@ export default function SeasonScheduleScreen() {
               {/* No size="sm" on these two: Button's own text stays text-base at every
                   size (see Button.tsx), so its "sm" already renders taller than these
                   chips' text-xs "sm". Their default (md) size lands at the same actual
-                  height as Button's "sm" — this is the match, not a mismatch to fix later. */}
+                  height as Button's "sm", this is the match, not a mismatch to fix later. */}
               <AddToCalendar event={item} teamName={season.teamName} />
               <MapLink location={item.location} label={item.title} />
               <Button label="Send Reminder" variant="secondary" size="sm" onPress={() => sendReminder(item)} loading={reminding === item.id} />
@@ -324,7 +324,7 @@ export default function SeasonScheduleScreen() {
                 {/* The season's events arrive before its roster (see
                     getSeason), so the picker can open on a roster that hasn't
                     loaded. Saying so beats an empty list that looks like a team
-                    with no players — and the save is blocked below, since an
+                    with no players, and the save is blocked below, since an
                     event saved here invites exactly who is selected. */}
                 {season.rosterPending ? (
                   <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading roster...</Text>

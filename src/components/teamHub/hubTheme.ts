@@ -44,5 +44,6 @@ export const HUB_ICONS = {
   check: 'M5 13l4 4L19 7',
   question: 'M9.5 9a2.5 2.5 0 115 0c0 1.5-2.5 2-2.5 4M12 17h.01',
   close: 'M6 6l12 12M18 6L6 18',
+  sliders: 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
   clock: 'M12 7v5l3 2M12 22a10 10 0 100-20 10 10 0 000 20z',
 } as const;

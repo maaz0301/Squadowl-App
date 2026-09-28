@@ -247,12 +247,12 @@ const ABOUT_SNIPPETS = [
   'Strong work ethic, still developing consistency under pressure.',
   'Returning athlete, was on the bubble at last season’s tryout.',
   'New to the association, moved from out of province over the summer.',
-  'Coachable and vocal — often ends up leading warmups.',
+  'Coachable and vocal, often ends up leading warmups.',
 ];
 
 const MEDICAL_SNIPPETS = [
   'No known allergies or conditions.',
-  'Mild seasonal asthma — carries an inhaler.',
+  'Mild seasonal asthma, carries an inhaler.',
   'Recovered from a wrist sprain in the spring, fully cleared.',
   'Peanut allergy, carries an EpiPen.',
 ];

@@ -38,7 +38,7 @@ export const LETTER_KIND_LABELS: Record<LetterKind, string> = {
 export const LETTER_KIND_DESCRIPTIONS: Record<LetterKind, string> = {
   offer: 'For players who made the team.',
   decision: 'For players who were not selected.',
-  custom: 'Anything else — a waitlist note, an affiliate invite, a thank-you.',
+  custom: 'Anything else, a waitlist note, an affiliate invite, a thank-you.',
 };
 
 export interface LetterPlaceholder {
@@ -57,9 +57,9 @@ export const LETTER_PLACEHOLDERS: LetterPlaceholder[] = [
   { token: 'season', label: 'Season', auto: true, hint: "The assessment's season." },
   { token: 'coach_name', label: 'Coach name', auto: true, hint: 'Head coach, falling back to you.' },
   { token: 'coach_email', label: 'Coach email', auto: true, hint: 'Where replies should go.' },
-  { token: 'next_steps', label: 'Next steps', auto: false, hint: 'What the family has to do now — write this yourself.' },
-  { token: 'feedback_notes', label: 'Feedback notes', auto: false, hint: 'Development areas the staff noted — write this yourself.' },
-  { token: 'alternative_options', label: 'Alternative options', auto: false, hint: 'Other programs to point them at — write this yourself.' },
+  { token: 'next_steps', label: 'Next steps', auto: false, hint: 'What the family has to do now, write this yourself.' },
+  { token: 'feedback_notes', label: 'Feedback notes', auto: false, hint: 'Development areas the staff noted, write this yourself.' },
+  { token: 'alternative_options', label: 'Alternative options', auto: false, hint: 'Other programs to point them at, write this yourself.' },
 ];
 
 /** The tokens `renderLetter()` substitutes; everything else is the coach's to write. */
@@ -82,7 +82,7 @@ export const BUILT_IN_LETTER_TEMPLATES: BuiltInLetterTemplate[] = [
   {
     kind: 'offer',
     name: 'Offer Letter (Made the Team)',
-    subject: "Congratulations, {{player_name}} — You've Made the {{team_name}}!",
+    subject: "Congratulations, {{player_name}}, You've Made the {{team_name}}!",
     body: `Hi {{parent_name}},
 
 Congratulations to {{player_name}} on earning a spot on the {{team_name}} for the {{season}} season!
@@ -104,7 +104,7 @@ Please respond to: {{coach_email}}`,
   {
     kind: 'decision',
     name: "Roster Decision Letter (Didn't Make the Team)",
-    subject: '{{team_name}} Tryout Results — {{player_name}}',
+    subject: '{{team_name}} Tryout Results, {{player_name}}',
     body: `Hi {{parent_name}},
 
 Thank you for having {{player_name}} try out for the {{team_name}} this season. We had a strong group of athletes this year, which made our decisions difficult.
@@ -114,9 +114,9 @@ After careful evaluation, {{player_name}} was not selected for this year's roste
 Some areas our coaching staff noted for continued development:
 {{feedback_notes}}
 
-We genuinely encourage {{player_name}} to keep working on these skills — we'd love to see them try out again in the future. {{alternative_options}}
+We genuinely encourage {{player_name}} to keep working on these skills, we'd love to see them try out again in the future. {{alternative_options}}
 
-If you'd like more detailed feedback, {{coach_name}} is happy to talk — reach out at {{coach_email}}.
+If you'd like more detailed feedback, {{coach_name}} is happy to talk, reach out at {{coach_email}}.
 
 Thank you again for your time and effort during tryouts.
 

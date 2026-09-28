@@ -202,7 +202,7 @@ export default function OrganizationMembersScreen() {
             {canManageOrganization && item.role !== 'admin' && (
               <View className="flex-row gap-2 items-center">
                 {/* A delegated manager has no membership row, so there is no
-                    organization role to change — only the team to take back. */}
+                    organization role to change, only the team to take back. */}
                 {tab === 'staff' && item.source !== 'teamManager' && (
                   <Button
                     label="Role"

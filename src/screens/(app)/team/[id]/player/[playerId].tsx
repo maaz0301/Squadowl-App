@@ -24,7 +24,7 @@ function Row({ label, value, colors }: { label: string; value?: string; colors: 
     <View className="flex-row justify-between gap-3">
       <Text className="text-sm" style={{ color: colors.inkMuted }}>{label}</Text>
       <Text className="text-sm font-medium flex-1 text-right" style={{ color: value ? colors.ink : colors.inkFaint }}>
-        {value || '—'}
+        {value || '-'}
       </Text>
     </View>
   );
@@ -173,7 +173,7 @@ export default function TeamPlayerScreen() {
             uri={rosterEntry?.avatarUrl ?? fullPlayer?.avatarUrl}
           />
           <Text className="text-sm" style={{ color: colors.inkMuted }}>
-            #{jersey ?? '—'} · {pos ?? '—'}
+            #{jersey ?? '-'} · {pos ?? '-'}
           </Text>
           {fullPlayer?.registrationSource === 'qr' ? <Badge label="QR Registered" variant="info" /> : null}
         </View>

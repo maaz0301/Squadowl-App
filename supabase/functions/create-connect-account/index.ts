@@ -58,7 +58,7 @@ serve(async (req) => {
           linkError.message,
         );
         throw new Error(
-          `Stripe account created but could not be saved (${connectAccountId}). Please retry — if this repeats, contact support with that id.`,
+          `Stripe account created but could not be saved (${connectAccountId}). Please retry, if this repeats, contact support with that id.`,
         );
       }
     } else {

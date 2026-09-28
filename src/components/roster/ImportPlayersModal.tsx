@@ -260,7 +260,7 @@ export function ImportPlayersModal({
               {reading ? 'Reading the file…' : 'Choose a roster file'}
             </Text>
             <Text className="text-center text-sm" style={{ color: colors.inkMuted }}>
-              Excel or CSV — from Files and iCloud on iPhone, or your phone&apos;s storage and Drive on
+              Excel or CSV, from Files and iCloud on iPhone, or your phone&apos;s storage and Drive on
               Android.
             </Text>
             <View className="flex-row gap-2 pt-1">
@@ -280,7 +280,7 @@ export function ImportPlayersModal({
 
           <Text className="text-xs" style={{ color: colors.inkFaint }}>
             One player per row, with a heading row above them. Whatever your columns are called, you&apos;ll
-            match them up on the next step. PDFs can&apos;t be read — export the roster as CSV or Excel
+            match them up on the next step. PDFs can&apos;t be read, export the roster as CSV or Excel
             first.
           </Text>
         </View>
@@ -292,7 +292,7 @@ export function ImportPlayersModal({
             </Text>
             <Text className="text-sm" style={{ color: colors.inkMuted }}>
               {removed.size > 0
-                ? `${rows.length} of ${sheet.rows.length} rows kept — ${removed.size} removed`
+                ? `${rows.length} of ${sheet.rows.length} rows kept, ${removed.size} removed`
                 : `${rows.length} ${rows.length === 1 ? 'row' : 'rows'} below the headings on line ${sheet.headerLine}`}
             </Text>
           </View>
@@ -345,7 +345,7 @@ export function ImportPlayersModal({
                   {open ? (
                     <View className="mt-1.5 flex-row flex-wrap">
                       <Chip
-                        label="— not in this file —"
+                        label="Not in this file"
                         active={index == null}
                         disabled={importing}
                         onPress={() => setMapping((m) => ({ ...m, [field.key]: null }))}
@@ -380,7 +380,7 @@ export function ImportPlayersModal({
 
           {skipped.length > 0 && !importing ? (
             <Text className="text-sm" style={{ color: colors.inkMuted }}>
-              {skipped.length} {skipped.length === 1 ? 'row is' : 'rows are'} being left out — see above.
+              {skipped.length} {skipped.length === 1 ? 'row is' : 'rows are'} being left out, see above.
             </Text>
           ) : null}
         </View>
@@ -455,7 +455,7 @@ function RowPreview({
               <Text className="text-xs" style={{ color: colors.inkMuted }}>
                 {[row.display.email, row.form.jersey && `#${row.form.jersey}`, row.form.pos, row.form.yearOfBirth]
                   .filter(Boolean)
-                  .join(' · ') || '—'}
+                  .join(' · ') || '-'}
               </Text>
               {row.errors.length > 0 ? (
                 <Text className="mt-0.5 text-xs font-semibold" style={{ color: colors.danger }}>
@@ -484,7 +484,7 @@ function RowPreview({
           <Text className="text-xs" style={{ color: colors.inkFaint }}>
             {showAll
               ? `Showing all ${rows.length} rows (${rows.filter((r) => r.errors.length === 0).length} ready to import)`
-              : `Previewing ${shown.length} of ${rows.length} rows — all ${rows.filter((r) => r.errors.length === 0).length} ready rows will be imported`}
+              : `Previewing ${shown.length} of ${rows.length} rows, all ${rows.filter((r) => r.errors.length === 0).length} ready rows will be imported`}
           </Text>
           <Pressable
             disabled={disabled}
@@ -551,7 +551,7 @@ function ImportSummary({
               <Text className="font-bold" style={{ color: colors.ink }}>
                 Row {f.line} · {f.name}
               </Text>
-              {' — '}
+              {', '}
               {f.message}
             </Text>
           ))}

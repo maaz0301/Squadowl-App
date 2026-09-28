@@ -278,7 +278,7 @@ export function AssessmentHistory({
             {scoreTrend.map((a) => (
               <View key={a.id} className="flex-row justify-between">
                 <Text style={{ color: colors.inkMuted }}>
-                  {a.date || '—'} {a.label ? `· ${a.label}` : ''}
+                  {a.date || '-'} {a.label ? `· ${a.label}` : ''}
                 </Text>
                 <Text style={{ color: colors.ink }}>{a.overall.toFixed(1)}</Text>
               </View>

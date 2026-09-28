@@ -117,7 +117,7 @@ export function TeamManagersCard({ teamId, teamName, readOnly, tierOverride }: P
           </Text>
           <Text className="text-xs mt-1" style={{ color: colors.inkMuted }}>
             Give another manager access to run {teamName}. They'll see this team's roster, schedule,
-            and chat, and can create and run its evaluations — but nothing else on your account. You keep full access.
+            and chat, and can create and run its evaluations, but nothing else on your account. You keep full access.
           </Text>
         </View>
 
@@ -182,7 +182,7 @@ export function TeamManagersCard({ teamId, teamName, readOnly, tierOverride }: P
             />
             <Text className="text-xs" style={{ color: colors.inkMuted }}>
               They'll get an email with an Accept Invitation button. If they don't have a TryoutHQ
-              account yet, the email asks them to create one — access is granted automatically when they do.
+              account yet, the email asks them to create one, access is granted automatically when they do.
             </Text>
           </View>
         )}

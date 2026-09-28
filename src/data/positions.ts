@@ -57,10 +57,10 @@ export const POSITION_OPTIONS_BY_SPORT: Record<Sport, PositionOption[]> = {
   ],
   Tennis: [
     { code: 'S', label: 'Singles Player' },
-    { code: 'DS', label: 'Doubles — Server' },
-    { code: 'DR', label: 'Doubles — Receiver' },
-    { code: 'DN', label: 'Doubles — Net Player' },
-    { code: 'DB', label: 'Doubles — Baseline Player' },
+    { code: 'DS', label: 'Doubles: Server' },
+    { code: 'DR', label: 'Doubles: Receiver' },
+    { code: 'DN', label: 'Doubles: Net Player' },
+    { code: 'DB', label: 'Doubles: Baseline Player' },
   ],
   Volleyball: [
     { code: 'S', label: 'Setter (S)' },

@@ -100,12 +100,12 @@ export default function ResultsScreen() {
                     {playerDisplayName(item.player)}
                   </Text>
                   <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                    #{item.player.jersey ?? '—'} · {item.player.pos ?? '—'}
+                    #{item.player.jersey ?? '-'} · {item.player.pos ?? '-'}
                   </Text>
                 </View>
                 <View className="items-end gap-1">
                   <Text className="text-xl font-display font-bold" style={{ color: heatColor }}>
-                    {item.overall > 0 ? item.overall.toFixed(1) : '—'}
+                    {item.overall > 0 ? item.overall.toFixed(1) : '-'}
                   </Text>
                   {item.latestRecommendation ? (
                     <Badge

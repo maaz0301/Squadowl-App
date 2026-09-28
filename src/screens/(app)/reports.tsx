@@ -24,7 +24,7 @@ type PendingRow = Pick<EvaluationReportRow, 'id' | 'name' | 'sport' | 'eventType
 type ListRow = EvaluationReportRow | PendingRow;
 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
-const score = (n: number | null) => (n === null ? '—' : n.toFixed(1));
+const score = (n: number | null) => (n === null ? '-' : n.toFixed(1));
 
 /** Insights across the coach's evaluations: progress, scoring, leaders and the calls made. */
 export default function ReportsScreen() {
@@ -99,17 +99,17 @@ export default function ReportsScreen() {
     { label: 'Evaluations', value: `${evaluationCount}`, caption: 'in your account' },
     {
       label: 'Players scored',
-      value: scoresReady ? `${summary.scoredPlayerCount}` : '—',
+      value: scoresReady ? `${summary.scoredPlayerCount}` : '-',
       caption: scoresReady ? `of ${summary.playerCount} · ${pct(summary.completion)}` : waiting,
     },
     {
       label: 'Scores recorded',
-      value: scoresReady ? `${summary.scoresRecorded}` : '—',
+      value: scoresReady ? `${summary.scoresRecorded}` : '-',
       caption: scoresReady ? 'evaluations entered' : waiting,
     },
     {
       label: 'Average score',
-      value: scoresReady ? score(summary.avgOverall) : '—',
+      value: scoresReady ? score(summary.avgOverall) : '-',
       caption: scoresReady ? 'out of 5' : waiting,
     },
   ];

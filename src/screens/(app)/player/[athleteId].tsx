@@ -14,7 +14,7 @@ function Row({ label, value, colors }: { label: string; value?: string; colors: 
     <View className="flex-row justify-between gap-3">
       <Text className="text-sm" style={{ color: colors.inkMuted }}>{label}</Text>
       <Text className="text-sm font-medium flex-1 text-right" style={{ color: value ? colors.ink : colors.inkFaint }}>
-        {value || '—'}
+        {value || '-'}
       </Text>
     </View>
   );
@@ -41,7 +41,7 @@ export default function PlayerProfileScreen() {
       <View className="items-center py-4 gap-2">
         <Avatar first={profile.first} last={profile.last} pos={profile.currentPosition} size={72} uri={profile.avatarUrl} />
         <Text className="text-sm" style={{ color: colors.inkMuted }}>
-          #{profile.jersey ?? '—'} · {profile.currentPosition ?? '—'}
+          #{profile.jersey ?? '-'} · {profile.currentPosition ?? '-'}
         </Text>
       </View>
 
@@ -77,9 +77,9 @@ export default function PlayerProfileScreen() {
       {/* Assessment history is scores: the season-over-season averages, the
           trend and every evaluation's overall. It belongs to the coach who ran
           the assessments, so guardians get the profile without it rather than a
-          read-only copy of it — they see the event's date, time and location in
+          read-only copy of it, they see the event's date, time and location in
           their own portal, and their athlete's results from the coach directly.
-          Rows are non-interactive for everyone here — this profile is a
+          Rows are non-interactive for everyone here, this profile is a
           read-only summary, not an entry point into the scoring flow. */}
       {isGuardian ? null : (
         <AssessmentHistory

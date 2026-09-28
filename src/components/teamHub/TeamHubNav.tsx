@@ -44,7 +44,7 @@ export function TeamHubNav({ items, activeKey }: { items: HubNavItem[]; activeKe
             accessibilityLabel={item.label}
             accessibilityState={{ selected: active }}
           >
-            <HubIcon d={item.icon} size={20} color={tint} strokeWidth={item.key === 'more' ? 3 : 2} />
+            <HubIcon d={item.icon} size={20} color={tint} strokeWidth={item.icon === HUB_ICONS.more ? 3 : 2} />
             <Text className="font-medium mt-1" style={{ fontSize: 10, color: tint }}>
               {item.label}
             </Text>

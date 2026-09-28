@@ -241,7 +241,7 @@ export function buildResultsSummary(tryout: Tryout): ResultsSummary {
 /** Title + subtitle line for the printed full-results report. */
 export function buildReportDocInfo(tryout: Tryout): ReportDocInfo {
   return {
-    title: `${tryout.name} — Full Results`,
+    title: `${tryout.name}, Full Results`,
     subtitle: `Assessment: ${tryout.name} • Event Type: ${tryout.eventType} • Date: ${tryout.tryoutDate ?? ''} • Rink: ${tryout.rink ?? ''} • Sport: ${sportLabel(tryout)}`,
   };
 }

@@ -316,7 +316,7 @@ export default function ProfileScreen() {
             <Button label="Archived" variant="ghost" onPress={() => navigation.navigate('ArchivedAssessments')} />
             <Button label="Send Feedback" variant="ghost" onPress={() => navigation.navigate('Feedback')} />
             {/* The portal is limited to an email allowlist held in the database
-                (`feedback_reviewers`), not to a plan or a role — so whether to
+                (`feedback_reviewers`), not to a plan or a role, so whether to
                 offer it is a question only the server can answer. */}
             {isFeedbackReviewer ? (
               <Button

@@ -401,7 +401,7 @@ export default function LettersScreen() {
       ) : templates.length === 0 ? (
         <Card className="mb-6 gap-3">
           <Text className="text-sm" style={{ color: colors.inkMuted }}>
-            No templates yet. Start from one of the standard letters — you can edit every word of it
+            No templates yet. Start from one of the standard letters, you can edit every word of it
             before anything is sent.
           </Text>
           <View className="flex-row flex-wrap gap-2">
@@ -564,7 +564,7 @@ export default function LettersScreen() {
 
       <Modal
         visible={!!previewFor && !!sendWith}
-        title={previewFor ? `Preview — ${playerDisplayName(previewFor)}` : 'Preview'}
+        title={previewFor ? `Preview: ${playerDisplayName(previewFor)}` : 'Preview'}
         onClose={() => setPreviewFor(null)}
       >
         {previewFor && sendWith ? (

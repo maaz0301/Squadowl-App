@@ -468,7 +468,7 @@ export default function ScoreScreen() {
         >
       <Header
         title={`Score: ${playerDisplayName(player)}`}
-        subtitle={`Overall: ${overall > 0 ? overall.toFixed(1) : '—'}`}
+        subtitle={`Overall: ${overall > 0 ? overall.toFixed(1) : '-'}`}
         showBack
         onBack={() => navigation.navigate('AssessmentRoster')}
       />
@@ -576,7 +576,7 @@ export default function ScoreScreen() {
                 {cat.label}
               </Text>
               <Text className="text-sm font-bold" style={{ color: colors.primary }}>
-                {catAvg !== null ? catAvg.toFixed(1) : '—'}
+                {catAvg !== null ? catAvg.toFixed(1) : '-'}
               </Text>
             </View>
             {cat.subskills.map((s) => (
@@ -663,7 +663,7 @@ export default function ScoreScreen() {
 
       <View className="py-4 gap-2">
         <Text className="text-center text-2xl font-display font-bold" style={{ color: colors.primary }}>
-          Overall: {overall > 0 ? overall.toFixed(1) : '—'}
+          Overall: {overall > 0 ? overall.toFixed(1) : '-'}
         </Text>
         <Button label="Done" onPress={onSubmit} loading={saving} />
       </View>

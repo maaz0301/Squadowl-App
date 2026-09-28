@@ -37,12 +37,12 @@ export function buildNudgeMessage(
   const limit = effectiveLimit(tier, metric, extraTeamLicenses);
   const next = getNextUsefulTier(tier, metric);
   if (metric === 'teams' && sellsExtraTeams(tier)) {
-    return `You're at ${count} of ${formatLimit(limit)} teams — add more for ${formatCad(
+    return `You're at ${count} of ${formatLimit(limit)} teams, add more for ${formatCad(
       getPlanDefinition(tier).extraTeamPriceCents!
     )} per team per year.`;
   }
   return next
-    ? `You're at ${count} of ${formatLimit(limit)} ${label} — upgrade to ${next.name} for ${formatLimit(next.limits[metric])} ${label}.`
+    ? `You're at ${count} of ${formatLimit(limit)} ${label}, upgrade to ${next.name} for ${formatLimit(next.limits[metric])} ${label}.`
     : `You're at ${count} of ${formatLimit(limit)} ${label}.`;
 }
 

@@ -30,7 +30,7 @@ export function ChatIconButton({ onPress, badge }: { onPress: () => void; badge?
         />
       </Svg>
       {/* Overhangs the circle's top-right corner, the way an app-icon badge
-          does — inside it, the pill would sit on the speech bubble itself. */}
+          does, inside it, the pill would sit on the speech bubble itself. */}
       {badge ? (
         <View className="absolute" style={{ top: -2, right: -2 }} pointerEvents="none">
           {badge}

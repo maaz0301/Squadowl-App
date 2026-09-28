@@ -328,8 +328,8 @@ export default function RegistrationsScreen() {
                   Testing Tools
                 </Text>
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                  AI-generate a batch of realistic dummy records — pending registrations, rostered
-                  players, or both — optionally scored across every rubric, to test rankings, filters,
+                  AI-generate a batch of realistic dummy records, pending registrations, rostered
+                  players, or both, optionally scored across every rubric, to test rankings, filters,
                   and reports at scale.
                 </Text>
                 <View className="flex-row flex-wrap gap-2 mt-1">

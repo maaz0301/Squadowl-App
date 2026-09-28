@@ -37,7 +37,7 @@ export default function SeasonPlayerScreen() {
     <Screen scroll>
       <Header title={`${player.firstName} ${player.lastName}`} showBack />
       <Card className="mb-4 gap-2">
-        <Text style={{ color: colors.inkMuted }}>Jersey #{player.jersey ?? '—'}</Text>
+        <Text style={{ color: colors.inkMuted }}>Jersey #{player.jersey ?? '-'}</Text>
         <Text style={{ color: colors.ink }}>{player.playerEmail ?? 'No player email'}</Text>
         <Text style={{ color: colors.ink }}>{player.guardianEmail ?? 'No guardian email'}</Text>
         {player.portalInviteSentAt ? (

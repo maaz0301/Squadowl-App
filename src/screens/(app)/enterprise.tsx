@@ -515,7 +515,7 @@ export default function EnterpriseScreen() {
             </Text>
           ) : (membersQuery.data?.length ?? 0) === 0 ? (
             <Text className="text-sm" style={{ color: colors.inkMuted }}>
-              No members yet — invite staff from Organization Members.
+              No members yet, invite staff from Organization Members.
             </Text>
           ) : (
             <>

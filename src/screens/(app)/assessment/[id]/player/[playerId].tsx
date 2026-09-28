@@ -201,7 +201,7 @@ export default function PlayerHubScreen() {
       <View className="items-center py-4 gap-2">
         <Avatar first={player.first} last={player.last} pos={player.pos} size={72} uri={player.avatarUrl} />
         <Text className="text-sm" style={{ color: colors.inkMuted }}>
-          #{player.jersey ?? '—'} · {player.pos ?? '—'}
+          #{player.jersey ?? '-'} · {player.pos ?? '-'}
         </Text>
         {player.registrationSource === 'qr' ? <Badge label="QR Registered" variant="info" /> : null}
         {player.playerEmail ? (
@@ -221,7 +221,7 @@ export default function PlayerHubScreen() {
             }
           />
           {/* Edit is open to anyone who can assess — including an invited
-              assessor — since fixing a wrong jersey number or position
+              assessor, since fixing a wrong jersey number or position
               shouldn't need the owning coach; Delete stays coach/admin-only. */}
           {canAssess && <Button label="Edit" variant="secondary" className="flex-1" onPress={() => setShowEdit(true)} />}
         </View>
@@ -514,7 +514,7 @@ export default function PlayerHubScreen() {
       </Card>
 
       {/* The profile is season-over-season history, which an assessor
-          scores without — they only ever see the assessment in front of
+          scores without, they only ever see the assessment in front of
           them. */}
       {isAssessorOnly ? null : (
         <Card className="mb-4 gap-2">
@@ -535,7 +535,7 @@ export default function PlayerHubScreen() {
 
       {/* Evaluations (session scores) are for managers/owners. An assessor
           already gets session numbering on Score via session progress, and
-          those prior sessions stay disabled there — they must not read others'
+          those prior sessions stay disabled there, they must not read others'
           scores here. */}
       {isAssessorOnly ? null : (
         <>

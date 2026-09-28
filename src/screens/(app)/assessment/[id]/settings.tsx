@@ -147,7 +147,7 @@ export default function SettingsScreen() {
         });
         Alert.alert(
           'Invitation Sent',
-          `An invitation email has been sent to ${assessor.email}. They can accept it after signing in — or after creating an account with that address if they don't have one yet.`,
+          `An invitation email has been sent to ${assessor.email}. They can accept it after signing in, or after creating an account with that address if they don't have one yet.`,
         );
         return;
       } catch (err: any) {

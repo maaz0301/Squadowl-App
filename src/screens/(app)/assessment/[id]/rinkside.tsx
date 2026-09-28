@@ -434,13 +434,13 @@ export default function RinksideScreen() {
           >
           <View className="items-center py-4 gap-1">
             <Text className="text-2xl font-display font-bold" style={{ color: colors.ink }}>
-              {player ? playerDisplayName(player) : '—'}
+              {player ? playerDisplayName(player) : '-'}
             </Text>
             <Text style={{ color: colors.inkMuted }}>
-              #{player?.jersey ?? '—'} · {player?.pos ?? '—'}
+              #{player?.jersey ?? '-'} · {player?.pos ?? '-'}
             </Text>
             <Text className="text-3xl font-display font-bold mt-2" style={{ color: colors.primary }}>
-              {overall > 0 ? overall.toFixed(1) : '—'}
+              {overall > 0 ? overall.toFixed(1) : '-'}
             </Text>
           </View>
 
@@ -515,7 +515,7 @@ export default function RinksideScreen() {
                     {cat.label}
                   </Text>
                   <Text className="text-sm font-bold" style={{ color: colors.primary }}>
-                    {catAvg !== null ? catAvg.toFixed(1) : '—'}
+                    {catAvg !== null ? catAvg.toFixed(1) : '-'}
                   </Text>
                 </View>
                 {cat.subskills.map((s) => (

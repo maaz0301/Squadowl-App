@@ -24,12 +24,12 @@ const FEE_SCHEDULE: { type: string; fee: string; note: string }[] = [
   {
     type: 'Domestic card (CAD)',
     fee: '2.9% + CAD$0.30',
-    note: 'Standard Canadian card — most common transaction.',
+    note: 'Standard Canadian card, most common transaction.',
   },
   {
     type: 'International card',
     fee: '2.9% + CAD$0.30 + 0.8%',
-    note: 'Card issued outside Canada — total ~3.7% + CAD$0.30.',
+    note: 'Card issued outside Canada, total ~3.7% + CAD$0.30.',
   },
   {
     type: 'Currency conversion',
@@ -184,14 +184,14 @@ export default function PaymentsScreen() {
               <Text className="text-sm" style={{ color: colors.inkMuted }}>
                 Connect a Stripe account to start collecting registration fees. Stripe's
                 processing fee (2.9% + $0.30 CAD) and TryoutHQ's 0.5% platform fee are deducted
-                automatically — the rest is paid out straight to you.
+                automatically, the rest is paid out straight to you.
               </Text>
               {/* An account that exists but can't take charges is mid-onboarding
-                  (or blocked on info Stripe still wants) — say so, rather than
+                  (or blocked on info Stripe still wants), say so, rather than
                   implying nothing was ever connected. */}
               {connect.onboardingIncomplete ? (
                 <Text className="text-xs" style={{ color: colors.warning }}>
-                  Your Stripe account isn't finished — Stripe still needs more information before it
+                  Your Stripe account isn't finished, Stripe still needs more information before it
                   will accept charges. Continue where you left off below.
                 </Text>
               ) : null}
@@ -337,7 +337,7 @@ export default function PaymentsScreen() {
         <>
           <Text className="text-base mb-4" style={{ color: colors.inkMuted }}>
             These are Stripe's own processing fees (CAD), deducted automatically per transaction
-            before funds reach your account — separate from TryoutHQ's 0.5% platform fee. Verified
+            before funds reach your account, separate from TryoutHQ's 0.5% platform fee. Verified
             June 2026.
           </Text>
 
@@ -359,7 +359,7 @@ export default function PaymentsScreen() {
           ))}
 
           <Text className="text-md font-bold mt-2 mb-3" style={{ color: colors.ink }}>
-            Real example — CAD$100 registration fee
+            Real example: CAD$100 registration fee
           </Text>
           <View className="gap-2 mb-3">
             <View className="flex-row justify-between gap-2">

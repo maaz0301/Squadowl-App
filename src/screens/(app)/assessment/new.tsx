@@ -288,7 +288,7 @@ export default function NewAssessmentScreen() {
         Alert.alert(
           'Still setting up',
           `"${data.name}" is being created and its team players are being added in the background. ` +
-            'It will appear in your evaluations list in a moment — no need to create it again.',
+            'It will appear in your evaluations list in a moment, no need to create it again.',
           [{ text: 'OK', onPress: () => navigation.goBack() }],
         );
         return;
@@ -546,7 +546,7 @@ export default function NewAssessmentScreen() {
               </View>
               {pendingAssessors.length === 0 ? (
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                  Invite whoever else is scoring — they get an email once the evaluation is created.
+                  Invite whoever else is scoring, they get an email once the evaluation is created.
                 </Text>
               ) : (
                 <View className="gap-2">
@@ -622,7 +622,7 @@ export default function NewAssessmentScreen() {
                 <Badge label={binaryLabels(rubricType)[1]} />
               </View>
               <Text className="text-xs italic" style={{ color: colors.inkMuted }}>
-                Assessors tap {binaryLabels(rubricType)[0]} / {binaryLabels(rubricType)[1]} — or flip the switch.{' '}
+                Assessors tap {binaryLabels(rubricType)[0]} / {binaryLabels(rubricType)[1]}, or flip the switch.{' '}
                 {binaryLabels(rubricType)[0]} scores 5.0, {binaryLabels(rubricType)[1]} scores 1.0.
               </Text>
             </View>
@@ -747,7 +747,7 @@ export default function NewAssessmentScreen() {
               value={rubricWeightStr}
               onChangeText={setRubricWeightStr}
               keyboardType="numeric"
-              placeholder="e.g. 25 — leave blank for an even share"
+              placeholder="e.g. 25, leave blank for an even share"
             />
             <Text className="text-xs" style={{ color: rubricWeightValid ? colors.inkMuted : colors.danger }}>
               {rubricWeightValid

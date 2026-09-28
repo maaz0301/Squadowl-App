@@ -31,7 +31,7 @@ export function FeatureBlockGate({ feature, allowSignOut }: Props) {
         {BLOCKABLE_FEATURE_LABEL[feature]} is unavailable
       </Text>
       <Text style={{ color: colors.inkMuted }}>
-        The rest of your account is unaffected — contact TryoutHQ if you think this is a mistake.
+        The rest of your account is unaffected, contact TryoutHQ if you think this is a mistake.
       </Text>
       <Button label="Email founder@tryout.ca" onPress={() => Linking.openURL('mailto:founder@tryout.ca')} />
       {allowSignOut ? (

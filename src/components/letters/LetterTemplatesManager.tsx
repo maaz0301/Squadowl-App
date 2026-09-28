@@ -119,7 +119,7 @@ export function LetterTemplatesManager() {
       ) : templates.length === 0 ? (
         <View className="gap-2">
           <Text className="text-sm" style={{ color: colors.inkMuted }}>
-            No templates yet. Start from one of the standard letters — you can edit every word of it before
+            No templates yet. Start from one of the standard letters, you can edit every word of it before
             anything is sent.
           </Text>
           <View className="flex-row flex-wrap gap-2">

@@ -348,7 +348,7 @@ export default function NewTeamScreen() {
             </Text>
             <Text className="text-xs" style={{ color: colors.inkMuted }}>
               Give them this team's roster, schedule, and chat as soon as it's created, and let
-              them create its evaluations — but nothing else on your account. They'll get an email with an Accept Invitation
+              them create its evaluations, but nothing else on your account. They'll get an email with an Accept Invitation
               button. If they don't have a TryoutHQ account yet, it asks them to create one, and access is granted automatically when they do.
             </Text>
             <Input
@@ -385,7 +385,7 @@ export default function NewTeamScreen() {
                 />
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
                   Creating this team creates (or reuses) its season and adds everyone on the roster to
-                  it — each player's guardian will then be asked to pay this fee, plus TryoutHQ's 0.5%
+                  it, each player's guardian will then be asked to pay this fee, plus TryoutHQ's 0.5%
                   platform fee, from their portal. QR/link evaluation registration always stays free.
                 </Text>
                 {connect.chargesEnabled ? (
@@ -394,8 +394,8 @@ export default function NewTeamScreen() {
                   <>
                     <Text className="text-xs" style={{ color: colors.warning }}>
                       {connect.onboardingIncomplete
-                        ? "Your Stripe account isn't finished — Stripe needs more information before it will accept charges. You can still create the team now and finish after."
-                        : 'Connect a Stripe account before guardians can pay — you can still create the team now and connect after.'}
+                        ? "Your Stripe account isn't finished, Stripe needs more information before it will accept charges. You can still create the team now and finish after."
+                        : 'Connect a Stripe account before guardians can pay, you can still create the team now and connect after.'}
                     </Text>
                     <Button
                       label={connect.onboardingIncomplete ? 'Continue Stripe Setup' : 'Connect with Stripe'}
@@ -420,7 +420,7 @@ export default function NewTeamScreen() {
             Testing Tools
           </Text>
           <Text className="text-xs" style={{ color: colors.inkMuted }}>
-            Skip the form and generate whole teams — each with a linked evaluation, a rubric set,
+            Skip the form and generate whole teams, each with a linked evaluation, a rubric set,
             and a roster of dummy players you can optionally score.
           </Text>
           <View className="flex-row flex-wrap gap-2 mt-1">

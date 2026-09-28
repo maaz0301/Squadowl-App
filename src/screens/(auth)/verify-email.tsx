@@ -78,7 +78,7 @@ export default function VerifyEmailScreen() {
 
         <View className="gap-3 mt-2">
           <Button
-            label="I've Verified — Continue to App"
+            label="I've Verified, Continue to App"
             onPress={handleCheckStatus}
             loading={checking}
           />

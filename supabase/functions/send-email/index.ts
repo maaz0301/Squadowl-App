@@ -111,7 +111,7 @@ function tplTeamManagerInvite(teamName: string, role: string, inviteUrl?: string
       </p>` : '';
   const who = email ? `<strong style="color:#a78bfa;">${escapeHtml(email)}</strong>` : 'this email address';
   const next = newUser
-    ? `You don't have a TryoutHQ account yet. Create one with ${who} and choose your own password — your access to the team is set up automatically as soon as the account exists.`
+    ? `You don't have a TryoutHQ account yet. Create one with ${who} and choose your own password, your access to the team is set up automatically as soon as the account exists.`
     : `Sign in with ${who} to accept the invitation and open the team.`;
   return {
     subject: `You've been invited to manage ${safeTeam} on TryoutHQ`,
@@ -124,7 +124,7 @@ function tplTeamManagerInvite(teamName: string, role: string, inviteUrl?: string
       <div style="background:#0f0f13;border-radius:12px;padding:20px 24px;margin:20px 0;border-left:4px solid #6366f1;">
         <p style="color:#9ca3af;font-size:13px;margin:0 0 4px;">What you can do</p>
         <p style="color:#fff;font-size:15px;line-height:1.6;margin:0;">
-          View and manage this team's roster, schedule, chat, and assessments — no access to anything else on the club's account.
+          View and manage this team's roster, schedule, chat, and assessments, no access to anything else on the club's account.
         </p>
       </div>
       <p style="color:#9ca3af;font-size:15px;line-height:1.7;margin:0;">
@@ -158,7 +158,7 @@ function tplTryoutInvite(tryoutName?: string, inviteUrl?: string, email?: string
         <p style="color:#fff;font-size:17px;font-weight:600;margin:0;">⚡ Assessor</p>
       </div>
       <p style="color:#9ca3af;font-size:15px;line-height:1.7;margin:0;">
-        No account yet? Creating one takes a minute — sign up with
+        No account yet? Creating one takes a minute, sign up with
         ${email ? `<strong style="color:#a78bfa;">${escapeHtml(email)}</strong>` : 'this email address'}
         and this invitation will be waiting for you. Already have one? Just sign in with that address.
       </p>
@@ -305,7 +305,7 @@ function tplScheduleUpdate(payload: SchedulePayload, recipient: string) {
           })
           .join('')}
         <p style="color:#6b7280;font-size:12px;line-height:1.6;margin:4px 0 0;">
-          One tap — no login needed. You can change your answer any time by tapping again.
+          One tap, no login needed. You can change your answer any time by tapping again.
         </p>
       </div>`
     : '';
@@ -366,7 +366,7 @@ function tplScheduleUpdate(payload: SchedulePayload, recipient: string) {
   }
 
   return {
-    subject: dateIsReal ? `${eventName} — ${dateLabel}` : `Schedule Update: ${eventName}`,
+    subject: dateIsReal ? `${eventName}, ${dateLabel}` : `Schedule Update: ${eventName}`,
     attachments,
     html: wrap('New Event Scheduled 📅', `
       <p style="color:#d1d5db;font-size:16px;line-height:1.7;margin:0 0 20px;">A new event has been added to your schedule:</p>
@@ -446,17 +446,17 @@ function tplRegistrationConfirm(playerName: string) {
 
 function tplPasswordReset(code: string) {
   return {
-    subject: `Reset Your Password — TryoutHQ`,
+    subject: `Reset Your Password | TryoutHQ`,
     html: wrap('Reset Your Password 🔐', `
       <p style="color:#d1d5db;font-size:16px;line-height:1.7;margin:0 0 24px;">
-        We received a request to reset your password. Use the verification code below — it expires shortly.
+        We received a request to reset your password. Use the verification code below, it expires shortly.
       </p>
       <div style="background:#0f0f13;border:1px solid #6366f1;border-radius:16px;padding:32px;margin:24px 0;text-align:center;">
         <p style="color:#9ca3af;font-size:12px;text-transform:uppercase;letter-spacing:2px;margin:0 0 16px;font-weight:600;">Verification Code</p>
         <p style="margin:0;font-size:44px;font-weight:700;letter-spacing:10px;color:#a78bfa;font-family:monospace;">${code}</p>
       </div>
       <p style="color:#ef4444;font-size:13px;margin:0;padding:12px 16px;background:#1c0505;border-radius:8px;border-left:3px solid #ef4444;">
-        🔒 If you did not request this reset, please ignore this email — your account remains secure.
+        🔒 If you did not request this reset, please ignore this email, your account remains secure.
       </p>
     `),
   };
@@ -465,7 +465,7 @@ function tplPasswordReset(code: string) {
 function tplSubscriptionUpgraded(planTier: string) {
   const planName = planTier.charAt(0).toUpperCase() + planTier.slice(1);
   return {
-    subject: `Welcome to ${planName} — TryoutHQ`,
+    subject: `Welcome to ${planName} | TryoutHQ`,
     html: wrap('Subscription Upgraded 🚀', `
       <div style="background:#0f0f13;border:1px solid #10b981;border-radius:16px;padding:24px;margin-bottom:32px;text-align:center;">
         <p style="margin:0;color:#10b981;font-size:18px;font-weight:700;">✅ Successfully Upgraded to ${planName}</p>
@@ -482,7 +482,7 @@ function tplSubscriptionUpgraded(planTier: string) {
 
 function tplSubscriptionCanceled() {
   return {
-    subject: `Subscription Canceled — TryoutHQ`,
+    subject: `Subscription Canceled | TryoutHQ`,
     html: wrap('Subscription Canceled 😔', `
       <p style="color:#d1d5db;font-size:16px;line-height:1.7;margin:0 0 24px;">
         We've successfully processed your subscription cancellation. Your account has been downgraded to the Free plan.

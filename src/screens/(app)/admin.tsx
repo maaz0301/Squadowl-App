@@ -118,7 +118,7 @@ export default function AdminScreen() {
             <Text className="font-display font-bold" style={{ color: colors.ink }}>
               Support Queue (Mock)
             </Text>
-            {['Password reset — coach@example.com', 'Export issue — club tier', 'QR code not loading'].map(
+            {['Password reset: coach@example.com', 'Export issue: club tier', 'QR code not loading'].map(
               (ticket) => (
                 <Pressable key={ticket} className="py-2 border-b" style={{ borderColor: colors.border }}>
                   <Text style={{ color: colors.ink }}>{ticket}</Text>

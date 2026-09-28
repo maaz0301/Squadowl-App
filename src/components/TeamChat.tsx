@@ -151,7 +151,7 @@ function Bubble({
 
           {/* Reserve room on the last line so the timestamp can sit in the
               corner. Measured from the rendered string rather than a fixed
-              constant — "12:53 PM", 24-hour clocks and longer locale formats
+              constant, "12:53 PM", 24-hour clocks and longer locale formats
               are all wider than the 7-character case, and when the reserve
               falls short the time prints on top of the message text. */}
           <Text
@@ -283,7 +283,7 @@ export function TeamChat({
           <View className="flex-1 justify-center">
             <EmptyState
               title="No messages yet"
-              message="Say hello — everyone on the roster and their guardians will see it."
+              message="Say hello, everyone on the roster and their guardians will see it."
             />
           </View>
         ) : (
@@ -321,9 +321,9 @@ export function TeamChat({
           matching how the message wall bleeds full-width above it.
           paddingBottom is explicit rather than `py-2` because this composer
           sits at the true bottom edge (TeamChatScreen's <Screen> only
-          reserves the top/left/right safe-area edges, not bottom — chat is
+          reserves the top/left/right safe-area edges, not bottom, chat is
           the one screen where that matters, since every other screen scrolls
-          under its own bottom padding instead of pinning content there) — so
+          under its own bottom padding instead of pinning content there), so
           it has to reserve the home-indicator/nav-bar inset itself, the same
           way BottomNav.tsx does. */}
       <View

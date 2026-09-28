@@ -58,7 +58,7 @@ export default function SeasonCalendarScreen() {
                       <View className="flex-1">
                         <Text className="font-bold" style={{ color: colors.ink }}>{ev.title}</Text>
                         <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                          {ev.startTime ?? '—'} ·{' '}
+                          {ev.startTime ?? '-'} ·{' '}
                           {ev.location ? (
                             <MapLink location={ev.location} label={ev.title} variant="inline" />
                           ) : (

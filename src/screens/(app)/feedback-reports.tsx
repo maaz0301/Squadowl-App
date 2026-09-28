@@ -178,13 +178,13 @@ export default function FeedbackReportsScreen() {
       ) : (
         <View className="mt-4 gap-4">
           {/* One strip of headline numbers: how much feedback there is, how it
-              scores overall, and how many came with a screenshot — which is the
+              scores overall, and how many came with a screenshot, which is the
               subset worth opening first when triaging bugs. */}
           <View className="flex-row gap-2">
             <StatTile label="Submissions" value={String(reports.length)} color={colors.ink} />
             <StatTile
               label="Average"
-              value={average != null ? `${average.toFixed(1)}/5` : '—'}
+              value={average != null ? `${average.toFixed(1)}/5` : '-'}
               color={average != null ? toneHex(Math.round(average)) : colors.ink}
             />
             <StatTile

@@ -249,7 +249,7 @@ export function FriendPackagesCard({ tryout, disabled }: Props) {
               No packages yet
             </Text>
             <Text className="text-xs text-center" style={{ color: colors.inkMuted }}>
-              Group the players who have to stay together — carpools, siblings, a coach&apos;s own kid.
+              Group the players who have to stay together, carpools, siblings, a coach&apos;s own kid.
             </Text>
           </View>
         ) : (

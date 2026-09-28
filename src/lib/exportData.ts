@@ -226,7 +226,7 @@ async function renderFullResultsPdf(tryout: Tryout): Promise<string> {
     }
 
     const meta = pdfSafe(
-      `#${card.jersey || '—'} • ${card.pos || '—'} • Shoots ${card.shoots || '—'} • Evals ${card.evalCount}`,
+      `#${card.jersey || '-'} • ${card.pos || '-'} • Shoots ${card.shoots || '-'} • Evals ${card.evalCount}`,
     );
     page.drawText(pdfSafe(card.name), { x: MARGIN, y, size: 15, font: fontBold, color: BLACK });
     const metaWidth = font.widthOfTextAtSize(meta, 9);
@@ -274,24 +274,24 @@ async function renderFullResultsPdf(tryout: Tryout): Promise<string> {
     y = tableBottom - 12;
 
     drawSegments(
-      [{ text: 'Recommendation: ' }, { text: card.recommendation || '—', color: BLUE }],
+      [{ text: 'Recommendation: ' }, { text: card.recommendation || '-', color: BLUE }],
       { size: 9.5, gap: 13 },
     );
-    drawWrapped(`Strengths: ${card.strengths || '—'}`, { size: 9.5, gap: 13 });
-    drawWrapped(`Improve: ${card.improve || '—'}`, { size: 9.5, gap: 13 });
+    drawWrapped(`Strengths: ${card.strengths || '-'}`, { size: 9.5, gap: 13 });
+    drawWrapped(`Improve: ${card.improve || '-'}`, { size: 9.5, gap: 13 });
     y -= 10;
 
     for (const ev of card.evals) {
       ensureSpace(36);
       const header = `Eval ${ev.index} • ${ev.date} • ${ev.evaluator} • ${ev.session}`;
-      const scoreLine = ev.values.map((v) => `${v.abbr}:${v.text || '—'}`).join(' • ');
+      const scoreLine = ev.values.map((v) => `${v.abbr}:${v.text || '-'}`).join(' • ');
       drawWrapped(header, { size: 9, f: fontBold, color: BLUE, gap: 13 });
       drawWrapped(scoreLine, { size: 8, color: BLUE, gap: 11 });
       drawSegments(
         [
           { text: 'Rec: ' },
-          { text: `${ev.recommendation || '—'} |`, color: BLUE },
-          { text: `Str: ${ev.strengths || '—'} | Imp: ${ev.improve || '—'}` },
+          { text: `${ev.recommendation || '-'} |`, color: BLUE },
+          { text: `Str: ${ev.strengths || '-'} | Imp: ${ev.improve || '-'}` },
         ],
         { size: 8.5, gap: 11 },
       );

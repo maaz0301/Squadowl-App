@@ -1,4 +1,4 @@
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { HubIcon } from './HubIcon';
@@ -12,8 +12,9 @@ export interface HubTab {
 }
 
 /**
- * Equal-width pill row under the hub header. The active pill is the solid
- * orange one; the others are panel-coloured with an orange count dot.
+ * Pill row under the hub header. The active pill is the solid orange one; the
+ * others are panel-coloured with an orange count dot. The pills share the width
+ * while they fit and scroll sideways once they don't (long labels, big counts).
  */
 export function TeamHubTabs({
   tabs,
@@ -28,7 +29,12 @@ export function TeamHubTabs({
   const s = useHubSurfaces();
 
   return (
-    <View className="flex-row gap-2 mb-6">
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      className="mb-6 flex-grow-0"
+      contentContainerStyle={{ flexGrow: 1, gap: 8 }}
+    >
       {tabs.map((tab) => {
         const active = tab.key === activeKey;
         const ink = active ? '#ffffff' : colors.inkMuted;
@@ -36,7 +42,7 @@ export function TeamHubTabs({
           <Pressable
             key={tab.key}
             onPress={() => onChange(tab.key)}
-            className="flex-1 flex-row items-center justify-center gap-1.5 rounded-lg"
+            className="flex-1 flex-row items-center justify-center gap-1.5 rounded-lg px-3"
             style={{
               height: 40,
               backgroundColor: active ? colors.primary : s.panelBg,
@@ -68,6 +74,6 @@ export function TeamHubTabs({
           </Pressable>
         );
       })}
-    </View>
+    </ScrollView>
   );
 }

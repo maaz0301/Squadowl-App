@@ -46,8 +46,8 @@ export function SubscriptionEndingBanner() {
   const planName = getPlanDefinition(user.planTier).name;
   const message =
     kind === 'cancel'
-      ? `Cancelled — your ${planName} plan stays active until ${formatDate(cancelAt!)}, then the account moves to Free. You can restart it any time before then.`
-      : `Your plan changes from ${planName} to ${getPlanDefinition(pendingTier!).name} on ${formatDate(pendingAt!)}. You keep ${planName} until then — nothing changes today.`;
+      ? `Cancelled, your ${planName} plan stays active until ${formatDate(cancelAt!)}, then the account moves to Free. You can restart it any time before then.`
+      : `Your plan changes from ${planName} to ${getPlanDefinition(pendingTier!).name} on ${formatDate(pendingAt!)}. You keep ${planName} until then, nothing changes today.`;
 
   return (
     <Card

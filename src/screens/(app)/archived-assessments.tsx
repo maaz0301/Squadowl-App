@@ -124,7 +124,7 @@ export default function ArchivedAssessmentsScreen() {
         {archived.length === 0 && archivedTeams.length === 0 ? (
           <EmptyState
             title="Nothing archived"
-            message="Evaluations and teams you archive — or that a plan change archives — will appear here. You can restore them at any time your plan has room."
+            message="Evaluations and teams you archive, or that a plan change archives, will appear here. You can restore them at any time your plan has room."
           />
         ) : null}
 

@@ -72,7 +72,7 @@ export default function SeasonHubScreen() {
           {season.teamName}
         </Text>
         <Text style={{ color: colors.inkMuted }}>
-          {season.sport} · {season.year} · {season.division ?? '—'}
+          {season.sport} · {season.year} · {season.division ?? '-'}
         </Text>
         {season.coach ? <Text style={{ color: colors.inkFaint }}>Coach: {season.coach}</Text> : null}
       </Card>
@@ -120,7 +120,7 @@ export default function SeasonHubScreen() {
               <Badge label={ev.type} variant={ev.type === 'Game' ? 'brand' : 'info'} />
             </View>
             <Text className="text-sm" style={{ color: colors.inkMuted }}>
-              {ev.date} · {ev.startTime ?? '—'} ·{' '}
+              {ev.date} · {ev.startTime ?? '-'} ·{' '}
               {ev.location ? (
                 <MapLink location={ev.location} label={ev.title} variant="inline" />
               ) : (

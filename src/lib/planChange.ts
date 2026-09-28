@@ -161,6 +161,6 @@ function overLimitLine(
   if (limit === 'unlimited' || count == null) return [];
   if (count <= limit) return [];
   return [
-    `You have ${count} ${noun} and ${next.name} includes ${formatLimit(limit)}. When the change takes effect, your oldest ${limit === 1 ? noun.replace(/s$/, '') : `${limit} ${noun}`} stay${limit === 1 ? 's' : ''} active and the other ${count - limit} ${count - limit === 1 ? noun.replace(/s$/, '') : noun} are archived — nothing is deleted, and you can restore them after upgrading.`,
+    `You have ${count} ${noun} and ${next.name} includes ${formatLimit(limit)}. When the change takes effect, your oldest ${limit === 1 ? noun.replace(/s$/, '') : `${limit} ${noun}`} stay${limit === 1 ? 's' : ''} active and the other ${count - limit} ${count - limit === 1 ? noun.replace(/s$/, '') : noun} are archived, nothing is deleted, and you can restore them after upgrading.`,
   ];
 }
