@@ -18,7 +18,7 @@ returns table (
   from public.profiles p
   join public.memberships m on m.user_id = p.id
   join public.accounts a on a.id = m.account_id
-  where p.email = trim(p_email)
+  where lower(p.email) = lower(trim(p_email))
     and m.role in ('owner','admin','coach')
   order by p.id, a.id;
 $$;
