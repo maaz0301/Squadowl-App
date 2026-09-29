@@ -1,3 +1,4 @@
+import { useTerms } from '@/lib/terms';
 import { useMemo, useState } from 'react';
 import { FlatList, Pressable, Text, View, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -19,6 +20,7 @@ export default function RosterLibraryScreen() {
   const navigation = useNavigation<any>();
   const tryoutsQuery = useTryoutsQuery(true);
   const currentTryoutQuery = useTryoutQuery(id);
+  const terms = useTerms(currentTryoutQuery.data?.settings.customLabels);
   // A team someone else owns is run on that team's plan, not the viewer's own.
   const effectiveTier = useEffectivePlanTier(currentTryoutQuery.data?.teamId);
   const user = useUser();
@@ -87,7 +89,7 @@ export default function RosterLibraryScreen() {
         keyExtractor={(item) => item.key}
         contentContainerStyle={{ padding: 16, paddingBottom: 32, flexGrow: 1 }}
         ListEmptyComponent={
-          <EmptyState title="Library empty" message="Add players to other evaluations first." />
+          <EmptyState title="Library empty" message={terms.t('Add players to other evaluations first.')} />
         }
         renderItem={({ item }) => {
           const isSelected = selected.has(item.key);

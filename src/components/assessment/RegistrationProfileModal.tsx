@@ -1,3 +1,4 @@
+import { useTerms } from '@/lib/terms';
 import { Text, View } from 'react-native';
 
 import { Badge, Button, Modal } from '@/components/ui';
@@ -37,6 +38,8 @@ interface RegistrationProfileModalProps {
   /** Omitted for non-pending registrations, which have nowhere left to go. */
   onAddToRoster?: () => void;
   onDismiss?: () => void;
+  /** The evaluation's own names. */
+  labels?: import('@/data/types').CustomLabels;
 }
 
 /**
@@ -49,7 +52,9 @@ export function RegistrationProfileModal({
   onClose,
   onAddToRoster,
   onDismiss,
+  labels,
 }: RegistrationProfileModalProps) {
+  const terms = useTerms(labels);
   const colors = useThemeColors();
   const r = registration;
 
@@ -85,7 +90,7 @@ export function RegistrationProfileModal({
             ) : null}
           </View>
 
-          <Section title="Player" colors={colors}>
+          <Section title={terms.player} colors={colors}>
             <Row label="Name" value={`${r.firstName} ${r.lastName}`} colors={colors} />
             <Row label="Year of Birth" value={r.yearOfBirth} colors={colors} />
             <Row label="Position" value={r.positionTryingOutFor} colors={colors} />

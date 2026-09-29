@@ -1,18 +1,15 @@
-import { ScrollView, Text, View } from 'react-native';
+import { ScrollView } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 
-import { useThemeColors } from '@/theme/ThemeProvider';
 import { TeamBanner } from '@/components/TeamBanner';
+import { MonthCalendar } from '@/components/MonthCalendar';
 import { useSeasonTeamBrand } from '@/features/useTeamBrand';
-import { Badge, Card, EmptyState, ErrorState, LoadingState, Screen } from '@/components/ui';
+import { ErrorState, LoadingState, Screen } from '@/components/ui';
 import { useSeasonQuery } from '@/features/queries';
-import { AddToCalendar } from '@/components/AddToCalendar';
-import { MapLink } from '@/components/MapLink';
 
 export default function SeasonCalendarScreen() {
   const route = useRoute<any>();
   const { id } = route.params || {};
-  const colors = useThemeColors();
   const seasonQuery = useSeasonQuery(id);
 
   // Hook, so it runs before the loading/error guards — skipping it on the
@@ -25,57 +22,11 @@ export default function SeasonCalendarScreen() {
   }
   const season = seasonQuery.data;
 
-  const byMonth = season.events.reduce<Record<string, typeof season.events>>((acc, ev) => {
-    const month = ev.date.slice(0, 7);
-    if (!acc[month]) acc[month] = [];
-    acc[month].push(ev);
-    return acc;
-  }, {});
-
   return (
     <Screen scroll padded={false} backgroundColor={brand.screenBg}>
       {team ? <TeamBanner team={team} className="px-4 pt-3" /> : null}
       <ScrollView contentContainerStyle={{ padding: 16 }}>
-        {Object.keys(byMonth).length === 0 ? (
-          <EmptyState title="No events" message="Your calendar is empty." />
-        ) : (
-          Object.entries(byMonth)
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([month, events]) => (
-              <View key={month} className="mb-6">
-                <Text className="text-lg font-display font-bold mb-3" style={{ color: colors.primary }}>
-                  {month}
-                </Text>
-                {events
-                  .sort((a, b) => a.date.localeCompare(b.date))
-                  .map((ev) => (
-                    <Card key={ev.id} className="mb-2 flex-row gap-3 items-center">
-                      <View className="w-12 items-center">
-                        <Text className="text-2xl font-display font-bold" style={{ color: colors.ink }}>
-                          {ev.date.slice(8)}
-                        </Text>
-                      </View>
-                      <View className="flex-1">
-                        <Text className="font-bold" style={{ color: colors.ink }}>{ev.title}</Text>
-                        <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                          {ev.startTime ?? '-'} ·{' '}
-                          {ev.location ? (
-                            <MapLink location={ev.location} label={ev.title} variant="inline" />
-                          ) : (
-                            'TBD'
-                          )}
-                        </Text>
-                      </View>
-                      <View className="items-end gap-1.5">
-                        <Badge label={ev.type} />
-                        <AddToCalendar event={ev} teamName={season.teamName} size="sm" />
-                        <MapLink location={ev.location} label={ev.title} size="sm" />
-                      </View>
-                    </Card>
-                  ))}
-              </View>
-            ))
-        )}
+        <MonthCalendar events={season.events} teamName={season.teamName} />
       </ScrollView>
     </Screen>
   );

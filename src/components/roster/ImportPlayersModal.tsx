@@ -1,3 +1,4 @@
+import { useTerms } from '@/lib/terms';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 import Svg, { Path, Polyline } from 'react-native-svg';
@@ -50,6 +51,7 @@ function UploadIcon({ color }: { color: string }) {
  * reads .xlsx and .xls as well as .csv.
  */
 export function ImportPlayersModal({
+  labels,
   visible,
   onClose,
   target,
@@ -57,6 +59,8 @@ export function ImportPlayersModal({
   atLimit = false,
   onLimitReached,
 }: {
+  /** The evaluation's own names, when opened from one. */
+  labels?: import('@/data/types').CustomLabels;
   visible: boolean;
   onClose: () => void;
   /** Names what the players are being added to, for the copy. */
@@ -74,6 +78,7 @@ export function ImportPlayersModal({
   ) => Promise<PlayerImportResult>;
 }) {
   const colors = useThemeColors();
+  const terms = useTerms(labels);
 
   const [source, setSource] = useState<{ name: string; base64?: string } | null>(null);
   const [sheet, setSheet] = useState<ParsedSheet | null>(null);
@@ -193,7 +198,7 @@ export function ImportPlayersModal({
   return (
     <Modal
       visible={visible}
-      title={`Import Players into ${target}`}
+      title={terms.t(`Import Players into ${target}`)}
       onClose={close}
       footer={
         result || !sheet ? undefined : (
@@ -211,7 +216,7 @@ export function ImportPlayersModal({
                   label={
                     ready.length === 0
                       ? 'Nothing to import'
-                      : `Import ${ready.length} ${ready.length === 1 ? 'player' : 'players'}`
+                      : `Import ${ready.length} ${(ready.length === 1 ? terms.player : terms.players).toLowerCase()}`
                   }
                   disabled={ready.length === 0}
                   onPress={runImport}
@@ -224,7 +229,7 @@ export function ImportPlayersModal({
       }
     >
       {result ? (
-        <ImportSummary result={result} onDone={close}
+        <ImportSummary result={result} terms={terms} onDone={close}
           onAgain={() => {
             if (atLimit) {
               close();
@@ -279,7 +284,7 @@ export function ImportPlayersModal({
           </Pressable>
 
           <Text className="text-xs" style={{ color: colors.inkFaint }}>
-            One player per row, with a heading row above them. Whatever your columns are called, you&apos;ll
+            {terms.t('One player per row, with a heading row above them.')} Whatever your columns are called, you&apos;ll
             match them up on the next step. PDFs can&apos;t be read, export the roster as CSV or Excel
             first.
           </Text>
@@ -332,7 +337,7 @@ export function ImportPlayersModal({
                     style={{ backgroundColor: colors.tile, borderColor: open ? colors.primary : colors.border }}
                   >
                     <Text className="flex-1 text-sm font-semibold" style={{ color: colors.ink }}>
-                      {field.label}
+                      {terms.t(field.label)}
                     </Text>
                     <Text className="text-sm" style={{ color: index == null ? colors.inkFaint : colors.primary }}>
                       {index == null ? 'not in this file' : columnLabel(sheet.headers[index], index)}
@@ -527,11 +532,13 @@ function RowPreview({
 
 function ImportSummary({
   result,
+  terms,
   onDone,
   onAgain,
   colors,
 }: {
   result: PlayerImportResult;
+  terms: { player: string; players: string; t: (s: string) => string };
   onDone: () => void;
   onAgain: () => void;
   colors: ReturnType<typeof useThemeColors>;
@@ -539,7 +546,7 @@ function ImportSummary({
   return (
     <View className="gap-4">
       <Text className="text-lg font-bold" style={{ color: colors.ink }}>
-        {result.added} {result.added === 1 ? 'player' : 'players'} added
+        {result.added} {(result.added === 1 ? terms.player : terms.players).toLowerCase()} added
       </Text>
       {result.failed.length > 0 ? (
         <View>
@@ -559,7 +566,7 @@ function ImportSummary({
       ) : null}
       <View className="gap-2">
         <Button label="Done" onPress={onDone} />
-        <Button label="Import more players" variant="secondary" onPress={onAgain} />
+        <Button label={terms.t('Import more players')} variant="secondary" onPress={onAgain} />
       </View>
     </View>
   );

@@ -1,3 +1,4 @@
+import { useTerms } from '@/lib/terms';
 import { useState, useMemo, useEffect } from 'react';
 import { Alert, Text, View, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -55,6 +56,7 @@ export default function PlayerHubScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
+  const terms = useTerms(tryoutQuery.data?.settings.customLabels);
   // A team someone else owns is run on that team's plan, not the viewer's own.
   const effectiveTier = useEffectivePlanTier(tryoutQuery.data?.teamId);
   const updatePlayer = useUpdatePlayerMutation(id!);
@@ -139,10 +141,10 @@ export default function PlayerHubScreen() {
 
   if (tryoutQuery.isLoading) return <LoadingState />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
-    return <ErrorState message="Player not found." onRetry={() => tryoutQuery.refetch()} />;
+    return <ErrorState message={terms.t('Player not found.')} onRetry={() => tryoutQuery.refetch()} />;
   }
 
-  if (!player) return <EmptyState title="Player not found" />;
+  if (!player) return <EmptyState title={terms.t('Player not found')} />;
 
   const evals = tryoutQuery.data.evals
     .filter((e) => e.playerId === playerId)
@@ -211,7 +213,7 @@ export default function PlayerHubScreen() {
 
         <View className="flex-row items-center gap-2 mt-4 mb-6">
           <Button
-            label="Score Player"
+            label={terms.t('Score Player')}
             className="flex-1"
             onPress={() =>
               navigation.navigate('AssessmentFlow', {
@@ -519,7 +521,7 @@ export default function PlayerHubScreen() {
       {isAssessorOnly ? null : (
         <Card className="mb-4 gap-2">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>
-            Player Profile
+            {terms.t('Player Profile')}
           </Text>
           <Text style={{ color: colors.inkMuted }}>
             View full evaluation history, score trends, and season-over-season comparison.
@@ -543,7 +545,7 @@ export default function PlayerHubScreen() {
             Evaluations ({evals.length})
           </Text>
           {evals.length === 0 ? (
-            <EmptyState title="No evaluations yet" message="Tap Score Player to add the first evaluation." />
+            <EmptyState title="No evaluations yet" message={terms.t('Tap Score Player to add the first evaluation.')} />
           ) : (
             evals.map((ev) => {
               const overall = weightedOverall(ev.scores ?? {}, categories, weights);
@@ -659,14 +661,14 @@ export default function PlayerHubScreen() {
 
       {canManageTeam && (
         <Button
-          label="Delete Player"
+          label={terms.t('Delete Player')}
           variant="danger"
           className="mt-6"
           loading={deletePlayer.isPending}
           onPress={() => {
             Alert.alert(
-              'Delete Player',
-              'Are you sure you want to delete this player? This cannot be undone.',
+              terms.t('Delete Player'),
+              terms.t('Are you sure you want to delete this player? This cannot be undone.'),
               [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -683,10 +685,11 @@ export default function PlayerHubScreen() {
         />
       )}
 
-      <Modal visible={showEdit} title="Edit Player" onClose={() => setShowEdit(false)}>
+      <Modal visible={showEdit} title={terms.t('Edit Player')} onClose={() => setShowEdit(false)}>
         <AddPlayerForm
           defaultValues={player}
           sport={tryoutQuery.data.sport}
+          labels={tryoutQuery.data.settings.customLabels}
           loading={updatePlayer.isPending || uploadPhoto.isPending}
           onSubmit={async (data) => {
             try {

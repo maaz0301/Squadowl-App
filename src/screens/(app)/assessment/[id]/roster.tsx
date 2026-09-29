@@ -1,3 +1,4 @@
+import { useTerms, sportLabel } from '@/lib/terms';
 import { useNavigation } from '@react-navigation/native';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Platform, Pressable, ScrollView, Text, View } from 'react-native';
@@ -53,6 +54,7 @@ export default function RosterScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
+  const terms = useTerms(tryoutQuery.data?.settings.customLabels);
   // A team someone else owns is run on that team's plan, not the viewer's own.
   const effectiveTier = useEffectivePlanTier(tryoutQuery.data?.teamId);
   const addPlayer = useAddPlayerMutation(id!);
@@ -271,8 +273,8 @@ export default function RosterScreen() {
   const deleteSelected = () => {
     const ids = [...selectedIds];
     Alert.alert(
-      'Delete players?',
-      `${ids.length} player${ids.length === 1 ? '' : 's'} will be permanently removed from this roster.`,
+      terms.t('Delete players?'),
+      terms.t(`${ids.length} player${ids.length === 1 ? '' : 's'} will be permanently removed from this roster.`),
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -291,12 +293,12 @@ export default function RosterScreen() {
                 const gone = new Set(deleted);
                 setSelectedIds(new Set(ids.filter((pid) => !gone.has(pid))));
                 Alert.alert(
-                  'Some Players Were Not Deleted',
+                  terms.t('Some Players Were Not Deleted'),
                   `${deleted.length} of ${ids.length} deleted. ${failed.length} could not be removed: ${failed[0].message}`,
                 );
               }
             } catch (e: any) {
-              Alert.alert('Delete Failed', e?.message || 'Could not delete the selected players.');
+              Alert.alert('Delete Failed', e?.message || terms.t('Could not delete the selected players.'));
             } finally {
               setDeletingSelected(false);
               setDeleteProgress(null);
@@ -333,10 +335,11 @@ export default function RosterScreen() {
             tier={effectiveTier}
             metric="players"
             count={tryout.roster.length}
-            label="players in this roster"
+            label={terms.t('players in this roster')}
           />
 
           <ScoreCta
+            playersLabel={terms.players}
             total={tryout.roster.length}
             scored={scoredCount}
             onPress={() =>
@@ -411,7 +414,12 @@ export default function RosterScreen() {
             </View>
           ) : null}
 
-          <RosterSearch value={playerSearch} onChange={setPlayerSearch} />
+          <RosterSearch
+            value={playerSearch}
+            onChange={setPlayerSearch}
+            playersLabel={terms.players}
+            jerseyLabel={terms.jersey}
+          />
 
           <RosterFilters
             active={activeFilter}
@@ -444,16 +452,16 @@ export default function RosterScreen() {
             <View className="flex-1 items-center justify-center px-6 gap-3">
               <ActivityIndicator size="large" color={colors.primary} />
               <Text className="text-base text-center" style={{ color: colors.inkMuted }}>
-                {bulkWriting ? 'Adding players...' : 'Loading roster...'}
+                {bulkWriting ? terms.t('Adding players...') : 'Loading roster...'}
               </Text>
             </View>
           ) : hasPlayers ? (
             <EmptyState
-              title="No players match"
+              title={terms.t('No players match')}
               message={
                 playerSearch.trim()
-                  ? `No players match "${playerSearch.trim()}".`
-                  : `No ${rosterFilter} players. Try a different filter.`
+                  ? terms.t(`No players match "${playerSearch.trim()}".`)
+                  : terms.t(`No ${rosterFilter} players. Try a different filter.`)
               }
               actionLabel={playerSearch.trim() ? 'Clear search' : 'Show all'}
               onAction={() => {
@@ -473,12 +481,12 @@ export default function RosterScreen() {
                 className="mt-4 text-center font-display text-xl font-bold"
                 style={{ color: colors.ink }}
               >
-                Add your players to get started
+                Add your {terms.players.toLowerCase()} to get started
               </Text>
               <Text className="mb-6 mt-2 text-center text-sm" style={{ color: colors.inkMuted }}>
-                Add players to this evaluation, then you can start scoring.
+                Add {terms.players.toLowerCase()} to this evaluation, then you can start scoring.
               </Text>
-              <Button label="+ Add Player" onPress={openAdd} className="w-full" />
+              <Button label={`+ Add ${terms.player}`} onPress={openAdd} className="w-full" />
               <Button
                 label="Import from a spreadsheet"
                 variant="secondary"
@@ -503,7 +511,7 @@ export default function RosterScreen() {
 
       <Modal
         visible={showAdd}
-        title="Add Player"
+        title={`Add ${terms.player}`}
         onClose={() => setShowAdd(false)}
         footer={
           <Button label="Cancel" variant="secondary" onPress={() => setShowAdd(false)} />
@@ -511,8 +519,9 @@ export default function RosterScreen() {
       >
         <AddPlayerForm
           sport={tryout.sport}
+          labels={tryout.settings.customLabels}
           loading={addPlayer.isPending || uploadPhoto.isPending || inviteParticipant.isPending}
-          submitLabel="Save Player & Send Invite"
+          submitLabel={`Save ${terms.player} & Send Invite`}
           onSubmit={async (data) => {
             // Saving a player here now links them to the portal too, same as
             // adding one to a season or team roster — until now an assessor
@@ -575,17 +584,17 @@ export default function RosterScreen() {
           [
             {
               label: 'Team Builder',
-              desc: 'Auto-split scored players into balanced teams.',
+              desc: terms.t('Auto-split scored players into balanced teams.'),
               go: () => navigation.navigate('AssessmentFlow', { screen: 'AssessmentTeamBuilder', params: { id: id } }),
             },
             {
               label: 'Roster Library',
-              desc: 'Import players from past seasons or other evaluations.',
+              desc: terms.t('Import players from past seasons or other evaluations.'),
               go: () => navigation.navigate('AssessmentFlow', { screen: 'AssessmentRosterLibrary', params: { id: id } }),
             },
             {
-              label: 'Scan Sheet Import',
-              desc: 'Import scores from printed OCR scanning sheets.',
+              label: 'Import Scores from Excel',
+              desc: 'Import results from a spreadsheet and assign its columns to your measures.',
               go: () => navigation.navigate('AssessmentFlow', { screen: 'AssessmentScanSheet', params: { id: id } }),
             },
             // Letters is a coach decision (who made the team), not a scoring
@@ -593,7 +602,7 @@ export default function RosterScreen() {
             // same way it's gated on its own screen.
             ...(isAssessorOnly ? [] : [
               {
-                label: 'Player Selection Letters',
+                label: terms.t('Player Selection Letters'),
                 desc: 'Create and send offer or roster decision letters, with a copy attached to each player.',
                 go: () => navigation.navigate('AssessmentFlow', { screen: 'AssessmentLetters', params: { id: id, isAssessorOnly } }),
               },
@@ -601,12 +610,12 @@ export default function RosterScreen() {
             ...(showDummyTools ? [
               {
                 label: 'Dummy Data Generator',
-                desc: 'Generate batch of realistic dummy players with optional scoring data across rubrics.',
+                desc: terms.t('Generate batch of realistic dummy players with optional scoring data across rubrics.'),
                 go: () => setShowTestGen(true),
               },
               {
                 label: 'Clear Dummy Data',
-                desc: 'Remove all generated dummy players and evaluation scores.',
+                desc: terms.t('Remove all generated dummy players and evaluation scores.'),
                 go: async () => {
                   try {
                     const res = await clearTest.mutateAsync();
@@ -644,6 +653,7 @@ export default function RosterScreen() {
       </Modal>
 
       <ImportPlayersModal
+        labels={tryout.settings.customLabels}
         visible={showImport}
         onClose={() => setShowImport(false)}
         target={tryout.name}
@@ -724,7 +734,7 @@ export default function RosterScreen() {
             else Alert.alert('Dummy data added', `Created ${parts.join(', ')}.`);
           } catch (e: any) {
             const msg = e?.message === 'NO_RUBRICS'
-              ? 'Add at least one rubric before generating scored players.'
+              ? terms.t('Add at least one rubric before generating scored players.')
               : e?.message || 'Failed to generate dummy data.';
             if (Platform.OS === 'web') alert(msg);
             else Alert.alert('Error', msg);

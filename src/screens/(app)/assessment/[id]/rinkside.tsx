@@ -1,3 +1,4 @@
+import { useTerms } from '@/lib/terms';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { Dimensions, ScrollView, Text, View, Alert } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -40,6 +41,7 @@ export default function RinksideScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
+  const terms = useTerms(tryoutQuery.data?.settings.customLabels);
   const saveEval = useSaveEvaluationMutation(id!);
   const rinksideIndex = useSessionStore((s) => s.rinksideIndex);
   const setRinksideIndex = useSessionStore((s) => s.setRinksideIndex);
@@ -303,7 +305,7 @@ export default function RinksideScreen() {
     return (
       <Screen>
         <Header title="Rinkside Scoring" showBack onBack={() => navigation.navigate('AssessmentRoster')} />
-        <EmptyState title="No players" message="Add players to the roster first." />
+        <EmptyState title={terms.t('No players')} message={terms.t('Add players to the roster first.')} />
       </Screen>
     );
   }

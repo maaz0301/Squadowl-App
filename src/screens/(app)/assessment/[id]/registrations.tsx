@@ -1,3 +1,4 @@
+import { useTerms } from '@/lib/terms';
 import { AddToRosterModal, type RosterDestination } from '@/components/assessment/AddToRosterModal';
 import { RegistrationForm } from '@/components/assessment/RegistrationForm';
 import { RegistrationProfileModal } from '@/components/assessment/RegistrationProfileModal';
@@ -41,6 +42,7 @@ export default function RegistrationsScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
+  const terms = useTerms(tryoutQuery.data?.settings.customLabels);
   // A team someone else owns is run on that team's plan, not the viewer's own.
   const effectiveTier = useEffectivePlanTier(tryoutQuery.data?.teamId);
   const regsQuery = useRegistrationsQuery(id!);
@@ -184,7 +186,7 @@ export default function RegistrationsScreen() {
       });
       setPlacing(null);
     } catch (e: any) {
-      showAlert('Error', e?.message || 'Failed to add players.');
+      showAlert('Error', e?.message || terms.t('Failed to add players.'));
     } finally {
       setPlacingProgress(null);
     }
@@ -242,7 +244,7 @@ export default function RegistrationsScreen() {
       showAlert('Dummy data added', `Created ${parts.join(', ')}.`);
     } catch (e: any) {
       showAlert('Error', e?.message === 'NO_RUBRICS'
-        ? 'Add at least one rubric before generating scored players.'
+        ? terms.t('Add at least one rubric before generating scored players.')
         : e?.message || 'Failed to generate dummy data.');
     } finally {
       // In `finally`, not after the await: generateTestData writes
@@ -489,6 +491,7 @@ export default function RegistrationsScreen() {
       />
 
       <RegistrationProfileModal
+        labels={tryoutQuery.data?.settings.customLabels}
         registration={viewing}
         onClose={() => setViewingId(null)}
         onAddToRoster={() => {
@@ -504,6 +507,7 @@ export default function RegistrationsScreen() {
       />
 
       <AddToRosterModal
+        labels={tryoutQuery.data?.settings.customLabels}
         visible={placing !== null}
         count={placing?.length ?? 0}
         currentTryoutId={id}

@@ -1,3 +1,4 @@
+import { useTerms } from '@/lib/terms';
 import { FlatList, Pressable, Text, View } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
@@ -26,6 +27,7 @@ export default function ResultsScreen() {
   const route = useRoute<any>();
   const setCurrentPlayer = useSessionStore((s) => s.setCurrentPlayer);
   const { data: tryout, results, isLoading, isError, refetch } = useResultsQuery(id);
+  const terms = useTerms(tryout?.settings.customLabels);
 
   const parentState = navigation.getParent()?.getState();
   const flowRoute = parentState?.routes?.find((r: any) => r.name === 'AssessmentFlow');
@@ -77,7 +79,7 @@ export default function ResultsScreen() {
         ListEmptyComponent={
           <EmptyState
             title="No results yet"
-            message="Score players to see the leaderboard."
+            message={terms.t('Score players to see the leaderboard.')}
           />
         }
         renderItem={({ item, index }) => {

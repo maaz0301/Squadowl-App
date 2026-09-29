@@ -1,3 +1,4 @@
+import { useTerms } from '@/lib/terms';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -52,6 +53,7 @@ export default function ScoreScreen() {
   const navigation = useNavigation<any>();
   const [saving, setSaving] = useState(false);
   const tryoutQuery = useTryoutQuery(id);
+  const terms = useTerms(tryoutQuery.data?.settings.customLabels);
   const saveEval = useSaveEvaluationMutation(id!);
   const workingScores = useSessionStore((s) => s.workingScores);
   const setWorkingScores = useSessionStore((s) => s.setWorkingScores);
@@ -387,7 +389,7 @@ export default function ScoreScreen() {
     );
   }
   if (!player || !tryoutQuery.data) {
-    return <ErrorState message="Player not found." onRetry={() => tryoutQuery.refetch()} />;
+    return <ErrorState message={terms.t('Player not found.')} onRetry={() => tryoutQuery.refetch()} />;
   }
 
   const overall = weightedOverall(scores ?? {}, categories, weights);

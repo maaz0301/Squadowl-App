@@ -1,3 +1,4 @@
+import { useTerms } from '@/lib/terms';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, FlatList, Pressable, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -63,6 +64,7 @@ export default function LettersScreen() {
   const user = useUser();
 
   const tryoutQuery = useTryoutQuery(id);
+  const terms = useTerms(tryoutQuery.data?.settings.customLabels);
   const teamsQuery = useTeamsQuery();
   const templatesQuery = useLetterTemplatesQuery();
   const lettersQuery = usePlayerLettersQuery(id);
@@ -184,7 +186,7 @@ export default function LettersScreen() {
     (l: PlayerLetter) => {
       Alert.alert(
         'Delete this copy?',
-        "The record comes off the player's card. It does not recall an email already delivered.",
+        terms.t("The record comes off the player's card. It does not recall an email already delivered."),
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -210,7 +212,7 @@ export default function LettersScreen() {
   if (tryoutQuery.isError || !tryout) {
     return (
       <Screen padded>
-        <Header title="Player Selection Letters" showBack onBack={goBack} />
+        <Header title={terms.t('Player Selection Letters')} showBack onBack={goBack} />
         <ErrorState message="Could not load this evaluation." onRetry={() => tryoutQuery.refetch()} />
       </Screen>
     );
@@ -222,7 +224,7 @@ export default function LettersScreen() {
   if (isAssessorOnly) {
     return (
       <Screen padded>
-        <Header title="Player Selection Letters" showBack onBack={goBack} />
+        <Header title={terms.t('Player Selection Letters')} showBack onBack={goBack} />
         <EmptyState
           title="Coach tool"
           message="Selection letters are managed by the coach running this evaluation."
@@ -266,7 +268,7 @@ export default function LettersScreen() {
       'Delete template?',
       // Worth saying out loud: the copies are snapshots, so deleting the
       // stationery does not un-send anything.
-      `"${t.name}" will be removed. Letters already sent from it stay on the players' cards.`,
+      terms.t(`"${t.name}" will be removed. Letters already sent from it stay on the players' cards.`),
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -309,14 +311,14 @@ export default function LettersScreen() {
         ? `${leftover.map((t) => `{{${t}}}`).join(', ')} ${leftover.length === 1 ? 'has' : 'have'} not been filled in and will be sent as-is.`
         : null,
       missingAddress.length
-        ? `${missingAddress.length} selected player${missingAddress.length === 1 ? ' has' : 's have'} no email address on file and will be saved as failed.`
+        ? terms.t(`${missingAddress.length} selected player${missingAddress.length === 1 ? ' has' : 's have'} no email address on file and will be saved as failed.`)
         : null,
     ].filter(Boolean) as string[];
 
     Alert.alert(
-      `Send to ${chosen.length} player${chosen.length === 1 ? '' : 's'}?`,
+      terms.t(`Send to ${chosen.length} player${chosen.length === 1 ? '' : 's'}?`),
       [
-        `"${sendWith.name}" will be emailed to the guardian on file for each selected player, and a copy attached to their card.`,
+        terms.t(`"${sendWith.name}" will be emailed to the guardian on file for each selected player, and a copy attached to their card.`),
         ...warnings,
       ].join('\n\n'),
       [
@@ -362,8 +364,8 @@ export default function LettersScreen() {
   return (
     <Screen scroll insideTabBar>
       <Header
-        title="Player Selection Letters"
-        subtitle="Write an offer or roster decision letter once, then send it to the players you choose"
+        title={terms.t('Player Selection Letters')}
+        subtitle={terms.t('Write an offer or roster decision letter once, then send it to the players you choose')}
         showBack
         onBack={goBack}
         right={
@@ -433,7 +435,7 @@ export default function LettersScreen() {
               </View>
               <View className="flex-row flex-wrap gap-2">
                 <Button
-                  label={sendWith?.id === t.id ? 'Selected' : 'Select Players'}
+                  label={sendWith?.id === t.id ? 'Selected' : terms.t('Select Players')}
                   size="sm"
                   onPress={() => startSend(t)}
                 />
@@ -483,7 +485,7 @@ export default function LettersScreen() {
               label={
                 sendProgress
                   ? `Sending ${sendProgress.done}/${sendProgress.total}...`
-                  : `Send to ${selectedIds.size} Player${selectedIds.size === 1 ? '' : 's'}`
+                  : terms.t(`Send to ${selectedIds.size} Player${selectedIds.size === 1 ? '' : 's'}`)
               }
               size="sm"
               disabled={selectedIds.size === 0}
@@ -492,7 +494,7 @@ export default function LettersScreen() {
             />
           </View>
 
-          <Input value={playerSearch} onChangeText={setPlayerSearch} placeholder="Search players by name" />
+          <Input value={playerSearch} onChangeText={setPlayerSearch} placeholder={terms.t('Search players by name')} />
 
           {filteredRoster.length === 0 ? (
             <Text className="text-sm" style={{ color: colors.inkMuted }}>
@@ -536,7 +538,7 @@ export default function LettersScreen() {
       ) : letters.length === 0 ? (
         <EmptyState
           title="No letters sent yet"
-          message="Pick a template above, choose the players it applies to, and send. Every copy shows up here and on the player's card."
+          message={terms.t("Pick a template above, choose the players it applies to, and send. Every copy shows up here and on the player's card.")}
         />
       ) : (
         <View className="gap-2">
@@ -572,13 +574,19 @@ export default function LettersScreen() {
             subject={renderFor(previewFor, sendWith.subject)}
             body={renderFor(previewFor, sendWith.body)}
             to={letterRecipient(previewFor)}
+            noEmail={terms.t('No email address on file for this player')}
           />
         ) : null}
       </Modal>
 
       <Modal visible={!!openLetter} title={openLetter?.subject || 'Letter'} onClose={() => setOpenLetter(null)}>
         {openLetter ? (
-          <LetterBody subject={openLetter.subject} body={openLetter.body} to={openLetter.recipientEmail} />
+          <LetterBody
+            subject={openLetter.subject}
+            body={openLetter.body}
+            to={openLetter.recipientEmail}
+            noEmail={terms.t('No email address on file for this player')}
+          />
         ) : null}
       </Modal>
     </Screen>
@@ -704,7 +712,7 @@ const SentLetterRow = memo(function SentLetterRow({
 });
 
 /** The rendered letter, as the family will read it. */
-function LetterBody({ subject, body, to }: { subject: string; body: string; to?: string }) {
+function LetterBody({ subject, body, to, noEmail }: { subject: string; body: string; to?: string; noEmail: string }) {
   const colors = useThemeColors();
   const leftover = unfilledTokens(`${subject}\n${body}`);
   return (
@@ -714,7 +722,7 @@ function LetterBody({ subject, body, to }: { subject: string; body: string; to?:
           To
         </Text>
         <Text className="text-sm" style={{ color: to ? colors.ink : colors.warning }}>
-          {to ?? 'No email address on file for this player'}
+          {to ?? noEmail}
         </Text>
       </View>
       <View>

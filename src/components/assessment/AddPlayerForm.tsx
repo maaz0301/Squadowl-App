@@ -1,3 +1,4 @@
+import { useTerms, sportLabel } from '@/lib/terms';
 import { useState, useMemo } from 'react';
 import { View, Text, Pressable, Image, Alert, ScrollView } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
@@ -14,6 +15,8 @@ interface Props {
   defaultValues?: Partial<AddPlayerFormType>;
   /** Drives the position picker's options — Hockey positions for a Hockey evaluation, and so on. */
   sport?: Sport;
+  /** The evaluation's own renames, so the form speaks its language. */
+  labels?: import('@/data/types').CustomLabels;
   onSubmit: (data: AddPlayerFormType) => Promise<void>;
   /**
    * Defaults to "Save Player". The team roster passes its own, because saving
@@ -22,7 +25,8 @@ interface Props {
   submitLabel?: string;
 }
 
-export function AddPlayerForm({ loading, defaultValues, sport, onSubmit, submitLabel }: Props) {
+export function AddPlayerForm({ loading, defaultValues, sport, labels, onSubmit, submitLabel }: Props) {
+  const terms = useTerms(labels);
   const colors = useThemeColors();
   const athletesQuery = useAthletesQuery();
   const [modalVisible, setModalVisible] = useState(false);
@@ -118,11 +122,11 @@ export function AddPlayerForm({ loading, defaultValues, sport, onSubmit, submitL
     <View className="gap-3 pb-4">
       {athletesQuery.data && athletesQuery.data.length > 0 && (
         <View className="mb-2">
-          <Button label="Search Existing Players" variant="secondary" onPress={() => setModalVisible(true)} />
+          <Button label={`Search Existing ${terms.players}`} variant="secondary" onPress={() => setModalVisible(true)} />
         </View>
       )}
       
-      <Modal visible={modalVisible} title="Select Existing Player" onClose={() => setModalVisible(false)}>
+      <Modal visible={modalVisible} title={`Select Existing ${terms.player}`} onClose={() => setModalVisible(false)}>
         <View className="mb-4">
           <Input 
             label="Search by name" 
@@ -185,7 +189,7 @@ export function AddPlayerForm({ loading, defaultValues, sport, onSubmit, submitL
         control={control}
         name="jersey"
         render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
-          <Input label="Jersey #" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} keyboardType="number-pad" />
+          <Input label={terms.jersey} onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} keyboardType="number-pad" />
         )}
       />
       <Controller
@@ -249,7 +253,7 @@ export function AddPlayerForm({ loading, defaultValues, sport, onSubmit, submitL
         control={control}
         name="playerEmail"
         render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
-          <Input label="Player Email" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} autoCapitalize="none" keyboardType="email-address" />
+          <Input label={`${terms.player} Email`} onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} autoCapitalize="none" keyboardType="email-address" />
         )}
       />
       <Controller
@@ -281,7 +285,7 @@ export function AddPlayerForm({ loading, defaultValues, sport, onSubmit, submitL
         )}
       />
       <Button
-        label={submitLabel ?? 'Save Player'}
+        label={submitLabel ?? `Save ${terms.player}`}
         onPress={handleSubmit(onSubmit, (errors) => {
           const emailError = errors.guardianEmail ?? errors.playerEmail;
           if (emailError) {

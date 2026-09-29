@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
-import { Alert, FlatList, Pressable, Text, View } from 'react-native';
+import { Alert, Pressable, Text, View } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
-import { Avatar, Badge, Button, Card, EmptyState, ErrorState, Header, Input, LoadingState, Screen } from '@/components/ui';
+import { Avatar, Badge, Button, Card, ErrorState, Header, Input, LoadingState, Screen } from '@/components/ui';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
   useAthleteSharesQuery,
-  useCoachDirectoryQuery,
+  useFindCoachByEmailMutation,
   useShareAthleteMutation,
 } from '@/features/queries';
 import type { AthleteShare, AthleteShareStatus, CoachDirectoryEntry } from '@/data/types';
@@ -89,11 +89,16 @@ export default function ShareDirectoryScreen() {
   const navigation = useNavigation<any>();
   const colors = useThemeColors();
   const { athleteId } = route.params || {};
-  const [query, setQuery] = useState('');
+  const [email, setEmail] = useState('');
+  // The email a lookup actually ran for, so the empty/no-match state below
+  // reads "no coach found for x@y.com" rather than re-running on every
+  // keystroke — this is a real network round trip per search, not a filter
+  // over an already-loaded list.
+  const [searchedEmail, setSearchedEmail] = useState<string | null>(null);
   const [sharingCoachId, setSharingCoachId] = useState<string | null>(null);
 
   const sharesQuery = useAthleteSharesQuery(athleteId);
-  const directoryQuery = useCoachDirectoryQuery();
+  const findCoach = useFindCoachByEmailMutation();
   const shareMutation = useShareAthleteMutation();
 
   const sharedCoachIds = useMemo(
@@ -101,14 +106,12 @@ export default function ShareDirectoryScreen() {
     [sharesQuery.data],
   );
 
-  const filteredCoaches = useMemo(() => {
-    const list = directoryQuery.data ?? [];
-    const q = query.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter(
-      (c) => c.displayName.toLowerCase().includes(q) || c.accountName.toLowerCase().includes(q),
-    );
-  }, [directoryQuery.data, query]);
+  const handleFind = () => {
+    const trimmed = email.trim();
+    if (!trimmed) return;
+    setSearchedEmail(trimmed);
+    findCoach.mutate(trimmed);
+  };
 
   const handleShare = async (coach: CoachDirectoryEntry) => {
     setSharingCoachId(coach.userId);
@@ -125,72 +128,82 @@ export default function ShareDirectoryScreen() {
     }
   };
 
-  if (sharesQuery.isLoading || directoryQuery.isLoading) {
-    return <LoadingState message="Loading coaches..." />;
-  }
-
-  if (directoryQuery.isError) {
-    return (
-      <Screen padded>
-        <Header title="Share with a Coach" showBack />
-        <ErrorState message="Could not load the coach directory." onRetry={() => directoryQuery.refetch()} />
-      </Screen>
-    );
+  if (sharesQuery.isLoading) {
+    return <LoadingState message="Loading..." />;
   }
 
   const shares = sharesQuery.data ?? [];
+  const results = findCoach.data ?? [];
 
   return (
-    <Screen padded={false}>
-      <View className="px-4">
-        <Header title="Share with a Coach" showBack />
+    <Screen padded scroll>
+      <Header title="Share with a Coach" showBack />
+
+      {shares.length > 0 ? (
+        <View className="mb-4">
+          <Text className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: colors.inkMuted }}>
+            Your Shares
+          </Text>
+          {shares.map((s) => (
+            <ExistingShareRow
+              key={s.id}
+              share={s}
+              colors={colors}
+              onPress={() => navigation.navigate('ShareDetail', { shareId: s.id })}
+            />
+          ))}
+        </View>
+      ) : null}
+
+      <Text className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: colors.inkMuted }}>
+        Share by Email
+      </Text>
+      <Text className="text-sm mb-3" style={{ color: colors.inkMuted }}>
+        Enter the coach&apos;s email address to send them this athlete&apos;s profile.
+      </Text>
+      <View className="flex-row gap-2 items-start mb-4">
+        <Input
+          value={email}
+          onChangeText={setEmail}
+          placeholder="coach@example.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          containerClassName="flex-1"
+          onSubmitEditing={handleFind}
+          returnKeyType="search"
+        />
+        <Button label="Find" loading={findCoach.isPending} disabled={!email.trim()} onPress={handleFind} />
       </View>
 
-      <FlatList
-        data={filteredCoaches}
-        keyExtractor={(c) => `${c.accountId}-${c.userId}`}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
-        ListHeaderComponent={
-          <View className="mb-4">
-            {shares.length > 0 ? (
-              <View className="mb-4">
-                <Text className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: colors.inkMuted }}>
-                  Your Shares
-                </Text>
-                {shares.map((s) => (
-                  <ExistingShareRow
-                    key={s.id}
-                    share={s}
-                    colors={colors}
-                    onPress={() => navigation.navigate('ShareDetail', { shareId: s.id })}
-                  />
-                ))}
-              </View>
-            ) : null}
-
-            <Text className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: colors.inkMuted }}>
-              Find a Coach
-            </Text>
-            <Input
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search by coach or club name..."
-            />
-          </View>
-        }
-        ListEmptyComponent={
-          <EmptyState title="No coaches found" message="Try a different search." />
-        }
-        renderItem={({ item }) => (
+      {findCoach.isPending ? (
+        <LoadingState message="Looking up that email..." />
+      ) : findCoach.isError ? (
+        <ErrorState
+          message={(findCoach.error as any)?.message || 'Could not look up that email.'}
+          onRetry={handleFind}
+        />
+      ) : searchedEmail && results.length === 0 ? (
+        <Card className="items-center py-6 gap-1">
+          <Text className="font-bold text-center" style={{ color: colors.ink }}>
+            No coach found for {searchedEmail}
+          </Text>
+          <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
+            Double-check the address, or ask them to create a TryoutHQ account first.
+          </Text>
+        </Card>
+      ) : (
+        results.map((c) => (
           <CoachRow
-            coach={item}
-            alreadySharedWith={sharedCoachIds.has(item.userId)}
-            loading={shareMutation.isPending && sharingCoachId === item.userId}
-            onShare={() => handleShare(item)}
+            key={`${c.accountId}-${c.userId}`}
+            coach={c}
+            alreadySharedWith={sharedCoachIds.has(c.userId)}
+            loading={shareMutation.isPending && sharingCoachId === c.userId}
+            onShare={() => handleShare(c)}
             colors={colors}
           />
-        )}
-      />
+        ))
+      )}
     </Screen>
   );
 }

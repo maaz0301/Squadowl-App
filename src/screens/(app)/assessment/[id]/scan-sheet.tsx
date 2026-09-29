@@ -1,100 +1,262 @@
+import { useTerms } from '@/lib/terms';
 import { useMemo, useState } from 'react';
-import { FlatList, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
+import { Badge, Button, Card, Chip, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
 import { useImportScanScoresMutation, useTryoutQuery } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
-import { getPlayerSubskills, playerDisplayName } from '@/data/rubrics';
+import { DocumentPickerUnavailable, pickRosterFile } from '@/lib/documentPicker';
+import { parseRosterBase64, type ParsedSheet } from '@/lib/rosterImport';
+import {
+  IDENTITY_FIELDS,
+  buildScoreImportRows,
+  guessIdentityMapping,
+  guessMeasureMapping,
+  type IdentityMapping,
+  type MeasureMapping,
+} from '@/lib/scoreImport';
 
+const SESSION_NAME = 'Excel Import';
+const PREVIEW_ROWS = 10;
+
+const columnLabel = (header: string, index: number) => (header.trim() ? header.trim() : `Column ${index + 1}`);
+
+/**
+ * Import evaluation results from a spreadsheet: pick a file, map its columns to
+ * the measures already built into this evaluation, review, then save.
+ */
 export default function ScanSheetScreen() {
   const id = useAssessmentId();
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
   const importScores = useImportScanScoresMutation();
-  const [imported, setImported] = useState(false);
 
-  const preview = useMemo(() => {
-    if (!tryoutQuery.data) return [];
-    return tryoutQuery.data.roster.slice(0, 5).map((p) => {
-      const subskills = getPlayerSubskills(tryoutQuery.data!.sport, p.pos, tryoutQuery.data!.settings.customRubrics);
-      const scores = subskills.slice(0, 3).map((r) => ({
-        rubricKey: r.key,
-        value: 3 + Math.floor(Math.random() * 2),
-      }));
-      return { player: p, scores };
-    });
-  }, [tryoutQuery.data]);
+  const [source, setSource] = useState<{ name: string; base64: string } | null>(null);
+  const [sheet, setSheet] = useState<ParsedSheet | null>(null);
+  const [identity, setIdentity] = useState<IdentityMapping>({});
+  const [mapping, setMapping] = useState<MeasureMapping>({});
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
+  const [savedCount, setSavedCount] = useState<number | null>(null);
 
-  if (tryoutQuery.isLoading) return <LoadingState message="Loading scan sheet..." />;
-  if (tryoutQuery.isError || !tryoutQuery.data) {
+  const tryout = tryoutQuery.data;
+  const terms = useTerms(tryout?.settings.customLabels);
+  const measures = useMemo(() => tryout?.settings.customRubrics ?? [], [tryout]);
+
+  const rows = useMemo(
+    () => (sheet && tryout ? buildScoreImportRows(sheet, tryout.roster, identity, mapping, measures) : []),
+    [sheet, tryout, identity, mapping, measures],
+  );
+  const ready = rows.filter((r) => r.errors.length === 0);
+  const skipped = rows.filter((r) => r.errors.length > 0);
+  const mappedMeasures = measures.filter((m) => mapping[m.key] != null).length;
+
+  const back = () => navigation.navigate('AssessmentRoster');
+
+  if (tryoutQuery.isLoading) return <LoadingState message="Loading evaluation..." />;
+  if (tryoutQuery.isError || !tryout) {
     return (
       <Screen scroll insideTabBar>
-        <Header title="Scan Sheet" showBack onBack={() => navigation.navigate('AssessmentRoster')} />
-        <ErrorState message="Could not load scan sheet." onRetry={() => tryoutQuery.refetch()} />
+        <Header title="Import Scores" showBack onBack={back} />
+        <ErrorState message="Could not load this evaluation." onRetry={() => tryoutQuery.refetch()} />
       </Screen>
     );
   }
 
-  const tryout = tryoutQuery.data;
-
-  const simulateImport = async () => {
-    const scores = preview.flatMap((item: any) =>
-      item.scores.map((sc: any) => ({ playerId: item.player.id, rubricKey: sc.rubricKey, value: sc.value })),
-    );
-    await importScores.mutateAsync({ tryoutId: id!, scores });
-    setImported(true);
+  const load = (parsed: ParsedSheet, name: string, base64: string) => {
+    const ident = guessIdentityMapping(parsed.headers);
+    setSource({ name, base64 });
+    setSheet(parsed);
+    setIdentity(ident);
+    setMapping(guessMeasureMapping(parsed.headers, measures, ident));
+    setExpanded(null);
   };
+
+  const choose = async () => {
+    setReading(true);
+    try {
+      const picked = await pickRosterFile();
+      if (picked) load(parseRosterBase64(picked.base64), picked.name, picked.base64);
+    } catch (e) {
+      if (e instanceof DocumentPickerUnavailable) Alert.alert('File Picker Not Available', e.message);
+      else Alert.alert('Could not read that file', e instanceof Error ? e.message : 'Try a different file.');
+    } finally {
+      setReading(false);
+    }
+  };
+
+  const switchSheet = (name: string) => {
+    if (!source) return;
+    try {
+      load(parseRosterBase64(source.base64, name), source.name, source.base64);
+    } catch (e) {
+      Alert.alert('Could not read that sheet', e instanceof Error ? e.message : 'Try a different sheet.');
+    }
+  };
+
+  const save = async () => {
+    const scores = ready.flatMap((r) =>
+      Object.entries(r.scores).map(([rubricKey, value]) => ({ playerId: r.player!.id, rubricKey, value })),
+    );
+    try {
+      await importScores.mutateAsync({ tryoutId: id!, scores, session: SESSION_NAME });
+      setSavedCount(ready.length);
+    } catch (e) {
+      Alert.alert('Import failed', e instanceof Error ? e.message : 'Nothing was saved. Try again.');
+    }
+  };
+
+  const picker = (key: string, current: number | null | undefined, onPick: (i: number | null) => void) =>
+    expanded === key && sheet ? (
+      <View className="mt-1.5 flex-row flex-wrap">
+        <Chip label="Not in this file" active={current == null} onPress={() => { onPick(null); setExpanded(null); }} />
+        {sheet.headers.map((h, i) => (
+          <Chip
+            key={`${key}-${i}`}
+            label={columnLabel(h, i)}
+            active={current === i}
+            onPress={() => { onPick(i); setExpanded(null); }}
+          />
+        ))}
+      </View>
+    ) : null;
+
+  const mapRow = (key: string, label: string, sub: string | undefined, current: number | null | undefined, onPick: (i: number | null) => void) => (
+    <View key={key} className="mb-1.5">
+      <Pressable
+        onPress={() => setExpanded(expanded === key ? null : key)}
+        className="flex-row items-center justify-between rounded-md border px-3 py-2.5"
+        style={{ backgroundColor: colors.tile, borderColor: expanded === key ? colors.primary : colors.border }}
+      >
+        <View className="flex-1 pr-2">
+          <Text className="text-sm font-semibold" style={{ color: colors.ink }}>{label}</Text>
+          {sub ? <Text className="text-xs" style={{ color: colors.inkFaint }}>{sub}</Text> : null}
+        </View>
+        <Text className="text-sm" style={{ color: current == null ? colors.inkFaint : colors.primary }}>
+          {current == null || !sheet ? 'not in this file' : columnLabel(sheet.headers[current], current)}
+        </Text>
+      </Pressable>
+      {picker(key, current, onPick)}
+    </View>
+  );
 
   return (
     <Screen padded={false}>
       <View className="px-4">
-        <Header title="Scan Sheet Import" showBack onBack={() => navigation.navigate('AssessmentRoster')} />
-        <Card accent className="mb-4 gap-2">
-          <Text className="font-display font-bold" style={{ color: colors.ink }}>
-            Paper score sheet → digital
-          </Text>
-          <Text style={{ color: colors.inkMuted }}>
-            Camera OCR is not wired yet. This demo simulates importing scanned scores for the first
-            5 players.
-          </Text>
-          <Badge label={`${tryout.roster.length} players on roster`} />
-        </Card>
+        <Header title="Import Scores from Excel" showBack onBack={back} />
       </View>
-
-      <FlatList
-        data={preview}
-        keyExtractor={(item) => item.player.id}
-        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
-        renderItem={({ item }) => (
-          <Card className="mb-2 gap-1">
-            <Text className="font-bold" style={{ color: colors.ink }}>
-              {playerDisplayName(item.player)}
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 12 }} keyboardShouldPersistTaps="handled">
+        {measures.length === 0 ? (
+          <Card accent className="gap-2">
+            <Text className="font-display font-bold" style={{ color: colors.ink }}>Add measures first</Text>
+            <Text style={{ color: colors.inkMuted }}>
+              Scores are imported into the measures created in this evaluation, and there are none yet.
             </Text>
-            {item.scores.map((s) => (
-              <Text key={s.rubricKey} className="text-sm" style={{ color: colors.inkMuted }}>
-                {s.rubricKey}: {s.value}
-              </Text>
-            ))}
+            <Button label="Go to Measures" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentRubrics', params: { id } })} />
           </Card>
-        )}
-        ListFooterComponent={
-          <View className="gap-2 mt-4">
-            {imported ? (
-              <Card accent className="items-center py-4">
-                <Text className="font-display font-bold" style={{ color: colors.success }}>
-                  Scores imported successfully
+        ) : savedCount != null ? (
+          <Card accent className="items-center gap-2 py-4">
+            <Text className="font-display font-bold" style={{ color: colors.success }}>
+              Scores imported for {savedCount} {(savedCount === 1 ? terms.player : terms.players).toLowerCase()}
+            </Text>
+            <Button label="View Results" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentResults', params: { id } })} />
+          </Card>
+        ) : !sheet ? (
+          <Card accent className="gap-2">
+            <Text className="font-display font-bold" style={{ color: colors.ink }}>Import results from a file</Text>
+            <Text style={{ color: colors.inkMuted }}>
+              Choose an Excel or CSV file with one row per player. You will match its columns to this
+              evaluation's {measures.length} {measures.length === 1 ? 'measure' : 'measures'} before anything is saved.
+            </Text>
+            <Button label="Choose File" loading={reading} onPress={choose} />
+          </Card>
+        ) : (
+          <>
+            <Card className="gap-1">
+              <Text className="font-bold" style={{ color: colors.ink }}>{source?.name}</Text>
+              <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                {sheet.rows.length} rows below the headings on line {sheet.headerLine}
+              </Text>
+              <Button label="Choose a different file" variant="secondary" onPress={choose} />
+            </Card>
+
+            {sheet.sheetNames.length > 1 ? (
+              <View>
+                <Text className="mb-1 text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>Sheet</Text>
+                <View className="flex-row flex-wrap">
+                  {sheet.sheetNames.map((n) => (
+                    <Chip key={n} label={n} active={n === sheet.sheetName} onPress={() => switchSheet(n)} />
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            <View>
+              <Text className="mb-2 text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>Which column is the {terms.player.toLowerCase()}</Text>
+              {IDENTITY_FIELDS.map((f) =>
+                mapRow(`id-${f.key}`, f.key === 'jersey' ? terms.jersey : f.label, undefined, identity[f.key], (i) => setIdentity((m) => ({ ...m, [f.key]: i }))),
+              )}
+            </View>
+
+            <View>
+              <Text className="mb-2 text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>
+                Assign a column to each measure ({mappedMeasures}/{measures.length})
+              </Text>
+              {measures.map((m) =>
+                mapRow(`m-${m.key}`, m.label, m.unit ? `Unit: ${m.unit}` : undefined, mapping[m.key], (i) =>
+                  setMapping((prev) => ({ ...prev, [m.key]: i })),
+                ),
+              )}
+            </View>
+
+            <View className="gap-1.5">
+              <View className="flex-row flex-wrap items-center gap-2">
+                <Badge label={`${ready.length} ready`} />
+                {skipped.length > 0 ? <Badge label={`${skipped.length} left out`} /> : null}
+              </View>
+              {rows.slice(0, PREVIEW_ROWS).map((r) => {
+                const bad = r.errors.length > 0;
+                return (
+                  <Card key={r.line} className="gap-0.5">
+                    <Text className="font-bold" style={{ color: bad ? colors.danger : colors.ink }}>
+                      {r.player ? `${r.player.first} ${r.player.last}`.trim() : r.label}
+                      <Text className="text-xs font-normal" style={{ color: colors.inkFaint }}>  row {r.line}</Text>
+                    </Text>
+                    {bad ? (
+                      <Text className="text-sm" style={{ color: colors.danger }}>{r.errors.join('. ')}</Text>
+                    ) : (
+                      <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                        {measures.filter((m) => r.scores[m.key] != null).map((m) => `${m.label}: ${r.scores[m.key]}`).join('  ·  ')}
+                      </Text>
+                    )}
+                    {r.warnings.length > 0 ? (
+                      <Text className="text-xs" style={{ color: colors.inkFaint }}>Skipped cells: {r.warnings.join('; ')}</Text>
+                    ) : null}
+                  </Card>
+                );
+              })}
+              {rows.length > PREVIEW_ROWS ? (
+                <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                  and {rows.length - PREVIEW_ROWS} more rows
                 </Text>
-                <Button label="View Results" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentResults', params: { id: id } })} />
-              </Card>
-            ) : (
-              <Button label="Simulate Scan Import" loading={importScores.isPending} onPress={simulateImport} />
-            )}
-          </View>
-        }
-      />
+              ) : null}
+            </View>
+
+            <Text className="text-xs" style={{ color: colors.inkFaint }}>
+              Saved as the "{SESSION_NAME}" session. Importing again replaces that session's scores for the same players.
+            </Text>
+            <Button
+              label={`Import ${ready.length} ${(ready.length === 1 ? terms.player : terms.players).toLowerCase()}`}
+              loading={importScores.isPending}
+              disabled={ready.length === 0 || mappedMeasures === 0}
+              onPress={save}
+            />
+          </>
+        )}
+      </ScrollView>
     </Screen>
   );
 }

@@ -1,3 +1,4 @@
+import { termsFor } from '@/lib/termsCore';
 import type { Player, Tryout } from './types';
 import { generateId, isGoaliePosition, playerDisplayName } from './rubrics';
 import { computePlayerResults } from '@/data/scoring';
@@ -777,7 +778,8 @@ export function buildTeamBuilderExportRows(
   const results = computePlayerResults(tryout);
   const overallByPlayerId = new Map(results.map((r) => [r.player.id, r.overall]));
   const playerById = new Map(tryout.roster.map((p) => [p.id, p]));
-  const headers = ['Team', 'Player', 'Jersey', 'Pos', 'Role', 'Overall'];
+  const t = termsFor(tryout);
+  const headers = ['Team', t('Player'), t('Jersey'), 'Pos', 'Role', 'Overall'];
   const teams = opts?.teamId ? state.teams.filter((t) => t.id === opts.teamId) : state.teams;
 
   const rows: string[][] = [];
@@ -804,7 +806,7 @@ export function buildTeamBuilderExportRows(
 
 export function formatExportCsv(tryout: Tryout): string {
   const results = computePlayerResults(tryout);
-  const headers = ['Rank', 'First', 'Last', 'Jersey', 'Pos', 'Overall', 'Recommendation'];
+  const headers = ['Rank', 'First', 'Last', termsFor(tryout)('Jersey'), 'Pos', 'Overall', 'Recommendation'];
   const rows = results
     .sort((a, b) => b.overall - a.overall)
     .map((r, i) => [

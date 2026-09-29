@@ -1,3 +1,4 @@
+import { useTerms } from '@/lib/terms';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
@@ -21,6 +22,8 @@ interface AddToRosterModalProps {
   progress?: { done: number; total: number };
   onClose: () => void;
   onConfirm: (destination: RosterDestination) => void;
+  /** The evaluation's own names. */
+  labels?: import('@/data/types').CustomLabels;
 }
 
 type Kind = 'assessment' | 'team';
@@ -38,7 +41,9 @@ export function AddToRosterModal({
   progress,
   onClose,
   onConfirm,
+  labels,
 }: AddToRosterModalProps) {
+  const terms = useTerms(labels);
   const colors = useThemeColors();
   const [kind, setKind] = useState<Kind | null>(null);
   const [targetId, setTargetId] = useState<string | null>(null);
@@ -61,7 +66,7 @@ export function AddToRosterModal({
       ? (tryoutsQuery.data ?? []).map((t) => ({
           id: t.id,
           name: t.name,
-          hint: t.id === currentTryoutId ? 'Current' : `${t.playerCount} players`,
+          hint: t.id === currentTryoutId ? 'Current' : terms.t(`${t.playerCount} players`),
         }))
       : kind === 'team'
         ? (teamsQuery.data ?? []).map((t) => ({ id: t.id, name: t.name, hint: t.season ?? '' }))
@@ -73,7 +78,7 @@ export function AddToRosterModal({
   return (
     <Modal
       visible={visible}
-      title={count > 1 ? `Add ${count} Players` : 'Add Player'}
+      title={terms.t(count > 1 ? `Add ${count} Players` : 'Add Player')}
       onClose={onClose}
       footer={
         <View className="mt-4 gap-2">
@@ -157,8 +162,8 @@ export function AddToRosterModal({
             </Text>
             <Text className="text-sm" style={{ color: colors.inkMuted }}>
               {kind === 'assessment'
-                ? 'Create an evaluation before adding players to one.'
-                : 'Create a team before adding players to one.'}
+                ? terms.t('Create an evaluation before adding players to one.')
+                : terms.t('Create a team before adding players to one.')}
             </Text>
           </View>
         ) : (

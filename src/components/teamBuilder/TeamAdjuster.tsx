@@ -1,3 +1,4 @@
+import { useTerms } from '@/lib/terms';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, BackHandler, FlatList, PanResponder, Pressable, ScrollView, Text, View } from 'react-native';
 
@@ -70,7 +71,10 @@ export function TeamAdjuster({
   onUndo,
   onRedo,
   onDone,
+  labels,
 }: {
+  /** The evaluation's own names. */
+  labels?: import('@/data/types').CustomLabels;
   teams: TeamBuilderTeam[];
   unassigned: string[];
   playerById: Map<string, Player>;
@@ -84,6 +88,7 @@ export function TeamAdjuster({
   onDone: () => void;
 }) {
   const colors = useThemeColors();
+  const terms = useTerms(labels);
 
   const zones = useMemo<Zone[]>(() => {
     // Same rule as the team cards on the Team Builder screen: an overall of 0 is
@@ -182,8 +187,8 @@ export function TeamAdjuster({
 
       <Text className="text-xs mb-2" style={{ color: colors.inkMuted }}>
         {dragging
-          ? 'Drop on a team to move this player.'
-          : 'Hold a player to drag them onto a team, or tap one to pick a team. Undo and redo take a mis-drop back.'}
+          ? terms.t('Drop on a team to move this player.')
+          : terms.t('Hold a player to drag them onto a team, or tap one to pick a team. Undo and redo take a mis-drop back.')}
       </Text>
 
       {/* The bins. Their own scroll view so a ten-team split still fits, and
@@ -297,7 +302,7 @@ export function TeamAdjuster({
 
       <Modal
         visible={!!movePickerFor}
-        title="Move Player"
+        title={terms.t('Move Player')}
         onClose={() => setMovePickerFor(null)}
       >
         <View className="gap-2">

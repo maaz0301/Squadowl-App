@@ -22,10 +22,13 @@ export function ScoreCta({
   total,
   scored,
   onPress,
+  playersLabel = 'Players',
 }: {
   total: number;
   scored: number;
   onPress: () => void;
+  /** The evaluation's word for players, e.g. "Skaters". */
+  playersLabel?: string;
 }) {
   const colors = useThemeColors();
   const pct = total === 0 ? 0 : Math.round((scored / total) * 100);
@@ -33,8 +36,8 @@ export function ScoreCta({
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel="Score players"
-      accessibilityHint={`${scored} of ${total} players scored`}
+      accessibilityLabel={`Score ${playersLabel.toLowerCase()}`}
+      accessibilityHint={`${scored} of ${total} ${playersLabel.toLowerCase()} scored`}
       className="relative flex-row items-center gap-3.5 overflow-hidden rounded-2xl px-4 py-4 active:opacity-85"
       style={{ backgroundColor: colors.primary }}
     >
@@ -43,7 +46,7 @@ export function ScoreCta({
       </View>
       <View className="flex-1">
         <Text className="font-display text-lg font-bold" style={{ color: '#fff' }}>
-          Score Players
+          Score {playersLabel}
         </Text>
       </View>
       <ChevronIcon color="#fff" size={20} />
@@ -166,7 +169,17 @@ export function RosterSelectToolbar({
 }
 
 /** Search, with the magnifier inside the field and a clear button once there's something to clear. */
-export function RosterSearch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+export function RosterSearch({
+  value,
+  onChange,
+  playersLabel = 'Players',
+  jerseyLabel = 'Jersey #',
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  playersLabel?: string;
+  jerseyLabel?: string;
+}) {
   const colors = useThemeColors();
   return (
     <View
@@ -177,7 +190,7 @@ export function RosterSearch({ value, onChange }: { value: string; onChange: (v:
       <TextInput
         value={value}
         onChangeText={onChange}
-        placeholder="Search players by name or jersey #"
+        placeholder={`Search ${playersLabel.toLowerCase()} by name or ${jerseyLabel.toLowerCase()}`}
         placeholderTextColor={colors.placeholder}
         autoCapitalize="none"
         autoCorrect={false}

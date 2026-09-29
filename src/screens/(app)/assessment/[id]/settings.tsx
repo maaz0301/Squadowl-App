@@ -1,3 +1,5 @@
+import { useTerms, sportLabel } from '@/lib/terms';
+import { TermsEditor } from '@/components/TermsEditor';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Share, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -62,6 +64,7 @@ export default function SettingsScreen() {
   const user = useUser();
   const welcomedRef = useRef(false);
   const tryoutQuery = useTryoutQuery(id);
+  const terms = useTerms(tryoutQuery.data?.settings.customLabels);
   // A team someone else owns is run on that team's plan, not the viewer's own.
   const effectiveTier = useEffectivePlanTier(tryoutQuery.data?.teamId);
   // Only `.length` is read from this, for the plan-limit check — the full
@@ -226,7 +229,7 @@ export default function SettingsScreen() {
     try {
       await getDataSource().sendEmail('reminder', assessor.email, {
         title: tryout.name,
-        message: `This is a reminder that you have been assigned to assess players for ${tryout.name}. Please log in to complete your evaluations.`,
+        message: terms.t(`This is a reminder that you have been assigned to assess players for ${tryout.name}. Please log in to complete your evaluations.`),
       });
       Alert.alert('Reminder Sent', `Reminder successfully sent to ${assessor.name}.`);
     } catch (e: any) {
@@ -293,7 +296,7 @@ export default function SettingsScreen() {
           {tryout.name}
         </Text>
         <Text style={{ color: colors.inkMuted }}>
-          {tryout.sport} · {tryout.eventType}
+          {sportLabel(tryout.sport, terms)} · {tryout.eventType}
         </Text>
         {tryout.tryoutDate ? (
           <Text style={{ color: colors.inkFaint }}>
@@ -310,6 +313,18 @@ export default function SettingsScreen() {
         {tryout.cloud?.id ? <Badge label={`Code: ${tryout.cloud.id}`} variant="brand" /> : null}
         <Button label="Edit Details" variant="secondary" size="sm" onPress={openEdit} />
       </Card>
+
+      <TermsEditor
+        key={JSON.stringify(tryout.settings.customLabels ?? {})}
+        value={tryout.settings.customLabels}
+        saving={updateTryout.isPending}
+        onSave={async (customLabels) => {
+          await updateTryout.mutateAsync({
+            id: tryout.id,
+            updates: { settings: { ...tryout.settings, customLabels } },
+          });
+        }}
+      />
 
       <Card className="mb-4 gap-3">
         <Text className="text-md font-display font-bold" style={{ color: colors.ink }}>

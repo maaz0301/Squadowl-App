@@ -1,3 +1,4 @@
+import { useTerms, sportLabel } from '@/lib/terms';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, View, Alert } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
@@ -57,6 +58,7 @@ import { buildLimitReachedMessage } from '@/lib/usageNudges';
 const MY_ATHLETES_PREVIEW = 3;
 
 export default function DashboardScreen() {
+  const terms = useTerms();
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const user = useUser();
@@ -417,7 +419,7 @@ export default function DashboardScreen() {
                 {item.name}
               </Text>
               <Text className="text-sm mt-1" style={{ color: colors.inkMuted }}>
-                {item.sport} · {item.eventType}
+                {sportLabel(item.sport, terms)} · {item.eventType}
               </Text>
               {item.tryoutDate ? (
                 <Text className="text-sm" style={{ color: colors.inkFaint }}>
@@ -661,7 +663,7 @@ export default function DashboardScreen() {
                             {t.name}
                           </Text>
                           <Text className="text-sm mt-1" style={{ color: colors.inkMuted }}>
-                            {t.sport} · {t.playerCount} {t.playerCount === 1 ? 'player' : 'players'}
+                            {sportLabel(t.sport, terms)} · {t.playerCount} {(t.playerCount === 1 ? terms.player : terms.players).toLowerCase()}
                           </Text>
                         </View>
                         <Badge label="Score" variant="brand" />

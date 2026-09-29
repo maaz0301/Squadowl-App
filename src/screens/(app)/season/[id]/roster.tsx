@@ -1,3 +1,4 @@
+import { useTerms, sportLabel } from '@/lib/terms';
 import { useState } from 'react';
 import { FlatList, Pressable, Text, View, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -21,6 +22,7 @@ import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 const SEASON_ROSTER_PAGE = 50;
 
 export default function SeasonRosterScreen() {
+  const terms = useTerms();
   const route = useRoute<any>();
   const { id } = route.params || {};
   const colors = useThemeColors();
@@ -219,15 +221,15 @@ export default function SeasonRosterScreen() {
         className="absolute left-4 right-4"
         style={{ bottom: Math.max(24, insets.bottom + 12) }}
       >
-        <Button label="+ Add Player" onPress={() => setShowAdd(true)} />
+        <Button label={`+ Add ${terms.player}`} onPress={() => setShowAdd(true)} />
       </View>
 
       <Modal visible={showAdd} title="Add Season Player" onClose={() => setShowAdd(false)}>
         <View className="gap-3">
           <Input label="First name" value={firstName} onChangeText={setFirstName} />
           <Input label="Last name" value={lastName} onChangeText={setLastName} />
-          <Input label="Jersey" value={jersey} onChangeText={setJersey} />
-          <Input label="Player email" value={playerEmail} onChangeText={setPlayerEmail} autoCapitalize="none" keyboardType="email-address" />
+          <Input label={terms.jersey} value={jersey} onChangeText={setJersey} />
+          <Input label={`${terms.player} email`} value={playerEmail} onChangeText={setPlayerEmail} autoCapitalize="none" keyboardType="email-address" />
           <Input label="Guardian email" value={guardianEmail} onChangeText={setGuardianEmail} autoCapitalize="none" keyboardType="email-address" />
           <Button label="Add to Roster" onPress={handleAdd} loading={addPlayer.isPending} />
         </View>

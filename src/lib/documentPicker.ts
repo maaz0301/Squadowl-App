@@ -168,3 +168,40 @@ export async function pickRosterFile(): Promise<PickedRosterFile | null> {
   if (!base64) throw new Error(`${name} is empty.`);
   return { name, base64 };
 }
+
+export interface PickedAttachment {
+  uri: string;
+  name: string;
+  type: string;
+  size: number;
+}
+
+/**
+ * Choose any single file (PDF, image, doc, spreadsheet) to attach somewhere.
+ * Same local-copy step as the roster picker, for the same reason: what the
+ * picker returns is a handle, not a path RNFS can read. Null = backed out.
+ */
+export async function pickAttachment(): Promise<PickedAttachment | null> {
+  const picker = loadPicker();
+  let picked: any;
+  try {
+    const results = await picker.pick({ allowMultiSelection: false });
+    picked = Array.isArray(results) ? results[0] : results;
+  } catch (e) {
+    if (picker.isErrorWithCode?.(e) && e.code === picker.errorCodes?.OPERATION_CANCELED) return null;
+    if (isMissingNativeModuleError(e)) throw new DocumentPickerUnavailable();
+    throw e;
+  }
+  if (!picked?.uri) return null;
+
+  const name: string = picked.name || 'File';
+  let uri: string = picked.uri;
+  if (typeof picker.keepLocalCopy === 'function') {
+    const [copy] = await picker.keepLocalCopy({
+      files: [{ uri: picked.uri, fileName: name }],
+      destination: 'cachesDirectory',
+    });
+    if (copy?.status === 'success') uri = copy.localUri;
+  }
+  return { uri, name, type: picked.type ?? '', size: Number(picked.size ?? 0) };
+}

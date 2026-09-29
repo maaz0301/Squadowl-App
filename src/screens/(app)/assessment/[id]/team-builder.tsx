@@ -1,3 +1,4 @@
+import { useTerms } from '@/lib/terms';
 import { useState, useEffect, useMemo } from 'react';
 import { Text, View, ActivityIndicator, Pressable, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -58,6 +59,7 @@ export default function TeamBuilderScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
+  const terms = useTerms(tryoutQuery.data?.settings.customLabels);
   const generate = useGenerateTeamBuilderMutation(id!);
   const resultsQuery = useTeamBuilderResultsQuery(id);
   const saveMut = useSaveTeamBuilderResultMutation(id!);
@@ -288,6 +290,7 @@ export default function TeamBuilderScreen() {
     return (
       <Screen insideTabBar>
         <TeamAdjuster
+          labels={tryoutQuery.data?.settings.customLabels}
           teams={effectiveTeams}
           unassigned={effectiveUnassigned}
           playerById={playerById}
@@ -516,7 +519,7 @@ export default function TeamBuilderScreen() {
               <Text className="text-lg font-display font-bold" style={{ color: colors.inkMuted }}>
                 Unassigned
               </Text>
-              <Badge label={`${effectiveUnassigned.length} players`} />
+              <Badge label={terms.t(`${effectiveUnassigned.length} players`)} />
             </View>
             <Text className="text-sm" style={{ color: colors.inkMuted }}>
               These players didn't fit within the requested team count and size, so they were left out instead of being added to a team.

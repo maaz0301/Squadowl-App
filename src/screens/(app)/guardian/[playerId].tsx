@@ -30,6 +30,7 @@ import {
 } from '@/features/queries';
 import { queryKeys } from '@/lib/queryClient';
 import { useAuthStore } from '@/state/authStore';
+import { EventDiscussion } from '@/components/EventDiscussion';
 import type { SeasonEvent } from '@/data/types';
 
 function money(cents: number): string {
@@ -49,6 +50,7 @@ function ExpandableText({ text, style, className }: { text: string, style?: any,
 
 function EventCard({ item, playerId, colors }: { item: SeasonEvent & { seasonName: string; teamName: string; seasonId: string }, playerId: string, colors: any }) {
   const rsvpMutation = useSetAvailabilityMutation(item.seasonId);
+  const userId = useAuthStore((s) => s.session?.user?.id);
   const rsvp = item.availability?.[playerId] || 'pending';
 
   const handleRsvp = async (response: 'yes' | 'maybe' | 'no') => {
@@ -118,6 +120,7 @@ function EventCard({ item, playerId, colors }: { item: SeasonEvent & { seasonNam
             <Text className="font-bold" style={{ color: rsvp === 'no' ? '#fff' : colors.ink }}>No</Text>
           </Pressable>
         </View>
+        <EventDiscussion seasonId={item.seasonId} eventId={item.id} currentUserId={userId} />
       </View>
     </Card>
   );

@@ -1,3 +1,4 @@
+import { useTerms } from '@/lib/terms';
 import { memo, useCallback, useMemo, useState } from 'react';
 import { Alert, FlatList, Pressable, Text, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
@@ -93,6 +94,7 @@ interface Props {
  */
 export function FriendPackagesCard({ tryout, disabled }: Props) {
   const colors = useThemeColors();
+  const terms = useTerms(tryout.settings.customLabels);
   const updateTryout = useUpdateTryoutMutation();
   const qc = useQueryClient();
 
@@ -168,8 +170,8 @@ export function FriendPackagesCard({ tryout, disabled }: Props) {
     }
     if (editing.playerIds.length < MIN_MEMBERS) {
       Alert.alert(
-        'Pick at least two players',
-        'A friend package is the group that has to stay together, so it needs at least two players.',
+        terms.t('Pick at least two players'),
+        terms.t('A friend package is the group that has to stay together, so it needs at least two players.'),
       );
       return;
     }
@@ -197,7 +199,7 @@ export function FriendPackagesCard({ tryout, disabled }: Props) {
   const handleDelete = (pkg: FriendPackage) => {
     Alert.alert(
       'Delete this package?',
-      `"${pkg.name}" will no longer be kept together when you generate teams. The players stay on the roster.`,
+      terms.t(`"${pkg.name}" will no longer be kept together when you generate teams. The players stay on the roster.`),
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -234,9 +236,9 @@ export function FriendPackagesCard({ tryout, disabled }: Props) {
         </View>
 
         <Text className="text-sm" style={{ color: colors.inkMuted }}>
-          Players in a package land on the same team when you generate. Groups picked up from
-          friend names on registration forms are kept too, and a package you build here wins
-          wherever the two disagree.
+          {terms.t(
+            'Players in a package land on the same team when you generate. Groups picked up from friend names on registration forms are kept too, and a package you build here wins wherever the two disagree.',
+          )}
         </Text>
 
         {packages.length === 0 ? (
@@ -249,7 +251,7 @@ export function FriendPackagesCard({ tryout, disabled }: Props) {
               No packages yet
             </Text>
             <Text className="text-xs text-center" style={{ color: colors.inkMuted }}>
-              Group the players who have to stay together, carpools, siblings, a coach&apos;s own kid.
+              {terms.t("Group the players who have to stay together, carpools, siblings, a coach's own kid.")}
             </Text>
           </View>
         ) : (
@@ -284,7 +286,7 @@ export function FriendPackagesCard({ tryout, disabled }: Props) {
                         className="text-xs"
                         style={{ color: missing > 0 ? colors.warning : colors.inkMuted }}
                       >
-                        {names.length} player{names.length === 1 ? '' : 's'}
+                        {`${names.length} ${(names.length === 1 ? terms.player : terms.players).toLowerCase()}`}
                         {missing > 0 ? ` · ${missing} no longer on the roster` : ''}
                       </Text>
                     </View>

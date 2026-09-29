@@ -1,3 +1,4 @@
+import { useTerms, sportLabel } from '@/lib/terms';
 import { useRoute } from '@react-navigation/native';
 import { useState } from 'react';
 import { Text } from 'react-native';
@@ -9,6 +10,7 @@ import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 export default function SeasonPlayerScreen() {
+  const terms = useTerms();
   const route = useRoute<any>();
   const { id, playerId } = route.params || {};
   const colors = useThemeColors();
@@ -37,7 +39,7 @@ export default function SeasonPlayerScreen() {
     <Screen scroll>
       <Header title={`${player.firstName} ${player.lastName}`} showBack />
       <Card className="mb-4 gap-2">
-        <Text style={{ color: colors.inkMuted }}>Jersey #{player.jersey ?? '-'}</Text>
+        <Text style={{ color: colors.inkMuted }}>{terms.jersey} {player.jersey ?? '-'}</Text>
         <Text style={{ color: colors.ink }}>{player.playerEmail ?? 'No player email'}</Text>
         <Text style={{ color: colors.ink }}>{player.guardianEmail ?? 'No guardian email'}</Text>
         {player.portalInviteSentAt ? (

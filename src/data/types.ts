@@ -110,10 +110,20 @@ export const CustomRubricSchema = z.object({
 
 export type CustomRubric = z.infer<typeof CustomRubricSchema>;
 
+/** Renames of a few standard terms (per evaluation) for a few standard terms; see src/lib/terms.ts. */
+export const CustomLabelsSchema = z.object({
+  player: z.string().max(30).optional(),
+  jersey: z.string().max(30).optional(),
+  sport: z.string().max(30).optional(),
+});
+export type CustomLabels = z.infer<typeof CustomLabelsSchema>;
+
 export const TryoutSettingsSchema = z.object({
   skaterWeights: z.record(z.string(), z.number()),
   goalieWeights: z.record(z.string(), z.number()),
   customRubrics: z.array(CustomRubricSchema).default([]),
+  /** This evaluation's own renames (Player -> Skater ...); see src/lib/terms.ts. */
+  customLabels: CustomLabelsSchema.optional(),
   /** Marks an assessment stood up by the dummy-data generator, so the whole
    *  bundle (team + assessment + players) can be cleared again in one action. */
   isTestData: z.boolean().optional(),
@@ -493,11 +503,14 @@ export const TeamBuilderResultSchema = z.object({
 
 export type TeamBuilderResult = z.infer<typeof TeamBuilderResultSchema>;
 
+
 export const UserProfileSchema = z.object({
   id: z.string(),
   email: z.string().email(),
   displayName: z.string(),
   organization: z.string().optional(),
+  /** The account's renamed terms, if any. */
+  customLabels: CustomLabelsSchema.optional(),
   avatarUrl: z.string().optional(),
   planTier: z.enum(PLAN_TIERS).default('coach'),
   subscriptionStatus: z.string().optional(),
@@ -1286,4 +1299,25 @@ export interface PlayerLetterSendResult {
   playerName: string;
   letter?: PlayerLetter;
   error?: string;
+}
+/** A comment on a season event, from staff or a guardian. */
+export interface EventComment {
+  id: string;
+  eventId: string;
+  authorUserId: string;
+  authorName: string;
+  body: string;
+  createdAt: number;
+}
+
+/** A file a coach attached to a season event. `url` is a short-lived signed link. */
+export interface EventFile {
+  id: string;
+  eventId: string;
+  name: string;
+  path: string;
+  size: number;
+  contentType: string;
+  createdAt: number;
+  url?: string;
 }

@@ -1,3 +1,4 @@
+import { useTerms, sportLabel } from '@/lib/terms';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Text,
@@ -21,6 +22,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { AddToCalendar } from '@/components/AddToCalendar';
+import { EventDiscussion } from '@/components/EventDiscussion';
+import { MonthCalendar } from '@/components/MonthCalendar';
 import { MapLink, MapLocationHint } from '@/components/MapLink';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, TimeField } from '@/components/ui';
@@ -91,6 +94,7 @@ const RSVP_PAGE = 25;
 const TEAM_ROSTER_PAGE = 50;
 
 export default function TeamDetailScreen() {
+  const terms = useTerms();
   const route = useRoute<any>();
   const { id } = route.params || {};
   const colors = useThemeColors();
@@ -882,12 +886,12 @@ export default function TeamDetailScreen() {
     requestAnimationFrame(() => setRsvpPending(false));
   };
 
-  const openEventModal = (kind: EventKind) => {
+  const openEventModal = (kind: EventKind, date = '') => {
     setEditingEventId(null);
     eventForm.reset({
       type: kind,
       title: '',
-      date: '',
+      date,
       endDate: '',
       startTime: '',
       endTime: '',
@@ -1144,7 +1148,8 @@ export default function TeamDetailScreen() {
       <TeamHubTabs
         tabs={[
           { key: 'schedule', label: 'Schedule', icon: HUB_ICONS.calendar, badge: allTeamEvents.length || undefined },
-          { key: 'players', label: 'Players', icon: HUB_ICONS.players, badge: playerCount },
+          { key: 'calendar', label: 'Calendar', icon: HUB_ICONS.calendar },
+          { key: 'players', label: terms.players, icon: HUB_ICONS.players, badge: playerCount },
           ...(canViewEvaluations
             ? [{ key: 'assessments', label: 'Evaluations', icon: HUB_ICONS.clipboard, badge: linkedTryouts.length }]
             : []),
@@ -1202,7 +1207,7 @@ export default function TeamDetailScreen() {
                   }}
                 />
                 <Button
-                  label="+ Add Player Manually"
+                  label={`+ Add ${terms.player} Manually`}
                   size="sm"
                   variant="secondary"
                   onPress={() => setShowAddManualPlayer(true)}
@@ -1700,6 +1705,15 @@ export default function TeamDetailScreen() {
                       </View>
                     ) : null}
 
+                        {teamSeasonId ? (
+                          <EventDiscussion
+                            seasonId={teamSeasonId}
+                            eventId={ev.id}
+                            canManage
+                            currentUserId={user?.id}
+                          />
+                        ) : null}
+
                         <View className="flex-row flex-wrap justify-between gap-2 mt-3">
                           <AddToCalendar
                             event={ev}
@@ -1731,6 +1745,23 @@ export default function TeamDetailScreen() {
               </>
             )}
           </View>
+          </PlanGate>
+        ) : tab === 'calendar' ? (
+          <PlanGate feature="seasonHub" title="Season Hub" tierOverride={effectiveTier}>
+            <View>
+              {seasonsQuery.isLoading || (teamSeasonId ? seasonQuery.isLoading : false) ? (
+                <View className="items-center py-6 gap-2">
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading calendar...</Text>
+                </View>
+              ) : (
+                <MonthCalendar
+                  events={seasonQuery.data?.events ?? []}
+                  teamName={team.name}
+                  onAddEvent={(date) => openEventModal('Event', date)}
+                />
+              )}
+            </View>
           </PlanGate>
         ) : (
           <View>
@@ -2220,7 +2251,7 @@ export default function TeamDetailScreen() {
 
       <Modal
         visible={showAddManualPlayer}
-        title="Add Player Manually"
+        title={`Add ${terms.player} Manually`}
         onClose={() => {
           if (addManualPlayer.isPending || uploadTeamPlayerPhoto.isPending) return;
           setShowAddManualPlayer(false);
@@ -2585,7 +2616,8 @@ export default function TeamDetailScreen() {
             onPress: () => navigation.navigate('DashboardMain', { tab: 'teams' }),
           },
           { key: 'schedule', label: 'Schedule', icon: HUB_ICONS.calendar, onPress: () => setTab('schedule') },
-          { key: 'players', label: 'Players', icon: HUB_ICONS.players, onPress: () => setTab('players') },
+          { key: 'calendar', label: 'Calendar', icon: HUB_ICONS.calendar, onPress: () => setTab('calendar') },
+          { key: 'players', label: terms.players, icon: HUB_ICONS.players, onPress: () => setTab('players') },
           ...(canViewEvaluations
             ? [{ key: 'assessments', label: 'Evaluations', icon: HUB_ICONS.clipboard, onPress: () => setTab('assessments') }]
             : []),

@@ -1,3 +1,4 @@
+import { useTerms } from '@/lib/terms';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -28,6 +29,7 @@ export default function CompareScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
+  const terms = useTerms(tryoutQuery.data?.settings.customLabels);
   const aiCompare = useAiCompareMutation(id!);
   const [selected, setSelected] = useState<string[]>([]);
   const [loadingText, setLoadingText] = useState(LOADING_MESSAGES[0]);
@@ -72,7 +74,7 @@ export default function CompareScreen() {
   if (tryoutQuery.isError || !tryoutQuery.data) {
     return (
       <Screen scroll insideTabBar>
-        <Header title="Compare Players" showBack />
+        <Header title={terms.t('Compare Players')} showBack />
         <ErrorState message="Could not load compare data." onRetry={() => tryoutQuery.refetch()} />
       </Screen>
     );
@@ -98,7 +100,7 @@ export default function CompareScreen() {
     <Screen padded={false}>
       <View className="px-4">
         <Header
-          title="Compare Players"
+          title={terms.t('Compare Players')}
           subtitle="Select 2–4 athletes"
           showBack
           onBack={() => navigation.navigate('AssessmentResults')}
@@ -151,7 +153,7 @@ export default function CompareScreen() {
                       >
                         <Text className="font-bold text-md mb-1" style={{ color: colors.ink }}>⚠️ Cannot generate comparison</Text>
                         <Text className="text-md leading-6" style={{ color: colors.inkMuted }}>
-                          {errorMessage || 'Make sure the selected players have been scored before running AI Compare.'}
+                          {errorMessage || terms.t('Make sure the selected players have been scored before running AI Compare.')}
                         </Text>
                       </View>
                     ) : showResult ? (
