@@ -1,5 +1,5 @@
 import { useTerms, sportLabel } from '@/lib/terms';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Text,
   View,
@@ -13,7 +13,6 @@ import {
   LayoutAnimation,
   type KeyboardEvent,
 } from 'react-native';
-import { launchImageLibrary } from 'react-native-image-picker';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -26,8 +25,9 @@ import { EventDiscussion } from '@/components/EventDiscussion';
 import { MonthCalendar } from '@/components/MonthCalendar';
 import { MapLink, MapLocationHint } from '@/components/MapLink';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
-import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, TimeField } from '@/components/ui';
-import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useUpdateTeamMutation, useDeleteTeamMutation, useArchiveTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterQuery, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useAddAthletesToEventsMutation, useUploadTeamLogoMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
+import { durationOf, endFromDuration } from '@/data/timeRange';
+import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, TimeField, TypeToConfirmModal, DurationField } from '@/components/ui';
+import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useDeleteTeamMutation, useArchiveTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterQuery, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useAddAthletesToEventsMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit, canUseDummyData, playerRoom, assessmentRoom } from '@/data/plans';
@@ -44,6 +44,8 @@ import { HubSectionLabel } from '@/components/teamHub/HubSection';
 import { HubRowCard } from '@/components/teamHub/HubRowCard';
 import { HubActionTile } from '@/components/teamHub/HubActionTile';
 import { HubEventCard } from '@/components/teamHub/HubEventCard';
+import { TeamFeed } from '@/components/teamHub/TeamFeed';
+import { EditTeamModal } from '@/components/teamHub/EditTeamModal';
 import { HubIcon } from '@/components/teamHub/HubIcon';
 import { TeamStatusTiles } from '@/components/teamHub/TeamStatusTiles';
 import { HUB_ICONS } from '@/components/teamHub/hubTheme';
@@ -54,17 +56,11 @@ import { LetterTemplatesManager } from '@/components/letters/LetterTemplatesMana
 import { ChatUnreadBadge } from '@/components/ChatUnreadBadge';
 import { PlanGate } from '@/components/PlanGate';
 import { teamBrandSurfaces } from '@/lib/teamBrand';
-import { TeamColorPicker } from '@/components/TeamColorPicker';
 import { TeamManagersCard } from '@/components/TeamManagersCard';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { getDataSource } from '@/data';
 import { queryKeys } from '@/lib/queryClient';
 import { DUMMY_LIMITS, clampOption } from '@/data/testDataGenerator';
-
-function feeCentsFromInput(feeInput: string): number {
-  const dollars = parseFloat(feeInput);
-  return !feeInput.trim() || isNaN(dollars) || dollars <= 0 ? 0 : Math.round(dollars * 100);
-}
 
 type Rsvp = 'yes' | 'maybe' | 'no' | 'pending';
 
@@ -119,21 +115,14 @@ export default function TeamDetailScreen() {
   const [preparingDummyTryout, setPreparingDummyTryout] = useState(false);
   const [dummyPlayerCount, setDummyPlayerCount] = useState('25');
   const qc = useQueryClient();
-  const updateTeam = useUpdateTeamMutation();
   const deleteTeam = useDeleteTeamMutation();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const archiveTeam = useArchiveTeamMutation();
   const updateTryout = useUpdateTryoutMutation();
-  const uploadLogo = useUploadTeamLogoMutation();
   const user = useUser();
   const { canManageTeam } = usePermissions();
   const teamManagedForPerm = teamsQuery.data?.find((t) => t.id === id)?.managed;
   const [editing, setEditing] = useState(false);
-  const [brandColor, setBrandColor] = useState<string | null>(null);
-  const [name, setName] = useState('');
-  const [season, setSeason] = useState('');
-  const [logo, setLogo] = useState<{ uri: string; type: string } | null>(null);
-  const [collectsFees, setCollectsFees] = useState(false);
-  const [feeInput, setFeeInput] = useState('');
   const [showAttachModal, setShowAttachModal] = useState(false);
   const [showAddPlayers, setShowAddPlayers] = useState(false);
   // Full assessment reads (every roster entry joined to its athlete, every
@@ -478,12 +467,14 @@ export default function TeamDetailScreen() {
   // one assessment's tab still selects every athlete on the account when
   // "Select all" is tapped, which is what actually produced a batch of 1001
   // instead of the one assessment's roster.
+  // Deferred so typing stays responsive while the (large) athlete pool filters.
+  const deferredCandidateSearch = useDeferredValue(candidateSearch);
   const filteredCandidates = useMemo(() => {
-    const q = candidateSearch.trim().toLowerCase();
+    const q = deferredCandidateSearch.trim().toLowerCase();
     return candidates
       .filter((c) => !candidateTryoutFilter || c.tryoutIds.has(candidateTryoutFilter))
       .filter((c) => (q ? `${c.first} ${c.last}`.toLowerCase().includes(q) : true));
-  }, [candidates, candidateTryoutFilter, candidateSearch]);
+  }, [candidates, candidateTryoutFilter, deferredCandidateSearch]);
 
   const availableCount = useMemo(
     () => filteredCandidates.filter((c) => !c.alreadyOnTeam).length,
@@ -895,6 +886,7 @@ export default function TeamDetailScreen() {
       endDate: '',
       startTime: '',
       endTime: '',
+      duration: undefined,
       location: '',
       notes: '',
       playerIds: [],
@@ -904,13 +896,20 @@ export default function TeamDetailScreen() {
 
   const openEditEventModal = (ev: SeasonEvent) => {
     setEditingEventId(ev.id);
+    const duration = durationOf(ev.date, ev.startTime, ev.endDate, ev.endTime) ?? undefined;
     eventForm.reset({
       type: ev.type,
       title: ev.title,
       date: ev.date,
-      endDate: ev.endDate ?? '',
+      // The end date follows from the start and duration, so it isn't
+      // pre-filled: a stale one would pin the old end when the start date or
+      // duration changes (a blank one saves as the start date).
+      endDate: duration ? '' : (ev.endDate ?? ''),
       startTime: ev.startTime ?? '',
-      endTime: ev.endTime ?? '',
+      // Derived from start + duration on save. Pre-filling it would validate a
+      // stale end against a moved start and reject the edit.
+      endTime: duration ? '' : (ev.endTime ?? ''),
+      duration,
       location: ev.location ?? '',
       notes: ev.notes ?? '',
       playerIds: [],
@@ -962,6 +961,13 @@ export default function TeamDetailScreen() {
         alertMsg('Validation Error', msg);
         return;
       }
+      // The form asks for a duration; the event is stored with an end date and
+      // time, so turn one into the other here.
+      const { duration, ...fields } = data;
+      const end = duration && data.startTime ? endFromDuration(data.date, data.startTime, duration) : null;
+      const endTime = end ? end.endTime : data.endTime;
+      const endDate = end && end.endDate > data.date ? end.endDate : data.endDate;
+      const eventData = { ...fields, endTime, endDate };
       try {
         if (editingEventId) {
           await updateEvent.mutateAsync({
@@ -970,16 +976,16 @@ export default function TeamDetailScreen() {
               type: data.type,
               title: data.title,
               date: data.date,
-              endDate: data.endDate || data.date,
+              endDate: eventData.endDate || data.date,
               startTime: data.startTime,
-              endTime: data.endTime,
+              endTime: eventData.endTime,
               location: data.location,
               notes: data.notes,
             },
           });
         } else {
           setSaveEventProgress(null);
-          await addEvent.mutateAsync(data);
+          await addEvent.mutateAsync(eventData);
         }
         setShowAddEvent(false);
         setEditingEventId(null);
@@ -992,7 +998,7 @@ export default function TeamDetailScreen() {
     (errors) => {
       alertMsg(
         'Validation Error',
-        errors.date?.message || errors.title?.message || 'Please check the required fields.',
+        errors.date?.message || errors.title?.message || (errors.endTime ? 'The event ends before it starts. Pick a duration to set a new end.' : undefined) || errors.endDate?.message || 'Please check the required fields.',
       );
     },
   );
@@ -1004,81 +1010,7 @@ export default function TeamDetailScreen() {
     ]);
   };
 
-  const startEdit = () => {
-    setName(team.name);
-    setSeason(team.season ?? '');
-    setLogo(null);
-    setCollectsFees(team.collectsFees ?? false);
-    setFeeInput(team.registrationFeeCents ? (team.registrationFeeCents / 100).toFixed(2) : '');
-    setBrandColor(team.brandColor ?? null);
-    setEditing(true);
-  };
-
-  const handleSelectLogo = async () => {
-    try {
-      const result = await launchImageLibrary({
-        mediaType: 'photo',
-        selectionLimit: 1,
-        includeBase64: false,
-      });
-      if (result.didCancel || !result.assets?.length) return;
-      
-      const asset = result.assets[0];
-      if (asset.uri && asset.type) {
-        setLogo({ uri: asset.uri, type: asset.type });
-      }
-    } catch (e: any) {
-      Alert.alert('Error', 'Failed to select image: ' + e.message);
-    }
-  };
-
-  const save = async () => {
-    let logoUrl = team.logoUrl;
-    if (logo) {
-      try {
-        logoUrl = await uploadLogo.mutateAsync({
-          teamId: team.id,
-          fileUri: logo.uri,
-          fileType: logo.type,
-        });
-      } catch (e: any) {
-        Alert.alert('Logo Upload Error', 'Failed to upload logo: ' + e.message);
-        return;
-      }
-    }
-    // Only touch fee fields when the coach's plan can actually collect fees —
-    // a free-tier coach never sees the toggle below, so leave whatever's
-    // already stored (e.g. from before a downgrade) untouched here.
-    const feeUpdates = canCollectFees
-      ? collectsFees
-        ? { collectsFees: true, registrationFeeCents: feeCentsFromInput(feeInput) }
-        : { collectsFees: false, registrationFeeCents: 0 }
-      : {};
-
-    try {
-      await updateTeam.mutateAsync({
-        id: team.id,
-        // '' rather than undefined when no colour is picked: undefined is "leave
-        // it alone" in updateTeam's patch builder, so clearing a colour has to be
-        // an explicit empty value to reach the column as NULL.
-        updates: {
-          name: name.trim(),
-          season: season.trim() || undefined,
-          logoUrl,
-          brandColor: brandColor ?? '',
-          ...feeUpdates,
-        },
-      });
-    } catch (e: any) {
-      // canEditTeam above hides this form from anyone who'd hit the RLS
-      // check on save, but surface a readable message instead of a raw
-      // Postgres error on the off chance the client's view of the team is
-      // stale (e.g. a delegation just revoked from another device).
-      Alert.alert('Error', e?.message || 'Could not save these changes.');
-      return;
-    }
-    setEditing(false);
-  };
+  const startEdit = () => setEditing(true);
 
   const handleArchive = () => {
     Alert.alert(
@@ -1101,26 +1033,16 @@ export default function TeamDetailScreen() {
     );
   };
 
-  const handleDelete = () => {
-    Alert.alert(
-      'Delete Team',
-      'Are you sure you want to delete this team? This action cannot be undone and will delete all associated data.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteTeam.mutateAsync(team.id);
-              navigation.replace('DashboardMain', { tab: 'teams' });
-            } catch (e: any) {
-              Alert.alert('Error', e?.message || 'Could not delete this team.');
-            }
-          },
-        },
-      ]
-    );
+  const handleDelete = () => setConfirmingDelete(true);
+
+  const confirmDeleteTeam = async () => {
+    setConfirmingDelete(false);
+    try {
+      await deleteTeam.mutateAsync(team.id);
+      navigation.replace('DashboardMain', { tab: 'teams' });
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not delete this team.');
+    }
   };
 
   const openTeamChat = () =>
@@ -1148,6 +1070,7 @@ export default function TeamDetailScreen() {
       <TeamHubTabs
         tabs={[
           { key: 'schedule', label: 'Schedule', icon: HUB_ICONS.calendar, badge: allTeamEvents.length || undefined },
+          { key: 'feed', label: 'Feed', icon: HUB_ICONS.feed },
           { key: 'calendar', label: 'Calendar', icon: HUB_ICONS.calendar },
           { key: 'players', label: terms.players, icon: HUB_ICONS.players, badge: playerCount },
           ...(canViewEvaluations
@@ -1163,6 +1086,13 @@ export default function TeamDetailScreen() {
 
   return (
     <Screen padded={false} keyboardAvoiding={false} backgroundColor={brand.screenBg}>
+      <TypeToConfirmModal
+        visible={confirmingDelete}
+        title="Delete Team"
+        message="Are you sure you want to delete this team? This action cannot be undone and will delete all associated data."
+        onConfirm={confirmDeleteTeam}
+        onCancel={() => setConfirmingDelete(false)}
+      />
       {tab === 'players' ? (
         // Players can number in the hundreds (dummy data goes up to 1000), so this
         // tab renders as a virtualized FlatList instead of the plain ScrollView the
@@ -1554,6 +1484,7 @@ export default function TeamDetailScreen() {
                 )}
 
                 <HubSectionLabel icon={HUB_ICONS.calendar} label="Season Hub" />
+                {canEditTeam ? (
                 <Pressable
                   onPress={() => openEventModal('Event')}
                   className="flex-row items-center gap-3 rounded-lg px-3 mb-6"
@@ -1575,6 +1506,7 @@ export default function TeamDetailScreen() {
                   </Text>
                   <HubIcon d={HUB_ICONS.chevron} size={18} color="#ffffff" strokeWidth={2.5} />
                 </Pressable>
+                ) : null}
 
                 {selectedEvent ? (
                   (() => {
@@ -1709,7 +1641,7 @@ export default function TeamDetailScreen() {
                           <EventDiscussion
                             seasonId={teamSeasonId}
                             eventId={ev.id}
-                            canManage
+                            canManage={canEditTeam}
                             currentUserId={user?.id}
                           />
                         ) : null}
@@ -1729,6 +1661,8 @@ export default function TeamDetailScreen() {
                               <HubActionTile icon={HUB_ICONS.pin} label="Directions" onPress={open} />
                             )}
                           />
+                          {canEditTeam ? (
+                            <>
                           <HubActionTile icon={HUB_ICONS.edit} label="Edit" onPress={() => openEditEventModal(ev)} />
                           <HubActionTile
                             icon={HUB_ICONS.trash}
@@ -1737,6 +1671,8 @@ export default function TeamDetailScreen() {
                             loading={deleteEvent.isPending && deleteEvent.variables === ev.id}
                             onPress={() => confirmDeleteEvent(ev.id, ev.title)}
                           />
+                            </>
+                          ) : null}
                         </View>
                       </>
                     );
@@ -1745,6 +1681,30 @@ export default function TeamDetailScreen() {
               </>
             )}
           </View>
+          </PlanGate>
+        ) : tab === 'feed' ? (
+          <PlanGate feature="seasonHub" title="Season Hub" tierOverride={effectiveTier}>
+            {seasonsQuery.isLoading || (teamSeasonId ? seasonQuery.isLoading : false) ? (
+              <View className="items-center py-6 gap-2">
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text className="text-sm" style={{ color: colors.inkMuted }}>Loading feed...</Text>
+              </View>
+            ) : teamSeasonId ? (
+              <TeamFeed
+                seasonId={teamSeasonId}
+                events={seasonQuery.data?.events ?? []}
+                canPost={canEditTeam}
+                // Organization info belongs to the club that owns the team, so a
+                // delegated manager (whose own role is another account's) can read it, not write it.
+                canPostOrg={canManageTeam && !team.managed}
+                currentUserId={user?.id}
+                onViewSchedule={() => setTab('schedule')}
+              />
+            ) : (
+              <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                The feed opens once this team has a season.
+              </Text>
+            )}
           </PlanGate>
         ) : tab === 'calendar' ? (
           <PlanGate feature="seasonHub" title="Season Hub" tierOverride={effectiveTier}>
@@ -1758,7 +1718,7 @@ export default function TeamDetailScreen() {
                 <MonthCalendar
                   events={seasonQuery.data?.events ?? []}
                   teamName={team.name}
-                  onAddEvent={(date) => openEventModal('Event', date)}
+                  onAddEvent={canEditTeam ? (date) => openEventModal('Event', date) : undefined}
                 />
               )}
             </View>
@@ -1918,60 +1878,12 @@ export default function TeamDetailScreen() {
       </ScrollView>
       )}
 
-      <Modal visible={editing} title="Edit Team" onClose={() => setEditing(false)}>
-        <View className="gap-3">
-          <Pressable onPress={handleSelectLogo} className="items-center mb-2 mt-4">
-            <View className="mb-3">
-              <Avatar
-                uri={logo?.uri || team?.logoUrl}
-                first="T"
-                last="M"
-                size={80}
-              />
-            </View>
-            <Text className="font-bold text-sm" style={{ color: colors.primary }}>
-              Change Team Logo
-            </Text>
-          </Pressable>
-          <Input label="Team name" value={name} onChangeText={setName} />
-          <Input label="Season" value={season} onChangeText={setSeason} />
-
-          <TeamColorPicker value={brandColor} onChange={setBrandColor} />
-
-          {canCollectFees ? (
-            <>
-              <View className="gap-2">
-                <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-                  Are you collecting fees?
-                </Text>
-                <View className="flex-row gap-2">
-                  <Chip label="No" active={!collectsFees} onPress={() => setCollectsFees(false)} />
-                  <Chip label="Yes" active={collectsFees} onPress={() => setCollectsFees(true)} />
-                </View>
-              </View>
-
-              {collectsFees ? (
-                <Card className="gap-2">
-                  <Input
-                    label="Fee per player (CAD)"
-                    value={feeInput}
-                    onChangeText={setFeeInput}
-                    keyboardType="decimal-pad"
-                    placeholder="0.00"
-                  />
-                  <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                    Saving this creates (or reuses) this team's season and adds everyone currently on
-                    the roster to it, each player's guardian will then be asked to pay this fee, plus
-                    TryoutHQ's 0.5% platform fee, from their portal.
-                  </Text>
-                </Card>
-              ) : null}
-            </>
-          ) : null}
-
-          <Button label="Save Changes" onPress={save} loading={updateTeam.isPending || uploadLogo.isPending} />
-        </View>
-      </Modal>
+      <EditTeamModal
+        visible={editing}
+        team={team}
+        canCollectFees={canCollectFees}
+        onClose={() => setEditing(false)}
+      />
 
       <Modal
         visible={showAttachModal}
@@ -2390,9 +2302,20 @@ export default function TeamDetailScreen() {
           />
           <Controller
             control={eventForm.control}
-            name="endTime"
+            name="duration"
             render={({ field: { onChange, value }, fieldState: { error } }) => (
-              <TimeField label="End Time" value={value} onChange={onChange} placeholder="Select a time" error={error?.message} />
+              <DurationField
+                label="Duration"
+                value={value}
+                onChange={(minutes) => {
+                  onChange(minutes);
+                  // The end time is derived from the duration, so a leftover one must not be validated.
+                  eventForm.setValue('endTime', '');
+                }}
+                placeholder={eventForm.watch('startTime') ? 'Select a duration' : 'Pick a start time first'}
+                error={error?.message}
+                disabled={!eventForm.watch('startTime')}
+              />
             )}
           />
           <Controller

@@ -259,6 +259,21 @@ export interface DataSource {
     file: { uri: string; name: string; type: string; size: number },
   ): Promise<import('./types').EventFile>;
   deleteEventFile(file: import('./types').EventFile): Promise<void>;
+  /** Team news feed: coaches post and attach files; anyone who can open the season reads and comments. */
+  listSeasonPosts(seasonId: string): Promise<import('./types').SeasonPost[]>;
+  addSeasonPost(seasonId: string, input: { title: string; body: string }): Promise<import('./types').SeasonPost>;
+  deleteSeasonPost(post: import('./types').SeasonPost): Promise<void>;
+  uploadPostFile(seasonId: string, postId: string, file: { uri: string; name: string; type: string; size: number }): Promise<import('./types').FeedFile>;
+  deletePostFile(file: import('./types').FeedFile): Promise<void>;
+  listPostComments(postId: string): Promise<import('./types').PostComment[]>;
+  addPostComment(postId: string, body: string): Promise<import('./types').PostComment>;
+  deletePostComment(commentId: string): Promise<void>;
+  /** Organization info: shared by every team of the season's account; staff write, members read. */
+  listOrgInfo(seasonId: string): Promise<import('./types').OrgInfoItem[]>;
+  addOrgInfo(seasonId: string, input: import('./types').OrgInfoInput): Promise<import('./types').OrgInfoItem>;
+  deleteOrgInfo(item: import('./types').OrgInfoItem): Promise<void>;
+  uploadOrgInfoFile(accountId: string, infoId: string, file: { uri: string; name: string; type: string; size: number }): Promise<import('./types').FeedFile>;
+  deleteOrgInfoFile(file: import('./types').FeedFile): Promise<void>;
   getEventRsvpContext(token: string): Promise<EventRsvpContext | null>;
   submitEventRsvp(token: string, response: 'yes' | 'maybe' | 'no'): Promise<EventRsvpContext>;
   listTeamMessages(seasonId: string): Promise<TeamMessage[]>;

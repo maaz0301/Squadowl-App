@@ -15,6 +15,7 @@ import {
   LoadingState,
   Modal,
   Screen,
+  TypeToConfirmModal,
 } from '@/components/ui';
 import { BottomNav } from '@/components/BottomNav';
 import { HomeHero } from '@/components/home/HomeHero';
@@ -78,7 +79,9 @@ export default function DashboardScreen() {
   useEffect(() => {
     const requested = route.params?.tab;
     if (requested === 'assessments' || requested === 'teams') setTab(requested);
-  }, [route.params?.tab]);
+    // Keyed on the params object, not the tab value: navigating with the same
+    // tab again (after the user switched tabs by hand) must still re-apply it.
+  }, [route.params]);
 
   const handleTabChange = (nextTab: 'assessments' | 'teams') => {
     scrollOffsets.current[tab] = currentOffset.current;
@@ -126,6 +129,7 @@ export default function DashboardScreen() {
   const assignedQuery = useAssignedTryoutSummariesQuery();
   const guardianQuery = useGuardianRostersQuery();
   const deleteTeam = useDeleteTeamMutation();
+  const [teamToDelete, setTeamToDelete] = useState<{ id: string; name: string } | null>(null);
   const archiveTeam = useArchiveTeamMutation();
   const deleteTryout = useDeleteTryoutMutation();
   const archiveTryout = useArchiveTryoutMutation();
@@ -163,28 +167,20 @@ export default function DashboardScreen() {
     );
   };
 
-  const handleDeleteTeam = (id: string, name: string) => {
-    Alert.alert(
-      'Delete Team',
-      `Are you sure you want to delete "${name}"? This action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setBusyId(id);
-            try {
-              await deleteTeam.mutateAsync(id);
-            } catch (e: any) {
-              Alert.alert('Error', e?.message || 'Could not delete this team.');
-            } finally {
-              setBusyId(null);
-            }
-          },
-        },
-      ]
-    );
+  const handleDeleteTeam = (id: string, name: string) => setTeamToDelete({ id, name });
+
+  const confirmDeleteTeam = async () => {
+    if (!teamToDelete) return;
+    const { id } = teamToDelete;
+    setTeamToDelete(null);
+    setBusyId(id);
+    try {
+      await deleteTeam.mutateAsync(id);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not delete this team.');
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const handleDeleteAssessment = (id: string, name: string) => {
@@ -541,6 +537,13 @@ export default function DashboardScreen() {
     // KeyboardAvoidingView has nothing to do here. Left on, it can stay shrunk
     // after a sheet has opened and closed, leaving a dead strip under the bottom bar.
     <Screen padded={false} keyboardAvoiding={false}>
+      <TypeToConfirmModal
+        visible={!!teamToDelete}
+        title="Delete Team"
+        message={`Are you sure you want to delete "${teamToDelete?.name ?? ''}"? This action cannot be undone.`}
+        onConfirm={confirmDeleteTeam}
+        onCancel={() => setTeamToDelete(null)}
+      />
       <FlatList
         key={isGuardianOnly ? 'guardian' : 'coach'}
         ref={listRef}

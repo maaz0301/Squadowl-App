@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { FlatList, View, Text, Pressable, Alert } from 'react-native';
+import { FlatList, ScrollView, View, Text, Pressable, Alert } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 import { InAppBrowser } from 'react-native-inappbrowser-reborn';
 import { useQueryClient } from '@tanstack/react-query';
@@ -30,6 +30,7 @@ import {
 } from '@/features/queries';
 import { queryKeys } from '@/lib/queryClient';
 import { useAuthStore } from '@/state/authStore';
+import { TeamFeed } from '@/components/teamHub/TeamFeed';
 import { EventDiscussion } from '@/components/EventDiscussion';
 import type { SeasonEvent } from '@/data/types';
 
@@ -234,6 +235,7 @@ export default function GuardianPortalScreen() {
   const navigation = useNavigation<any>();
   const playerId = route.params?.playerId;
   const colors = useThemeColors();
+  const userId = useAuthStore((s) => s.session?.user?.id);
   const [tab, setTab] = useState('overview');
   // Only shown when the athlete is on more than one team — with just one,
   // the chat icon skips straight to it.
@@ -352,6 +354,7 @@ export default function GuardianPortalScreen() {
           tabs={[
             { key: 'overview', label: 'Overview' },
             { key: 'schedule', label: 'Schedule', badge: allEvents.length || undefined },
+            { key: 'feed', label: 'News' },
             { key: 'info', label: 'Info' },
           ]}
           activeKey={tab}
@@ -386,6 +389,30 @@ export default function GuardianPortalScreen() {
           }
           renderItem={({ item }) => <EventCard item={item} playerId={playerId} colors={colors} />}
         />
+      ) : tab === 'feed' ? (
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}>
+          {athlete.seasons.length === 0 ? (
+            <EmptyState title="No teams yet" message="News from a team appears here once this athlete is on its roster." />
+          ) : (
+            athlete.seasons.map((season) => (
+              <View key={season.id} className="mb-6">
+                {athlete.seasons.length > 1 ? (
+                  <Text className="text-lg font-display font-bold mb-3" style={{ color: colors.ink }}>
+                    {season.teamName}
+                  </Text>
+                ) : null}
+                <TeamFeed
+                  seasonId={season.id}
+                  events={(season as any).events ?? []}
+                  canPost={false}
+                  canPostOrg={false}
+                  currentUserId={userId}
+                  onViewSchedule={() => setTab('schedule')}
+                />
+              </View>
+            ))
+          )}
+        </ScrollView>
       ) : (
         <View className="px-4">
           <Card className="mb-3">

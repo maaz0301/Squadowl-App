@@ -326,7 +326,7 @@ export default function RosterScreen() {
         <Header
           title={tryout.name}
           showBack
-          onBack={() => navigation.navigate('DashboardMain')}
+          onBack={() => navigation.navigate('DashboardMain', { tab: 'assessments' })}
         />
       </View>
       {hasPlayers ? (
