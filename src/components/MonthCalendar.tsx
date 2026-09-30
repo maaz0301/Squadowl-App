@@ -65,24 +65,22 @@ export function MonthCalendar({
 
       <View className="mb-1 flex-row">
         {WEEKDAYS.map((d) => (
-          <Text key={d} className="flex-1 text-center text-xs font-bold" style={{ color: colors.inkMuted }}>{d}</Text>
+          <Text key={d} className="text-center text-xs font-bold" style={{ width: `${100 / 7}%`, color: colors.inkMuted }}>{d}</Text>
         ))}
       </View>
       {weeks.map((week, wi) => (
         <View key={wi} className="flex-row">
           {week.map((key, di) => {
-            if (!key) return <View key={di} className="flex-1" style={{ height: 52 }} />;
+            if (!key) return <View key={di} style={{ width: `${100 / 7}%`, height: 52 }} />;
             const count = dayMap[key]?.length ?? 0;
             const isSel = selected === key;
             const isToday = key === today;
             return (
+              <View key={di} style={{ width: `${100 / 7}%`, height: 52, padding: 1 }}>
               <Pressable
-                key={di}
                 onPress={() => setSelected(isSel ? null : key)}
                 className="flex-1 items-center justify-center rounded-md border"
                 style={{
-                  height: 52,
-                  margin: 1,
                   backgroundColor: isSel ? colors.primary : colors.tile,
                   borderColor: isToday ? colors.primary : colors.border,
                 }}
@@ -101,6 +99,7 @@ export function MonthCalendar({
                   </View>
                 ) : null}
               </Pressable>
+              </View>
             );
           })}
         </View>

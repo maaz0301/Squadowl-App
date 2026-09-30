@@ -137,10 +137,13 @@ export function RosterSelectToolbar({
   onBack,
   onToggleAll,
   onDeleteSelected,
+  deleteLabel = 'Delete Selected',
 }: {
   allSelected: boolean;
   count: number;
   deleting: boolean;
+  /** Wording for the destructive button, so it can match the confirmation it opens. */
+  deleteLabel?: string;
   onBack: () => void;
   onToggleAll: () => void;
   onDeleteSelected: () => void;
@@ -156,7 +159,7 @@ export function RosterSelectToolbar({
         disabled={deleting}
       />
       <Button
-        label={`Delete Selected${count ? ` (${count})` : ''}`}
+        label={`${deleteLabel}${count ? ` (${count})` : ''}`}
         variant="danger"
         size="sm"
         disabled={count === 0}

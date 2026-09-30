@@ -998,7 +998,14 @@ export default function TeamDetailScreen() {
     (errors) => {
       alertMsg(
         'Validation Error',
-        errors.date?.message || errors.title?.message || (errors.endTime ? 'The event ends before it starts. Pick a duration to set a new end.' : undefined) || errors.endDate?.message || 'Please check the required fields.',
+        [
+          errors.title?.message,
+          errors.date?.message,
+          errors.endTime ? 'The event ends before it starts. Pick a duration to set a new end.' : undefined,
+          errors.endDate?.message,
+        ]
+          .filter(Boolean)
+          .join('\n') || 'Please check the required fields.',
       );
     },
   );
@@ -1121,6 +1128,7 @@ export default function TeamDetailScreen() {
                     setSelectedRosterIds(allRosterSelected ? new Set() : new Set(selectableRosterIds))
                   }
                   onDeleteSelected={confirmRemoveSelected}
+                  deleteLabel="Remove Selected"
                 />
               </View>
             ) : (
@@ -2393,7 +2401,7 @@ export default function TeamDetailScreen() {
                         // a team with large attached assessments it can run well past the
                         // team's actual headcount. Only the 'invites' phase below reflects
                         // who actually gets this event.
-                        `Syncing ${saveEventProgress.done} of ${saveEventProgress.total} evaluation records...`
+                        `Updating player records: ${saveEventProgress.done} of ${saveEventProgress.total}...`
                       : `Sending invites to ${saveEventProgress.done} of ${saveEventProgress.total} players...`}
               </Text>
             </View>
