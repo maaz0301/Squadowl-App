@@ -13,8 +13,7 @@ export interface HubNavItem {
 }
 
 /**
- * The hub's own bottom bar: Home leaves for the teams list, the rest switch
- * the hub's tab. The active item gets the orange label and underline.
+ * The hub's own bottom bar: each item switches the hub's tab. The active item gets the orange label and underline.
  */
 export function TeamHubNav({ items, activeKey }: { items: HubNavItem[]; activeKey: string }) {
   const colors = useThemeColors();

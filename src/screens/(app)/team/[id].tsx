@@ -2453,12 +2453,7 @@ export default function TeamDetailScreen() {
       <TeamHubNav
         activeKey={tab}
         items={[
-          {
-            key: 'home',
-            label: 'Home',
-            icon: HUB_ICONS.home,
-            onPress: () => navigation.navigate('DashboardMain', { tab: 'teams' }),
-          },
+          { key: 'feed', label: 'Feed', icon: HUB_ICONS.feed, onPress: () => setTab('feed') },
           { key: 'schedule', label: 'Schedule', icon: HUB_ICONS.calendar, onPress: () => setTab('schedule') },
           { key: 'calendar', label: 'Calendar', icon: HUB_ICONS.calendar, onPress: () => setTab('calendar') },
           { key: 'players', label: terms.players, icon: HUB_ICONS.players, onPress: () => setTab('players') },
