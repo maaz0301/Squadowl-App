@@ -61,7 +61,7 @@ export default function ProfileScreen() {
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteText, setDeleteText] = useState('');
-  const deleteConfirmed = deleteText.trim().toLowerCase() === 'delete';
+  const deleteConfirmed = deleteText.trim() === 'DELETE';
 
   const plan = getPlanDefinition(user?.planTier ?? 'free');
   const extraTeamLicenses = user?.extraTeamLicenses ?? 0;
@@ -380,12 +380,12 @@ export default function ProfileScreen() {
           This permanently deletes your account, login and profile. This cannot be undone.
         </Text>
         <Input
-          label="Type delete to confirm"
+          label="Type DELETE to confirm"
           value={deleteText}
           onChangeText={setDeleteText}
-          autoCapitalize="none"
+          autoCapitalize="characters"
           autoCorrect={false}
-          placeholder="delete"
+          placeholder="DELETE"
           editable={!deletingAccount}
           returnKeyType="done"
           onSubmitEditing={handleDeleteAccount}

@@ -20,6 +20,7 @@ import {
   Modal,
   Screen,
   TimeField,
+  useTypeToConfirm,
 } from '@/components/ui';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import {
@@ -56,6 +57,7 @@ const INVITE_STATUS: Record<'pending' | 'accepted' | 'declined' | 'completed', {
 };
 
 export default function SettingsScreen() {
+  const typeToConfirm = useTypeToConfirm();
   const id = useAssessmentId();
   const route = useRoute<any>();
   const { welcome } = route.params || {};
@@ -270,26 +272,19 @@ export default function SettingsScreen() {
     navigation.replace('DashboardMain');
   };
 
-  const handleDelete = () => {
-    Alert.alert(
-      'Delete Evaluation',
-      'Are you sure you want to delete this evaluation? This action cannot be undone and will delete all associated data.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteTryout.mutateAsync(tryout.id);
-            navigation.replace('DashboardMain');
-          },
-        },
-      ]
-    );
-  };
+  const handleDelete = () =>
+    typeToConfirm.ask({
+      title: 'Delete Evaluation',
+      message: 'Are you sure you want to delete this evaluation? This action cannot be undone and will delete all associated data.',
+      onConfirm: async () => {
+        await deleteTryout.mutateAsync(tryout.id);
+        navigation.replace('DashboardMain');
+      },
+    });
 
   return (
     <Screen scroll insideTabBar>
+      {typeToConfirm.modal}
       <Header title="Evaluation Settings" showBack />
       <Card accent className="mb-4 gap-2">
         <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>

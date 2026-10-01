@@ -8,7 +8,7 @@ import { CreateEventFormSchema, EVENT_KINDS, type CreateEventForm, type SeasonEv
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { TeamBanner } from '@/components/TeamBanner';
 import { useSeasonTeamBrand } from '@/features/useTeamBrand';
-import { Badge, Button, Card, Chip, EmptyState, ErrorState, Input, LoadingState, Modal, Screen, DateField, TimeField, Header } from '@/components/ui';
+import { Badge, Button, Card, Chip, EmptyState, ErrorState, Input, LoadingState, Modal, Screen, DateField, TimeField, Header, useTypeToConfirm } from '@/components/ui';
 import { AddToCalendar } from '@/components/AddToCalendar';
 import { MapLink, MapLocationHint } from '@/components/MapLink';
 import { useSeasonQuery, useAddSeasonEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation } from '@/features/queries';
@@ -42,6 +42,7 @@ export default function SeasonScheduleScreen() {
   const { id } = route.params || {};
   const colors = useThemeColors();
   const seasonQuery = useSeasonQuery(id);
+  const typeToConfirm = useTypeToConfirm();
   const [eventProgress, setEventProgress] = useState<{ done: number; total: number } | null>(null);
   const addEvent = useAddSeasonEventMutation(id!, (done, total) => setEventProgress({ done, total }));
   const updateEvent = useUpdateSeasonEventMutation(id!);
@@ -219,20 +220,19 @@ export default function SeasonScheduleScreen() {
     }
   };
 
-  const confirmDeleteEvent = async (eventId: string, label: string) => {
-    const ok = await confirmAsync({
+  const confirmDeleteEvent = (eventId: string, label: string) => {
+    typeToConfirm.ask({
       title: 'Delete Event',
       message: `Delete "${label}"?`,
-      confirmLabel: 'Delete',
-      destructive: true,
+      onConfirm: () => deleteEvent.mutate(eventId),
     });
-    if (ok) deleteEvent.mutate(eventId);
   };
 
   const formBusy = addEvent.isPending || updateEvent.isPending;
 
   return (
     <Screen padded={false} backgroundColor={brand.screenBg}>
+      {typeToConfirm.modal}
       <Header title="Schedule" showBack />
       {/* Same banner as the team hub, so a coach deep in the schedule still sees
           whose team it belongs to. Tapping it goes back to the hub. */}

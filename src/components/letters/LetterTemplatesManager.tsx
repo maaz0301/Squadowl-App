@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Platform, Text, View } from 'react-native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, ErrorState } from '@/components/ui';
+import { Badge, Button, Card, ErrorState, useTypeToConfirm } from '@/components/ui';
 import { TemplateEditor, type TemplateDraft } from '@/components/letters/TemplateEditor';
 import { BUILT_IN_LETTER_TEMPLATES, LETTER_KIND_LABELS } from '@/data/letters';
 import type { LetterTemplate } from '@/data/types';
@@ -23,6 +23,7 @@ import {
  * players are.
  */
 export function LetterTemplatesManager() {
+  const typeToConfirm = useTypeToConfirm();
   const colors = useThemeColors();
   const templatesQuery = useLetterTemplatesQuery();
   const createTemplate = useCreateLetterTemplateMutation();
@@ -80,20 +81,18 @@ export function LetterTemplatesManager() {
         alertMsg('Delete Failed', e?.message || 'Could not delete the template.');
       }
     };
-    if (Platform.OS === 'web') {
-      if (confirm(`Delete template?\n\n${message}`)) void doDelete();
-      return;
-    }
-    Alert.alert('Delete template?', message, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => void doDelete() },
-    ]);
+    typeToConfirm.ask({
+      title: 'Delete template?',
+      message,
+      onConfirm: () => void doDelete(),
+    });
   };
 
   const templates = templatesQuery.data ?? [];
 
   return (
     <View className="gap-2">
+      {typeToConfirm.modal}
       {savedNotice ? (
         <View
           className="flex-row items-center gap-2 self-start rounded-full px-3 py-1.5"

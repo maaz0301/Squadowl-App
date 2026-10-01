@@ -3,10 +3,11 @@ import { useNavigation } from '@react-navigation/native';
 import { useRoute } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
+import { Badge, Button, Card, ErrorState, Header, LoadingState, Screen, useTypeToConfirm } from '@/components/ui';
 import { useSeasonQuery, useUpdateSeasonMutation, useDeleteSeasonMutation, useEmailScheduleMutation } from '@/features/queries';
 
 export default function SeasonSettingsScreen() {
+  const typeToConfirm = useTypeToConfirm();
   const route = useRoute<any>();
   const { id } = route.params || {};
   const colors = useThemeColors();
@@ -41,26 +42,19 @@ export default function SeasonSettingsScreen() {
     navigation.replace('DashboardMain');
   };
 
-  const handleDelete = () => {
-    Alert.alert(
-      'Delete Season',
-      'Are you sure you want to delete this season? This action cannot be undone and will delete all associated data.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteSeason.mutateAsync(id!);
-            navigation.replace('DashboardMain');
-          },
-        },
-      ]
-    );
-  };
+  const handleDelete = () =>
+    typeToConfirm.ask({
+      title: 'Delete Season',
+      message: 'Are you sure you want to delete this season? This action cannot be undone and will delete all associated data.',
+      onConfirm: async () => {
+        await deleteSeason.mutateAsync(id!);
+        navigation.replace('DashboardMain');
+      },
+    });
 
   return (
     <Screen scroll>
+      {typeToConfirm.modal}
       <Header title="Settings" showBack />
       <Card accent className="mb-4 gap-2">
         <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>{season.name}</Text>

@@ -3,7 +3,7 @@ import { memo, useCallback, useMemo, useState } from 'react';
 import { Alert, FlatList, Pressable, Text, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Avatar, Badge, Button, Card, Input, Modal } from '@/components/ui';
+import { Avatar, Badge, Button, Card, Input, Modal, useTypeToConfirm } from '@/components/ui';
 import { useUpdateTryoutMutation } from '@/features/queries';
 import { queryKeys } from '@/lib/queryClient';
 import { generateId, playerDisplayName } from '@/data/rubrics';
@@ -93,6 +93,7 @@ interface Props {
  * carpools, siblings with different surnames, a coach's own kid.
  */
 export function FriendPackagesCard({ tryout, disabled }: Props) {
+  const typeToConfirm = useTypeToConfirm();
   const colors = useThemeColors();
   const terms = useTerms(tryout.settings.customLabels);
   const updateTryout = useUpdateTryoutMutation();
@@ -196,26 +197,18 @@ export function FriendPackagesCard({ tryout, disabled }: Props) {
     }
   };
 
-  const handleDelete = (pkg: FriendPackage) => {
-    Alert.alert(
-      'Delete this package?',
-      terms.t(`"${pkg.name}" will no longer be kept together when you generate teams. The players stay on the roster.`),
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await save(packages.filter((p) => p.id !== pkg.id));
-            } catch (e: any) {
-              Alert.alert('Could not delete', e?.message ?? 'The package was not deleted.');
-            }
-          },
-        },
-      ],
-    );
-  };
+  const handleDelete = (pkg: FriendPackage) =>
+    typeToConfirm.ask({
+      title: 'Delete this package?',
+      message: terms.t(`"${pkg.name}" will no longer be kept together when you generate teams. The players stay on the roster.`),
+      onConfirm: async () => {
+        try {
+          await save(packages.filter((p) => p.id !== pkg.id));
+        } catch (e: any) {
+          Alert.alert('Could not delete', e?.message ?? 'The package was not deleted.');
+        }
+      },
+    });
 
   const memberNames = (pkg: FriendPackage) =>
     pkg.playerIds
@@ -225,6 +218,7 @@ export function FriendPackagesCard({ tryout, disabled }: Props) {
 
   return (
     <>
+      {typeToConfirm.modal}
       <Card accent className="mb-4 gap-3">
         <View className="flex-row items-center justify-between">
           <Text className="font-display font-bold text-base" style={{ color: colors.ink }}>

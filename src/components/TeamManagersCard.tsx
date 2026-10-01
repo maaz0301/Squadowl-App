@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Alert, Platform, Text, View } from 'react-native';
 
-import { Badge, Button, Card, Input } from '@/components/ui';
+import { Badge, Button, Card, Input, useTypeToConfirm } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
 import {
   useInviteTeamManagerMutation,
@@ -59,6 +59,7 @@ export function TeamManagersCard({ teamId, teamName, readOnly, tierOverride }: P
   const { data: managers = [], isLoading } = useTeamManagersQuery(teamId);
   const invite = useInviteTeamManagerMutation(teamId);
   const remove = useRemoveTeamManagerMutation(teamId);
+  const typeToConfirm = useTypeToConfirm();
 
   const [email, setEmail] = useState('');
 
@@ -98,18 +99,17 @@ export function TeamManagersCard({ teamId, teamName, readOnly, tierOverride }: P
         showAlert('Could not remove', e?.message || 'Something went wrong.');
       }
     };
-    if (Platform.OS === 'web') {
-      if ((globalThis as any).confirm?.(`Remove ${who} from ${teamName}?`)) confirm();
-      return;
-    }
-    Alert.alert('Remove access', `Remove ${who} from ${teamName}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: confirm },
-    ]);
+    typeToConfirm.ask({
+      title: 'Remove access',
+      message: `Remove ${who} from ${teamName}?`,
+      confirmLabel: 'Remove',
+      onConfirm: confirm,
+    });
   };
 
   return (
     <PlanGate feature="teamManagers" title="Team Managers" tierOverride={tierOverride}>
+      {typeToConfirm.modal}
       <Card className="gap-3">
         <View>
           <Text className="font-display font-bold text-base" style={{ color: colors.ink }}>

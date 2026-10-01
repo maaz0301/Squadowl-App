@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Alert, FlatList, Platform, Text, View } from 'react-native';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, Header, Input, Screen, Tabs, Modal } from '@/components/ui';
+import { Badge, Button, Card, Header, Input, Screen, Tabs, Modal, useTypeToConfirm } from '@/components/ui';
 import { FeatureBlockGate } from '@/components/FeatureBlockGate';
 import {
   useOrgMembersQuery,
@@ -19,6 +19,7 @@ const TABS = [
 ];
 
 export default function OrganizationMembersScreen() {
+  const typeToConfirm = useTypeToConfirm();
   const colors = useThemeColors();
   const { canManageOrganization } = usePermissions();
   const [tab, setTab] = useState<'staff' | 'guardians'>('staff');
@@ -90,15 +91,12 @@ export default function OrganizationMembersScreen() {
       }
     };
 
-    if (Platform.OS === 'web') {
-      if ((globalThis as any).confirm?.(`${title}\n\n${message}`)) void remove();
-      return;
-    }
-
-    Alert.alert(title, message, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: isGuardian ? 'Revoke' : 'Remove', style: 'destructive', onPress: () => void remove() },
-    ]);
+    typeToConfirm.ask({
+      title,
+      message,
+      confirmLabel: isGuardian ? 'Revoke' : 'Remove',
+      onConfirm: () => void remove(),
+    });
   };
 
   const filteredMembers = members.filter((m) =>
@@ -118,6 +116,7 @@ export default function OrganizationMembersScreen() {
 
   return (
     <Screen scroll={false} padded={false}>
+      {typeToConfirm.modal}
       <View className="px-4">
         <Header title="Manage Organization" showBack />
         <Tabs

@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import { useTheme } from '@/theme/ThemeProvider';
-import { EmptyState, ErrorState } from '@/components/ui';
+import { EmptyState, ErrorState, useTypeToConfirm } from '@/components/ui';
 import {
   useDeleteTeamMessageMutation,
   useSendTeamMessageMutation,
@@ -187,6 +187,7 @@ export function TeamChat({
   noSeasonMessage?: string;
 }) {
   const { colors, isDark } = useTheme();
+  const typeToConfirm = useTypeToConfirm();
   const insets = useSafeAreaInsets();
   const currentUserId = useAuthStore((s) => s.session?.user?.id);
   const [draft, setDraft] = useState('');
@@ -238,22 +239,18 @@ export function TeamChat({
     }
   };
 
-  const confirmDelete = (message: TeamMessage) => {
-    Alert.alert('Delete Message', 'Remove this message for everyone on the team?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteMessage.mutateAsync(message.id);
-          } catch (e: any) {
-            Alert.alert('Error', e?.message || 'Could not delete this message.');
-          }
-        },
+  const confirmDelete = (message: TeamMessage) =>
+    typeToConfirm.ask({
+      title: 'Delete Message',
+      message: 'Remove this message for everyone on the team?',
+      onConfirm: async () => {
+        try {
+          await deleteMessage.mutateAsync(message.id);
+        } catch (e: any) {
+          Alert.alert('Error', e?.message || 'Could not delete this message.');
+        }
       },
-    ]);
-  };
+    });
 
   if (!seasonId) {
     return <EmptyState title="No team chat yet" message={noSeasonMessage} />;
@@ -269,6 +266,7 @@ export function TeamChat({
 
   return (
     <View className="flex-1">
+      {typeToConfirm.modal}
       <View className="flex-1 -mx-4" style={{ backgroundColor: wallpaper }}>
         {messagesQuery.isLoading ? (
           <View className="flex-1 items-center justify-center gap-2">

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, Text, TextInput, View } from 'react-native';
 
-import { Button, Chip, Input, Modal } from '@/components/ui';
+import { Button, Chip, Input, Modal, useTypeToConfirm } from '@/components/ui';
 import {
   FeedUploadError,
   useAddPostCommentMutation,
@@ -142,6 +142,7 @@ function PostComments({
   const comments = usePostCommentsQuery(post.id, { enabled: open });
   const add = useAddPostCommentMutation(seasonId, post.id);
   const remove = useDeletePostCommentMutation(seasonId, post.id);
+  const typeToConfirm = useTypeToConfirm();
 
   const submit = async () => {
     const body = draft.trim();
@@ -155,20 +156,19 @@ function PostComments({
   };
 
   const confirmRemove = (id: string) =>
-    Alert.alert('Remove this comment?', undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () =>
-          remove.mutate(id, {
-            onError: (e) => Alert.alert('Could not remove comment', e instanceof Error ? e.message : 'Please try again.'),
-          }),
-      },
-    ]);
+    typeToConfirm.ask({
+      title: 'Remove Comment',
+      message: 'Remove this comment?',
+      confirmLabel: 'Remove',
+      onConfirm: () =>
+        remove.mutate(id, {
+          onError: (e) => Alert.alert('Could not remove comment', e instanceof Error ? e.message : 'Please try again.'),
+        }),
+    });
 
   return (
     <View className="mt-2">
+      {typeToConfirm.modal}
       <Pressable onPress={() => setOpen((o) => !o)} hitSlop={6} accessibilityRole="button">
         <Text className="text-sm font-semibold" style={{ color: colors.primary }}>
           {open ? 'Hide comments' : post.commentCount ? `Comments (${post.commentCount})` : 'Comment'}
@@ -232,25 +232,24 @@ function PostCard({
   const s = useHubSurfaces();
   const deletePost = useDeleteSeasonPostMutation(seasonId);
   const deleteFile = useDeletePostFileMutation(seasonId);
+  const typeToConfirm = useTypeToConfirm();
 
   const confirmDelete = () =>
-    Alert.alert('Delete Post', 'Delete this post, its comments and files?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () =>
-          deletePost.mutate(post, {
-            onError: (e) => Alert.alert('Could not delete post', e instanceof Error ? e.message : 'Please try again.'),
-          }),
-      },
-    ]);
+    typeToConfirm.ask({
+      title: 'Delete Post',
+      message: 'Delete this post, its comments and files?',
+      onConfirm: () =>
+        deletePost.mutate(post, {
+          onError: (e) => Alert.alert('Could not delete post', e instanceof Error ? e.message : 'Please try again.'),
+        }),
+    });
 
   return (
     <View
       className="rounded-lg p-3 mb-3"
       style={{ backgroundColor: s.panelBg, borderWidth: 1, borderColor: s.panelBorder }}
     >
+      {typeToConfirm.modal}
       <View className="flex-row items-start justify-between gap-2">
         <View className="flex-1">
           {post.title ? (
@@ -276,17 +275,15 @@ function PostCard({
               onRemove={
                 canPost
                   ? () =>
-                      Alert.alert(`Remove ${f.name}?`, undefined, [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Remove',
-                          style: 'destructive',
-                          onPress: () =>
-                            deleteFile.mutate(f, {
-                              onError: (e) => Alert.alert('Could not remove file', e instanceof Error ? e.message : 'Please try again.'),
-                            }),
-                        },
-                      ])
+                      typeToConfirm.ask({
+                        title: 'Remove File',
+                        message: `Remove ${f.name}?`,
+                        confirmLabel: 'Remove',
+                        onConfirm: () =>
+                          deleteFile.mutate(f, {
+                            onError: (e) => Alert.alert('Could not remove file', e instanceof Error ? e.message : 'Please try again.'),
+                          }),
+                      })
                   : undefined
               }
             />
@@ -413,25 +410,24 @@ function OrgInfoCard({ item, canPost }: { item: OrgInfoItem; canPost: boolean })
   const s = useHubSurfaces();
   const deleteItem = useDeleteOrgInfoMutation();
   const deleteFile = useDeleteOrgInfoFileMutation();
+  const typeToConfirm = useTypeToConfirm();
 
   const confirmDelete = () =>
-    Alert.alert('Delete', `Delete "${item.title}" for every team?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () =>
-          deleteItem.mutate(item, {
-            onError: (e) => Alert.alert('Could not delete', e instanceof Error ? e.message : 'Please try again.'),
-          }),
-      },
-    ]);
+    typeToConfirm.ask({
+      title: 'Delete',
+      message: `Delete "${item.title}" for every team?`,
+      onConfirm: () =>
+        deleteItem.mutate(item, {
+          onError: (e) => Alert.alert('Could not delete', e instanceof Error ? e.message : 'Please try again.'),
+        }),
+    });
 
   return (
     <View
       className="rounded-lg p-3 mb-3"
       style={{ backgroundColor: s.panelBg, borderWidth: 1, borderColor: s.panelBorder }}
     >
+      {typeToConfirm.modal}
       <View className="flex-row items-start justify-between gap-2">
         <View className="flex-1">
           <View className="flex-row mb-1">
@@ -463,17 +459,15 @@ function OrgInfoCard({ item, canPost }: { item: OrgInfoItem; canPost: boolean })
               onRemove={
                 canPost
                   ? () =>
-                      Alert.alert(`Remove ${f.name}?`, undefined, [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Remove',
-                          style: 'destructive',
-                          onPress: () =>
-                            deleteFile.mutate(f, {
-                              onError: (e) => Alert.alert('Could not remove file', e instanceof Error ? e.message : 'Please try again.'),
-                            }),
-                        },
-                      ])
+                      typeToConfirm.ask({
+                        title: 'Remove File',
+                        message: `Remove ${f.name}?`,
+                        confirmLabel: 'Remove',
+                        onConfirm: () =>
+                          deleteFile.mutate(f, {
+                            onError: (e) => Alert.alert('Could not remove file', e instanceof Error ? e.message : 'Please try again.'),
+                          }),
+                      })
                   : undefined
               }
             />

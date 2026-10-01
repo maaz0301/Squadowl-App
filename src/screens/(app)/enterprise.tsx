@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, View }
 import { useNavigation } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, ErrorState, Header, LoadingState, Modal, Screen, Tabs } from '@/components/ui';
+import { Badge, Button, Card, ErrorState, Header, LoadingState, Modal, Screen, Tabs, useTypeToConfirm } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
 import { FeatureBlockGate } from '@/components/FeatureBlockGate';
 import {
@@ -119,6 +119,7 @@ export default function EnterpriseScreen() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const tryouts = tryoutsQuery.data ?? [];
+  const typeToConfirm = useTypeToConfirm();
 
   const showAlert = (title: string, message: string) => {
     if (Platform.OS === 'web') (globalThis as any).alert?.(`${title}\n\n${message}`);
@@ -151,19 +152,12 @@ export default function EnterpriseScreen() {
       }
     };
 
-    if (Platform.OS === 'web') {
-      if ((globalThis as any).confirm?.(`${title}\n\n${message}`)) void remove();
-      return;
-    }
-
-    Alert.alert(title, message, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: isAssessor ? 'Remove Assessor' : isGuardian ? 'Revoke' : 'Remove',
-        style: 'destructive',
-        onPress: () => void remove(),
-      },
-    ]);
+    typeToConfirm.ask({
+      title,
+      message,
+      confirmLabel: isAssessor ? 'Remove Assessor' : isGuardian ? 'Revoke' : 'Remove',
+      onConfirm: () => void remove(),
+    });
   };
   /**
    * Every headline number here is derived from the assessments the org actually
@@ -285,6 +279,7 @@ export default function EnterpriseScreen() {
 
   return (
     <Screen padded={false}>
+      {typeToConfirm.modal}
       <View className="px-4">
         <Header title="Dashboard" showBack />
         <PlanGate feature="enterprise" title="Enterprise Dashboard">

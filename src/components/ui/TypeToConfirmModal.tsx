@@ -9,7 +9,7 @@ interface TypeToConfirmModalProps {
   visible: boolean;
   title: string;
   message: string;
-  /** The word the user has to type (case-insensitive) before the button enables. */
+  /** The word the user has to type, exactly as written (case-sensitive), before the button enables. */
   word?: string;
   confirmLabel?: string;
   loading?: boolean;
@@ -22,7 +22,7 @@ export function TypeToConfirmModal({
   visible,
   title,
   message,
-  word = 'delete',
+  word = 'DELETE',
   confirmLabel = 'Delete',
   loading,
   onConfirm,
@@ -35,7 +35,7 @@ export function TypeToConfirmModal({
     if (visible) setTyped('');
   }, [visible]);
 
-  const matches = typed.trim().toLowerCase() === word.toLowerCase();
+  const matches = typed.trim() === word;
 
   return (
     <Modal
@@ -64,11 +64,44 @@ export function TypeToConfirmModal({
           label={`Type "${word}" to confirm`}
           value={typed}
           onChangeText={setTyped}
-          autoCapitalize="none"
+          autoCapitalize="characters"
           autoCorrect={false}
           placeholder={word}
         />
       </View>
     </Modal>
   );
+}
+
+export interface TypeToConfirmRequest {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  onConfirm: () => void;
+}
+
+/**
+ * Imperative wrapper for TypeToConfirmModal: call `ask({...})` from a delete button and render
+ * `modal` once in the screen. Replaces Alert.alert / window.confirm for deletes, which also never
+ * showed on react-native-web.
+ */
+export function useTypeToConfirm() {
+  const [request, setRequest] = useState<TypeToConfirmRequest | null>(null);
+
+  const modal = (
+    <TypeToConfirmModal
+      visible={request !== null}
+      title={request?.title ?? ''}
+      message={request?.message ?? ''}
+      confirmLabel={request?.confirmLabel}
+      onCancel={() => setRequest(null)}
+      onConfirm={() => {
+        const run = request?.onConfirm;
+        setRequest(null);
+        run?.();
+      }}
+    />
+  );
+
+  return { ask: setRequest, modal };
 }

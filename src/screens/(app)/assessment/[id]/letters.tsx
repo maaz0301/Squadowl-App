@@ -15,6 +15,7 @@ import {
   LoadingState,
   Modal,
   Screen,
+  useTypeToConfirm,
 } from '@/components/ui';
 import {
   BUILT_IN_LETTER_TEMPLATES,
@@ -57,6 +58,7 @@ const STATUS_VARIANT = { sent: 'success', failed: 'danger', draft: 'warning' } a
  * JSX translation.
  */
 export default function LettersScreen() {
+  const typeToConfirm = useTypeToConfirm();
   const id = useAssessmentId();
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
@@ -184,26 +186,19 @@ export default function LettersScreen() {
 
   const deleteLetterFor = useCallback(
     (l: PlayerLetter) => {
-      Alert.alert(
-        'Delete this copy?',
-        terms.t("The record comes off the player's card. It does not recall an email already delivered."),
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                await deleteLetter.mutateAsync(l.id);
-              } catch (e: any) {
-                Alert.alert('Delete Failed', e?.message || 'Could not delete.');
-              }
-            },
-          },
-        ],
-      );
+      typeToConfirm.ask({
+        title: 'Delete this copy?',
+        message: terms.t("The record comes off the player's card. It does not recall an email already delivered."),
+        onConfirm: async () => {
+          try {
+            await deleteLetter.mutateAsync(l.id);
+          } catch (e: any) {
+            Alert.alert('Delete Failed', e?.message || 'Could not delete.');
+          }
+        },
+      });
     },
-    [deleteLetter],
+    [deleteLetter, typeToConfirm.ask, terms],
   );
 
   const goBack = () => navigation.navigate('AssessmentRoster');
@@ -264,27 +259,20 @@ export default function LettersScreen() {
   };
 
   const removeTemplate = (t: LetterTemplate) => {
-    Alert.alert(
-      'Delete template?',
+    typeToConfirm.ask({
+      title: 'Delete template?',
       // Worth saying out loud: the copies are snapshots, so deleting the
       // stationery does not un-send anything.
-      terms.t(`"${t.name}" will be removed. Letters already sent from it stay on the players' cards.`),
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteTemplate.mutateAsync(t.id);
-              if (sendWith?.id === t.id) setSendWith(null);
-            } catch (e: any) {
-              Alert.alert('Delete Failed', e?.message || 'Could not delete the template.');
-            }
-          },
-        },
-      ],
-    );
+      message: terms.t(`"${t.name}" will be removed. Letters already sent from it stay on the players' cards.`),
+      onConfirm: async () => {
+        try {
+          await deleteTemplate.mutateAsync(t.id);
+          if (sendWith?.id === t.id) setSendWith(null);
+        } catch (e: any) {
+          Alert.alert('Delete Failed', e?.message || 'Could not delete the template.');
+        }
+      },
+    });
   };
 
   const startSend = (t: LetterTemplate) => {
@@ -363,6 +351,7 @@ export default function LettersScreen() {
 
   return (
     <Screen scroll insideTabBar>
+      {typeToConfirm.modal}
       <Header
         title={terms.t('Player Selection Letters')}
         subtitle={terms.t('Write an offer or roster decision letter once, then send it to the players you choose')}

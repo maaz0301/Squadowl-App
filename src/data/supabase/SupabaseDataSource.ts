@@ -10074,6 +10074,14 @@ export class SupabaseDataSource implements DataSource {
     if (error) throw new Error(error.message);
   }
 
+  async removeGuardianAthlete(athleteId: string): Promise<void> {
+    // User-scoped client, like leaveSeason: a guardian has no staff tenant, and the
+    // RPC authorizes against the athlete itself.
+    const supabase = getSupabase();
+    const { error } = await supabase.rpc('guardian_remove_athlete', { p_athlete_id: athleteId });
+    if (error) throw new Error(error.message);
+  }
+
   async getGuardianRosters(): Promise<import('../types').GuardianRosterAthlete[]> {
     const { supabase, userId } = await this.userCtx();
     if (!userId) return [];

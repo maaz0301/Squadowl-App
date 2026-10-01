@@ -16,6 +16,7 @@ import {
   Modal,
   Screen,
   TypeToConfirmModal,
+  useTypeToConfirm,
 } from '@/components/ui';
 import { BottomNav } from '@/components/BottomNav';
 import { HomeHero } from '@/components/home/HomeHero';
@@ -48,6 +49,7 @@ import {
   useArchiveTryoutMutation,
   usePrefetchTryout,
   usePlatformBlockedFeaturesQuery,
+  useRemoveGuardianAthleteMutation,
 } from '@/features/queries';
 import { APP_CONFIG } from '@/config/app';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
@@ -128,6 +130,8 @@ export default function DashboardScreen() {
   const tryoutsQuery = useTryoutSummariesQuery(false);
   const assignedQuery = useAssignedTryoutSummariesQuery();
   const guardianQuery = useGuardianRostersQuery();
+  const removeGuardianAthlete = useRemoveGuardianAthleteMutation();
+  const removeAthleteConfirm = useTypeToConfirm();
   const deleteTeam = useDeleteTeamMutation();
   const [teamToDelete, setTeamToDelete] = useState<{ id: string; name: string } | null>(null);
   const archiveTeam = useArchiveTeamMutation();
@@ -537,6 +541,7 @@ export default function DashboardScreen() {
     // KeyboardAvoidingView has nothing to do here. Left on, it can stay shrunk
     // after a sheet has opened and closed, leaving a dead strip under the bottom bar.
     <Screen padded={false} keyboardAvoiding={false}>
+      {removeAthleteConfirm.modal}
       <TypeToConfirmModal
         visible={!!teamToDelete}
         title="Delete Team"
@@ -739,6 +744,25 @@ export default function DashboardScreen() {
                                 : ath.seasons.map((s) => s.name).join(' · ')}
                             </Text>
                           </View>
+                          <Pressable
+                            hitSlop={8}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Delete ${ath.firstName} ${ath.lastName}`}
+                            disabled={removeGuardianAthlete.isPending}
+                            onPress={() =>
+                              removeAthleteConfirm.ask({
+                                title: 'Delete Athlete',
+                                message: `Remove ${ath.firstName} ${ath.lastName} from My Athletes? Their team and evaluation records stay with the coach.`,
+                                onConfirm: () =>
+                                  removeGuardianAthlete.mutate(ath.id, {
+                                    onError: (e: any) =>
+                                      Alert.alert('Could Not Delete', e?.message || 'Something went wrong.'),
+                                  }),
+                              })
+                            }
+                          >
+                            <Text className="text-xs font-bold" style={{ color: colors.danger }}>Delete</Text>
+                          </Pressable>
                           <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
                             <Path d="M9 5l7 7-7 7" stroke={colors.inkMuted} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
                           </Svg>

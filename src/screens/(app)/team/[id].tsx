@@ -26,7 +26,7 @@ import { MonthCalendar } from '@/components/MonthCalendar';
 import { MapLink, MapLocationHint } from '@/components/MapLink';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import { durationOf, endFromDuration } from '@/data/timeRange';
-import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, TimeField, TypeToConfirmModal, DurationField } from '@/components/ui';
+import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, TimeField, TypeToConfirmModal, useTypeToConfirm, DurationField } from '@/components/ui';
 import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useDeleteTeamMutation, useArchiveTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterQuery, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useAddAthletesToEventsMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
@@ -117,6 +117,7 @@ export default function TeamDetailScreen() {
   const qc = useQueryClient();
   const deleteTeam = useDeleteTeamMutation();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const typeToConfirm = useTypeToConfirm();
   const archiveTeam = useArchiveTeamMutation();
   const updateTryout = useUpdateTryoutMutation();
   const user = useUser();
@@ -328,26 +329,23 @@ export default function TeamDetailScreen() {
   const setAvailability = useSetAvailabilityMutation(teamSeasonId ?? '');
   const addAthletesToEvents = useAddAthletesToEventsMutation(teamSeasonId ?? '');
 
-  // Offered right after a player lands on the roster, when the team already
-  // has upcoming events — adding to team_roster/season_roster never touches
-  // event_availability, so without this a player added after an event exists
-  // stays invisible on that event's RSVP list and invite emails forever (see
-  // addAthletesToEvents on DataSource). null = no prompt open; a non-null
-  // (always non-empty) array is the athlete ids waiting on a yes/no.
-  const [pendingEventInviteAthleteIds, setPendingEventInviteAthleteIds] = useState<string[] | null>(null);
-  const [selectedInviteEventIds, setSelectedInviteEventIds] = useState<Set<string>>(new Set());
+  // A player added after events exist is connected to the schedule automatically:
+  // adding to team_roster/season_roster alone never writes event_availability, so
+  // they would stay off every RSVP list and invite email (see addAthletesToEvents
+  // on DataSource). The database trigger does the same for new roster rows; this
+  // call is idempotent (already-invited pairs are left alone) and covers rows that
+  // were already on the roster.
   // The import modal shows its own per-row summary before closing, so its
-  // athlete ids are held here and the prompt is offered on close instead of
-  // the moment the import call resolves — see the ImportPlayersModal wiring
-  // below. Accumulates across "Import more players" rounds within one open
-  // of the modal, since onClose (and this prompt) only fires once at the end.
+  // athlete ids are held here and connected on close. Accumulates across
+  // "Import more players" rounds within one open of the modal.
   const [pendingImportAthleteIds, setPendingImportAthleteIds] = useState<string[]>([]);
 
   const offerAddToUpcomingEvents = (athleteIds: string[]) => {
     const ids = athleteIds.filter(Boolean);
-    if (ids.length === 0 || upcomingEvents.length === 0) return;
-    setSelectedInviteEventIds(new Set(upcomingEvents.map((e) => e.id)));
-    setPendingEventInviteAthleteIds(ids);
+    if (ids.length === 0 || upcomingEvents.length === 0 || !teamSeasonId) return;
+    addAthletesToEvents
+      .mutateAsync({ eventIds: upcomingEvents.map((e) => e.id), athleteIds: ids })
+      .catch((e: any) => Alert.alert('Error', e?.message || 'Could not add this player to the upcoming events.'));
   };
 
   const eventForm = useForm<CreateEventForm>({
@@ -724,17 +722,12 @@ export default function TeamDetailScreen() {
   };
 
   const confirmRemovePlayer = (athleteId: string, label: string) => {
-    const message = `Remove ${label} from ${team.name}?`;
-    // Alert is a no-op under React Native Web, where this app also runs — the
-    // confirmation never appeared there, so the button did nothing at all.
-    if (Platform.OS === 'web') {
-      if (confirm(`Remove Player\n\n${message}`)) void removePlayer(athleteId);
-      return;
-    }
-    Alert.alert('Remove Player', message, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => void removePlayer(athleteId) },
-    ]);
+    typeToConfirm.ask({
+      title: 'Remove Player',
+      message: `Remove ${label} from ${team.name}?`,
+      confirmLabel: 'Remove',
+      onConfirm: () => void removePlayer(athleteId),
+    });
   };
 
   /** Export the whole roster (not just the loaded page) as Excel or PDF. */
@@ -805,15 +798,12 @@ export default function TeamDetailScreen() {
   const confirmRemoveSelected = () => {
     const count = selectedRosterIds.size;
     if (count === 0) return;
-    const message = `${count} player${count === 1 ? '' : 's'} will be removed from ${team.name}.`;
-    if (Platform.OS === 'web') {
-      if (confirm(`Remove Players\n\n${message}`)) void removeSelectedPlayers();
-      return;
-    }
-    Alert.alert('Remove Players', message, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => void removeSelectedPlayers() },
-    ]);
+    typeToConfirm.ask({
+      title: 'Remove Players',
+      message: `${count} player${count === 1 ? '' : 's'} will be removed from ${team.name}.`,
+      confirmLabel: 'Remove',
+      onConfirm: () => void removeSelectedPlayers(),
+    });
   };
 
   const teamSeason = seasonQuery.data;
@@ -1011,10 +1001,11 @@ export default function TeamDetailScreen() {
   );
 
   const confirmDeleteEvent = (eventId: string, label: string) => {
-    Alert.alert('Delete Event', `Delete "${label}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => deleteEvent.mutate(eventId) },
-    ]);
+    typeToConfirm.ask({
+      title: 'Delete Event',
+      message: `Delete "${label}"?`,
+      onConfirm: () => deleteEvent.mutate(eventId),
+    });
   };
 
   const startEdit = () => setEditing(true);
@@ -1093,6 +1084,7 @@ export default function TeamDetailScreen() {
 
   return (
     <Screen padded={false} keyboardAvoiding={false} backgroundColor={brand.screenBg}>
+      {typeToConfirm.modal}
       <TypeToConfirmModal
         visible={confirmingDelete}
         title="Delete Team"
@@ -2182,85 +2174,6 @@ export default function TeamDetailScreen() {
           onSubmit={submitManualPlayer}
           submitLabel="Save Player & Send Invite"
         />
-      </Modal>
-
-      <Modal
-        visible={pendingEventInviteAthleteIds != null}
-        title={pendingEventInviteAthleteIds && pendingEventInviteAthleteIds.length > 1 ? 'Add to Upcoming Events?' : 'Add to Upcoming Event?'}
-        onClose={() => {
-          if (addAthletesToEvents.isPending) return;
-          setPendingEventInviteAthleteIds(null);
-        }}
-        footer={
-          <View style={{ gap: 8 }}>
-            <Button
-              label={
-                selectedInviteEventIds.size === 0
-                  ? 'Select events to add to'
-                  : `Add to ${selectedInviteEventIds.size} ${selectedInviteEventIds.size === 1 ? 'event' : 'events'}`
-              }
-              disabled={selectedInviteEventIds.size === 0}
-              loading={addAthletesToEvents.isPending}
-              onPress={async () => {
-                if (!pendingEventInviteAthleteIds || !teamSeasonId) return;
-                try {
-                  await addAthletesToEvents.mutateAsync({
-                    eventIds: [...selectedInviteEventIds],
-                    athleteIds: pendingEventInviteAthleteIds,
-                  });
-                } catch (e: any) {
-                  Alert.alert('Error', e?.message || 'Could not add this player to those events.');
-                  return;
-                }
-                setPendingEventInviteAthleteIds(null);
-              }}
-            />
-            <Button
-              label="Not Now"
-              variant="ghost"
-              disabled={addAthletesToEvents.isPending}
-              onPress={() => setPendingEventInviteAthleteIds(null)}
-            />
-          </View>
-        }
-      >
-        <Text className="text-sm mb-3" style={{ color: colors.inkMuted }}>
-          {pendingEventInviteAthleteIds && pendingEventInviteAthleteIds.length > 1
-            ? `These ${pendingEventInviteAthleteIds.length} players were just added to the team, which already has ${upcomingEvents.length === 1 ? 'an upcoming event' : `${upcomingEvents.length} upcoming events`}. Add them to:`
-            : `This player was just added to the team, which already has ${upcomingEvents.length === 1 ? 'an upcoming event' : `${upcomingEvents.length} upcoming events`}. Add them to:`}
-        </Text>
-        {upcomingEvents.map((ev) => {
-          const selected = selectedInviteEventIds.has(ev.id);
-          return (
-            <Pressable
-              key={ev.id}
-              onPress={() =>
-                setSelectedInviteEventIds((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(ev.id)) next.delete(ev.id);
-                  else next.add(ev.id);
-                  return next;
-                })
-              }
-              className="flex-row items-center gap-3 py-3 px-2 rounded-md border mb-2"
-              style={{
-                borderColor: selected ? colors.primary : colors.border,
-                backgroundColor: selected ? 'rgba(255,107,43,0.12)' : 'transparent',
-              }}
-            >
-              <View className="flex-1">
-                <Text className="font-bold" style={{ color: colors.ink }}>
-                  {ev.title}
-                </Text>
-                <Text className="text-xs mt-0.5" style={{ color: colors.inkMuted }}>
-                  {ev.date}
-                  {ev.startTime ? ` · ${ev.startTime}` : ''}
-                </Text>
-              </View>
-              {selected ? <Badge label="Selected" variant="brand" /> : null}
-            </Pressable>
-          );
-        })}
       </Modal>
 
       <Modal

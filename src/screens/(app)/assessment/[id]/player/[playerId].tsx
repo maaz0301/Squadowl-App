@@ -20,6 +20,7 @@ import {
   Modal,
   Chip,
   Screen,
+  useTypeToConfirm,
 } from '@/components/ui';
 import {
   useTryoutQuery,
@@ -47,6 +48,7 @@ import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { PlanGate } from '@/components/PlanGate';
 
 export default function PlayerHubScreen() {
+  const typeToConfirm = useTypeToConfirm();
   const assessmentId = useAssessmentId();
   const isAssessorOnly = useAssessorMode();
   const route = useRoute<any>();
@@ -172,29 +174,23 @@ export default function PlayerHubScreen() {
     }
   };
 
-  const confirmRemoveContact = (contactId: string, name: string) => {
-    Alert.alert(
-      'Remove Contact',
-      `Remove ${name} from this athlete's family contacts?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await removeFamilyContactMut.mutateAsync(contactId);
-            } catch (e: any) {
-              Alert.alert('Error', e?.message || 'Could not remove this contact.');
-            }
-          },
-        },
-      ]
-    );
-  };
+  const confirmRemoveContact = (contactId: string, name: string) =>
+    typeToConfirm.ask({
+      title: 'Remove Contact',
+      message: `Remove ${name} from this athlete's family contacts?`,
+      confirmLabel: 'Remove',
+      onConfirm: async () => {
+        try {
+          await removeFamilyContactMut.mutateAsync(contactId);
+        } catch (e: any) {
+          Alert.alert('Error', e?.message || 'Could not remove this contact.');
+        }
+      },
+    });
 
   return (
     <Screen scroll insideTabBar>
+      {typeToConfirm.modal}
       <Header
         title={playerDisplayName(player)}
         showBack
@@ -665,23 +661,16 @@ export default function PlayerHubScreen() {
           variant="danger"
           className="mt-6"
           loading={deletePlayer.isPending}
-          onPress={() => {
-            Alert.alert(
-              terms.t('Delete Player'),
-              terms.t('Are you sure you want to delete this player? This cannot be undone.'),
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Delete',
-                  style: 'destructive',
-                  onPress: async () => {
-                    await deletePlayer.mutateAsync(playerId!);
-                    navigation.goBack();
-                  },
-                },
-              ]
-            );
-          }}
+          onPress={() =>
+            typeToConfirm.ask({
+              title: terms.t('Delete Player'),
+              message: terms.t('Are you sure you want to delete this player? This cannot be undone.'),
+              onConfirm: async () => {
+                await deletePlayer.mutateAsync(playerId!);
+                navigation.goBack();
+              },
+            })
+          }
         />
       )}
 

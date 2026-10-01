@@ -13,6 +13,7 @@ import {
   Screen,
   Input,
   Modal,
+  useTypeToConfirm,
 } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
 import { FriendPackagesCard } from '@/components/teamBuilder/FriendPackagesCard';
@@ -55,6 +56,7 @@ function rosterSnapshot(state: TeamBuilderState) {
 }
 
 export default function TeamBuilderScreen() {
+  const typeToConfirm = useTypeToConfirm();
   const id = useAssessmentId();
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
@@ -269,19 +271,15 @@ export default function TeamBuilderScreen() {
     }
   };
 
-  const handleDeleteResult = (resultId: string, label: string) => {
-    Alert.alert('Delete saved teams?', `"${label}" will be permanently deleted.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          if (viewingResultId === resultId) setViewingResultId(null);
-          deleteMut.mutate(resultId);
-        },
+  const handleDeleteResult = (resultId: string, label: string) =>
+    typeToConfirm.ask({
+      title: 'Delete saved teams?',
+      message: `"${label}" will be permanently deleted.`,
+      onConfirm: () => {
+        if (viewingResultId === resultId) setViewingResultId(null);
+        deleteMut.mutate(resultId);
       },
-    ]);
-  };
+    });
 
   // Not scrolling, and not a Modal: the adjuster owns its own layout, and its
   // drag has to claim the touch without an outer scroll view fighting it for
@@ -308,6 +306,7 @@ export default function TeamBuilderScreen() {
 
   return (
     <Screen scroll insideTabBar>
+      {typeToConfirm.modal}
       <Header title="Team Builder" subtitle="Sort Out: balanced teams" showBack onBack={() => navigation.navigate('AssessmentResults')} />
 
       <PlanGate feature="teamBuilder" title="Team Builder" tierOverride={tier}>

@@ -21,6 +21,7 @@ import {
   LoadingState,
   Modal,
   Screen,
+  useTypeToConfirm,
 } from '@/components/ui';
 import { isAtPlayerLimit, playerRoom } from '@/data/plans';
 import { useCanUseDummyData } from '@/features/useCanUseDummyData';
@@ -49,6 +50,7 @@ import { useSessionStore, type RosterFilter } from '@/state/sessionStore';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 export default function RosterScreen() {
+  const typeToConfirm = useTypeToConfirm();
   const id = useAssessmentId();
   const isAssessorOnly = useAssessorMode();
   const colors = useThemeColors();
@@ -272,41 +274,34 @@ export default function RosterScreen() {
 
   const deleteSelected = () => {
     const ids = [...selectedIds];
-    Alert.alert(
-      terms.t('Delete players?'),
-      terms.t(`${ids.length} player${ids.length === 1 ? '' : 's'} will be permanently removed from this roster.`),
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setDeleteProgress({ done: 0, total: ids.length });
-            setDeletingSelected(true);
-            try {
-              const { deleted, failed } = await deletePlayers.mutateAsync(ids);
-              if (failed.length === 0) {
-                exitSelectMode();
-              } else {
-                // Keep only the players that are still on the roster selected,
-                // so a retry goes straight at what is left.
-                const gone = new Set(deleted);
-                setSelectedIds(new Set(ids.filter((pid) => !gone.has(pid))));
-                Alert.alert(
-                  terms.t('Some Players Were Not Deleted'),
-                  `${deleted.length} of ${ids.length} deleted. ${failed.length} could not be removed: ${failed[0].message}`,
-                );
-              }
-            } catch (e: any) {
-              Alert.alert('Delete Failed', e?.message || terms.t('Could not delete the selected players.'));
-            } finally {
-              setDeletingSelected(false);
-              setDeleteProgress(null);
-            }
-          },
-        },
-      ]
-    );
+    typeToConfirm.ask({
+      title: terms.t('Delete players?'),
+      message: terms.t(`${ids.length} player${ids.length === 1 ? '' : 's'} will be permanently removed from this roster.`),
+      onConfirm: async () => {
+        setDeleteProgress({ done: 0, total: ids.length });
+        setDeletingSelected(true);
+        try {
+          const { deleted, failed } = await deletePlayers.mutateAsync(ids);
+          if (failed.length === 0) {
+            exitSelectMode();
+          } else {
+            // Keep only the players that are still on the roster selected,
+            // so a retry goes straight at what is left.
+            const gone = new Set(deleted);
+            setSelectedIds(new Set(ids.filter((pid) => !gone.has(pid))));
+            Alert.alert(
+              terms.t('Some Players Were Not Deleted'),
+              `${deleted.length} of ${ids.length} deleted. ${failed.length} could not be removed: ${failed[0].message}`,
+            );
+          }
+        } catch (e: any) {
+          Alert.alert('Delete Failed', e?.message || terms.t('Could not delete the selected players.'));
+        } finally {
+          setDeletingSelected(false);
+          setDeleteProgress(null);
+        }
+      },
+    });
   };
 
   const hasPlayers = tryout.roster.length > 0;
@@ -322,6 +317,7 @@ export default function RosterScreen() {
 
   return (
     <Screen padded={false}>
+      {typeToConfirm.modal}
       <View className="px-4">
         <Header
           title={tryout.name}

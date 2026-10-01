@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, Text, TextInput, View } from 'react-native';
 
-import { Button } from '@/components/ui';
+import { Button, useTypeToConfirm } from '@/components/ui';
 import {
   useAddEventCommentMutation,
   useDeleteEventCommentMutation,
@@ -37,6 +37,7 @@ export function EventDiscussion({
   currentUserId?: string;
 }) {
   const colors = useThemeColors();
+  const typeToConfirm = useTypeToConfirm();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
 
@@ -77,10 +78,7 @@ export function EventDiscussion({
   };
 
   const confirm = (title: string, onYes: () => void) =>
-    Alert.alert(title, undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: onYes },
-    ]);
+    typeToConfirm.ask({ title: 'Remove', message: title, confirmLabel: 'Remove', onConfirm: onYes });
 
   const commentCount = comments.data?.length;
   const fileCount = files.data?.length;
@@ -89,6 +87,7 @@ export function EventDiscussion({
 
   return (
     <View className="mt-2">
+      {typeToConfirm.modal}
       <Pressable onPress={() => setOpen((o) => !o)} hitSlop={6} accessibilityRole="button">
         <Text className="text-sm font-semibold" style={{ color: colors.primary }}>
           {open ? 'Hide comments & files' : summary}
