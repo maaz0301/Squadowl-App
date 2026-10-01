@@ -51,3 +51,6 @@ $$;
 
 revoke all on function public.guardian_remove_athlete(uuid) from public;
 grant execute on function public.guardian_remove_athlete(uuid) to authenticated;
+
+-- Supabase grants new public functions to anon by default; only signed-in users should call this.
+revoke execute on function public.guardian_remove_athlete(uuid) from anon;
