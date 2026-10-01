@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { FlatList, ScrollView, View, Text, Pressable, Alert } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 import { InAppBrowser } from 'react-native-inappbrowser-reborn';
@@ -254,6 +254,13 @@ export default function GuardianPortalScreen() {
   const reportUnread = useCallback((seasonId: string, count: number) => {
     setUnreadBySeason((prev) => (prev[seasonId] === count ? prev : { ...prev, [seasonId]: count }));
   }, []);
+
+  // The athlete can leave this list while the screen is open (the guardian just left their
+  // only team, or deleted them). Go back to the list instead of stranding them on a dead end.
+  const athleteGone = guardianQuery.isSuccess && !guardianQuery.data?.some((a) => a.id === playerId);
+  useEffect(() => {
+    if (athleteGone) navigation.goBack();
+  }, [athleteGone, navigation]);
 
   if (guardianQuery.isLoading) {
     return <LoadingState message="Loading portal..." />;
