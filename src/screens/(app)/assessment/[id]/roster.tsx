@@ -612,16 +612,21 @@ export default function RosterScreen() {
               {
                 label: 'Clear Dummy Data',
                 desc: terms.t('Remove all generated dummy players and evaluation scores.'),
-                go: async () => {
-                  try {
-                    const res = await clearTest.mutateAsync();
-                    if (Platform.OS === 'web') alert(`Cleared ${res.removed} dummy records.`);
-                    else Alert.alert('Cleared', `Removed ${res.removed} generated record${res.removed === 1 ? '' : 's'}.`);
-                  } catch (e: any) {
-                    if (Platform.OS === 'web') alert(e?.message || 'Failed to clear dummy data.');
-                    else Alert.alert('Error', e?.message || 'Failed to clear dummy data.');
-                  }
-                },
+                go: () =>
+                  typeToConfirm.ask({
+                    title: 'Clear Dummy Data',
+                    message: 'Remove all generated dummy players and their scores? This can\'t be undone.',
+                    onConfirm: async () => {
+                      try {
+                        const res = await clearTest.mutateAsync();
+                        if (Platform.OS === 'web') alert(`Cleared ${res.removed} dummy records.`);
+                        else Alert.alert('Cleared', `Removed ${res.removed} generated record${res.removed === 1 ? '' : 's'}.`);
+                      } catch (e: any) {
+                        if (Platform.OS === 'web') alert(e?.message || 'Failed to clear dummy data.');
+                        else Alert.alert('Error', e?.message || 'Failed to clear dummy data.');
+                      }
+                    },
+                  }),
               },
             ] : []),
           ] as const

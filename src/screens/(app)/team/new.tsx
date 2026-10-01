@@ -8,7 +8,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { DummyDataModal } from '@/components/DummyDataModal';
 import { TeamColorPicker } from '@/components/TeamColorPicker';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
-import { Button, Card, Chip, ErrorState, Header, Input, LoadingState, Screen, Avatar, Badge } from '@/components/ui';
+import { Button, Card, Chip, ErrorState, Header, Input, LoadingState, Screen, Avatar, Badge, useTypeToConfirm } from '@/components/ui';
 import { canUseFeature, isAtTeamLimit, playerRoom, teamRoom, assessmentRoom } from '@/data/plans';
 import { useCanUseDummyData } from '@/features/useCanUseDummyData';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
@@ -52,6 +52,7 @@ export default function NewTeamScreen() {
   const user = useUser();
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
   const [showDummy, setShowDummy] = useState(false);
+  const typeToConfirm = useTypeToConfirm();
   const [logo, setLogo] = useState<{ uri: string; type: string } | null>(null);
   const [brandColor, setBrandColor] = useState<string | null>(null);
   const [collectsFees, setCollectsFees] = useState(false);
@@ -281,6 +282,13 @@ export default function NewTeamScreen() {
     }
   };
 
+  const confirmClearDummy = () =>
+    typeToConfirm.ask({
+      title: 'Clear Dummy Teams',
+      message: "Remove all generated dummy teams and their evaluations? This can't be undone.",
+      onConfirm: () => void runClearDummy(),
+    });
+
   const runClearDummy = async () => {
     try {
       const res = await clearDummy.mutateAsync();
@@ -308,6 +316,7 @@ export default function NewTeamScreen() {
 
   return (
     <Screen scroll>
+      {typeToConfirm.modal}
       <Header title="New Team" showBack />
       <View className="gap-4 mt-2">
         <Pressable onPress={handleSelectLogo} className="items-center mb-2 mt-4">
@@ -430,7 +439,7 @@ export default function NewTeamScreen() {
               size="sm"
               variant="ghost"
               loading={clearDummy.isPending}
-              onPress={runClearDummy}
+              onPress={confirmClearDummy}
             />
           </View>
         </Card>

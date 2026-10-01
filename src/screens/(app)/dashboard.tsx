@@ -851,11 +851,20 @@ export default function DashboardScreen() {
             label="Delete Permanently"
             variant="danger"
             onPress={() => {
-              if (actionTryout) {
-                setBusyId(actionTryout.id);
-                deleteTryout.mutate(actionTryout.id, { onSettled: () => setBusyId(null) });
-              }
+              const target = actionTryout;
               setActionTryout(null);
+              if (!target) return;
+              // Let the actions sheet finish closing before the confirm opens.
+              setTimeout(() => {
+                removeAthleteConfirm.ask({
+                  title: 'Delete Evaluation',
+                  message: `Permanently delete "${target.name}" and all of its scores? This can't be undone.`,
+                  onConfirm: () => {
+                    setBusyId(target.id);
+                    deleteTryout.mutate(target.id, { onSettled: () => setBusyId(null) });
+                  },
+                });
+              }, 350);
             }}
           />
         </View>

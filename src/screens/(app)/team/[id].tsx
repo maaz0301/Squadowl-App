@@ -1840,18 +1840,24 @@ export default function TeamDetailScreen() {
                       size="sm"
                       variant="ghost"
                       loading={clearTest.isPending}
-                      onPress={async () => {
-                        try {
-                          const res = await clearTest.mutateAsync();
-                          const msg = `Removed ${res.removed} generated record${res.removed === 1 ? '' : 's'}.`;
-                          if (Platform.OS === 'web') alert(msg);
-                          else Alert.alert('Cleared', msg);
-                        } catch (e: any) {
-                          const msg = e?.message || 'Failed to clear dummy data.';
-                          if (Platform.OS === 'web') alert(msg);
-                          else Alert.alert('Error', msg);
-                        }
-                      }}
+                      onPress={() =>
+                        typeToConfirm.ask({
+                          title: 'Clear Dummy Data',
+                          message: 'Remove all generated dummy players and their scores? This can\'t be undone.',
+                          onConfirm: async () => {
+                            try {
+                              const res = await clearTest.mutateAsync();
+                              const msg = `Removed ${res.removed} generated record${res.removed === 1 ? '' : 's'}.`;
+                              if (Platform.OS === 'web') alert(msg);
+                              else Alert.alert('Cleared', msg);
+                            } catch (e: any) {
+                              const msg = e?.message || 'Failed to clear dummy data.';
+                              if (Platform.OS === 'web') alert(msg);
+                              else Alert.alert('Error', msg);
+                            }
+                          },
+                        })
+                      }
                     />
                   ) : null}
                 </View>

@@ -5,7 +5,7 @@ import { RegistrationProfileModal } from '@/components/assessment/RegistrationPr
 import { DummyDataModal } from '@/components/DummyDataModal';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { PlanGate } from '@/components/PlanGate';
-import { Badge, Button, Card, EmptyState, ErrorState, Header, LoadingState, Modal, Screen, Tabs } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, ErrorState, Header, LoadingState, Modal, Screen, Tabs, useTypeToConfirm } from '@/components/ui';
 import { isAtPlayerLimit, playerRoom } from '@/data/plans';
 import { useCanUseDummyData } from '@/features/useCanUseDummyData';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
@@ -255,17 +255,24 @@ export default function RegistrationsScreen() {
     }
   };
 
-  const clearTestData = async () => {
-    try {
-      const res = await clearTest.mutateAsync();
-      showAlert('Cleared', `Removed ${res.removed} generated record${res.removed === 1 ? '' : 's'}.`);
-    } catch (e: any) {
-      showAlert('Error', e?.message || 'Failed to clear dummy data.');
-    }
-  };
+  const typeToConfirm = useTypeToConfirm();
+  const clearTestData = () =>
+    typeToConfirm.ask({
+      title: 'Clear Dummy Data',
+      message: 'Remove all generated dummy players and their scores? This can\'t be undone.',
+      onConfirm: async () => {
+        try {
+          const res = await clearTest.mutateAsync();
+          showAlert('Cleared', `Removed ${res.removed} generated record${res.removed === 1 ? '' : 's'}.`);
+        } catch (e: any) {
+          showAlert('Error', e?.message || 'Failed to clear dummy data.');
+        }
+      },
+    });
 
   return (
     <Screen padded={false}>
+      {typeToConfirm.modal}
       <Header title="Registrations" showBack />
 
       <FlatList
