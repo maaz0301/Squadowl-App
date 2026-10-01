@@ -14,6 +14,7 @@ import {
   buildScoreImportRows,
   guessIdentityMapping,
   guessMeasureMapping,
+  validateImportSetup,
   type IdentityMapping,
   type MeasureMapping,
 } from '@/lib/scoreImport';
@@ -53,6 +54,12 @@ export default function ScanSheetScreen() {
   const ready = rows.filter((r) => r.errors.length === 0);
   const skipped = rows.filter((r) => r.errors.length > 0);
   const mappedMeasures = measures.filter((m) => mapping[m.key] != null).length;
+  const issues = useMemo(
+    () => (sheet ? validateImportSetup(sheet.headers, identity, mapping, measures) : []),
+    [sheet, identity, mapping, measures],
+  );
+  const blocked = issues.some((i) => i.level === 'error');
+  const cellWarnings = rows.filter((r) => r.errors.length === 0 && r.warnings.length > 0).length;
 
   const back = () => navigation.navigate('AssessmentRoster');
 
@@ -212,10 +219,23 @@ export default function ScanSheetScreen() {
               )}
             </View>
 
+            {issues.length > 0 ? (
+              <Card className="gap-1.5">
+                <Text className="font-bold" style={{ color: colors.ink }}>Check before importing</Text>
+                {issues.map((i, n) => (
+                  <Text key={n} className="text-sm" style={{ color: i.level === 'error' ? colors.danger : colors.inkMuted }}>
+                    {i.level === 'error' ? 'Fix: ' : 'Note: '}{i.message}
+                  </Text>
+                ))}
+              </Card>
+            ) : null}
+
             <View className="gap-1.5">
+              <Text className="mb-1 text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>Preview</Text>
               <View className="flex-row flex-wrap items-center gap-2">
-                <Badge label={`${ready.length} ready`} />
-                {skipped.length > 0 ? <Badge label={`${skipped.length} left out`} /> : null}
+                <Badge label={`${ready.length} ready`} variant="success" />
+                {skipped.length > 0 ? <Badge label={`${skipped.length} left out`} variant="danger" /> : null}
+                {cellWarnings > 0 ? <Badge label={`${cellWarnings} with skipped cells`} variant="warning" /> : null}
               </View>
               {rows.slice(0, PREVIEW_ROWS).map((r) => {
                 const bad = r.errors.length > 0;
@@ -251,7 +271,7 @@ export default function ScanSheetScreen() {
             <Button
               label={`Import ${ready.length} ${(ready.length === 1 ? terms.player : terms.players).toLowerCase()}`}
               loading={importScores.isPending}
-              disabled={ready.length === 0 || mappedMeasures === 0}
+              disabled={blocked || ready.length === 0 || mappedMeasures === 0}
               onPress={save}
             />
           </>
