@@ -154,6 +154,8 @@ export default function TeamDetailScreen() {
   const [openRsvpEventId, setOpenRsvpEventId] = useState<string | null>(null);
   // The event Team Status, RSVPs and the action row are pointed at.
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  // Whether the selected event's details are showing under its card.
+  const [eventDetailsOpen, setEventDetailsOpen] = useState(true);
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [rsvpVisible, setRsvpVisible] = useState(RSVP_PAGE);
   const [rsvpSearch, setRsvpSearch] = useState('');
@@ -1449,67 +1451,25 @@ export default function TeamDetailScreen() {
                     </Text>
                   </Card>
                 ) : (
-                  shownEvents.map((ev) => (
-                    <HubEventCard
-                      key={ev.id}
-                      event={ev}
-                      selected={selectedEvent?.id === ev.id}
-                      playerCount={playerCount}
-                      evaluatorCount={evaluatorCount}
-                      onPress={() => {
-                        setSelectedEventId(ev.id);
-                        setOpenRsvpEventId(null);
-                      }}
-                    />
-                  ))
-                )}
-
-                {selectedEvent ? (
-                  <View className="mb-6">
-                    <AddToCalendar
-                      event={selectedEvent}
-                      teamName={team.name}
-                      renderTrigger={(open) => (
-                        <HubRowCard
-                          icon={HUB_ICONS.calendar}
-                          title="Add to Calendar"
-                          caption="Sync this event with your calendar"
-                          onPress={open}
+                  shownEvents.map((ev) => {
+                    const open = selectedEvent?.id === ev.id && eventDetailsOpen;
+                    return (
+                      <View key={ev.id}>
+                        <HubEventCard
+                          event={ev}
+                          selected={selectedEvent?.id === ev.id}
+                          expanded={open}
+                          playerCount={playerCount}
+                          evaluatorCount={evaluatorCount}
+                          onPress={() => {
+                            // The selected event's arrow shows and hides its details;
+                            // picking another event opens that one's.
+                            setEventDetailsOpen(selectedEvent?.id === ev.id ? !eventDetailsOpen : true);
+                            setSelectedEventId(ev.id);
+                            setOpenRsvpEventId(null);
+                          }}
                         />
-                      )}
-                    />
-                  </View>
-                ) : (
-                  <View className="mb-3" />
-                )}
-
-                <HubSectionLabel icon={HUB_ICONS.calendar} label="Season Hub" />
-                {canEditTeam ? (
-                <Pressable
-                  onPress={() => openEventModal('Event')}
-                  className="flex-row items-center gap-3 rounded-lg px-3 mb-6"
-                  style={{
-                    height: 50,
-                    backgroundColor: colors.primary,
-                    shadowColor: colors.primary,
-                    shadowOpacity: 0.4,
-                    shadowRadius: 10,
-                    shadowOffset: { width: 0, height: 4 },
-                    elevation: 4,
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Add event"
-                >
-                  <HubIcon d={HUB_ICONS.calendarPlus} size={22} color="#ffffff" />
-                  <Text className="flex-1 text-base font-bold" style={{ color: '#ffffff' }}>
-                    + Event
-                  </Text>
-                  <HubIcon d={HUB_ICONS.chevron} size={18} color="#ffffff" strokeWidth={2.5} />
-                </Pressable>
-                ) : null}
-
-                {selectedEvent ? (
-                  (() => {
+                        {open ? (<View className="mb-4">{(() => {
                     const ev = selectedEvent;
                     const rsvp = rsvpByEvent.get(ev.id) ?? EMPTY_RSVP;
                     const expanded = openRsvpEventId === ev.id;
@@ -1543,7 +1503,7 @@ export default function TeamDetailScreen() {
                               <ActivityIndicator size="small" color={colors.primary} />
                             ) : (
                               <HubIcon
-                                d={expanded ? 'M6 15l6-6 6 6' : 'M9 5l7 7-7 7'}
+                                d={expanded ? HUB_ICONS.chevronUp : HUB_ICONS.chevronDown}
                                 size={16}
                                 color={colors.primary}
                                 strokeWidth={2.5}
@@ -1676,8 +1636,56 @@ export default function TeamDetailScreen() {
                         </View>
                       </>
                     );
-                  })()
+                  })()}</View>) : null}
+                      </View>
+                    );
+                  })
+                )}
+
+                {selectedEvent ? (
+                  <View className="mb-6">
+                    <AddToCalendar
+                      event={selectedEvent}
+                      teamName={team.name}
+                      renderTrigger={(open) => (
+                        <HubRowCard
+                          icon={HUB_ICONS.calendar}
+                          title="Add to Calendar"
+                          caption="Sync this event with your calendar"
+                          onPress={open}
+                        />
+                      )}
+                    />
+                  </View>
+                ) : (
+                  <View className="mb-3" />
+                )}
+
+                <HubSectionLabel icon={HUB_ICONS.calendar} label="Season Hub" />
+                {canEditTeam ? (
+                <Pressable
+                  onPress={() => openEventModal('Event')}
+                  className="flex-row items-center gap-3 rounded-lg px-3 mb-6"
+                  style={{
+                    height: 50,
+                    backgroundColor: colors.primary,
+                    shadowColor: colors.primary,
+                    shadowOpacity: 0.4,
+                    shadowRadius: 10,
+                    shadowOffset: { width: 0, height: 4 },
+                    elevation: 4,
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add event"
+                >
+                  <HubIcon d={HUB_ICONS.calendarPlus} size={22} color="#ffffff" />
+                  <Text className="flex-1 text-base font-bold" style={{ color: '#ffffff' }}>
+                    + Event
+                  </Text>
+                  <HubIcon d={HUB_ICONS.chevron} size={18} color="#ffffff" strokeWidth={2.5} />
+                </Pressable>
                 ) : null}
+
               </>
             )}
           </View>

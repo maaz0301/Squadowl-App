@@ -71,7 +71,7 @@ export function QuickAccessGrid({ items }: { items: QuickAccessItem[] }) {
                     {item.label}
                   </Text>
                   <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-                    <Path d="M9 5l7 7-7 7" stroke={colors.inkMuted} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                    <Path d="M6 9l6 6 6-6" stroke={colors.inkMuted} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
                   </Svg>
                 </View>
                 <Text className="text-sm" style={{ color: colors.inkMuted }} numberOfLines={3}>

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, Text, TextInput, View } from 'react-native';
 
 import { Button, useTypeToConfirm } from '@/components/ui';
+import { HubIcon } from '@/components/teamHub/HubIcon';
+import { HUB_ICONS } from '@/components/teamHub/hubTheme';
 import {
   useAddEventCommentMutation,
   useDeleteEventCommentMutation,
@@ -15,6 +17,15 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
+const VIDEO_EXT = /\.(mp4|mov|m4v|webm|avi|mkv)$/i;
+const IMAGE_EXT = /\.(jpe?g|png|gif|webp|heic|heif|bmp)$/i;
+const kindOf = (f: { name: string; contentType: string }): 'video' | 'image' | 'info' =>
+  f.contentType.startsWith('video/') || VIDEO_EXT.test(f.name)
+    ? 'video'
+    : f.contentType.startsWith('image/') || IMAGE_EXT.test(f.name)
+      ? 'image'
+      : 'info';
+
 const formatSize = (bytes: number) =>
   bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
@@ -22,7 +33,8 @@ const formatSize = (bytes: number) =>
  * Comments and files for one event. Everyone who can see the event can read
  * and post comments (a guardian speaks for their athlete); only `canManage`
  * users (coaches) attach or remove files, and can remove any comment.
- * Collapsed until opened so an event list doesn't fire two reads per card.
+ * Shown under the selected event only, so it reads its counts straight away: four
+ * indicators (video, info, picture, comments) show what has been added.
  */
 export function EventDiscussion({
   seasonId,
@@ -41,8 +53,8 @@ export function EventDiscussion({
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
 
-  const comments = useEventCommentsQuery(eventId, { enabled: open });
-  const files = useEventFilesQuery(eventId, { enabled: open });
+  const comments = useEventCommentsQuery(eventId, { enabled: true });
+  const files = useEventFilesQuery(eventId, { enabled: true });
   const addComment = useAddEventCommentMutation(eventId);
   const deleteComment = useDeleteEventCommentMutation(eventId);
   const upload = useUploadEventFileMutation(seasonId, eventId);
@@ -80,19 +92,46 @@ export function EventDiscussion({
   const confirm = (title: string, onYes: () => void) =>
     typeToConfirm.ask({ title: 'Remove', message: title, confirmLabel: 'Remove', onConfirm: onYes });
 
-  const commentCount = comments.data?.length;
-  const fileCount = files.data?.length;
-  const summary =
-    commentCount == null && fileCount == null ? 'Comments & files' : `Comments (${commentCount ?? 0}) · Files (${fileCount ?? 0})`;
+  const counts = { video: 0, info: 0, image: 0 };
+  for (const f of files.data ?? []) counts[kindOf(f)] += 1;
+  const indicators = [
+    { key: 'video', icon: HUB_ICONS.video, label: 'Video', count: files.data ? counts.video : undefined },
+    { key: 'info', icon: HUB_ICONS.info, label: 'Info', count: files.data ? counts.info : undefined },
+    { key: 'image', icon: HUB_ICONS.image, label: 'Photo', count: files.data ? counts.image : undefined },
+    { key: 'comments', icon: HUB_ICONS.chat, label: 'Comments', count: comments.data?.length },
+  ];
 
   return (
     <View className="mt-2">
       {typeToConfirm.modal}
-      <Pressable onPress={() => setOpen((o) => !o)} hitSlop={6} accessibilityRole="button">
-        <Text className="text-sm font-semibold" style={{ color: colors.primary }}>
-          {open ? 'Hide comments & files' : summary}
-        </Text>
-      </Pressable>
+      <Text className="text-xs font-bold mb-2" style={{ color: colors.primary }}>Comments & files</Text>
+      <View className="flex-row gap-2">
+        {indicators.map((i) => {
+          const has = (i.count ?? 0) > 0;
+          const tint = has ? colors.primary : colors.inkMuted;
+          return (
+            <Pressable
+              key={i.key}
+              onPress={() => setOpen((o) => !o)}
+              accessibilityRole="button"
+              accessibilityLabel={`${i.label}${i.count == null ? '' : `: ${i.count}`}`}
+              accessibilityState={{ expanded: open }}
+              className="flex-1 items-center justify-center rounded-lg border"
+              style={{
+                height: 52,
+                backgroundColor: has ? 'rgba(255,107,43,0.12)' : colors.tile,
+                borderColor: has ? colors.primary : colors.border,
+              }}
+            >
+              <View className="flex-row items-center gap-1">
+                <HubIcon d={i.icon} size={14} color={tint} />
+                <Text className="text-xs font-bold" style={{ color: tint }}>{i.count ?? '–'}</Text>
+              </View>
+              <Text numberOfLines={1} style={{ fontSize: 10, color: tint }}>{i.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
 
       {open ? (
         <View className="mt-2 gap-3">
