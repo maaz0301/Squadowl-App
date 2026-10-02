@@ -17,6 +17,7 @@ export { Header } from './Header';
 export { SplashScreen } from './SplashScreen';
 export { ThemeToggle } from './ThemeToggle';
 export { YearField } from './YearField';
+export { BirthDateField } from './BirthDateField';
 export { PhoneField } from './PhoneField';
 export { TypeToConfirmModal, useTypeToConfirm } from './TypeToConfirmModal';
 export { DurationField } from './DurationField';

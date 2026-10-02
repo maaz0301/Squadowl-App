@@ -4,7 +4,7 @@ import { useRoute } from '@react-navigation/native';
 
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Screen, Header, Button, Input } from '@/components/ui';
+import { Screen, Header, Button, Input, BirthDateField } from '@/components/ui';
 import { SupabaseDataSource } from '@/data/supabase/SupabaseDataSource';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { RegistrationSubmitSchema, type RegistrationSubmit } from '@/data/types';
@@ -18,12 +18,13 @@ export default function PublicRegistration() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  const { control, handleSubmit, formState: { errors } } = useForm<RegistrationSubmit>({
+  const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<RegistrationSubmit>({
     resolver: zodResolver(RegistrationSubmitSchema),
     defaultValues: {
       firstName: '',
       lastName: '',
       yearOfBirth: '',
+      dateOfBirth: '',
       positionTryingOutFor: '',
       playerEmail: '',
       guardianName: '',
@@ -124,7 +125,16 @@ export default function PublicRegistration() {
           control={control}
           name="yearOfBirth"
           render={({ field: { onChange, onBlur, value } }) => (
-            <Input label="Year of Birth" onBlur={onBlur} onChangeText={onChange} value={value} error={errors.yearOfBirth?.message} keyboardType="number-pad" placeholder="YYYY" />
+          <BirthDateField
+            label="Date of Birth"
+            year={value}
+            dateOfBirth={watch('dateOfBirth') ?? ''}
+            onChange={({ year, dateOfBirth }) => {
+              onChange(year);
+              setValue('dateOfBirth', dateOfBirth);
+            }}
+            error={errors.yearOfBirth?.message}
+          />
           )}
         />
         

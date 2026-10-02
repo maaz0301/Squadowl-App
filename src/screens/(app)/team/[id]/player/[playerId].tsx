@@ -19,6 +19,7 @@ import { teamBrandSurfaces } from '@/lib/teamBrand';
 import { BottomNav } from '@/components/BottomNav';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { PlayerFamilyContactsCard } from '@/components/assessment/PlayerFamilyContactsCard';
+import { formatBirth } from '@/lib/birthDate';
 
 function Row({ label, value, colors }: { label: string; value?: string; colors: any }) {
   return (
@@ -119,6 +120,7 @@ export default function TeamPlayerScreen() {
     jersey: jersey || '',
     pos: pos || '',
     yearOfBirth: yearOfBirth || '',
+    dateOfBirth: rosterEntry?.dateOfBirth ?? fullPlayer?.dateOfBirth ?? '',
     playerEmail: rosterEntry?.playerEmail ?? fullPlayer?.playerEmail ?? '',
     guardianName: rosterEntry?.guardianName ?? fullPlayer?.guardianName ?? '',
     guardianEmail: rosterEntry?.guardianEmail ?? fullPlayer?.guardianEmail ?? '',
@@ -181,7 +183,7 @@ export default function TeamPlayerScreen() {
 
         <Card className="mb-4 gap-2">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>Details</Text>
-          <Row label="Year of Birth" value={yearOfBirth} colors={colors} />
+          <Row label="Date of Birth" value={formatBirth(rosterEntry?.dateOfBirth ?? fullPlayer?.dateOfBirth, yearOfBirth)} colors={colors} />
           <Row label="Player Email" value={rosterEntry?.playerEmail ?? fullPlayer?.playerEmail} colors={colors} />
         </Card>
 

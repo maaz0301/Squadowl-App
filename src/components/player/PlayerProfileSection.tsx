@@ -4,6 +4,7 @@ import { Button, Card, ErrorState } from '@/components/ui';
 import { AssessmentHistory } from '@/components/player/AssessmentHistory';
 import { usePlayerProfileQuery } from '@/features/queries';
 import { slugify } from '@/lib/exportCsv';
+import { formatBirth } from '@/lib/birthDate';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 /**
@@ -51,7 +52,7 @@ export function PlayerProfileSection({
           <Text className="font-display font-bold" style={{ color: colors.ink }}>Details</Text>
           {onEditDetails ? <Button label="Edit" variant="secondary" size="sm" onPress={onEditDetails} /> : null}
         </View>
-        {row('Year of Birth', profile.yearOfBirth)}
+        {row('Date of Birth', formatBirth(profile.dateOfBirth, profile.yearOfBirth))}
         {row('Current Team', profile.currentTeam)}
         {profile.teams.length > 1 ? row('All Teams', profile.teams.map((t) => t.teamName).join(', ')) : null}
         {row('Position', profile.currentPosition)}

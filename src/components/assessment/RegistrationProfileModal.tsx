@@ -4,6 +4,7 @@ import { Text, View } from 'react-native';
 import { Badge, Button, Modal } from '@/components/ui';
 import type { Registration } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { formatBirth } from '@/lib/birthDate';
 
 function Row({ label, value, colors }: { label: string; value?: string; colors: any }) {
   return (
@@ -92,7 +93,7 @@ export function RegistrationProfileModal({
 
           <Section title={terms.player} colors={colors}>
             <Row label="Name" value={`${r.firstName} ${r.lastName}`} colors={colors} />
-            <Row label="Year of Birth" value={r.yearOfBirth} colors={colors} />
+            <Row label="Date of Birth" value={formatBirth(r.dateOfBirth, r.yearOfBirth)} colors={colors} />
             <Row label="Position" value={r.positionTryingOutFor} colors={colors} />
             <Row label="Current Team" value={r.currentTeam} colors={colors} />
             <Row label="Current Level" value={r.currentLevel} colors={colors} />

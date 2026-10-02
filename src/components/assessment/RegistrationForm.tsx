@@ -2,7 +2,7 @@ import { View } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { RegistrationSubmitSchema, type RegistrationSubmit } from '@/data/types';
-import { Button, Input } from '@/components/ui';
+import { BirthDateField, Button, Input } from '@/components/ui';
 
 interface Props {
   loading?: boolean;
@@ -10,12 +10,13 @@ interface Props {
 }
 
 export function RegistrationForm({ loading, onSubmit }: Props) {
-  const { control, handleSubmit } = useForm<RegistrationSubmit>({
+  const { control, handleSubmit, watch, setValue } = useForm<RegistrationSubmit>({
     resolver: zodResolver(RegistrationSubmitSchema),
     defaultValues: {
       firstName: '',
       lastName: '',
       yearOfBirth: '',
+      dateOfBirth: '',
       playerEmail: '',
       guardianName: '',
       guardianEmail: '',
@@ -42,7 +43,16 @@ export function RegistrationForm({ loading, onSubmit }: Props) {
         control={control}
         name="yearOfBirth"
         render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
-          <Input label="Year of Birth" onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} keyboardType="number-pad" placeholder="YYYY" />
+          <BirthDateField
+            label="Date of Birth"
+            year={value}
+            dateOfBirth={watch('dateOfBirth') ?? ''}
+            onChange={({ year, dateOfBirth }) => {
+              onChange(year);
+              setValue('dateOfBirth', dateOfBirth);
+            }}
+            error={error?.message}
+          />
         )}
       />
       <Controller

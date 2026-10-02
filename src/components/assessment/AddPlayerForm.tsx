@@ -4,7 +4,7 @@ import { View, Text, Pressable, Image, Alert, ScrollView } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { AddPlayerFormSchema, type AddPlayerForm as AddPlayerFormType, type Athlete, type Sport } from '@/data/types';
-import { Button, Chip, Input, Modal, Avatar, YearField, PhoneField } from '@/components/ui';
+import { Button, Chip, Input, Modal, Avatar, BirthDateField, PhoneField } from '@/components/ui';
 import { useAthletesQuery } from '@/features/queries';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { launchImageLibrary } from 'react-native-image-picker';
@@ -56,6 +56,7 @@ export function AddPlayerForm({ loading, defaultValues, sport, labels, onSubmit,
       pos: defaultValues?.pos || (positionOptions.length > 0 ? '' : 'FWD'),
       shoots: defaultValues?.shoots || '',
       yearOfBirth: defaultValues?.yearOfBirth || '',
+      dateOfBirth: defaultValues?.dateOfBirth || '',
       positionTryingOutFor: defaultValues?.positionTryingOutFor || '',
       playerEmail: defaultValues?.playerEmail || '',
       guardianName: defaultValues?.guardianName || '',
@@ -99,6 +100,7 @@ export function AddPlayerForm({ loading, defaultValues, sport, labels, onSubmit,
     setValue('first', a.first);
     setValue('last', a.last);
     setValue('yearOfBirth', a.yearOfBirth || '');
+    setValue('dateOfBirth', a.dateOfBirth || '');
     setValue('playerEmail', a.playerEmail || '');
     setValue('guardianName', a.guardianName || '');
     setValue('guardianEmail', a.guardianEmail || '');
@@ -246,7 +248,16 @@ export function AddPlayerForm({ loading, defaultValues, sport, labels, onSubmit,
         control={control}
         name="yearOfBirth"
         render={({ field: { onChange, value }, fieldState: { error } }) => (
-          <YearField label="Year of Birth" value={value} onChange={onChange} error={error?.message} />
+          <BirthDateField
+            label="Date of Birth"
+            year={value}
+            dateOfBirth={watch('dateOfBirth') ?? ''}
+            onChange={({ year, dateOfBirth }) => {
+              onChange(year);
+              setValue('dateOfBirth', dateOfBirth);
+            }}
+            error={error?.message}
+          />
         )}
       />
       <Controller
