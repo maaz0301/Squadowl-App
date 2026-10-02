@@ -53,7 +53,7 @@ export function AddPlayerForm({ loading, defaultValues, sport, labels, onSubmit,
       // once a sport has its own position list, defaulting into a code that
       // isn't actually on it would silently submit a mismatched position for
       // anyone who never touches the picker.
-      pos: defaultValues?.pos || (positionOptions.length > 0 ? '' : 'FWD'),
+      pos: defaultValues?.pos || (positionOptions.length > 0 || sport === 'Skating' ? '' : 'FWD'),
       shoots: defaultValues?.shoots || '',
       yearOfBirth: defaultValues?.yearOfBirth || '',
       dateOfBirth: defaultValues?.dateOfBirth || '',
@@ -107,7 +107,7 @@ export function AddPlayerForm({ loading, defaultValues, sport, labels, onSubmit,
     setValue('guardianPhone', a.guardianPhone || '');
     setValue('medicalInfo', a.medicalInfo || '');
     setValue('aboutChild', a.aboutChild || '');
-    const pos = a.currentPosition || (positionOptions.length > 0 ? '' : 'FWD');
+    const pos = a.currentPosition || (positionOptions.length > 0 || sport === 'Skating' ? '' : 'FWD');
     setPositionIsCustom(
       positionOptions.length === 0 || (!!pos && !positionOptions.some((o) => o.code === pos)),
     );
@@ -223,7 +223,7 @@ export function AddPlayerForm({ loading, defaultValues, sport, labels, onSubmit,
             </View>
           ) : (
             <Input
-              label={positionOptions.length > 0 ? 'Position (custom)' : 'Position (FWD/DEF/GTL)'}
+              label={positionOptions.length > 0 ? 'Position (custom)' : sport === 'Skating' ? 'Position (optional)' : 'Position (FWD/DEF/GTL)'}
               onBlur={onBlur}
               onChangeText={(t) => onChange(t.toUpperCase())}
               value={value}

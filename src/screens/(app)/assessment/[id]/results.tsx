@@ -72,7 +72,7 @@ export default function ResultsScreen() {
           sorted.length === 0 ? null : (
             <View className="flex-row gap-2 mb-3">
               <Badge label={`${skaters.length} Skaters`} variant="brand" />
-              <Badge label={`${goalies.length} Goalies`} variant="info" />
+              {tryout?.sport === 'Skating' ? null : <Badge label={`${goalies.length} Goalies`} variant="info" />}
             </View>
           )
         }
