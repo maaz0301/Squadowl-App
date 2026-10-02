@@ -7888,7 +7888,10 @@ export class SupabaseDataSource implements DataSource {
     const { data: participantRows } = await supabase
       .from('tryout_participants')
       .select('id, tryout_id, jersey, position, current_team, current_level, created_at')
-      .eq('athlete_id', athleteId);
+      .eq('athlete_id', athleteId)
+      // A player taken off an evaluation (removed_at) is no longer part of it,
+      // same as the web app.
+      .is('removed_at', null);
     const participants = participantRows ?? [];
 
     const tryoutIds = [...new Set(participants.map((p: any) => p.tryout_id))];
