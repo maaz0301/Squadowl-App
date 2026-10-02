@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
-import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { Badge, Button, Card, EmptyState, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
+import { Badge, Button, Card, Chip, EmptyState, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
 import { HomePanel, PanelRow } from '@/components/home/HomePanel';
 import { HubIcon } from '@/components/teamHub/HubIcon';
 import { HUB_ICONS } from '@/components/teamHub/hubTheme';
@@ -12,6 +12,8 @@ import { useSessionStore } from '@/state/sessionStore';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import {
   buildReportSummary,
+  listReportRubrics,
+  topPerformersByRubric,
   REPORT_RECOMMENDATIONS,
   type EvaluationReportRow,
   type ReportRecommendation,
@@ -43,6 +45,24 @@ export default function ReportsScreen() {
 
   const scoresReady = !!tryoutsQuery.data;
   const summary = useMemo(() => buildReportSummary(tryoutsQuery.data ?? []), [tryoutsQuery.data]);
+
+  // Top performers can be ranked on the overall score or on any one measure.
+  const [leaderFocus, setLeaderFocus] = useState('overall');
+  const rubricOptions = useMemo(() => listReportRubrics(tryoutsQuery.data ?? []), [tryoutsQuery.data]);
+  const focusRubric = rubricOptions.find((r) => r.key === leaderFocus);
+  const leaders = useMemo(
+    () =>
+      focusRubric
+        ? topPerformersByRubric(tryoutsQuery.data ?? [], focusRubric.key)
+        : summary.topPerformers.map((p) => ({ ...p, unit: undefined as string | undefined })),
+    [focusRubric, tryoutsQuery.data, summary],
+  );
+  const leaderValue = (n: number, unit?: string) =>
+    !focusRubric
+      ? score(n)
+      : unit
+        ? `${Number.isInteger(n) ? n : n.toFixed(2).replace(/0$/, '')} ${unit}`
+        : n.toFixed(1);
 
   // Until the scores arrive the list is built from the light read: same cards,
   // same buttons, no progress figures.
@@ -189,7 +209,18 @@ export default function ReportsScreen() {
             </Text>
           ) : (
             <View className="gap-2">
-              {summary.topPerformers.map((p, i) => (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <Chip label="Overall" active={!focusRubric} onPress={() => setLeaderFocus('overall')} />
+                {rubricOptions.map((r) => (
+                  <Chip
+                    key={r.key}
+                    label={r.label}
+                    active={focusRubric?.key === r.key}
+                    onPress={() => setLeaderFocus(r.key)}
+                  />
+                ))}
+              </ScrollView>
+              {leaders.map((p, i) => (
                 <Pressable
                   key={`${p.evaluationId}-${p.playerId}`}
                   onPress={() => {
@@ -219,7 +250,7 @@ export default function ReportsScreen() {
                         {p.pos ? ` · ${p.pos}` : ''}
                       </Text>
                     </View>
-                    <Badge label={score(p.overall)} variant="brand" />
+                    <Badge label={leaderValue(p.overall, p.unit)} variant="brand" />
                   </PanelRow>
                 </Pressable>
               ))}
