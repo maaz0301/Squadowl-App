@@ -2507,6 +2507,13 @@ export function useImportScanScoresMutation() {
   });
 }
 
+export function useLinkFamilyContactGuardianMutation() {
+  return useMutation({
+    mutationFn: ({ contactId, userId }: { contactId: string; userId: string }) =>
+      getDataSource().linkFamilyContactGuardian(contactId, userId),
+  });
+}
+
 // ---- Player selection letters ----
 
 export function useLetterTemplatesQuery(options?: { enabled?: boolean }) {
