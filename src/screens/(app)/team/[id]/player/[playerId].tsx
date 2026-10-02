@@ -18,6 +18,7 @@ import { TeamBanner } from '@/components/TeamBanner';
 import { teamBrandSurfaces } from '@/lib/teamBrand';
 import { BottomNav } from '@/components/BottomNav';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
+import { PlayerFamilyContactsCard } from '@/components/assessment/PlayerFamilyContactsCard';
 
 function Row({ label, value, colors }: { label: string; value?: string; colors: any }) {
   return (
@@ -40,7 +41,7 @@ export default function TeamPlayerScreen() {
   const updateRosterPlayer = useUpdateTeamRosterPlayerMutation(teamId);
   const uploadPhoto = useUploadTeamPlayerPhotoMutation(teamId);
   const [showEdit, setShowEdit] = useState(false);
-  const { canManageTeam } = usePermissions();
+  const { canManageTeam, canAssess } = usePermissions();
   // The team_roster row carries everything that lives on the athlete itself —
   // guardian contact, medical notes and the photo included — and the team
   // screen has already loaded it, so this card paints from cache. Only the
@@ -196,6 +197,16 @@ export default function TeamPlayerScreen() {
           <Row label="Email" value={rosterEntry?.guardianEmail ?? fullPlayer?.guardianEmail} colors={colors} />
           <Row label="Phone" value={rosterEntry?.guardianPhone ?? fullPlayer?.guardianPhone} colors={colors} />
         </Card>
+
+        {(canManageTeam || canAssess) && (rosterEntry?.athleteId ?? fullPlayer?.athleteId) ? (
+          <PlayerFamilyContactsCard
+            athleteId={(rosterEntry?.athleteId ?? fullPlayer?.athleteId)!}
+            athleteName={`${first ?? ''} ${last ?? ''}`.trim()}
+            linkedGuardianId={rosterEntry?.linkedGuardianId ?? fullPlayer?.linkedGuardianId}
+            guardianEmail={rosterEntry?.guardianEmail ?? fullPlayer?.guardianEmail}
+            canInvite={canManageTeam}
+          />
+        ) : null}
 
         {rosterEntry?.canViewMedical ? (
           <Card className="mb-4 gap-2">

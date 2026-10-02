@@ -2507,6 +2507,14 @@ export function useImportScanScoresMutation() {
   });
 }
 
+export function useConnectedFamilyContactIdsQuery(athleteId: string | undefined) {
+  return useQuery({
+    queryKey: [...familyContactsKey(athleteId ?? ''), 'connected'],
+    queryFn: () => getDataSource().listConnectedFamilyContactIds(athleteId!),
+    enabled: !!athleteId,
+  });
+}
+
 export function useLinkFamilyContactGuardianMutation() {
   return useMutation({
     mutationFn: ({ contactId, userId }: { contactId: string; userId: string }) =>
