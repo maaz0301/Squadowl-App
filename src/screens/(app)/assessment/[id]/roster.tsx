@@ -25,7 +25,6 @@ import {
 } from '@/components/ui';
 import { isAtPlayerLimit, playerRoom } from '@/data/plans';
 import { useCanUseDummyData } from '@/features/useCanUseDummyData';
-import { isInPositionGroup, rosterPositionGroups } from '@/data/positions';
 import { capImportRows, dropExistingPlayers, withSkippedRows } from '@/data/bulkTeamImport';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
@@ -149,19 +148,11 @@ export default function RosterScreen() {
     return ids;
   }, [evalCountByPlayerId, isAssessorOnly, sessionProgressQuery.data]);
 
-  const positionGroups = useMemo(
-    () => (tryoutQuery.data ? rosterPositionGroups(tryoutQuery.data.sport, tryoutQuery.data.roster) : []),
-    [tryoutQuery.data],
-  );
-  // The filter is remembered across assessments, so a hockey one can leave
-  // "Goalies" selected on a basketball roster that has no such category.
+  // Every sport gets the same three filters. The filter is remembered across
+  // assessments, so a position filter saved before they were removed falls back
+  // to All instead of leaving the roster filtered by something with no chip.
   const activeFilter: RosterFilter =
-    rosterFilter === 'all' ||
-    rosterFilter === 'scored' ||
-    rosterFilter === 'unscored' ||
-    positionGroups.some((g) => `pos:${g.key}` === rosterFilter)
-      ? rosterFilter
-      : 'all';
+    rosterFilter === 'all' || rosterFilter === 'scored' || rosterFilter === 'unscored' ? rosterFilter : 'all';
 
   const filteredRoster = useMemo(() => {
     if (!tryoutQuery.data) return [];
@@ -174,13 +165,8 @@ export default function RosterScreen() {
       case 'unscored':
         result = roster.filter((p) => !scoredIds.has(p.id));
         break;
-      case 'all':
+      default:
         result = roster;
-        break;
-      default: {
-        const group = positionGroups.find((g) => `pos:${g.key}` === activeFilter);
-        result = group ? roster.filter((p) => isInPositionGroup(group, p.pos)) : roster;
-      }
     }
     const search = playerSearch.trim().toLowerCase();
     if (search) {
@@ -208,7 +194,7 @@ export default function RosterScreen() {
       });
     }
     return result;
-  }, [tryoutQuery.data, activeFilter, playerSearch, rosterSort, scoredIds, positionGroups]);
+  }, [tryoutQuery.data, activeFilter, playerSearch, rosterSort, scoredIds]);
 
   // Every filter's count, whichever one is showing: a chip that says how many
   // players it would leave answers "how much is left to score?" without the
@@ -217,11 +203,8 @@ export default function RosterScreen() {
     const roster = tryoutQuery.data?.roster ?? [];
     const scored = roster.filter((p) => scoredIds.has(p.id)).length;
     const counts: Record<string, number> = { all: roster.length, scored, unscored: roster.length - scored };
-    for (const g of positionGroups) {
-      counts[`pos:${g.key}`] = roster.filter((p) => isInPositionGroup(g, p.pos)).length;
-    }
     return counts;
-  }, [tryoutQuery.data, scoredIds, positionGroups]);
+  }, [tryoutQuery.data, scoredIds]);
 
   const { canComplete, completing, complete } = useCompleteAssessing(tryoutQuery.data);
 
@@ -420,7 +403,6 @@ export default function RosterScreen() {
           <RosterFilters
             active={activeFilter}
             counts={filterCounts}
-            positionGroups={positionGroups}
             onSelect={setRosterFilter}
           />
 

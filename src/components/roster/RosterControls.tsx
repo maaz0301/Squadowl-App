@@ -2,7 +2,6 @@ import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
 import { Button } from '@/components/ui';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import type { PositionGroup } from '@/data/positions';
 import type { RosterFilter } from '@/state/sessionStore';
 import { CheckSquareIcon, ChevronIcon, ClearIcon, PlayIcon, PlusIcon, SearchIcon, ToolsIcon, UploadIcon } from './icons';
 
@@ -220,20 +219,14 @@ export function RosterSearch({
 export function RosterFilters({
   active,
   counts,
-  positionGroups,
   onSelect,
 }: {
   active: RosterFilter;
   counts: Record<string, number>;
-  /** The sport's position categories, one chip each (see rosterPositionGroups). */
-  positionGroups: PositionGroup[];
   onSelect: (f: RosterFilter) => void;
 }) {
   const colors = useThemeColors();
-  const filters: { key: RosterFilter; label: string }[] = [
-    ...FILTERS,
-    ...positionGroups.map((g) => ({ key: `pos:${g.key}` as const, label: g.label })),
-  ];
+  const filters: { key: RosterFilter; label: string }[] = [...FILTERS];
   return (
     <ScrollView
       horizontal

@@ -44,6 +44,7 @@ export const SPORTS = [
   'Baseball',
   'Ringette',
   'Cricket',
+  'Skating',
   'Other',
 ] as const;
 
