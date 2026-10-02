@@ -321,7 +321,13 @@ export default function ScoreScreen() {
   }, [workingScores]);
 
   useEffect(() => {
-    return () => clearWorkingScores();
+    return () => {
+      // Re-arm the seeding above: effects can run again on the same mount (React
+      // strict mode, fast refresh), and without this the emptied store would be
+      // pushed into the form, leaving a saved score blank.
+      workingScoresSyncedRef.current = false;
+      clearWorkingScores();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -417,7 +423,8 @@ export default function ScoreScreen() {
 
   const overall = weightedOverall(scores ?? {}, categories, weights);
 
-  const onSubmit = handleSubmit(async (data) => {
+  // `closeAfter` leaves the scoring screen once saved, instead of moving on to the next session.
+  const submit = (closeAfter: boolean) => handleSubmit(async (data) => {
     try {
       setSaving(true);
       if (autoSaveTimeoutRef.current) {
@@ -460,7 +467,7 @@ export default function ScoreScreen() {
       }
 
       const currentIdx = SESSIONS.indexOf(data.session);
-      if (currentIdx !== -1 && currentIdx < SESSIONS.length - 1) {
+      if (!closeAfter && currentIdx !== -1 && currentIdx < SESSIONS.length - 1) {
         const nextSess = SESSIONS[currentIdx + 1];
         const nextEvalId = scoredSessions.get(nextSess) || null;
         navigation.setParams({ evalId: nextEvalId, session: nextSess });
@@ -474,6 +481,8 @@ export default function ScoreScreen() {
       setSaving(false);
     }
   });
+  const onSubmit = submit(false);
+  const onSaveAndClose = submit(true);
 
   const isEditing = !!evalId;
   const firstUnscoredIdx = SESSIONS.findIndex(
@@ -691,6 +700,7 @@ export default function ScoreScreen() {
           Overall: {overall > 0 ? overall.toFixed(1) : '-'}
         </Text>
         <Button label="Done" onPress={onSubmit} loading={saving} />
+        <Button label="Save & Close" variant="secondary" onPress={onSaveAndClose} disabled={saving} />
       </View>
       </View>
         </ScrollView>
