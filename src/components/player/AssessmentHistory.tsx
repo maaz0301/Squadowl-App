@@ -5,6 +5,7 @@ import Svg, { Circle, Line as SvgLine, Path, Rect, Text as SvgText } from 'react
 import { Badge, Button, Card, EmptyState } from '@/components/ui';
 import { csvCell, exportCsvFile } from '@/lib/exportCsv';
 import type { PlayerProfileAssessment } from '@/data/types';
+import { EvaluationRecordModal } from '@/components/player/EvaluationRecordModal';
 
 const CHART_WIDTH = 320;
 const CHART_HEIGHT = 130;
@@ -139,6 +140,8 @@ interface AssessmentHistoryProps {
    * is coach-only by product requirement).
    */
   exportFileName?: string;
+  /** Adds a View button to each evaluation in the history that opens its record (coach-facing views only). */
+  viewRecords?: boolean;
 }
 
 /**
@@ -153,8 +156,10 @@ export function AssessmentHistory({
   emptyTitle = 'No evaluations yet',
   emptyMessage = "This player's profile will build up as they're evaluated across tryouts and seasons.",
   exportFileName,
+  viewRecords,
 }: AssessmentHistoryProps) {
   const [exporting, setExporting] = useState(false);
+  const [record, setRecord] = useState<PlayerProfileAssessment | null>(null);
   const scoredAssessments = useMemo(() => assessments.filter((a) => a.evalCount > 0), [assessments]);
 
   const scoreTrend = useMemo(() => {
@@ -306,9 +311,14 @@ export function AssessmentHistory({
               {a.eventType} · {a.date || 'No date'} · {a.sport}
               {a.teamName ? ` · ${a.teamName}` : ''}
             </Text>
-            <Text className="text-sm" style={{ color: colors.ink }}>
-              {a.evalCount > 0 ? `Score: ${a.overall.toFixed(1)}` : 'Not yet scored'}
-            </Text>
+            <View className="flex-row items-center justify-between gap-2">
+              <Text className="text-sm" style={{ color: colors.ink }}>
+                {a.evalCount > 0 ? `Score: ${a.overall.toFixed(1)}` : 'Not yet scored'}
+              </Text>
+              {viewRecords ? (
+                <Button label="View" variant="secondary" size="sm" onPress={() => setRecord(a)} />
+              ) : null}
+            </View>
           </Card>
         );
         return onPressAssessment ? (
@@ -319,6 +329,7 @@ export function AssessmentHistory({
           <View key={a.tryoutId}>{card}</View>
         );
       })}
+      {viewRecords ? <EvaluationRecordModal assessment={record} onClose={() => setRecord(null)} /> : null}
     </>
   );
 }

@@ -7837,7 +7837,9 @@ export class SupabaseDataSource implements DataSource {
     const { data: tryoutRosterRows } = await supabase
       .from('tryout_participants')
       .select('id, tryout_id')
-      .eq('athlete_id', athleteId);
+      .eq('athlete_id', athleteId)
+      // A player taken off an evaluation (removed_at) no longer has its scores.
+      .is('removed_at', null);
 
     let pastEvaluations: Evaluation[] = [];
     if (tryoutRosterRows && tryoutRosterRows.length > 0) {
@@ -8007,7 +8009,7 @@ export class SupabaseDataSource implements DataSource {
           tryoutName: tryout.name,
           seasonId: resolvedSeason?.id ?? tryout.season_id ?? undefined,
           seasonName: resolvedSeason?.name ?? undefined,
-          eventType: tryout.event_type,
+          eventType: EVENT_TYPE_FROM_DB[tryout.event_type] ?? 'Tryout',
           sport: tryout.sport,
           date: tryout.tryout_date ?? undefined,
           position: p.position ?? undefined,

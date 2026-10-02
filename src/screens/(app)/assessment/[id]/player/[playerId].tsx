@@ -47,6 +47,7 @@ import { playerDisplayName, weightedOverall, getPlayerCategories, isGoaliePositi
 import { LETTER_KIND_LABELS } from '@/data/letters';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { PlanGate } from '@/components/PlanGate';
+import { PlayerProfileSection } from '@/components/player/PlayerProfileSection';
 
 export default function PlayerHubScreen() {
   const typeToConfirm = useTypeToConfirm();
@@ -579,24 +580,14 @@ export default function PlayerHubScreen() {
 
       </Card>
 
-      {/* The profile is season-over-season history, which an assessor
-          scores without, they only ever see the assessment in front of
-          them. */}
-      {isAssessorOnly ? null : (
-        <Card className="mb-4 gap-2">
-          <Text className="font-display font-bold" style={{ color: colors.ink }}>
-            {terms.t('Player Profile')}
-          </Text>
-          <Text style={{ color: colors.inkMuted }}>
-            View full evaluation history, score trends, and season-over-season comparison.
-          </Text>
-          <Button
-            label="View Full Profile"
-            variant="secondary"
-            disabled={!player.athleteId}
-            onPress={() => navigation.navigate('PlayerProfile', { athleteId: player.athleteId })}
-          />
-        </Card>
+      {/* The whole profile, inline: details, season-over-season and the
+          evaluation history. It is history an assessor scores without, they
+          only ever see the assessment in front of them. */}
+      {isAssessorOnly || !player.athleteId ? null : (
+        <PlayerProfileSection
+          athleteId={player.athleteId}
+          onEditDetails={canAssess ? () => setShowEdit(true) : undefined}
+        />
       )}
 
       {/* Evaluations (session scores) are for managers/owners. An assessor
