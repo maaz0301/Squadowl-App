@@ -23,11 +23,12 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { AddToCalendar } from '@/components/AddToCalendar';
 import { EventDiscussion } from '@/components/EventDiscussion';
 import { MonthCalendar } from '@/components/MonthCalendar';
+import { groupCalendarTeams, linkedEvents } from '@/lib/teamCalendars';
 import { MapLink, MapLocationHint } from '@/components/MapLink';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import { durationOf, endFromDuration } from '@/data/timeRange';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, TimeField, TypeToConfirmModal, useTypeToConfirm, DurationField } from '@/components/ui';
-import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useDeleteTeamMutation, useArchiveTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterQuery, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useAddAthletesToEventsMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
+import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useDeleteTeamMutation, useArchiveTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterQuery, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonsQuery, useTeamCalendarLinksQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useAddAthletesToEventsMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit, canUseDummyData, playerRoom, assessmentRoom } from '@/data/plans';
@@ -153,10 +154,12 @@ export default function TeamDetailScreen() {
   const [tab, setTab] = useState(route.params?.tab === 'settings' ? 'settings' : 'schedule');
   const [openRsvpEventId, setOpenRsvpEventId] = useState<string | null>(null);
   // The event Team Status, RSVPs and the action row are pointed at.
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  // Arriving from the Calendar screen with an event opens that event straight away.
+  const focusEventId: string | null = route.params?.eventId ?? null;
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(focusEventId);
   // Whether the selected event's details are showing under its card.
   const [eventDetailsOpen, setEventDetailsOpen] = useState(true);
-  const [showAllEvents, setShowAllEvents] = useState(false);
+  const [showAllEvents, setShowAllEvents] = useState(!!focusEventId);
   const [rsvpVisible, setRsvpVisible] = useState(RSVP_PAGE);
   const [rsvpSearch, setRsvpSearch] = useState('');
   const [rsvpPending, setRsvpPending] = useState(false);
@@ -312,6 +315,10 @@ export default function TeamDetailScreen() {
   // it. That read used to stand in front of the schedule before the season's
   // own read had even started.
   const seasonsQuery = useSeasonSummariesQuery();
+  // Calendars of other teams attached to this one (Calendar screen). The full seasons are only read when some are.
+  const calendarLinksQuery = useTeamCalendarLinksQuery();
+  const hasAttachedCalendars = (calendarLinksQuery.data ?? []).some((l) => l.viewerTeamId === id);
+  const allSeasonsQuery = useSeasonsQuery({ enabled: hasAttachedCalendars && tab === 'calendar' });
   const teamSeasonId = (seasonsQuery.data ?? []).find((s) => s.teamId === id)?.id;
   const seasonQuery = useSeasonQuery(teamSeasonId);
   // Keeps RSVPs/event edits in sync with a guardian's portal without the coach
@@ -808,6 +815,7 @@ export default function TeamDetailScreen() {
     });
   };
 
+  const attachedCalendars = linkedEvents(id, groupCalendarTeams(allSeasonsQuery.data ?? []), calendarLinksQuery.data ?? []);
   const teamSeason = seasonQuery.data;
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -1724,8 +1732,9 @@ export default function TeamDetailScreen() {
                 </View>
               ) : (
                 <MonthCalendar
-                  events={seasonQuery.data?.events ?? []}
+                  events={[...(seasonQuery.data?.events ?? []), ...attachedCalendars.events]}
                   teamName={team.name}
+                  teamNameFor={(ev) => attachedCalendars.teamByEvent.get(ev.id)}
                   onAddEvent={canEditTeam ? (date) => openEventModal('Event', date) : undefined}
                 />
               )}

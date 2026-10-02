@@ -17,6 +17,7 @@ export function MonthCalendar({
   events,
   teamName,
   teamNameFor,
+  onOpenEvent,
   onAddEvent,
 }: {
   events: SeasonEvent[];
@@ -24,6 +25,8 @@ export function MonthCalendar({
   /** For a calendar that mixes several teams: which team an event belongs to. Shown on each event. */
   teamNameFor?: (event: SeasonEvent) => string | undefined;
   /** When given, a selected day offers "Add event on <date>" and hands the date back. */
+  /** Opens an event's full details (the team's schedule, for the all-teams calendar). When set, each event offers it. */
+  onOpenEvent?: (event: SeasonEvent) => void;
   onAddEvent?: (date: string) => void;
 }) {
   const colors = useThemeColors();
@@ -138,6 +141,18 @@ export function MonthCalendar({
             </View>
             <View className="items-end gap-1.5">
               <Badge label={ev.type} />
+              {onOpenEvent ? (
+                <Pressable
+                  onPress={() => onOpenEvent(ev)}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel={`View event ${ev.title}`}
+                  className="rounded-lg border px-2.5 py-1"
+                  style={{ borderColor: colors.primary }}
+                >
+                  <Text className="text-xs font-bold" style={{ color: colors.primary }}>View event ›</Text>
+                </Pressable>
+              ) : null}
               <AddToCalendar event={ev} teamName={teamNameFor?.(ev) ?? teamName} size="sm" />
               <MapLink location={ev.location} label={ev.title} size="sm" />
             </View>
