@@ -9,14 +9,18 @@ import { useImportScanScoresMutation, useTryoutQuery } from '@/features/queries'
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { DocumentPickerUnavailable, pickRosterFile } from '@/lib/documentPicker';
 import { parseRosterBase64, type ParsedSheet } from '@/lib/rosterImport';
+import { ImportReviewModal } from '@/components/assessment/ImportReviewModal';
 import {
   IDENTITY_FIELDS,
   buildScoreImportRows,
   guessIdentityMapping,
   guessMeasureMapping,
+  headingMatches,
   validateImportSetup,
   type IdentityMapping,
   type MeasureMapping,
+  type RowResolutions,
+  type ScoreImportRow,
 } from '@/lib/scoreImport';
 
 const SESSION_NAME = 'Excel Import';
@@ -42,6 +46,7 @@ export default function ScanSheetScreen() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   const [savedCount, setSavedCount] = useState<number | null>(null);
+  const [reviewing, setReviewing] = useState(false);
 
   const tryout = tryoutQuery.data;
   const terms = useTerms(tryout?.settings.customLabels);
@@ -60,6 +65,12 @@ export default function ScanSheetScreen() {
   );
   const blocked = issues.some((i) => i.level === 'error');
   const cellWarnings = rows.filter((r) => r.errors.length === 0 && r.warnings.length > 0).length;
+  const conflicts = rows.filter((r) => r.conflict).length;
+  // Anything the file did not say outright is put in front of the coach before saving.
+  const needsReview =
+    conflicts > 0 ||
+    cellWarnings > 0 ||
+    (sheet ? headingMatches(sheet.headers, measures, mapping).some((m) => m.kind === 'close') : false);
 
   const back = () => navigation.navigate('AssessmentRoster');
 
@@ -104,17 +115,26 @@ export default function ScanSheetScreen() {
     }
   };
 
-  const save = async () => {
-    const scores = ready.flatMap((r) =>
+  const saveRows = async (toSave: ScoreImportRow[]) => {
+    const importable = toSave.filter((r) => r.errors.length === 0 && r.player);
+    const scores = importable.flatMap((r) =>
       Object.entries(r.scores).map(([rubricKey, value]) => ({ playerId: r.player!.id, rubricKey, value })),
     );
     try {
       await importScores.mutateAsync({ tryoutId: id!, scores, session: SESSION_NAME });
-      setSavedCount(ready.length);
+      setReviewing(false);
+      setSavedCount(importable.length);
     } catch (e) {
       Alert.alert('Import failed', e instanceof Error ? e.message : 'Nothing was saved. Try again.');
     }
   };
+
+  /** Import was pressed: through the review window when anything was guessed, straight away when not. */
+  const startImport = () => (needsReview ? setReviewing(true) : void saveRows(rows));
+
+  /** The coach's choices in the window: rebuild the rows with them, then save exactly those. */
+  const confirmReview = (resolutions: RowResolutions) =>
+    void saveRows(buildScoreImportRows(sheet!, tryout.roster, identity, mapping, measures, resolutions));
 
   const picker = (key: string, current: number | null | undefined, onPick: (i: number | null) => void) =>
     expanded === key && sheet ? (
@@ -269,14 +289,33 @@ export default function ScanSheetScreen() {
               Saved as the "{SESSION_NAME}" session. Importing again replaces that session's scores for the same players.
             </Text>
             <Button
-              label={`Import ${ready.length} ${(ready.length === 1 ? terms.player : terms.players).toLowerCase()}`}
+              label={
+                needsReview
+                  ? 'Review and import'
+                  : `Import ${ready.length} ${(ready.length === 1 ? terms.player : terms.players).toLowerCase()}`
+              }
               loading={importScores.isPending}
-              disabled={blocked || ready.length === 0 || mappedMeasures === 0}
-              onPress={save}
+              disabled={blocked || (ready.length === 0 && conflicts === 0) || mappedMeasures === 0}
+              onPress={startImport}
             />
           </>
         )}
       </ScrollView>
+
+      {reviewing && sheet ? (
+        <ImportReviewModal
+          headers={sheet.headers}
+          measures={measures}
+          mapping={mapping}
+          onMappingChange={(key, column) => setMapping((prev) => ({ ...prev, [key]: column }))}
+          rows={rows}
+          roster={tryout.roster}
+          importing={importScores.isPending}
+          playerLabel={terms.player}
+          onClose={() => setReviewing(false)}
+          onConfirm={confirmReview}
+        />
+      ) : null}
     </Screen>
   );
 }
