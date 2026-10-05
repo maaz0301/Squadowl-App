@@ -355,7 +355,7 @@ export default function DashboardScreen() {
                   </View>
                 ) : null}
                 <View className="flex-1">
-                  <View className="flex-row items-center gap-2">
+                  <View className="flex-row flex-wrap items-center gap-2">
                     <Text className="text-lg font-display font-bold" style={{ color: colors.ink }}>
                       {item.name}
                     </Text>

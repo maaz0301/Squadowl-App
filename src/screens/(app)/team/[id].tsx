@@ -13,6 +13,7 @@ import {
   Keyboard,
   LayoutAnimation,
   type KeyboardEvent,
+  AppState,
 } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { useForm, Controller } from 'react-hook-form';
@@ -186,6 +187,17 @@ export default function TeamDetailScreen() {
   useFocusEffect(() => {
     setNavigatingId(null);
   });
+  // Access can be taken away while this screen is open (a manager removed by the
+  // club). Re-reading the team list whenever the app comes back to the
+  // foreground is what lets the "removed" notice below appear, instead of the
+  // screen going on showing a team the person no longer has.
+  const refetchTeams = teamsQuery.refetch;
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refetchTeams();
+    });
+    return () => sub.remove();
+  }, [refetchTeams]);
 
   // Same pattern as assessment/new.tsx, feedback.tsx and the scoring screen:
   // Screen's default KeyboardAvoidingView relies on a runtime view measurement
