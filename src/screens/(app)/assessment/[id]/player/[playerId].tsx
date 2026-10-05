@@ -314,7 +314,7 @@ export default function PlayerHubScreen() {
                         email: player.guardianEmail!, 
                         role: 'guardian' 
                       });
-                      Alert.alert('Invite Sent', `Resent invite to ${player.guardianEmail} with a new temporary password.`);
+                      Alert.alert('Invite Sent', `Resent the invite to ${player.guardianEmail}. A temporary password is only included if their account has never been used.`);
                     } catch (error: any) {
                       const msg = error.message || '';
                       if (

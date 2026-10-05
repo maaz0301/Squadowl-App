@@ -95,7 +95,13 @@ export default function SearchScreen() {
       // evaluation up together; a single one still goes straight to that
       // evaluation's player screen.
       if (row.player.evaluations.length > 1 && row.player.athleteId) {
-        navigation.navigate('PlayerProfile', { athleteId: row.player.athleteId });
+        navigation.navigate('PlayerProfile', {
+          athleteId: row.player.athleteId,
+          // Other athlete records that are the same person, so their evaluations show too.
+          alsoAthleteIds: Array.from(
+            new Set(row.player.evaluations.map((e) => e.athleteId).filter((id): id is string => !!id && id !== row.player.athleteId)),
+          ),
+        });
         return;
       }
       prefetchTryout(first.tryoutId);

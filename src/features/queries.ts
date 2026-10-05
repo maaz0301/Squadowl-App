@@ -1836,10 +1836,15 @@ export function useAthleteHistoryQuery(athleteId?: string) {
   });
 }
 
-export function usePlayerProfileQuery(athleteId?: string) {
+/**
+ * `alsoAthleteIds` are other athlete records that are the same person (see
+ * getPlayerProfile); their evaluations are folded into this profile.
+ */
+export function usePlayerProfileQuery(athleteId?: string, alsoAthleteIds?: string[]) {
+  const also = alsoAthleteIds?.length ? [alsoAthleteIds.join(',')] : [];
   return useQuery({
-    queryKey: queryKeys.playerProfile(athleteId ?? ''),
-    queryFn: () => getDataSource().getPlayerProfile(athleteId!),
+    queryKey: [...queryKeys.playerProfile(athleteId ?? ''), ...also],
+    queryFn: () => getDataSource().getPlayerProfile(athleteId!, alsoAthleteIds),
     enabled: !!athleteId,
   });
 }

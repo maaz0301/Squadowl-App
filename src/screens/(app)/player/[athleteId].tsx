@@ -23,11 +23,11 @@ function Row({ label, value, colors }: { label: string; value?: string; colors: 
 
 export default function PlayerProfileScreen() {
   const route = useRoute<any>();
-  const { athleteId } = route.params || {};
+  const { athleteId, alsoAthleteIds } = route.params || {};
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const { isGuardian } = usePermissions();
-  const profileQuery = usePlayerProfileQuery(athleteId);
+  const profileQuery = usePlayerProfileQuery(athleteId, alsoAthleteIds);
   const profile = profileQuery.data;
 
   if (profileQuery.isLoading) return <LoadingState />;

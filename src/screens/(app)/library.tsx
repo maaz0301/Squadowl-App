@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { Alert, Image, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 
 import { BottomNav } from '@/components/BottomNav';
 import {
@@ -164,13 +164,11 @@ export default function LibraryScreen() {
       },
     });
 
-  const open = async (item: LibraryItem) => {
-    if (item.kind === 'note') {
-      setReading(item);
-      return;
-    }
-    // An uploaded file or video is a short-lived signed address; a link is the coach's own.
-    const target = item.fileUrl ?? safeExternalUrl(item.url);
+  // Read shows everything in the item inside the app: a note's text, a file's
+  // preview, a link, each with its description and a button to open it.
+  const open = (item: LibraryItem) => setReading(item);
+
+  const openExternal = async (target: string | null | undefined) => {
     if (!target) {
       Alert.alert('Nothing to open', 'This item has no file or link.');
       return;
@@ -258,7 +256,7 @@ export default function LibraryScreen() {
                   <Button
                     size="sm"
                     variant="secondary"
-                    label={item.kind === 'note' ? 'Read' : item.kind === 'file' ? 'Open file' : 'Watch / open'}
+                    label="Read"
                     onPress={() => open(item)}
                   />
                   {canManageOrganization ? (
@@ -361,10 +359,41 @@ export default function LibraryScreen() {
       </Modal>
 
       <Modal visible={reading !== null} title={reading?.title ?? ''} onClose={() => setReading(null)}>
-        <ScrollView style={{ maxHeight: 420 }}>
-          <Text className="text-base leading-6" style={{ color: colors.ink }}>
-            {reading?.body}
-          </Text>
+        <ScrollView style={{ maxHeight: 460 }}>
+          {reading?.kind === 'file' &&
+          reading.fileUrl &&
+          (reading.contentType?.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(reading.fileName ?? '')) ? (
+            <Image
+              source={{ uri: reading.fileUrl }}
+              resizeMode="contain"
+              style={{ width: '100%', height: 260, borderRadius: 12, marginBottom: 12 }}
+            />
+          ) : null}
+          {reading?.body ? (
+            <Text className="text-base leading-6" style={{ color: colors.ink }}>
+              {reading.body}
+            </Text>
+          ) : null}
+          {reading?.fileName ? (
+            <Text className="mt-3 text-xs" style={{ color: colors.inkMuted }}>
+              {reading.fileName}
+            </Text>
+          ) : null}
+          <View className="mt-4 gap-2">
+            {reading?.fileUrl ? (
+              <Button
+                label={reading.kind === 'video' ? 'Play video' : 'Open file'}
+                onPress={() => openExternal(reading.fileUrl)}
+              />
+            ) : null}
+            {safeExternalUrl(reading?.url) ? (
+              <Button
+                variant="secondary"
+                label={reading?.kind === 'video' ? 'Watch video' : 'Open link'}
+                onPress={() => openExternal(safeExternalUrl(reading?.url))}
+              />
+            ) : null}
+          </View>
         </ScrollView>
       </Modal>
 

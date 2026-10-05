@@ -328,7 +328,7 @@ export interface DataSource {
    * need to continue at the right session without exposing anyone's scores.
    */
   getSessionProgress(tryoutId: string): Promise<Record<string, number>>;
-  getPlayerProfile(athleteId: string): Promise<PlayerProfile>;
+  getPlayerProfile(athleteId: string, alsoAthleteIds?: string[]): Promise<PlayerProfile>;
   listAthletes(): Promise<Athlete[]>;
 
   // Phase 4: Enterprise & Admin

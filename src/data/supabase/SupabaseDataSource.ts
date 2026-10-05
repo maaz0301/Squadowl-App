@@ -8261,7 +8261,7 @@ export class SupabaseDataSource implements DataSource {
     return { participants, tryoutById, teams, assessments };
   }
 
-  async getPlayerProfile(athleteId: string): Promise<PlayerProfile> {
+  async getPlayerProfile(athleteId: string, alsoAthleteIds?: string[]): Promise<PlayerProfile> {
     const { supabase, userId, accountId } = await this.ctx();
 
     const { data: athleteRow } = await supabase
@@ -8279,15 +8279,21 @@ export class SupabaseDataSource implements DataSource {
     // and goes stale/empty independently of this request.
     const canViewMedical = athleteRow.account_id === accountId || (!!userId && athleteRow.guardian_user_id === userId);
 
-    const { participants, tryoutById, teams, assessments } = await this.fetchAthleteAssessmentContext(
-      supabase,
-      athleteId,
-    );
+    // The same person is sometimes stored as more than one athlete record (an
+    // athlete imported separately into two evaluations gets two). Search folds
+    // those into one result and passes the others in, so this profile shows
+    // every evaluation. Only the first record's own details are shown.
+    const ids = [athleteId, ...(alsoAthleteIds ?? []).filter((i) => i && i !== athleteId)];
+    const contexts = await Promise.all(ids.map((id) => this.fetchAthleteAssessmentContext(supabase, id)));
+    const participants = contexts.flatMap((c) => c.participants);
+    const tryoutById = new Map(contexts.flatMap((c) => Array.from(c.tryoutById)));
+    const teams = Array.from(new Map(contexts.flatMap((c) => c.teams).map((t) => [t.teamId, t])).values());
+    const assessments = Array.from(new Map(contexts.flatMap((c) => c.assessments).map((a) => [a.tryoutId, a])).values());
 
     const { data: rosterRows } = await supabase
       .from('season_roster')
       .select('season_id, seasons(name, team_name)')
-      .eq('athlete_id', athleteId);
+      .in('athlete_id', ids);
     const pastSeasons = (rosterRows || []).map((r: any) => ({
       seasonId: r.season_id,
       seasonName: r.seasons?.name || 'Unknown Season',

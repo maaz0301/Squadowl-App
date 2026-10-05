@@ -774,6 +774,33 @@ export default function DashboardScreen() {
               </View>
             ) : null}
 
+            {/* Guardians have no bottom menu, so the Library gets its own row on
+                their home screen, whether or not any athlete is linked yet. */}
+            {isGuardianOnly ? (
+              <View className="mb-6">
+                <HomePanel
+                  icon="M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 006.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15z"
+                  label="Library"
+                >
+                  <Pressable accessibilityRole="button" onPress={() => navigation.navigate('Library')}>
+                    <PanelRow>
+                      <View className="flex-1">
+                        <Text className="text-base font-display font-bold" style={{ color: colors.ink }}>
+                          Files, notes and videos
+                        </Text>
+                        <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                          Shared with you by the club
+                        </Text>
+                      </View>
+                      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                        <Path d="M9 5l7 7-7 7" stroke={colors.inkMuted} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                      </Svg>
+                    </PanelRow>
+                  </Pressable>
+                </HomePanel>
+              </View>
+            ) : null}
+
             {/* Section panel: header, actions and — when there's nothing to list
                 yet, the empty state, all inside one container. Items follow as
                 their own cards below. */}

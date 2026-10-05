@@ -15,17 +15,28 @@ serve(async (req: Request) => {
       throw new Error('Missing required fields (userId, email)');
     }
 
-    // 1. Generate a new secure temporary password
-    const newPassword = Math.random().toString(36).slice(-6) + 'Aa1!';
+    // 1. An account that has already signed in keeps its password. Resetting
+    //    it would lock a real person out of their own login and mail them a
+    //    password they never asked for. Only an account that was created by
+    //    the invite and never used gets a fresh temporary password.
+    const { data: existing, error: lookupError } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (lookupError) {
+      throw lookupError;
+    }
+    const alreadyUsed = !!existing?.user?.last_sign_in_at;
 
-    // 2. Force update the user's password using the Admin API
-    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-      userId,
-      { password: newPassword }
-    );
+    let newPassword: string | undefined;
+    if (!alreadyUsed) {
+      // 2. Generate a new secure temporary password and set it.
+      newPassword = Math.random().toString(36).slice(-6) + 'Aa1!';
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+        userId,
+        { password: newPassword }
+      );
 
-    if (updateError) {
-      throw updateError;
+      if (updateError) {
+        throw updateError;
+      }
     }
 
     // 3. Invoke the send-email Edge Function internally to send the email
@@ -53,7 +64,7 @@ serve(async (req: Request) => {
       throw new Error(`Failed to dispatch email: ${errorText}`);
     }
 
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({ success: true, passwordReset: !alreadyUsed }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
