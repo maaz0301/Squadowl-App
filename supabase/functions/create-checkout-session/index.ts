@@ -107,8 +107,8 @@ serve(async (req) => {
       club: { name: 'Club Plan', year: 9999, month: 1000 },
     };
 
-    /** CAD$10/team/year — mirrors EXTRA_TEAM_PRICE_CENTS in src/data/plans.ts. */
-    const EXTRA_TEAM_PRICE_CENTS = 1000;
+    /** CAD$20/team/year — mirrors EXTRA_TEAM_PRICE_CENTS in src/data/plans.ts. */
+    const EXTRA_TEAM_PRICE_CENTS = 2000;
 
     const envKey = isTeamLicense
       ? 'STRIPE_PRICE_ID_TEAM_LICENSE_YEARLY'

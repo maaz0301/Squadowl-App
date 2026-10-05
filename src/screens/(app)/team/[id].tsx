@@ -29,14 +29,15 @@ import { MapLink, MapLocationHint } from '@/components/MapLink';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import { durationOf, endFromDuration } from '@/data/timeRange';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, TimeField, TypeToConfirmModal, useTypeToConfirm, DurationField } from '@/components/ui';
-import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useDeleteTeamMutation, useArchiveTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterQuery, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonsQuery, useTeamCalendarLinksQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useAddAthletesToEventsMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation } from '@/features/queries';
+import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useDeleteTeamMutation, useArchiveTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterQuery, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonsQuery, useTeamCalendarLinksQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useAddAthletesToEventsMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation, useAccountPlayerCount } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
-import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit, canUseDummyData, playerRoom, assessmentRoom } from '@/data/plans';
+import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit, canUseDummyData, playerRoom, playersTowardCap, assessmentRoom } from '@/data/plans';
 import { useDummyDataBlockedTiers } from '@/features/useCanUseDummyData';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { capImportRows, dropExistingPlayers, withSkippedRows } from '@/data/bulkTeamImport';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
+import { TeamPlanBadge } from '@/components/TeamPlanBadge';
 import { CreateEventFormSchema, type AddPlayerForm as AddPlayerFormValues, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { TeamHubHeader } from '@/components/teamHub/TeamHubHeader';
@@ -123,6 +124,9 @@ export default function TeamDetailScreen() {
   const archiveTeam = useArchiveTeamMutation();
   const updateTryout = useUpdateTryoutMutation();
   const user = useUser();
+  const seenTeamRef = useRef(false);
+  // Read before the early returns below; only used when the team's plan is Free.
+  const accountPlayersFree = useAccountPlayerCount((user?.planTier ?? 'free') === 'free');
   const { canManageTeam } = usePermissions();
   const teamManagedForPerm = teamsQuery.data?.find((t) => t.id === id)?.managed;
   const [editing, setEditing] = useState(false);
@@ -161,6 +165,9 @@ export default function TeamDetailScreen() {
   // Whether the selected event's details are showing under its card.
   const [eventDetailsOpen, setEventDetailsOpen] = useState(true);
   const [showAllEvents, setShowAllEvents] = useState(!!focusEventId);
+  // Past events: the Schedule tab leads with what's coming, and this switches it
+  // to what already happened, so photos and videos added to a game stay reachable.
+  const [showPast, setShowPast] = useState(false);
   const [rsvpVisible, setRsvpVisible] = useState(RSVP_PAGE);
   const [rsvpSearch, setRsvpSearch] = useState('');
   const [rsvpPending, setRsvpPending] = useState(false);
@@ -503,6 +510,49 @@ export default function TeamDetailScreen() {
     ]),
   );
 
+  // Read above the early returns on purpose: a manager who is removed while
+  // this screen is open loses the team, and a hook sitting below those returns
+  // would then render fewer hooks than before and crash the app.
+  const teamSeason = seasonQuery.data;
+  // Availability is stored per invited season-roster player; the coach sees it
+  // as a Yes/Maybe/No tally that expands into the actual names. On a big roster
+  // this is a per-event pass over every invite, and it feeds the badges on
+  // every card, so it runs once per read instead of on every render.
+  const rsvpByEvent = useMemo(() => {
+    const byId = new Map((teamSeason?.roster ?? []).map((p) => [p.id, p]));
+    const order: Rsvp[] = ['yes', 'maybe', 'no', 'pending'];
+    const out = new Map<string, RsvpSummary>();
+    for (const ev of teamSeason?.events ?? []) {
+      const counts: Record<Rsvp, number> = { yes: 0, maybe: 0, no: 0, pending: 0 };
+      const rows: RsvpRow[] = [];
+      for (const [playerId, response] of Object.entries(ev.availability ?? {})) {
+        const player = byId.get(playerId);
+        if (!player) continue;
+        const r = (response ?? 'pending') as Rsvp;
+        counts[r] += 1;
+        rows.push({ playerId, name: `${player.firstName} ${player.lastName}`, response: r });
+      }
+      rows.sort(
+        (a, b) => order.indexOf(a.response) - order.indexOf(b.response) || a.name.localeCompare(b.name),
+      );
+      out.set(ev.id, { counts, rows });
+    }
+    return out;
+  }, [teamSeason?.roster, teamSeason?.events]);
+
+  // A manager removed while this team is open: the team drops out of their list
+  // on the next refresh. Say so and go back, rather than leave them on a screen
+  // that no longer exists.
+  const teamInList = teamsQuery.data?.find((t) => t.id === id);
+  if (teamInList) seenTeamRef.current = true;
+  const lostTeam = seenTeamRef.current && !teamsQuery.isLoading && !teamsQuery.isError && !teamInList;
+  useEffect(() => {
+    if (!lostTeam) return;
+    Alert.alert('Removed as manager', 'You have been removed as a manager of this team.', [
+      { text: 'OK', onPress: () => navigation.goBack() },
+    ]);
+  }, [lostTeam, navigation]);
+
   if (teamsQuery.isLoading || tryoutsQuery.isLoading) return <LoadingState message="Loading team..." />;
   if (teamsQuery.isError || tryoutsQuery.isError) {
     return (
@@ -524,7 +574,11 @@ export default function TeamDetailScreen() {
     return (
       <Screen scroll>
         <Header title="Team" showBack />
-        <ErrorState message="Team not found." onRetry={() => teamsQuery.refetch()} />
+        {lostTeam ? (
+          <ErrorState message="You have been removed as a manager of this team." onRetry={() => navigation.goBack()} />
+        ) : (
+          <ErrorState message="Team not found." onRetry={() => teamsQuery.refetch()} />
+        )}
       </Screen>
     );
   }
@@ -586,6 +640,10 @@ export default function TeamDetailScreen() {
   // and the empty-state checks never read as "no players" on a team that has
   // them.
   const playerCount = rosterAthleteIds?.length ?? listedPlayers.length;
+  // Free plans share one pool of players across evaluations and teams, so a new
+  // player is checked against the account's total as well as this roster.
+  const accountPlayers = effectiveTier === 'free' ? accountPlayersFree : 0;
+  const capCount = playersTowardCap(effectiveTier, playerCount, accountPlayers);
 
   const isAddingPlayers = addRosterPlayers.isPending || enrollingAssessments;
 
@@ -597,7 +655,7 @@ export default function TeamDetailScreen() {
   const linkedSummary = summaries.find((t) => t.teamId === team.id);
   const dummyAssessmentCount = team.managed ? summaries.filter((t) => t.teamId === team.id).length : summaries.length;
   const dummyRoom = Math.min(
-    playerRoom(effectiveTier, playerCount),
+    playerRoom(effectiveTier, capCount),
     linkedSummary ? playerRoom(effectiveTier, linkedSummary.playerCount ?? 0) : Number.POSITIVE_INFINITY,
   );
   const dummyBlocked = !linkedSummary && assessmentRoom(effectiveTier, dummyAssessmentCount) < 1;
@@ -609,7 +667,7 @@ export default function TeamDetailScreen() {
   // onto the roster, not a way around the cap. The roster's cap is the owning
   // club's for a delegated team (effectiveTier), as for every other add path.
   const openImportPlayers = () => {
-    if (isAtPlayerLimit(effectiveTier, playerCount)) {
+    if (isAtPlayerLimit(effectiveTier, capCount)) {
       setLimitMsg(buildLimitReachedMessage(effectiveTier, 'players', 'players'));
       return;
     }
@@ -817,7 +875,6 @@ export default function TeamDetailScreen() {
   };
 
   const attachedCalendars = linkedEvents(id, groupCalendarTeams(allSeasonsQuery.data ?? []), calendarLinksQuery.data ?? []);
-  const teamSeason = seasonQuery.data;
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const allTeamEvents = [...(teamSeason?.events ?? [])].sort((a, b) => a.date.localeCompare(b.date));
@@ -825,7 +882,11 @@ export default function TeamDetailScreen() {
   const pastEvents = allTeamEvents.filter((e) => (e.endDate || e.date) < todayStr);
   // The hub leads with what's coming; "View All" opens the whole season, past
   // events included, so nothing that used to be reachable here is lost.
-  const shownEvents = showAllEvents ? allTeamEvents : upcomingEvents.slice(0, 3);
+  const shownEvents = showPast
+    ? [...pastEvents].reverse()
+    : showAllEvents
+      ? allTeamEvents
+      : upcomingEvents.slice(0, 3);
   const selectedEvent = shownEvents.find((e) => e.id === selectedEventId) ?? shownEvents[0];
   const hasHiddenEvents = allTeamEvents.length > upcomingEvents.slice(0, 3).length;
   const evaluatorCount = new Set(
@@ -837,31 +898,6 @@ export default function TeamDetailScreen() {
     ),
   ).size;
 
-  // Availability is stored per invited season-roster player; the coach sees it
-  // as a Yes/Maybe/No tally that expands into the actual names. On a big roster
-  // this is a per-event pass over every invite, and it feeds the badges on
-  // every card, so it runs once per read instead of on every render.
-  const rsvpByEvent = useMemo(() => {
-    const byId = new Map((teamSeason?.roster ?? []).map((p) => [p.id, p]));
-    const order: Rsvp[] = ['yes', 'maybe', 'no', 'pending'];
-    const out = new Map<string, RsvpSummary>();
-    for (const ev of teamSeason?.events ?? []) {
-      const counts: Record<Rsvp, number> = { yes: 0, maybe: 0, no: 0, pending: 0 };
-      const rows: RsvpRow[] = [];
-      for (const [playerId, response] of Object.entries(ev.availability ?? {})) {
-        const player = byId.get(playerId);
-        if (!player) continue;
-        const r = (response ?? 'pending') as Rsvp;
-        counts[r] += 1;
-        rows.push({ playerId, name: `${player.firstName} ${player.lastName}`, response: r });
-      }
-      rows.sort(
-        (a, b) => order.indexOf(a.response) - order.indexOf(b.response) || a.name.localeCompare(b.name),
-      );
-      out.set(ev.id, { counts, rows });
-    }
-    return out;
-  }, [teamSeason?.roster, teamSeason?.events]);
 
   // Open the panel on the next frame so the tap paints (chevron flips, spinner
   // shows) before the rows mount, instead of the row work blocking the touch.
@@ -1071,7 +1107,14 @@ export default function TeamDetailScreen() {
         subtitle={team.season || undefined}
         logoUrl={team.logoUrl}
         // A delegated team says so, so a club-owned team is never mistaken for one of the coach's own.
-        extra={team.managed ? <Badge label="Managed" variant="info" /> : undefined}
+        extra={
+          team.managed ? (
+            <>
+              <Badge label="Managed" variant="info" />
+              <TeamPlanBadge team={team} showUpgrade />
+            </>
+          ) : undefined
+        }
         chatBadge={<ChatUnreadBadge seasonId={teamSeasonId} />}
         onChat={openTeamChat}
         onEdit={canEditTeam ? startEdit : undefined}
@@ -1152,7 +1195,15 @@ export default function TeamDetailScreen() {
                   label={`+ Add ${terms.player} Manually`}
                   size="sm"
                   variant="secondary"
-                  onPress={() => setShowAddManualPlayer(true)}
+                  onPress={() => {
+                    // Same plan gate as the import and the evaluation roster: adding
+                    // by hand is not a way around the cap.
+                    if (isAtPlayerLimit(effectiveTier, capCount)) {
+                      setLimitMsg(buildLimitReachedMessage(effectiveTier, 'players', 'players'));
+                      return;
+                    }
+                    setShowAddManualPlayer(true);
+                  }}
                 />
                 <Button
                   label="Import Spreadsheet"
@@ -1448,16 +1499,33 @@ export default function TeamDetailScreen() {
               <>
                 <HubSectionLabel
                   icon={HUB_ICONS.calendar}
-                  label="Upcoming Events"
-                  actionLabel={showAllEvents ? 'Show Less' : hasHiddenEvents ? 'View All' : undefined}
+                  label={showPast ? 'Past Events' : 'Upcoming Events'}
+                  actionLabel={showPast ? undefined : showAllEvents ? 'Show Less' : hasHiddenEvents ? 'View All' : undefined}
                   onAction={() => setShowAllEvents((v) => !v)}
                 />
+                {pastEvents.length > 0 || showPast ? (
+                  <View className="mb-3 flex-row">
+                    <Button
+                      label={showPast ? 'Back to upcoming events' : `Past events (${pastEvents.length})`}
+                      size="sm"
+                      variant="secondary"
+                      onPress={() => {
+                        setShowPast((v) => !v);
+                        setSelectedEventId(null);
+                        setEventDetailsOpen(false);
+                      }}
+                    />
+                  </View>
+                ) : null}
                 {shownEvents.length === 0 ? (
                   <Card className="items-center py-6 gap-1 mb-2">
-                    <Text className="font-bold" style={{ color: colors.ink }}>No upcoming events</Text>
+                    <Text className="font-bold" style={{ color: colors.ink }}>
+                      {showPast ? 'No past events' : 'No upcoming events'}
+                    </Text>
                     <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
-                      Add an event, everyone on the roster is invited and their guardians can RSVP from
-                      the portal.
+                      {showPast
+                        ? 'Events that have already happened are kept here, with their photos, videos and notes.'
+                        : 'Add an event, everyone on the roster is invited and their guardians can RSVP from the portal.'}
                     </Text>
                   </Card>
                 ) : (
@@ -1479,6 +1547,12 @@ export default function TeamDetailScreen() {
                             setOpenRsvpEventId(null);
                           }}
                         />
+                        {/* Every event offers Add to calendar, not only the one that is open. */}
+                        {!open ? (
+                          <View className="mb-2 flex-row px-1">
+                            <AddToCalendar event={ev} teamName={team.name} size="sm" />
+                          </View>
+                        ) : null}
                         {open ? (<View className="mb-4">{(() => {
                     const ev = selectedEvent;
                     const rsvp = rsvpByEvent.get(ev.id) ?? EMPTY_RSVP;
@@ -2140,7 +2214,7 @@ export default function TeamDetailScreen() {
           }
         }}
         target={team.name}
-        atLimit={isAtPlayerLimit(effectiveTier, playerCount)}
+        atLimit={isAtPlayerLimit(effectiveTier, capCount)}
         onLimitReached={() => setLimitMsg(buildLimitReachedMessage(effectiveTier, 'players', 'players'))}
         onImport={async (rows, onProgress) => {
           // A spreadsheet is a faster way onto the roster, not a way around the
@@ -2148,7 +2222,7 @@ export default function TeamDetailScreen() {
           // nobody, so they shouldn't spend the cap), then what fits goes in and
           // the rest is listed as not added.
           const { fresh, duplicates } = dropExistingPlayers(rows, listedPlayers);
-          const capped = capImportRows(fresh, playerRoom(effectiveTier, playerCount));
+          const capped = capImportRows(fresh, playerRoom(effectiveTier, capCount));
           const allowed = capped.allowed;
           const skipped = [...duplicates, ...capped.skipped];
           if (allowed.length === 0) {

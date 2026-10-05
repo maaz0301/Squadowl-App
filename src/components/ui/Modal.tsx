@@ -57,6 +57,8 @@ function useKeyboardOverlap(visible: boolean, windowHeight: number): number {
   return Math.max(0, Math.round(windowHeight - keyboardTop));
 }
 
+const KEYBOARD_GAP = 20;
+
 export function Modal({ visible, title, onClose, children, footer, scroll = true }: ModalProps) {
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
@@ -64,7 +66,9 @@ export function Modal({ visible, title, onClose, children, footer, scroll = true
   const overlap = useKeyboardOverlap(visible, windowHeight);
   // Once lifted, the sheet has to fit in what is left above the keyboard, or its
   // top runs off the screen; the ScrollView inside takes the difference.
-  const liftedMaxHeight = overlap > 0 ? Math.max(200, windowHeight - overlap - 24) : undefined;
+  // KEYBOARD_GAP keeps the footer buttons clear of the keyboard's suggestion
+  // strip, which is not always counted in the height Android reports.
+  const liftedMaxHeight = overlap > 0 ? Math.max(200, windowHeight - overlap - KEYBOARD_GAP - 24) : undefined;
   return (
     <RNModal
       visible={visible}
@@ -94,7 +98,7 @@ export function Modal({ visible, title, onClose, children, footer, scroll = true
             // Lifted above the keyboard the bar is already covered, so use plain padding.
             paddingBottom: overlap > 0 ? 32 : Math.max(32, insets.bottom + 16),
             ...(scroll ? null : { height: '85%' }),
-            ...(overlap > 0 ? { marginBottom: overlap, ...(scroll ? { maxHeight: liftedMaxHeight } : { height: liftedMaxHeight }) } : null),
+            ...(overlap > 0 ? { marginBottom: overlap + KEYBOARD_GAP, ...(scroll ? { maxHeight: liftedMaxHeight } : { height: liftedMaxHeight }) } : null),
           }}
         >
           <View className="flex-row items-center justify-between mb-4">

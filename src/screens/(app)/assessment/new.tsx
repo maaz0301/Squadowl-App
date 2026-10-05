@@ -32,12 +32,13 @@ import {
 } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { MapLocationHint } from '@/components/MapLink';
-import { Button, Chip, DateField, TimeField, Input, Modal, Screen, Header, ErrorState, LoadingState, Badge } from '@/components/ui';
+import { Button, Chip, DateField, DurationField, TimeField, Input, Modal, Screen, Header, ErrorState, LoadingState, Badge } from '@/components/ui';
 import { CreateTryoutContinuingError, useCreateTryoutMutation, useTeamsQuery, useTryoutSummariesQuery, useUpdateTryoutMutation } from '@/features/queries';
 import { useSessionStore } from '@/state/sessionStore';
 import { useUser } from '@/state/authStore';
 import { isAtAssessmentLimit } from '@/data/plans';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
+import { endFromDuration, isEndAfterStart } from '@/data/timeRange';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { getDataSource } from '@/data';
@@ -253,6 +254,21 @@ export default function NewAssessmentScreen() {
   const sport = watch('sport');
   const eventType = watch('eventType');
   const teamId = watch('teamId');
+  // The evaluation is entered as a start plus how long it runs; the end time
+  // that is stored is worked out from the two, as events do.
+  const [duration, setDuration] = useState<number | undefined>(undefined);
+  const startTimeValue = watch('startTime');
+  const tryoutDateValue = watch('tryoutDate');
+  const endTimeValue = watch('endTime');
+  // A duration that carries past midnight would leave an end before the start.
+  const runsPastMidnight = !!duration && !!startTimeValue && !!endTimeValue && !isEndAfterStart(startTimeValue, endTimeValue);
+  useEffect(() => {
+    const end =
+      duration && startTimeValue
+        ? endFromDuration(tryoutDateValue || '2000-01-01', startTimeValue, duration)?.endTime
+        : undefined;
+    setValue('endTime', end ?? '');
+  }, [duration, startTimeValue, tryoutDateValue, setValue]);
   // An evaluation for a team someone else owns is created on that team's plan,
   // not the creator's own — the manager's account stays as it is.
   const tier = useEffectivePlanTier(teamId);
@@ -478,12 +494,13 @@ export default function NewAssessmentScreen() {
                 <TimeField label="Start Time" value={value} onChange={onChange} placeholder="Select a time" />
               )}
             />
-            <Controller
-              control={control}
-              name="endTime"
-              render={({ field: { onChange, value }, fieldState: { error } }) => (
-                <TimeField label="End Time" value={value} onChange={onChange} placeholder="Select a time" error={error?.message} />
-              )}
+            <DurationField
+              label="Duration"
+              value={duration}
+              onChange={setDuration}
+              placeholder={startTimeValue ? 'Select a duration' : 'Pick a start time first'}
+              disabled={!startTimeValue}
+              error={runsPastMidnight ? 'This runs past midnight. Pick a shorter duration or an earlier start.' : undefined}
             />
             <View onLayout={rememberField('rink')}>
               <Controller
@@ -501,7 +518,7 @@ export default function NewAssessmentScreen() {
                       onFocus={revealField('rink')}
                       onSubmitEditing={() => Keyboard.dismiss()}
                     />
-                    <MapLocationHint location={value} />
+                    <MapLocationHint location={value} large />
                   </>
                 )}
               />
@@ -509,18 +526,18 @@ export default function NewAssessmentScreen() {
 
             <View>
               <View className="flex-row items-center justify-between mb-2">
-                <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                <Text className="text-base font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
                   Rubrics *
                 </Text>
-                <Button label="+ Add Rubric" variant="ghost" size="sm" onPress={() => setShowRubricForm(true)} />
+                <Button label="+ Add Rubric" variant="ghost" onPress={() => setShowRubricForm(true)} />
               </View>
               {rubricError ? (
-                <Text className="text-xs font-medium mb-1" style={{ color: colors.danger }}>
+                <Text className="text-base font-medium mb-1" style={{ color: colors.danger }}>
                   {rubricError}
                 </Text>
               ) : null}
               {pendingRubrics.length === 0 ? (
-                <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                <Text className="text-base" style={{ color: colors.inkMuted }}>
                   Add at least one rubric to define how players will be scored in this evaluation.
                 </Text>
               ) : (
@@ -539,13 +556,13 @@ export default function NewAssessmentScreen() {
 
             <View>
               <View className="flex-row items-center justify-between mb-2">
-                <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                <Text className="text-base font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
                   Assessors (optional)
                 </Text>
-                <Button label="+ Add Assessor" variant="ghost" size="sm" onPress={() => setShowAssessorForm(true)} />
+                <Button label="+ Add Assessor" variant="ghost" onPress={() => setShowAssessorForm(true)} />
               </View>
               {pendingAssessors.length === 0 ? (
-                <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                <Text className="text-base" style={{ color: colors.inkMuted }}>
                   Invite whoever else is scoring, they get an email once the evaluation is created.
                 </Text>
               ) : (
@@ -557,8 +574,8 @@ export default function NewAssessmentScreen() {
                       style={{ backgroundColor: colors.tile }}
                     >
                       <View className="flex-1">
-                        <Text numberOfLines={1} className="text-sm font-bold" style={{ color: colors.ink }}>{a.name}</Text>
-                        <Text numberOfLines={1} className="text-xs" style={{ color: colors.inkMuted }}>{a.email}</Text>
+                        <Text numberOfLines={1} className="text-lg font-bold" style={{ color: colors.ink }}>{a.name}</Text>
+                        <Text numberOfLines={1} className="text-base" style={{ color: colors.inkMuted }}>{a.email}</Text>
                       </View>
                       <Button label="Remove" variant="ghost" size="sm" onPress={() => removeAssessorFromList(i)} />
                     </View>

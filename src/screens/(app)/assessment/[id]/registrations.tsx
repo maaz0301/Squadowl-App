@@ -6,11 +6,12 @@ import { DummyDataModal } from '@/components/DummyDataModal';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { PlanGate } from '@/components/PlanGate';
 import { Badge, Button, Card, EmptyState, ErrorState, Header, LoadingState, Modal, Screen, Tabs, useTypeToConfirm } from '@/components/ui';
-import { isAtPlayerLimit, playerRoom } from '@/data/plans';
+import { isAtPlayerLimit, playerRoom, playersTowardCap } from '@/data/plans';
 import { useCanUseDummyData } from '@/features/useCanUseDummyData';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import type { DummyDataOptions } from '@/data/testDataGenerator';
 import {
+  useAccountPlayerCount,
   useAddRegistrationToRosterMutation,
   useAddRegistrationToTeamMutation,
   useClearTestDataMutation,
@@ -45,6 +46,8 @@ export default function RegistrationsScreen() {
   const terms = useTerms(tryoutQuery.data?.settings.customLabels);
   // A team someone else owns is run on that team's plan, not the viewer's own.
   const effectiveTier = useEffectivePlanTier(tryoutQuery.data?.teamId);
+  // Free plans share one pool of players across evaluations and teams.
+  const accountPlayers = useAccountPlayerCount(effectiveTier === 'free');
   const regsQuery = useRegistrationsQuery(id!);
   const ensureCloud = useEnsureCloudSessionMutation();
   // Only the destination's headcount is read below, so the light list is
@@ -152,11 +155,13 @@ export default function RegistrationsScreen() {
 
     // The player limit is per-assessment, so it has to be measured against the
     // roster actually receiving these players — not this screen's assessment,
-    // which may not be the destination. A team roster isn't capped this way.
-    if (destination.kind === 'assessment') {
-      const target = (allTryouts.data ?? []).find((t) => t.id === destination.id);
+    // which may not be the destination. 
+    // On the Free plan a team roster is capped too, because evaluations and
+    // teams share one pool of players.
+    {
+      const target = destination.kind === 'assessment' ? (allTryouts.data ?? []).find((t) => t.id === destination.id) : undefined;
       const existing = target?.playerCount ?? 0;
-      if (isAtPlayerLimit(effectiveTier, existing + ids.length - 1)) {
+      if (isAtPlayerLimit(effectiveTier, playersTowardCap(effectiveTier, existing, accountPlayers) + ids.length - 1)) {
         setLimitMsg(buildLimitReachedMessage(effectiveTier, 'players', 'players'));
         return;
       }

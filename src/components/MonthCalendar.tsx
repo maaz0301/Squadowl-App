@@ -111,9 +111,13 @@ export function MonthCalendar({
         </View>
       ))}
 
-      <Text className="mb-2 mt-5 text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>
-        {selected ? `Events on ${selected}` : `Events in ${MONTH_NAMES[cursor.month]}`}
-      </Text>
+      {selected ? (
+        <Text className="mb-2 mt-5 text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>
+          {`Events on ${selected}`}
+        </Text>
+      ) : (
+        <View className="mt-5" />
+      )}
       {selected && onAddEvent ? (
         <View className="mb-3">
           <Button label={`+ Add event on ${selected}`} onPress={() => onAddEvent(selected)} />
@@ -125,6 +129,9 @@ export function MonthCalendar({
         shown.map((ev) => (
           <Card key={ev.id} className="mb-2 flex-row items-center gap-3">
             <View className="w-12 items-center">
+              <Text className="text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>
+                {MONTH_NAMES[Number(ev.date.slice(5, 7)) - 1]?.slice(0, 3)}
+              </Text>
               <Text className="text-2xl font-display font-bold" style={{ color: colors.ink }}>
                 {ev.date.slice(8, 10)}
               </Text>

@@ -5,8 +5,8 @@ import { useNavigation } from '@react-navigation/native';
 import { BottomNav } from '@/components/BottomNav';
 import { MonthCalendar } from '@/components/MonthCalendar';
 import { Badge, Button, Card, ErrorState, Header, LoadingState, Modal, Screen } from '@/components/ui';
-import { useSeasonsQuery, useSetTeamCalendarLinkMutation, useTeamCalendarLinksQuery } from '@/features/queries';
-import { groupCalendarTeams } from '@/lib/teamCalendars';
+import { useSeasonsQuery, useSetTeamCalendarLinkMutation, useTeamCalendarLinksQuery, useTeamsQuery } from '@/features/queries';
+import { groupCalendarTeams, withAllTeams } from '@/lib/teamCalendars';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 /** Every team's events on one month calendar, each marked with its team, plus which calendars are attached to which teams. */
@@ -20,7 +20,12 @@ export default function CalendarScreen() {
   const [managingId, setManagingId] = useState<string | null>(null);
 
   const seasons = seasonsQuery.data;
-  const teams = useMemo(() => groupCalendarTeams(seasons ?? []), [seasons]);
+  const teamsQuery = useTeamsQuery();
+  const allTeams = teamsQuery.data;
+  const teams = useMemo(
+    () => withAllTeams(groupCalendarTeams(seasons ?? []), allTeams ?? []),
+    [seasons, allTeams],
+  );
   const { events, teamByEvent, teamIdByEvent } = useMemo(() => {
     const teamByEvent = new Map<string, string>();
     const teamIdByEvent = new Map<string, string>();

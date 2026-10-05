@@ -153,7 +153,7 @@ export function MapLink({
  * — not after the invite has gone out. It never blocks the save: a well-known
  * venue name maps fine and has none of the markers `looksAddressable` looks for.
  */
-export function MapLocationHint({ location }: { location?: string | null }) {
+export function MapLocationHint({ location, large = false }: { location?: string | null; large?: boolean }) {
   const colors = useThemeColors();
   const trimmed = location?.trim();
   if (!trimmed || !hasMappableLocation(trimmed)) return null;
@@ -161,7 +161,7 @@ export function MapLocationHint({ location }: { location?: string | null }) {
   const vague = !looksAddressable(trimmed);
 
   return (
-    <Text className="mt-1 text-xs" style={{ color: vague ? colors.warning : colors.inkMuted }}>
+    <Text className={`mt-1 ${large ? 'text-base' : 'text-xs'}`} style={{ color: vague ? colors.warning : colors.inkMuted }}>
       {vague
         ? 'Add a street address so players can get directions. '
         : 'Players will get a directions link to this location. '}

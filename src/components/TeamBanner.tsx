@@ -2,6 +2,7 @@ import { Image, Pressable, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 import { Badge } from '@/components/ui';
+import { TeamPlanBadge } from '@/components/TeamPlanBadge';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import type { Team } from '@/data/types';
 
@@ -16,7 +17,7 @@ import type { Team } from '@/data/types';
  */
 
 interface TeamBannerProps {
-  team: Pick<Team, 'id' | 'name' | 'season' | 'logoUrl' | 'brandColor' | 'managed'>;
+  team: Pick<Team, 'id' | 'name' | 'season' | 'logoUrl' | 'brandColor' | 'managed' | 'ownerPlanTier'>;
   /** Right-hand actions (chat, edit). Rendered on the banner, tinted to match. */
   right?: React.ReactNode;
   /** Line under the team name; defaults to the season label. */
@@ -75,6 +76,7 @@ export function TeamBanner({ team, right, subtitle, linkToHub = true, className 
       {/* A delegated coach sees whose team this is, so a club-owned team is never
           mistaken for one of their own. */}
       {team.managed ? <Badge label="Managed" variant="info" /> : null}
+      <TeamPlanBadge team={team} />
       {right}
     </View>
   );

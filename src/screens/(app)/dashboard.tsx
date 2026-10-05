@@ -18,6 +18,7 @@ import {
   TypeToConfirmModal,
   useTypeToConfirm,
 } from '@/components/ui';
+import { TeamPlanBadge } from '@/components/TeamPlanBadge';
 import { BottomNav } from '@/components/BottomNav';
 import { HomeHero } from '@/components/home/HomeHero';
 import { HomeTopBar } from '@/components/home/HomeTopBar';
@@ -360,6 +361,7 @@ export default function DashboardScreen() {
                     </Text>
                     {/* Delegated to this user by a club — not one of their own. */}
                     {item.managed ? <Badge label="Managed" /> : null}
+                    <TeamPlanBadge team={item} />
                   </View>
                   {item.season ? (
                     <Text className="text-sm mt-0.5" style={{ color: colors.inkMuted }}>

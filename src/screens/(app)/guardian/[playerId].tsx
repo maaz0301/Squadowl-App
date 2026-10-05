@@ -139,7 +139,7 @@ function SeasonCard({ item, colors, playerId }: { item: any; colors: any; player
   const confirmLeave = () => {
     Alert.alert(
       'Leave Team',
-      `Remove this athlete from ${item.teamName ?? 'this team'} (${item.name})? You'll need a new invite to rejoin.`,
+      `Remove this athlete from ${item.teamName ?? 'this team'} (${item.name})? You'll stop getting this team's schedule and messages. The coach's roster is not changed, and only the coach can add you back.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {

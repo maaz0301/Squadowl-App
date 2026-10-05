@@ -7,6 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { useTryoutQuery, useRegistrationsQuery, useTryoutRealtimeSync } from '@/features/queries';
 import { useSessionStore } from '@/state/sessionStore';
+import { useEvaluationAccess } from '@/features/useEvaluationAccess';
+import { Button, EmptyState, Header, Screen } from '@/components/ui';
 
 import AssessmentRosterScreen from '../screens/(app)/assessment/[id]/roster';
 import AssessmentRegistrationsScreen from '../screens/(app)/assessment/[id]/registrations';
@@ -83,6 +85,24 @@ export default function AssessmentTabNavigator() {
 
   const regsQuery = useRegistrationsQuery(id!);
   const pendingRegs = (regsQuery.data ?? []).filter(r => r.status === 'pending').length;
+
+  // A guardian of one of its players belongs in the athlete view, not here:
+  // no roster, scoring or editing.
+  const access = useEvaluationAccess(tryout);
+  if (access === 'guardian-only') {
+    return (
+      <Screen>
+        <Header title="Evaluation" showBack />
+        <EmptyState
+          title="This evaluation isn't available to you"
+          message="Your athletes and their results are under My Athletes on your dashboard."
+        />
+        <View className="mt-4">
+          <Button label="Go to My Athletes" onPress={() => navigation.navigate('DashboardMain')} />
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Tab.Navigator

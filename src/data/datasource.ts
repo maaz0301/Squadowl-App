@@ -330,6 +330,12 @@ export interface DataSource {
   getSessionProgress(tryoutId: string): Promise<Record<string, number>>;
   getPlayerProfile(athleteId: string, alsoAthleteIds?: string[]): Promise<PlayerProfile>;
   listAthletes(): Promise<Athlete[]>;
+  /**
+   * How many different players are on the account's evaluation rosters and
+   * team rosters together (removed players excluded). A player on both counts
+   * once. The Free plan's player cap is measured against this.
+   */
+  countActiveAthletes(): Promise<number>;
 
   // Phase 4: Enterprise & Admin
   getOrg(): Promise<Org | null>;
@@ -598,10 +604,10 @@ export interface DataSource {
   ): Promise<void>;
   getGuardianRosters(): Promise<GuardianRosterAthlete[]>;
   /**
-   * Takes the guardian's own athlete off a team: the season roster entry, the
-   * team roster row behind it, and any other live season of the same team
-   * (guardian_leave_season RPC). Removing the team roster row is what makes it
-   * stick — anything less and the team's next event save re-enrolls them.
+   * The guardian leaves a team: their athlete's season roster entries go, so
+   * the schedule, RSVPs and team chat stop, and the opt-out is recorded so
+   * nothing re-enrols them (guardian_leave_season RPC). The coach's team roster
+   * is not touched: only a coach can remove a player from it.
    */
   leaveSeason(seasonRosterId: string): Promise<void>;
   /**
