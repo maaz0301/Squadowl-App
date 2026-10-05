@@ -1,12 +1,17 @@
 import { useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, Text, View } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
 
 import { Modal } from '@/components/ui';
+import { getDataSource } from '@/data';
 import {
   googleCalendarUrl,
+  googleSubscribeUrl,
   openCalendarUrl,
   outlookCalendarUrl,
+  outlookSubscribeUrl,
   shareIcs,
+  webcalUrl,
   type CalendarEvent,
 } from '@/lib/calendarLinks';
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -52,9 +57,10 @@ export function toCalendarEvent(
  * Calendar, Outlook on a desktop, a work calendar — goes through the share
  * sheet, which is where the OS offers "Add to Calendar" for an .ics.
  *
- * Worth knowing: the copy this makes is a snapshot. Nothing here subscribes,
- * so a later edit by the coach does not move the entry already in a personal
- * calendar — the emailed invite is the path that updates in place.
+ * Worth knowing: the single-event copy is a snapshot, so a later edit by the
+ * coach does not move the entry already in a personal calendar. The "Whole
+ * season" options below subscribe instead: they add every event and keep the
+ * calendar in step as events are added, changed or deleted.
  */
 export function AddToCalendar({
   event,
@@ -73,6 +79,17 @@ export function AddToCalendar({
   const [busy, setBusy] = useState(false);
 
   const calendarEvent = toCalendarEvent(event, { teamName });
+
+  // Looked up only once the picker is open. Null for anyone who cannot see the
+  // season (or a public RSVP page with no session), in which case the season
+  // section simply does not appear.
+  const feedQuery = useQuery({
+    queryKey: ['seasonCalendarFeed', event.id],
+    queryFn: () => getDataSource().getSeasonCalendarFeed(event.id).catch(() => null),
+    enabled: open,
+    staleTime: 10 * 60 * 1000,
+  });
+  const feed = feedQuery.data ?? null;
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -110,6 +127,31 @@ export function AddToCalendar({
     },
   ];
 
+  const seasonOptions: { key: string; label: string; hint: string; run: () => Promise<void> }[] = feed
+    ? [
+        {
+          key: 'season-google',
+          label: 'Google Calendar',
+          hint: 'Subscribe in your browser',
+          run: () => openCalendarUrl(googleSubscribeUrl(feed.url)),
+        },
+        {
+          key: 'season-outlook',
+          label: 'Outlook',
+          hint: 'Subscribe in your browser',
+          run: () => openCalendarUrl(outlookSubscribeUrl(feed.url, feed.name)),
+        },
+        {
+          key: 'season-apple',
+          label: 'Apple Calendar / other',
+          hint: 'Opens your calendar app',
+          // No canOpenURL probe: webcal:// is not in the app's query allow-list,
+          // and openURL on it is what hands the subscription to the OS.
+          run: () => Linking.openURL(webcalUrl(feed.url)),
+        },
+      ]
+    : [];
+
   return (
     <>
       {renderTrigger ? (
@@ -135,6 +177,11 @@ export function AddToCalendar({
 
       <Modal visible={open} title="Add to calendar" onClose={() => setOpen(false)}>
         <View className="gap-2">
+          {seasonOptions.length > 0 ? (
+            <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+              This event only
+            </Text>
+          ) : null}
           {options.map((o) => (
             <Pressable
               key={o.key}
@@ -155,6 +202,40 @@ export function AddToCalendar({
               </Text>
             </Pressable>
           ))}
+
+          {seasonOptions.length > 0 ? (
+            <>
+              <Text
+                className="text-xs font-bold uppercase tracking-wider mt-3"
+                style={{ color: colors.inkMuted }}
+              >
+                Whole season
+              </Text>
+              <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                Adds every event and keeps it up to date when events are added, changed or removed.
+              </Text>
+              {seasonOptions.map((o) => (
+                <Pressable
+                  key={o.key}
+                  disabled={busy}
+                  onPress={() => run(o.run)}
+                  className="rounded-xl border px-4 py-3"
+                  style={{
+                    backgroundColor: colors.tile,
+                    borderColor: colors.border,
+                    opacity: busy ? 0.5 : 1,
+                  }}
+                >
+                  <Text className="text-base font-bold" style={{ color: colors.ink }}>
+                    {o.label}
+                  </Text>
+                  <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                    {o.hint}
+                  </Text>
+                </Pressable>
+              ))}
+            </>
+          ) : null}
         </View>
       </Modal>
     </>

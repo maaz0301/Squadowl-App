@@ -24,6 +24,7 @@ import AssessmentCompareScreen from '../screens/(app)/assessment/[id]/compare';
 import AssessmentRosterLibraryScreen from '../screens/(app)/assessment/[id]/roster-library';
 import AssessmentScanSheetScreen from '../screens/(app)/assessment/[id]/scan-sheet';
 import AssessmentLettersScreen from '../screens/(app)/assessment/[id]/letters';
+import AssessmentReportCardScreen from '../screens/(app)/assessment/[id]/player/report-card';
 
 const Tab = createBottomTabNavigator();
 
@@ -97,7 +98,8 @@ export default function AssessmentTabNavigator() {
           'AssessmentCompare',
           'AssessmentRosterLibrary',
           'AssessmentScanSheet',
-          'AssessmentLetters'
+          'AssessmentLetters',
+          'AssessmentReportCard'
         ].includes(activeRoute.name);
 
         if (isRosterSubScreen) {
@@ -250,6 +252,7 @@ export default function AssessmentTabNavigator() {
       <Tab.Screen name="AssessmentRosterLibrary" component={AssessmentRosterLibraryScreen} initialParams={{ id }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
       <Tab.Screen name="AssessmentScanSheet" component={AssessmentScanSheetScreen} initialParams={{ id }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
       <Tab.Screen name="AssessmentLetters" component={AssessmentLettersScreen} initialParams={{ id, isAssessorOnly }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
+      <Tab.Screen name="AssessmentReportCard" component={AssessmentReportCardScreen} initialParams={{ id, isAssessorOnly }} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, headerShown: false }} />
     </Tab.Navigator>
   );
 }

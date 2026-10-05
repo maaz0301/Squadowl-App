@@ -5,6 +5,14 @@ import { Tryout, ExportFormat, type TeamRosterPlayer } from '@/data/types';
 import { buildTeamBuilderExportRows, type TeamBuilderState } from '@/data/teamBuilder';
 import { buildFullResultsCsvRows, buildPlayerFullResults, buildReportDocInfo } from '@/data/resultsExport';
 import { csvCell, slugify } from '@/lib/exportCsv';
+import { renderPlayerReportPdf, type PlayerReportPdfInput } from '@/lib/playerReportPdf';
+import {
+  LOGO_BAND,
+  drawLogoStrip,
+  embedLogos,
+  renderCompactResults,
+  type ReportPdfOptions,
+} from '@/lib/reportPdf';
 import { PDFDocument, PDFFont, StandardFonts, rgb } from 'pdf-lib';
 import * as XLSX from 'xlsx';
 
@@ -131,17 +139,29 @@ function wrapSegments(segments: TextSegment[], f: PDFFont, size: number, maxWidt
 }
 
 /**
- * Full printable results report: one page per roster player with a
+ * Full printable results report: by default one page per roster player with a
  * metric/score/rank table (ranked against the whole roster) and every
- * evaluation's raw scores condensed onto a couple of dense lines.
+ * evaluation's raw scores condensed onto a couple of dense lines. With
+ * `playersPerPage` above 1, several players share a page (scores and ranks
+ * only), and `logoUrls` prints a team or organization logo on every page.
  */
-async function renderFullResultsPdf(tryout: Tryout): Promise<string> {
+async function renderFullResultsPdf(tryout: Tryout, opts: ReportPdfOptions = {}): Promise<string> {
   const docInfo = buildReportDocInfo(tryout);
   const cards = buildPlayerFullResults(tryout);
 
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const logos = await embedLogos(pdfDoc, opts.logoUrls);
+
+  const perPage = opts.playersPerPage ?? 1;
+  if (perPage !== 1) {
+    renderCompactResults(pdfDoc, { font, bold: fontBold }, docInfo, cards, perPage, logos);
+    return pdfDoc.saveAsBase64();
+  }
+
+  // Where content starts on every page, lower when a logo strip sits above it.
+  const TOP = PAGE_HEIGHT - MARGIN - (logos.length ? LOGO_BAND : 0);
 
   /** Adds a page and frames it with the report's border. */
   const newPage = () => {
@@ -154,16 +174,17 @@ async function renderFullResultsPdf(tryout: Tryout): Promise<string> {
       borderColor: BLACK,
       borderWidth: 1,
     });
+    if (logos.length) drawLogoStrip(p, logos, MARGIN);
     return p;
   };
 
   let page = newPage();
-  let y = PAGE_HEIGHT - MARGIN;
+  let y = TOP;
 
   const ensureSpace = (needed: number) => {
     if (y - needed < MARGIN) {
       page = newPage();
-      y = PAGE_HEIGHT - MARGIN;
+      y = TOP;
     }
   };
 
@@ -221,8 +242,18 @@ async function renderFullResultsPdf(tryout: Tryout): Promise<string> {
 
   cards.forEach((card, idx) => {
     if (idx > 0) {
-      page = newPage();
-      y = PAGE_HEIGHT - MARGIN;
+      if (opts.continuous) {
+        // Next player starts right below the last, divided by a rule. The
+        // header and score table are kept together, so a player never starts
+        // with a name stranded at the bottom of a page.
+        y -= 6;
+        ensureSpace(120);
+        page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_WIDTH - MARGIN, y }, thickness: 0.75, color: RULE });
+        y -= 18;
+      } else {
+        page = newPage();
+        y = TOP;
+      }
     }
 
     const meta = pdfSafe(
@@ -404,7 +435,11 @@ async function writeAndDeliverFile(
   }
 }
 
-export async function exportTryoutData(tryout: Tryout, format: ExportFormat): Promise<void> {
+export async function exportTryoutData(
+  tryout: Tryout,
+  format: ExportFormat,
+  pdfOptions?: ReportPdfOptions,
+): Promise<void> {
   const safeName = tryout.name.replace(/\s+/g, '_');
   const fileName = `${safeName}_results.${format}`;
   let fileContent = '';
@@ -441,12 +476,24 @@ export async function exportTryoutData(tryout: Tryout, format: ExportFormat): Pr
     encoding = 'base64';
     mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   } else if (format === 'pdf') {
-    fileContent = await renderFullResultsPdf(tryout);
+    fileContent = await renderFullResultsPdf(tryout, pdfOptions);
     encoding = 'base64';
     mimeType = 'application/pdf';
   }
 
   await writeAndDeliverFile(fileName, fileContent, encoding, mimeType, format);
+}
+
+/** The player report card as a PDF, handed to the OS like the other exports. */
+export async function exportPlayerReportCard(input: PlayerReportPdfInput): Promise<void> {
+  const safeName = input.card.name.replace(/[^\w]+/g, '_').replace(/^_|_$/g, '') || 'player';
+  await writeAndDeliverFile(
+    `${safeName}_report_card.pdf`,
+    await renderPlayerReportPdf(input),
+    'base64',
+    'application/pdf',
+    'pdf',
+  );
 }
 
 /**

@@ -12,13 +12,13 @@ import {
   useSeasonsQuery,
   useTryoutSummariesQuery,
 } from '@/features/queries';
-import { buildSearchIndex, runSearch, type SearchPlayer } from '@/data/search';
+import { buildSearchIndex, runSearch, type SearchPerson } from '@/data/search';
 import { useSessionStore } from '@/state/sessionStore';
 
 type Row =
   | { kind: 'header'; key: string; label: string; total: number }
   | { kind: 'evaluation'; key: string; id: string; name: string; sport: string }
-  | { kind: 'player'; key: string; player: SearchPlayer }
+  | { kind: 'player'; key: string; player: SearchPerson }
   | { kind: 'season'; key: string; id: string; name: string; teamName: string }
   | { kind: 'more'; key: string; hidden: number };
 
@@ -65,7 +65,7 @@ export default function SearchScreen() {
     }
     if (players.items.length) {
       out.push({ kind: 'header', key: 'h-p', label: 'Players', total: players.total });
-      players.items.forEach((p) => out.push({ kind: 'player', key: `p-${p.id}`, player: p }));
+      players.items.forEach((p) => out.push({ kind: 'player', key: `p-${p.key}`, player: p }));
     }
     if (seasons.items.length) {
       out.push({ kind: 'header', key: 'h-s', label: 'Seasons', total: seasons.total });
@@ -90,12 +90,20 @@ export default function SearchScreen() {
       setAssessorOnlyTryout(null);
       navigation.navigate('AssessmentFlow', { screen: 'AssessmentRoster', params: { id: row.id } });
     } else if (row.kind === 'player') {
-      prefetchTryout(row.player.tryoutId);
-      setCurrentTryout(row.player.tryoutId);
+      const first = row.player.evaluations[0];
+      // One person on several evaluations opens their profile, which lines every
+      // evaluation up together; a single one still goes straight to that
+      // evaluation's player screen.
+      if (row.player.evaluations.length > 1 && row.player.athleteId) {
+        navigation.navigate('PlayerProfile', { athleteId: row.player.athleteId });
+        return;
+      }
+      prefetchTryout(first.tryoutId);
+      setCurrentTryout(first.tryoutId);
       setAssessorOnlyTryout(null);
       navigation.navigate('AssessmentFlow', {
         screen: 'AssessmentPlayer',
-        params: { id: row.player.tryoutId, playerId: row.player.id },
+        params: { id: first.tryoutId, playerId: first.id },
       });
     } else if (row.kind === 'season') {
       navigation.navigate('SeasonDetail', { id: row.id });
@@ -131,11 +139,16 @@ export default function SearchScreen() {
 
     const title =
       item.kind === 'player' ? `${item.player.first} ${item.player.last}`.trim() : item.name;
+    const personSub = (p: SearchPerson) => {
+      if (p.evaluations.length > 1 && p.athleteId) {
+        const names = Array.from(new Set(p.evaluations.map((e) => e.tryoutName).filter(Boolean)));
+        return `${p.evaluations.length} evaluations${names.length ? ` · ${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}` : ''}`;
+      }
+      return [p.jersey ? `#${p.jersey}` : null, p.pos, p.evaluations[0].tryoutName].filter(Boolean).join(' · ');
+    };
     const sub =
       item.kind === 'player'
-        ? [item.player.jersey ? `#${item.player.jersey}` : null, item.player.pos, item.player.tryoutName]
-            .filter(Boolean)
-            .join(' · ')
+        ? personSub(item.player)
         : item.kind === 'evaluation'
           ? item.sport
           : item.teamName;

@@ -40,6 +40,7 @@ import {
   useLinkFamilyContactGuardianMutation,
   usePlayerLettersForParticipantQuery,
   useResendPlayerLetterMutation,
+  usePlayerReportCardsQuery,
   usePlatformBlockedFeaturesQuery,
 } from '@/features/queries';
 import { useAssessmentId, useAssessorMode } from '@/features/useAssessmentId';
@@ -48,6 +49,7 @@ import { LETTER_KIND_LABELS } from '@/data/letters';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { PlanGate } from '@/components/PlanGate';
 import { PlayerProfileSection } from '@/components/player/PlayerProfileSection';
+import { PlayerLetterModal } from '@/components/player/PlayerLetterModal';
 
 export default function PlayerHubScreen() {
   const typeToConfirm = useTypeToConfirm();
@@ -126,6 +128,8 @@ export default function PlayerHubScreen() {
   // see the lookup above) instead of fetching every letter in the assessment
   // and filtering client-side.
   const playerLettersQuery = usePlayerLettersForParticipantQuery(id, player?.id);
+  const reportCardsQuery = usePlayerReportCardsQuery(player?.athleteId);
+  const [showLetter, setShowLetter] = useState(false);
   const resendLetterMut = useResendPlayerLetterMutation(id!);
   const playerLetters = (playerLettersQuery.data ?? []).slice().sort((a, b) => b.createdAt - a.createdAt);
 
@@ -649,12 +653,7 @@ export default function PlayerHubScreen() {
             <Text className="font-display font-bold" style={{ color: colors.ink }}>
               Letters
             </Text>
-            <Button
-              label="Send a Letter"
-              size="sm"
-              variant="ghost"
-              onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentLetters', params: { id: id, isAssessorOnly } })}
-            />
+            <Button label="Send a Letter" size="sm" variant="ghost" onPress={() => setShowLetter(true)} />
           </View>
           {playerLettersQuery.isLoading ? (
             <ActivityIndicator size="small" color={colors.primary} />
@@ -712,6 +711,45 @@ export default function PlayerHubScreen() {
             </View>
           )}
         </Card>
+      ) : null}
+
+      {isCoachHere ? (
+        <Card className="mb-4 gap-2">
+          <View className="flex-row items-center justify-between gap-2">
+            <Text className="font-display font-bold" style={{ color: colors.ink }}>
+              Report Card
+            </Text>
+            <Button
+              label="Create Report Card"
+              size="sm"
+              variant="ghost"
+              onPress={() =>
+                navigation.navigate('AssessmentFlow', {
+                  screen: 'AssessmentReportCard',
+                  params: { id: id, playerId: playerId, isAssessorOnly },
+                })
+              }
+            />
+          </View>
+          <Text style={{ color: colors.inkFaint }}>
+            {(reportCardsQuery.data?.length ?? 0) === 0
+              ? 'Pick evaluations, add your comments (and AI comments), attach video or files, and print or share it when you sit down with the family.'
+              : `${reportCardsQuery.data!.length} saved report card${reportCardsQuery.data!.length === 1 ? '' : 's'}. Open the builder to view, edit or print them.`}
+          </Text>
+        </Card>
+      ) : null}
+
+      {isCoachHere && player ? (
+        <PlayerLetterModal
+          tryout={tryoutQuery.data!}
+          player={player}
+          visible={showLetter}
+          onClose={() => setShowLetter(false)}
+          onOpenTool={() => {
+            setShowLetter(false);
+            navigation.navigate('AssessmentFlow', { screen: 'AssessmentLetters', params: { id: id, isAssessorOnly } });
+          }}
+        />
       ) : null}
 
       {canManageTeam && (

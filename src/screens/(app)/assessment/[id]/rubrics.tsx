@@ -391,7 +391,7 @@ export default function RubricsScreen() {
                     value={minValStr}
                     onChangeText={setMinValStr}
                     keyboardType="numeric"
-                    placeholder={scoringType === 'time' ? '12 (Best)' : '5 (Worst)'}
+                    placeholder={rankingDirection === 'lower_is_better' ? '1 (Best)' : '1 (Worst)'}
                   />
                 </View>
                 <View className="flex-1">
@@ -400,7 +400,7 @@ export default function RubricsScreen() {
                     value={maxValStr}
                     onChangeText={setMaxValStr}
                     keyboardType="numeric"
-                    placeholder={scoringType === 'time' ? '25 (Worst)' : '25 (Best)'}
+                    placeholder={rankingDirection === 'lower_is_better' ? '10 (Worst)' : '10 (Best)'}
                   />
                 </View>
               </View>
@@ -408,8 +408,8 @@ export default function RubricsScreen() {
               <Text className="text-xs font-bold italic" style={{ color: colors.primary }}>
                 Score Benchmark Rule:{' '}
                 {rankingDirection === 'lower_is_better'
-                  ? `Min value (${minValStr || '10'}) = 5.0 points (Best)  ·  Max value (${maxValStr || '25'}) = 1.0 points (Worst)`
-                  : `Min value (${minValStr || '5'}) = 1.0 points (Worst)  ·  Max value (${maxValStr || '25'}) = 5.0 points (Best)`}
+                  ? `Min value (${minValStr || '1'}) = 5.0 points (Best)  ·  Max value (${maxValStr || '10'}) = 1.0 points (Worst)`
+                  : `Min value (${minValStr || '1'}) = 1.0 points (Worst)  ·  Max value (${maxValStr || '10'}) = 5.0 points (Best)`}
               </Text>
             </View>
           )}

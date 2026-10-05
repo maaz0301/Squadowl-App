@@ -1,4 +1,5 @@
 import { getDataSource } from '@/data';
+import { expandEventForms } from '@/lib/recurrence';
 import type { DummyDataOptions, DummyTeamOptions } from '@/data/testDataGenerator';
 import type { LetterKind } from '@/data/letters';
 import {
@@ -1455,15 +1456,22 @@ export function useAddSeasonEventMutation(
 ) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (form: import('@/data/types').CreateEventForm) =>
-      getDataSource().addSeasonEvent(seasonId, form, onProgress),
-    onSuccess: (event, form) => {
+    mutationFn: async (form: import('@/data/types').CreateEventForm) => {
+      // A repeating event becomes several, saved together and announced once.
+      const forms = expandEventForms(form);
+      const events =
+        forms.length > 1
+          ? await getDataSource().addSeasonEvents(seasonId, forms, onProgress)
+          : [await getDataSource().addSeasonEvent(seasonId, forms[0], onProgress)];
+      return { event: events[0], events };
+    },
+    onSuccess: ({ events }, form) => {
       const cached = qc.getQueryData<import('@/data/types').Season>(queryKeys.season(seasonId));
       const roster = cached?.roster ?? [];
       const invitedRoster = form.playerIds?.length
         ? roster.filter((p) => form.playerIds!.includes(p.id))
         : roster;
-      addEventToSeasonCache(qc, seasonId, event, invitedRoster);
+      for (const event of events) addEventToSeasonCache(qc, seasonId, event, invitedRoster);
       qc.invalidateQueries({ queryKey: queryKeys.season(seasonId) });
     },
   });
@@ -1586,13 +1594,22 @@ export function useAddTeamEventMutation(
       // with no sense of how long was left. On the RPC path it's one round trip
       // and the bar goes straight to done.
       const playerIds = invitedRoster.map((p) => p.id);
-      const event = await getDataSource().addSeasonEvent(sid, { ...form, playerIds }, (done, total) =>
-        onProgress?.('invites', done, total),
-      );
-      return { seasonId: sid, event, roster: invitedRoster };
+      // A repeating event becomes several, saved together and announced once.
+      const forms = expandEventForms({ ...form, playerIds });
+      const events =
+        forms.length > 1
+          ? await getDataSource().addSeasonEvents(sid, forms, (done, total) =>
+              onProgress?.('invites', done, total),
+            )
+          : [
+              await getDataSource().addSeasonEvent(sid, forms[0], (done, total) =>
+                onProgress?.('invites', done, total),
+              ),
+            ];
+      return { seasonId: sid, event: events[0], events, roster: invitedRoster };
     },
-    onSuccess: ({ seasonId: sid, event, roster }) => {
-      addEventToSeasonCache(qc, sid, event, roster);
+    onSuccess: ({ seasonId: sid, events, roster }) => {
+      for (const event of events) addEventToSeasonCache(qc, sid, event, roster);
       qc.invalidateQueries({ queryKey: queryKeys.seasons });
       qc.invalidateQueries({ queryKey: queryKeys.season(sid) });
     },
@@ -2730,6 +2747,80 @@ export function useDeleteEventFileMutation(eventId: string) {
   });
 }
 
+
+// ---- Player report cards ----
+
+const reportCardsKey = (athleteId: string) => ['report-cards', athleteId] as const;
+
+export function usePlayerReportCardsQuery(athleteId: string | undefined) {
+  return useQuery({
+    queryKey: reportCardsKey(athleteId ?? ''),
+    queryFn: () => getDataSource().listPlayerReportCards(athleteId!),
+    enabled: !!athleteId,
+  });
+}
+
+export function useSavePlayerReportCardMutation(athleteId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { input: import('@/data/types').PlayerReportCardInput; files?: { uri: string; name: string; type: string; size: number }[] }) =>
+      getDataSource().savePlayerReportCard(args.input, args.files),
+    onSuccess: () => qc.invalidateQueries({ queryKey: reportCardsKey(athleteId) }),
+  });
+}
+
+export function useDeletePlayerReportCardMutation(athleteId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (card: import('@/data/types').PlayerReportCard) => getDataSource().deletePlayerReportCard(card),
+    onSuccess: () => qc.invalidateQueries({ queryKey: reportCardsKey(athleteId) }),
+  });
+}
+
+export function useGenerateReportCardCommentsMutation(tryoutId: string) {
+  return useMutation({
+    mutationFn: (args: { playerId: string; evalIds: string[] }) =>
+      getDataSource().generateReportCardComments(tryoutId, args.playerId, args.evalIds),
+  });
+}
+
+// ---- Library ----
+
+const libraryKey = ['library'] as const;
+
+export function useLibraryQuery(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: libraryKey,
+    queryFn: () => getDataSource().listLibraryItems(),
+    enabled: options?.enabled !== false,
+  });
+}
+
+export function useCreateLibraryItemMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { input: import('@/data/types').LibraryItemInput; file?: { uri: string; name: string; type: string; size: number } }) =>
+      getDataSource().createLibraryItem(args.input, args.file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: libraryKey }),
+  });
+}
+
+export function useUpdateLibraryItemMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; updates: Partial<import('@/data/types').LibraryItemInput> }) =>
+      getDataSource().updateLibraryItem(args.id, args.updates),
+    onSuccess: () => qc.invalidateQueries({ queryKey: libraryKey }),
+  });
+}
+
+export function useDeleteLibraryItemMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (item: import('@/data/types').LibraryItem) => getDataSource().deleteLibraryItem(item),
+    onSuccess: () => qc.invalidateQueries({ queryKey: libraryKey }),
+  });
+}
 
 // ---- Team feed & organization info ----
 

@@ -138,3 +138,10 @@ entrypoint = "./functions/resend-invite/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/resend-invite/*.html" ]
+
+# Calendar apps subscribe to this by URL and cannot send a Supabase session.
+# Access is the season's own schedule_share_token, checked inside the function.
+[functions.season-calendar-feed]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/season-calendar-feed/index.ts"

@@ -335,6 +335,7 @@ export default function GuardianPortalScreen() {
           right={
             <View className="flex-row items-center gap-2">
               <ChatIconButton onPress={openChat} badge={<UnreadPill count={totalUnread} />} />
+              <Button label="Library" size="sm" variant="secondary" onPress={() => navigation.navigate('Library')} />
               <Button
                 label="Share"
                 size="sm"

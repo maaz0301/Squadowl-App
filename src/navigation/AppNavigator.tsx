@@ -55,6 +55,7 @@ export default function AppNavigator() {
       <Stack.Screen name="Admin" component={require('../screens/(app)/admin').default} />
       <Stack.Screen name="Combine" component={require('../screens/(app)/combine').default} />
       <Stack.Screen name="Calendar" component={require('../screens/(app)/calendar').default} />
+      <Stack.Screen name="Library" component={require('../screens/(app)/library').default} />
       <Stack.Screen name="Reports" component={require('../screens/(app)/reports').default} />
       <Stack.Screen name="GuardianPortal" component={require('../screens/(app)/guardian/[playerId]').default} />
       <Stack.Screen name="GuardianAssessmentDetails" component={require('../screens/(app)/guardian/assessment').default} />

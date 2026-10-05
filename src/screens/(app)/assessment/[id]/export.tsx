@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Share, Text, View } from 'react-native';
+import { Alert, Pressable, Share, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import RNFS from 'react-native-fs';
 import RNShare from 'react-native-share';
@@ -8,6 +8,7 @@ import {
   Badge,
   Button,
   Card,
+  Chip,
   ErrorState,
   Header,
   LoadingState,
@@ -19,7 +20,9 @@ import {
   useExportTryoutMutation,
   useShareLinkMutation,
   usePlatformBlockedFeaturesQuery,
+  useTeamsQuery,
 } from '@/features/queries';
+import { PLAYERS_PER_PAGE_OPTIONS, type PlayersPerPage } from '@/lib/reportPdf';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { canUseFeature, getPlanDefinition } from '@/data/plans';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
@@ -36,6 +39,13 @@ export default function ExportScreen() {
   const { data: platformBlockedFeatures } = usePlatformBlockedFeaturesQuery();
   const billingBlocked = (platformBlockedFeatures ?? []).includes('billing');
   const [isExporting, setIsExporting] = useState<string | null>(null);
+  const [playersPerPage, setPlayersPerPage] = useState<PlayersPerPage>(1);
+  const [continuous, setContinuous] = useState(false);
+  const [printLogo, setPrintLogo] = useState(true);
+  // The team's own logo, for club accounts. A hook, so it runs before the
+  // loading/error guards below.
+  const teamsQuery = useTeamsQuery();
+  const teamLogoUrl = teamsQuery.data?.find((t) => t.id === tryoutQuery.data?.teamId)?.logoUrl;
   // Hook, so it runs before the loading/error guards below — skipping it on
   // the loading render would change hook order. A delegated team's tryout
   // gates against the owning club's tier, not the viewer's own.
@@ -49,13 +59,21 @@ export default function ExportScreen() {
   const tryout = tryoutQuery.data;
   const exportsAllowed = canUseFeature(tier, 'exports') || tier !== 'free';
   const allowedFormats = getPlanDefinition(tier).limits.exports;
+  // Logos on the printed report are a Club-plan touch.
+  const clubMode = tier === 'club';
 
   const handleExport = async (format: ExportFormat) => {
     setIsExporting(format);
     try {
       await nextFrame();
       const { exportTryoutData } = await import('@/lib/exportData');
-      await exportTryoutData(tryout, format);
+      await exportTryoutData(
+        tryout,
+        format,
+        format === 'pdf'
+          ? { playersPerPage, continuous: continuous && playersPerPage === 1, logoUrls: clubMode && printLogo && teamLogoUrl ? [teamLogoUrl] : [] }
+          : undefined,
+      );
     } catch (e: any) {
       console.error(e);
       Alert.alert('Export Failed', e?.message || `Could not export the ${format.toUpperCase()}.`);
@@ -108,7 +126,66 @@ export default function ExportScreen() {
           </Text>
           <Button label="Export CSV" variant="secondary" onPress={() => handleExport('csv')} loading={isExporting === 'csv'} />
           {allowedFormats.includes('pdf') ? (
-            <Button label="Export PDF" variant="secondary" onPress={() => handleExport('pdf')} loading={isExporting === 'pdf'} />
+            <Card className="gap-3">
+              <Text className="font-display font-bold" style={{ color: colors.ink }}>
+                PDF layout
+              </Text>
+              <View>
+                <Text className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: colors.inkMuted }}>
+                  Players per page
+                </Text>
+                <View className="flex-row flex-wrap">
+                  {PLAYERS_PER_PAGE_OPTIONS.map((n) => (
+                    <Chip
+                      key={n}
+                      label={n === 1 ? '1 (full detail)' : String(n)}
+                      active={playersPerPage === n && !(n === 1 && continuous)}
+                      onPress={() => {
+                        setPlayersPerPage(n);
+                        setContinuous(false);
+                      }}
+                    />
+                  ))}
+                  <Chip
+                    label="Continuous (no gaps)"
+                    active={continuous}
+                    onPress={() => {
+                      setPlayersPerPage(1);
+                      setContinuous(true);
+                    }}
+                  />
+                </View>
+                <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                  {continuous
+                    ? 'Players run one after another with no blank space, each with every evaluation listed.'
+                    : playersPerPage === 1
+                    ? 'One player per page, with every evaluation listed.'
+                    : 'Several players per page: scores, ranks and notes. Individual evaluations are left out to keep each card small.'}
+                </Text>
+              </View>
+              {clubMode && teamLogoUrl ? (
+                <Pressable
+                  onPress={() => setPrintLogo((v) => !v)}
+                  className="flex-row items-center gap-2"
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: printLogo }}
+                >
+                  <View
+                    className="h-5 w-5 items-center justify-center rounded border"
+                    style={{
+                      borderColor: colors.primary,
+                      backgroundColor: printLogo ? colors.primary : 'transparent',
+                    }}
+                  >
+                    {printLogo ? <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>✓</Text> : null}
+                  </View>
+                  <Text className="text-sm flex-1" style={{ color: colors.ink }}>
+                    Print the team logo at the top of every page
+                  </Text>
+                </Pressable>
+              ) : null}
+              <Button label="Export PDF" variant="secondary" onPress={() => handleExport('pdf')} loading={isExporting === 'pdf'} />
+            </Card>
           ) : (
             lockedFormat('PDF Export', 'pdf', 'Coach+')
           )}

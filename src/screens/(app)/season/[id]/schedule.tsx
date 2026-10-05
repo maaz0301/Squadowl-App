@@ -10,6 +10,7 @@ import { TeamBanner } from '@/components/TeamBanner';
 import { useSeasonTeamBrand } from '@/features/useTeamBrand';
 import { Badge, Button, Card, Chip, EmptyState, ErrorState, Input, LoadingState, Modal, Screen, DateField, TimeField, Header, useTypeToConfirm } from '@/components/ui';
 import { AddToCalendar } from '@/components/AddToCalendar';
+import { RepeatField } from '@/components/RepeatField';
 import { MapLink, MapLocationHint } from '@/components/MapLink';
 import { useSeasonQuery, useAddSeasonEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation } from '@/features/queries';
 import { getDataSource } from '@/data';
@@ -52,7 +53,7 @@ export default function SeasonScheduleScreen() {
   const [reminding, setReminding] = useState<string | null>(null);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
 
-  const { control, handleSubmit, watch, setValue, reset, setError } = useForm<CreateEventForm>({
+  const { control, handleSubmit, watch, setValue, reset, setError, formState: { errors } } = useForm<CreateEventForm>({
     resolver: zodResolver(CreateEventFormSchema),
     defaultValues: { type: 'Practice', title: '', date: '', startTime: '', location: '', playerIds: [] },
   });
@@ -161,7 +162,7 @@ export default function SeasonScheduleScreen() {
       }
     },
     (errors) => {
-      const msg = errors.date?.message || errors.title?.message || 'Please check the required fields and date format.';
+      const msg = errors.date?.message || errors.title?.message || errors.repeatUntil?.message || 'Please check the required fields and date format.';
       notify('Validation Error', msg);
     }
   );
@@ -315,6 +316,20 @@ export default function SeasonScheduleScreen() {
                 <MapLocationHint location={value} />
               </View>
             )} />
+            {editingEventId ? null : (
+              <Controller control={control} name="repeatWeekdays" render={({ field: { value } }) => (
+                <RepeatField
+                  date={watch('date')}
+                  weekdays={value}
+                  until={watch('repeatUntil')}
+                  error={errors.repeatUntil?.message}
+                  onChange={({ weekdays, until }) => {
+                    setValue('repeatWeekdays', weekdays, { shouldValidate: false });
+                    setValue('repeatUntil', until, { shouldValidate: false });
+                  }}
+                />
+              )} />
+            )}
             {editingEventId ? null : (
               <>
                 <Text className="font-bold text-xs uppercase tracking-wider mt-2" style={{ color: colors.inkMuted }}>

@@ -9,7 +9,7 @@ import { usePermissions } from '@/state/authStore';
 import { usePlatformBlockedFeaturesQuery } from '@/features/queries';
 import { Modal } from '@/components/ui';
 
-export type BottomNavKey = 'assessments' | 'teams' | 'calendar' | 'profile' | 'more';
+export type BottomNavKey = 'assessments' | 'teams' | 'calendar' | 'library' | 'profile' | 'more';
 
 const ICONS: Record<BottomNavKey, string> = {
   assessments:
@@ -17,6 +17,7 @@ const ICONS: Record<BottomNavKey, string> = {
   teams:
     'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z',
   calendar: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z',
+  library: 'M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 006.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15z',
   profile: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
 };
@@ -25,6 +26,7 @@ const LABELS: Record<BottomNavKey, string> = {
   assessments: 'Evaluations',
   teams: 'Teams',
   calendar: 'Calendar',
+  library: 'Library',
   profile: 'Profile',
   more: 'More',
 };
@@ -66,6 +68,10 @@ export function BottomNav({ active, onTabPress }: BottomNavProps) {
     }
     if (key === 'calendar') {
       navigation.navigate('Calendar');
+      return;
+    }
+    if (key === 'library') {
+      navigation.navigate('Library');
       return;
     }
     if (key === 'more') {
