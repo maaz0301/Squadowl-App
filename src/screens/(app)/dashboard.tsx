@@ -54,7 +54,7 @@ import {
 } from '@/features/queries';
 import { APP_CONFIG } from '@/config/app';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
-import { canUseFeature, isAtAssessmentLimit, isAtTeamLimit } from '@/data/plans';
+import { canUseFeature, isAtAssessmentLimit, isAtTeamLimit, ownedTryouts } from '@/data/plans';
 import { teamBrandSurfaces } from '@/lib/teamBrand';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 
@@ -306,7 +306,8 @@ export default function DashboardScreen() {
       }
       navigation.navigate('NewTeam');
     } else {
-      const count = tryoutsQuery.data?.length ?? 0;
+      // Evaluations on a team another club delegated to this user are theirs, not this plan's.
+      const count = ownedTryouts(tryoutsQuery.data ?? [], teamsQuery.data ?? []).length;
       if (isAtAssessmentLimit(user?.planTier ?? 'free', count)) {
         setLimitMsg(buildLimitReachedMessage(user?.planTier ?? 'free', 'assessments', 'evaluations'));
         return;
@@ -490,7 +491,7 @@ export default function DashboardScreen() {
   // The tile and the list agree on standalone evaluations; the plan-limit nudge
   // below still counts every evaluation the account owns, team-linked included.
   const evalCount = standaloneTryouts.length;
-  const totalEvalCount = tryoutsQuery.data?.length ?? 0;
+  const totalEvalCount = ownedTryouts(tryoutsQuery.data ?? [], teamsQuery.data ?? []).length;
   // Visible count: every team the user can see, including ones delegated to
   // them. Distinct from ownedTeamCount below, which feeds the plan-limit
   // nudge/gate — delegated teams don't consume this account's own allowance.

@@ -15,7 +15,7 @@ import {
   Screen,
 } from '@/components/ui';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
-import { isAtAssessmentLimit, isAtTeamLimit } from '@/data/plans';
+import { isAtAssessmentLimit, isAtTeamLimit, ownedTryouts } from '@/data/plans';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { useUser } from '@/state/authStore';
 import {
@@ -86,7 +86,7 @@ export default function ArchivedAssessmentsScreen() {
     // Restoring adds a live evaluation, so it is held to the plan limit the
     // same way creating one is — otherwise a downgrade's archive could be undone
     // on the spot.
-    if (isAtAssessmentLimit(tier, activeTryoutsQuery.data?.length ?? 0)) {
+    if (isAtAssessmentLimit(tier, ownedTryouts(activeTryoutsQuery.data ?? [], teamsQuery.data ?? []).length)) {
       setLimitMsg(buildLimitReachedMessage(tier, 'assessments', 'evaluations'));
       return;
     }

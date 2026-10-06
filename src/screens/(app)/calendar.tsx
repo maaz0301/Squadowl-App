@@ -7,6 +7,7 @@ import { MonthCalendar } from '@/components/MonthCalendar';
 import { Badge, Button, Card, ErrorState, Header, LoadingState, Modal, Screen } from '@/components/ui';
 import { useSeasonsQuery, useSetTeamCalendarLinkMutation, useTeamCalendarLinksQuery, useTeamsQuery } from '@/features/queries';
 import { groupCalendarTeams, withAllTeams } from '@/lib/teamCalendars';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 /** Every team's events on one month calendar, each marked with its team, plus which calendars are attached to which teams. */
@@ -22,6 +23,9 @@ export default function CalendarScreen() {
   const seasons = seasonsQuery.data;
   const teamsQuery = useTeamsQuery();
   const allTeams = teamsQuery.data;
+  const refreshControl = usePullToRefresh(() =>
+    Promise.all([seasonsQuery.refetch(), linksQuery.refetch(), teamsQuery.refetch()]),
+  );
   const teams = useMemo(
     () => withAllTeams(groupCalendarTeams(seasons ?? []), allTeams ?? []),
     [seasons, allTeams],
@@ -57,7 +61,7 @@ export default function CalendarScreen() {
       ) : seasonsQuery.isError ? (
         <ErrorState message="Could not load the calendar." onRetry={() => seasonsQuery.refetch()} />
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16 }}>
+        <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={refreshControl}>
           {teams.length > 1 ? (
             <View className="mb-5">
               <Text className="mb-2 text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>Your calendars</Text>

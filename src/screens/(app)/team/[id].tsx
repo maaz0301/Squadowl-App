@@ -1123,7 +1123,7 @@ export default function TeamDetailScreen() {
           team.managed ? (
             <>
               <Badge label="Managed" variant="info" />
-              <TeamPlanBadge team={team} showUpgrade />
+              <TeamPlanBadge team={team} />
             </>
           ) : undefined
         }

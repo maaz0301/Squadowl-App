@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { Alert, Image, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 
 import { BottomNav } from '@/components/BottomNav';
@@ -74,6 +75,7 @@ export default function LibraryScreen() {
   const colors = useThemeColors();
   const { canManageOrganization, isGuardian } = usePermissions();
   const libraryQuery = useLibraryQuery();
+  const refreshControl = usePullToRefresh(() => libraryQuery.refetch());
   const createItem = useCreateLibraryItemMutation();
   const updateItem = useUpdateLibraryItemMutation();
   const deleteItem = useDeleteLibraryItemMutation();
@@ -200,7 +202,11 @@ export default function LibraryScreen() {
           right={canManageOrganization ? <Button label="Add" size="sm" onPress={openNew} /> : undefined}
         />
       </View>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={refreshControl}
+      >
         <Text className="mb-3 text-sm" style={{ color: colors.inkMuted }}>
           {canManageOrganization
             ? 'Store files, notes, videos and links, then choose who can see each one.'

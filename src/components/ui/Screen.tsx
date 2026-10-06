@@ -1,4 +1,4 @@
-import { Platform, View, type ViewProps, KeyboardAvoidingView } from 'react-native';
+import { Platform, View, type RefreshControlProps, type ViewProps, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets, type Edge } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -28,6 +28,8 @@ interface ScreenProps extends ViewProps {
    * so screens keep tracking the light/dark theme.
    */
   backgroundColor?: string;
+  /** Pull-to-refresh for a `scroll` screen; see usePullToRefresh. */
+  refreshControl?: React.ReactElement<RefreshControlProps>;
   children: React.ReactNode;
 }
 
@@ -40,6 +42,7 @@ export function Screen({
   keyboardOffset = Platform.OS === 'ios' ? 88 : 0,
   insideTabBar = false,
   backgroundColor,
+  refreshControl,
   children,
   ...props
 }: ScreenProps) {
@@ -72,6 +75,7 @@ export function Screen({
       enableOnAndroid={true}
       extraScrollHeight={Platform.OS === 'ios' ? 20 : 0}
       viewIsInsideTabBar={insideTabBar}
+      refreshControl={refreshControl}
     >
       {innerContent}
     </KeyboardAwareScrollView>

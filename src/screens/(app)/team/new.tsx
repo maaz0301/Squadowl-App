@@ -9,7 +9,7 @@ import { DummyDataModal } from '@/components/DummyDataModal';
 import { TeamColorPicker } from '@/components/TeamColorPicker';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { Button, Card, Chip, ErrorState, Header, Input, LoadingState, Screen, Avatar, Badge, useTypeToConfirm } from '@/components/ui';
-import { canUseFeature, isAtTeamLimit, playerRoom, teamRoom, assessmentRoom } from '@/data/plans';
+import { canUseFeature, isAtTeamLimit, playerRoom, teamRoom, assessmentRoom, ownedTryouts } from '@/data/plans';
 import { useCanUseDummyData } from '@/features/useCanUseDummyData';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import type { DummyTeamOptions } from '@/data/testDataGenerator';
@@ -78,7 +78,7 @@ export default function NewTeamScreen() {
   const tryoutSummaries = useTryoutSummariesQuery(false);
   const dummyTier = user?.planTier ?? 'free';
   const dummyTeamRoom = teamRoom(dummyTier, (teamsQuery.data ?? []).filter((t) => !t.managed).length, user?.extraTeamLicenses ?? 0);
-  const dummyEvaluationRoom = tryoutSummaries.data ? assessmentRoom(dummyTier, tryoutSummaries.data.length) : 0;
+  const dummyEvaluationRoom = tryoutSummaries.data ? assessmentRoom(dummyTier, ownedTryouts(tryoutSummaries.data, teamsQuery.data ?? []).length) : 0;
   const dummyMaxTeams = Math.min(dummyTeamRoom, dummyEvaluationRoom);
   const dummyBlockedBy: 'teams' | 'evaluations' | 'loading' | undefined =
     !tryoutSummaries.data || !teamsQuery.data

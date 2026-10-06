@@ -36,7 +36,7 @@ import { Button, Chip, DateField, DurationField, TimeField, Input, Modal, Screen
 import { CreateTryoutContinuingError, useCreateTryoutMutation, useTeamsQuery, useTryoutSummariesQuery, useUpdateTryoutMutation } from '@/features/queries';
 import { useSessionStore } from '@/state/sessionStore';
 import { useUser } from '@/state/authStore';
-import { isAtAssessmentLimit } from '@/data/plans';
+import { isAtAssessmentLimit, ownedTryouts } from '@/data/plans';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { endFromDuration, isEndAfterStart } from '@/data/timeRange';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
@@ -282,7 +282,7 @@ export default function NewAssessmentScreen() {
     // On a managed team only that team's evaluations are visible (and counted).
     const count = teamIsManaged
       ? (tryoutsQuery.data ?? []).filter((t) => t.teamId === teamId).length
-      : (tryoutsQuery.data?.length ?? 0);
+      : ownedTryouts(tryoutsQuery.data ?? [], teamsQuery.data ?? []).length;
     if (isAtAssessmentLimit(tier, count)) {
       setLimitMsg(buildLimitReachedMessage(tier, 'assessments', 'evaluations'));
       return;

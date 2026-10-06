@@ -31,6 +31,7 @@ import type { PlayerReportCard, ReportCardAttachment } from '@/data/types';
 import { DocumentPickerUnavailable, pickAttachment, type PickedAttachment } from '@/lib/documentPicker';
 import { formatAiComments } from '@/lib/reportCardText';
 import { reportLogoUrls } from '@/lib/reportPdf';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { usePermissions, useUser } from '@/state/authStore';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
@@ -72,6 +73,9 @@ export default function PlayerReportCardScreen() {
 
   const player = tryoutQuery.data?.roster.find((p) => p.athleteId === playerId || p.id === playerId);
   const cardsQuery = usePlayerReportCardsQuery(player?.athleteId);
+  const refreshControl = usePullToRefresh(() =>
+    Promise.all([tryoutQuery.refetch(), cardsQuery.refetch(), teamsQuery.refetch()]),
+  );
   const save = useSavePlayerReportCardMutation(player?.athleteId ?? '');
   const remove = useDeletePlayerReportCardMutation(player?.athleteId ?? '');
   const generate = useGenerateReportCardCommentsMutation(id!);
@@ -287,7 +291,11 @@ export default function PlayerReportCardScreen() {
       <View className="px-4">
         <Header title="Report Card" subtitle={`${name} | ${tryout.name}`} showBack onBack={() => navigation.goBack()} />
       </View>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 16 }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 16 }}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={refreshControl}
+      >
         {savedCards.length > 0 ? (
           <Card className="gap-2">
             <View className="flex-row items-center justify-between">

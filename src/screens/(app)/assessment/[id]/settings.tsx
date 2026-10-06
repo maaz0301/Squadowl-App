@@ -26,6 +26,7 @@ import { LimitReachedModal } from '@/components/LimitReachedModal';
 import {
   useTryoutQuery,
   useTryoutSummariesQuery,
+  useTeamsQuery,
   useUpdateTryoutMutation,
   useArchiveTryoutMutation,
   useDeleteTryoutMutation,
@@ -36,7 +37,7 @@ import { useAssessmentId } from '@/features/useAssessmentId';
 import { END_BEFORE_START_MESSAGE, isEndAfterStart } from '@/data/timeRange';
 import { useUser } from '@/state/authStore';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
-import { isAtAssessmentLimit } from '@/data/plans';
+import { isAtAssessmentLimit, ownedTryouts } from '@/data/plans';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { ASSESSOR_INVITE_URL } from '@/config/app';
 
@@ -73,6 +74,7 @@ export default function SettingsScreen() {
   // read pulled every roster, evaluation and registration in the account to
   // get a number. See useTryoutSummariesQuery.
   const tryoutsQuery = useTryoutSummariesQuery(false);
+  const teamsQuery = useTeamsQuery();
   const updateTryout = useUpdateTryoutMutation();
   const archiveTryout = useArchiveTryoutMutation();
   const deleteTryout = useDeleteTryoutMutation();
@@ -255,7 +257,13 @@ export default function SettingsScreen() {
   };
 
   const handleCopy = async () => {
-    const count = tryoutsQuery.data?.length ?? 0;
+    // On a delegated team only that team's evaluations count, against its own plan;
+    // otherwise only the evaluations this account owns.
+    const teamId = tryoutQuery.data?.teamId;
+    const teamIsManaged = !!teamsQuery.data?.find((t) => t.id === teamId)?.managed;
+    const count = teamIsManaged
+      ? (tryoutsQuery.data ?? []).filter((t) => t.teamId === teamId).length
+      : ownedTryouts(tryoutsQuery.data ?? [], teamsQuery.data ?? []).length;
     if (isAtAssessmentLimit(effectiveTier, count)) {
       setLimitMsg(buildLimitReachedMessage(effectiveTier, 'assessments', 'evaluations'));
       return;

@@ -1,5 +1,6 @@
 import { useTerms } from '@/lib/terms';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { Alert, FlatList, Pressable, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
@@ -69,6 +70,9 @@ export default function LettersScreen() {
   const terms = useTerms(tryoutQuery.data?.settings.customLabels);
   const teamsQuery = useTeamsQuery();
   const templatesQuery = useLetterTemplatesQuery();
+  const refreshControl = usePullToRefresh(() =>
+    Promise.all([tryoutQuery.refetch(), teamsQuery.refetch(), templatesQuery.refetch()]),
+  );
   const lettersQuery = usePlayerLettersQuery(id);
 
   const createTemplate = useCreateLetterTemplateMutation();
@@ -350,7 +354,7 @@ export default function LettersScreen() {
   };
 
   return (
-    <Screen scroll insideTabBar>
+    <Screen scroll insideTabBar refreshControl={refreshControl}>
       {typeToConfirm.modal}
       <Header
         title={terms.t('Player Selection Letters')}
