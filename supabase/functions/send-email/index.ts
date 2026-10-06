@@ -10,6 +10,7 @@ import {
   type IcsEvent,
 } from '../_shared/ics.ts';
 import { hasMappableLocation, mapUrl } from '../_shared/maps.ts';
+import { pushForEmail } from '../_shared/push.ts';
 
 const SENDGRID_API_KEY = Deno.env.get('SENDGRID_API_KEY') || '';
 const FROM_EMAIL = Deno.env.get('SENDGRID_FROM_EMAIL') || 'noreply@tryouthq.ca';
@@ -788,7 +789,12 @@ serve(async (req: Request) => {
       throw new Error(`SendGrid ${sgRes.status}: ${await sgRes.text()}`);
     }
 
-    return new Response(JSON.stringify({ success: true }), {
+    // The same news in the recipient's phone notification bar, when they have
+    // the app. Best effort: it never fails a sent email, and what happened is
+    // reported back so a caller (or a test) can see it.
+    const push = await pushForEmail(type, to, payload);
+
+    return new Response(JSON.stringify({ success: true, push }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
