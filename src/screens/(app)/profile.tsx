@@ -225,23 +225,27 @@ export default function ProfileScreen() {
           <View className="w-full gap-3">
             <Input label="Display name" value={displayName} onChangeText={setDisplayName} />
             <Input label="Organization" value={organization} onChangeText={setOrganization} />
-            <View className="flex-row items-center gap-3">
-              <Pressable onPress={selectOrganizationLogo} accessibilityLabel="Upload organization logo">
-                <Avatar uri={user?.organizationLogoUrl} first="O" last="G" size={56} />
-              </Pressable>
-              <View className="flex-1">
-                <Text className="font-semibold" style={{ color: colors.ink }}>Organization logo</Text>
-                <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                  Printed at the top of exported reports on the Club plan.
-                </Text>
+            <View className="gap-3">
+              <View className="flex-row items-center gap-3">
+                <Pressable onPress={selectOrganizationLogo} accessibilityLabel="Upload organization logo">
+                  <Avatar uri={user?.organizationLogoUrl} first="O" last="G" size={56} />
+                </Pressable>
+                <View className="flex-1">
+                  <Text className="font-semibold" style={{ color: colors.ink }}>Organization logo</Text>
+                  <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                    Printed at the top of exported reports on the Club plan.
+                  </Text>
+                </View>
               </View>
-              <Button
-                label={uploadOrgLogo.isPending ? 'Uploading...' : user?.organizationLogoUrl ? 'Change' : 'Upload'}
-                variant="secondary"
-                onPress={selectOrganizationLogo}
-                disabled={uploadOrgLogo.isPending}
-              />
-              {user?.organizationLogoUrl ? <Button label="Remove" variant="ghost" onPress={removeOrganizationLogo} /> : null}
+              <View className="flex-row gap-2">
+                <Button
+                  label={uploadOrgLogo.isPending ? 'Uploading...' : user?.organizationLogoUrl ? 'Change logo' : 'Upload logo'}
+                  variant="secondary"
+                  onPress={selectOrganizationLogo}
+                  disabled={uploadOrgLogo.isPending}
+                />
+                {user?.organizationLogoUrl ? <Button label="Remove" variant="ghost" onPress={removeOrganizationLogo} /> : null}
+              </View>
             </View>
             <View className="flex-row gap-2">
               <Button label="Save" onPress={saveProfile} loading={updateProfile.isPending} />
