@@ -112,7 +112,10 @@ serve(async (req: Request) => {
       throw new Error(`Failed to retrieve FCM tokens: ${tokensError.message}`);
     }
 
-    const tokens = tokenRecords?.map(r => r.token).filter(Boolean) || [];
+    // One phone is often registered under several accounts (everyone who has signed
+    // in on it), so the same token can come back once per account. Send to each
+    // phone once, or it shows the same notification several times.
+    const tokens = [...new Set(tokenRecords?.map(r => r.token).filter(Boolean) || [])];
     if (tokens.length === 0) {
       console.log('No FCM tokens registered for target users');
       return new Response(

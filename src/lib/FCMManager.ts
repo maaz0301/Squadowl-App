@@ -52,12 +52,16 @@ export class FCMManager {
       }
 
       console.log(`FCM: Registering token for user ${userId}`);
-      const { error } = await supabase
-        .from('fcm_tokens')
-        .upsert(
-          { user_id: userId, token },
-          { onConflict: 'user_id,token' }
-        );
+      // Claim the token for this account only: the phone may have been signed in
+      // as someone else before, and their copy must stop receiving pushes meant
+      // for them on this phone (and stop doubling up ours).
+      let { error } = await supabase.rpc('claim_fcm_token', { p_token: token });
+      if (error) {
+        // Older database without the function: fall back to adding the token.
+        ({ error } = await supabase
+          .from('fcm_tokens')
+          .upsert({ user_id: userId, token }, { onConflict: 'user_id,token' }));
+      }
 
       if (error) {
         console.error('Error saving FCM token to Supabase:', error);
