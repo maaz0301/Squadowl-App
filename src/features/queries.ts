@@ -81,6 +81,14 @@ export function useCreateTeamMutation() {
 }
 
 
+export function useUploadOrganizationLogoMutation() {
+  return useMutation({
+    mutationFn: async ({ fileUri, fileType }: { fileUri: string; fileType: string }) => {
+      return getDataSource().uploadOrganizationLogo(fileUri, fileType);
+    },
+  });
+}
+
 export function useUploadTeamLogoMutation() {
   return useMutation({
     mutationFn: async ({ teamId, fileUri, fileType }: { teamId: string; fileUri: string; fileType: string }) => {

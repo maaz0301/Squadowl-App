@@ -17,6 +17,7 @@ import {
   useTeamsQuery,
   useSeasonsQuery,
   useUploadCoachPhotoMutation,
+  useUploadOrganizationLogoMutation,
   useIsFeedbackReviewerQuery,
   usePlatformBlockedFeaturesQuery,
 } from '@/features/queries';
@@ -36,6 +37,7 @@ export default function ProfileScreen() {
   const updateProfile = useUpdateProfileMutation();
   const updatePasswordMut = useUpdatePasswordMutation();
   const uploadPhoto = useUploadCoachPhotoMutation();
+  const uploadOrgLogo = useUploadOrganizationLogoMutation();
   const { role, isGuardian } = usePermissions();
   const { data: isFeedbackReviewer } = useIsFeedbackReviewerQuery(!isGuardian);
   const guardianQuery = useGuardianRostersQuery();
@@ -90,6 +92,26 @@ export default function ProfileScreen() {
       } catch (e: any) {
         Alert.alert('Upload Error', 'Failed to upload photo: ' + e.message);
       }
+    }
+  };
+
+  const selectOrganizationLogo = async () => {
+    const result = await launchImageLibrary({ mediaType: 'photo', selectionLimit: 1, quality: 0.9 });
+    const asset = result.assets?.[0];
+    if (result.didCancel || !asset?.uri) return;
+    try {
+      const url = await uploadOrgLogo.mutateAsync({ fileUri: asset.uri, fileType: asset.type || 'image/png' });
+      await updateProfile.mutateAsync({ organizationLogoUrl: url });
+    } catch (e: any) {
+      Alert.alert('Logo Upload Error', 'Failed to upload logo: ' + (e?.message ?? 'Please try again.'));
+    }
+  };
+
+  const removeOrganizationLogo = async () => {
+    try {
+      await updateProfile.mutateAsync({ organizationLogoUrl: '' });
+    } catch (e: any) {
+      Alert.alert('Could not remove logo', e?.message ?? 'Please try again.');
     }
   };
 
@@ -203,6 +225,24 @@ export default function ProfileScreen() {
           <View className="w-full gap-3">
             <Input label="Display name" value={displayName} onChangeText={setDisplayName} />
             <Input label="Organization" value={organization} onChangeText={setOrganization} />
+            <View className="flex-row items-center gap-3">
+              <Pressable onPress={selectOrganizationLogo} accessibilityLabel="Upload organization logo">
+                <Avatar uri={user?.organizationLogoUrl} first="O" last="G" size={56} />
+              </Pressable>
+              <View className="flex-1">
+                <Text className="font-semibold" style={{ color: colors.ink }}>Organization logo</Text>
+                <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                  Printed at the top of exported reports on the Club plan.
+                </Text>
+              </View>
+              <Button
+                label={uploadOrgLogo.isPending ? 'Uploading...' : user?.organizationLogoUrl ? 'Change' : 'Upload'}
+                variant="secondary"
+                onPress={selectOrganizationLogo}
+                disabled={uploadOrgLogo.isPending}
+              />
+              {user?.organizationLogoUrl ? <Button label="Remove" variant="ghost" onPress={removeOrganizationLogo} /> : null}
+            </View>
             <View className="flex-row gap-2">
               <Button label="Save" onPress={saveProfile} loading={updateProfile.isPending} />
               <Button label="Cancel" variant="ghost" onPress={() => setEditing(false)} />

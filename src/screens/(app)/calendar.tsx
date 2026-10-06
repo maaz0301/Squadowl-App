@@ -80,6 +80,12 @@ export default function CalendarScreen() {
             </View>
           ) : null}
 
+          {teams.length === 1 ? (
+            <Text className="mb-4 text-sm" style={{ color: colors.inkMuted }}>
+              Attaching calendars shows up once you have a second team.
+            </Text>
+          ) : null}
+
           <MonthCalendar
             events={events}
             teamNameFor={(ev) => teamByEvent.get(ev.id)}

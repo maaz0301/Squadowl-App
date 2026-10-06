@@ -76,6 +76,7 @@ export interface DataSource {
   createTeam(name: string, season?: string): Promise<Team>;
   updateTeam(id: string, updates: Partial<Team>): Promise<Team>;
   uploadTeamLogo(teamId: string, fileUri: string, fileType: string): Promise<string>;
+  uploadOrganizationLogo(fileUri: string, fileType: string): Promise<string>;
   deleteTeam(id: string): Promise<void>;
 
   // Team managers (CLUB mode): hand one team to another coach/manager by email.

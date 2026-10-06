@@ -526,18 +526,18 @@ export default function NewAssessmentScreen() {
 
             <View>
               <View className="flex-row items-center justify-between mb-2">
-                <Text className="text-base font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                <Text className="text-xl font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
                   Rubrics *
                 </Text>
                 <Button label="+ Add Rubric" variant="ghost" onPress={() => setShowRubricForm(true)} />
               </View>
               {rubricError ? (
-                <Text className="text-base font-medium mb-1" style={{ color: colors.danger }}>
+                <Text className="text-lg font-medium mb-1" style={{ color: colors.danger }}>
                   {rubricError}
                 </Text>
               ) : null}
               {pendingRubrics.length === 0 ? (
-                <Text className="text-base" style={{ color: colors.inkMuted }}>
+                <Text className="text-lg" style={{ color: colors.inkMuted }}>
                   Add at least one rubric to define how players will be scored in this evaluation.
                 </Text>
               ) : (
@@ -556,13 +556,13 @@ export default function NewAssessmentScreen() {
 
             <View>
               <View className="flex-row items-center justify-between mb-2">
-                <Text className="text-base font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                <Text className="text-xl font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
                   Assessors (optional)
                 </Text>
                 <Button label="+ Add Assessor" variant="ghost" onPress={() => setShowAssessorForm(true)} />
               </View>
               {pendingAssessors.length === 0 ? (
-                <Text className="text-base" style={{ color: colors.inkMuted }}>
+                <Text className="text-lg" style={{ color: colors.inkMuted }}>
                   Invite whoever else is scoring, they get an email once the evaluation is created.
                 </Text>
               ) : (
@@ -575,7 +575,7 @@ export default function NewAssessmentScreen() {
                     >
                       <View className="flex-1">
                         <Text numberOfLines={1} className="text-lg font-bold" style={{ color: colors.ink }}>{a.name}</Text>
-                        <Text numberOfLines={1} className="text-base" style={{ color: colors.inkMuted }}>{a.email}</Text>
+                        <Text numberOfLines={1} className="text-lg" style={{ color: colors.inkMuted }}>{a.email}</Text>
                       </View>
                       <Button label="Remove" variant="ghost" size="sm" onPress={() => removeAssessorFromList(i)} />
                     </View>

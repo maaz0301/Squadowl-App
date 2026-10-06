@@ -30,7 +30,8 @@ import { playerDisplayName } from '@/data/rubrics';
 import type { PlayerReportCard, ReportCardAttachment } from '@/data/types';
 import { DocumentPickerUnavailable, pickAttachment, type PickedAttachment } from '@/lib/documentPicker';
 import { formatAiComments } from '@/lib/reportCardText';
-import { usePermissions } from '@/state/authStore';
+import { reportLogoUrls } from '@/lib/reportPdf';
+import { usePermissions, useUser } from '@/state/authStore';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
@@ -62,6 +63,7 @@ export default function PlayerReportCardScreen() {
   const { playerId } = route.params || {};
   const colors = useThemeColors();
   const { canManageTeam } = usePermissions();
+  const user = useUser();
   const typeToConfirm = useTypeToConfirm();
 
   const tryoutQuery = useTryoutQuery(id);
@@ -240,7 +242,7 @@ export default function PlayerReportCardScreen() {
           ...kept.map((a) => ({ kind: a.kind, name: a.name, url: a.url })),
           ...files.map((f) => ({ kind: (f.type.startsWith('video/') ? 'video' : 'file') as 'video' | 'file', name: f.name })),
         ],
-        logoUrls: tier === 'club' && team?.logoUrl ? [team.logoUrl] : [],
+        logoUrls: reportLogoUrls({ club: tier === 'club', organizationLogoUrl: user?.organizationLogoUrl, teamLogoUrl: team?.logoUrl }),
       });
     } catch (e) {
       notify('Export failed', e instanceof Error ? e.message : 'Could not build the PDF.');

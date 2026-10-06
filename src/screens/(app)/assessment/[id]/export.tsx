@@ -22,12 +22,13 @@ import {
   usePlatformBlockedFeaturesQuery,
   useTeamsQuery,
 } from '@/features/queries';
-import { PLAYERS_PER_PAGE_OPTIONS, type PlayersPerPage } from '@/lib/reportPdf';
+import { PLAYERS_PER_PAGE_OPTIONS, reportLogoUrls, type PlayersPerPage } from '@/lib/reportPdf';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { canUseFeature, getPlanDefinition } from '@/data/plans';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import type { ExportFormat } from '@/data/types';
 import { nextFrame } from '@/lib/nextFrame';
+import { useUser } from '@/state/authStore';
 
 export default function ExportScreen() {
   const id = useAssessmentId();
@@ -46,6 +47,7 @@ export default function ExportScreen() {
   // loading/error guards below.
   const teamsQuery = useTeamsQuery();
   const teamLogoUrl = teamsQuery.data?.find((t) => t.id === tryoutQuery.data?.teamId)?.logoUrl;
+  const organizationLogoUrl = useUser()?.organizationLogoUrl;
   // Hook, so it runs before the loading/error guards below — skipping it on
   // the loading render would change hook order. A delegated team's tryout
   // gates against the owning club's tier, not the viewer's own.
@@ -71,7 +73,7 @@ export default function ExportScreen() {
         tryout,
         format,
         format === 'pdf'
-          ? { playersPerPage, continuous: continuous && playersPerPage === 1, logoUrls: clubMode && printLogo && teamLogoUrl ? [teamLogoUrl] : [] }
+          ? { playersPerPage, continuous: continuous && playersPerPage === 1, logoUrls: reportLogoUrls({ club: clubMode && printLogo, organizationLogoUrl, teamLogoUrl }) }
           : undefined,
       );
     } catch (e: any) {
@@ -163,7 +165,7 @@ export default function ExportScreen() {
                     : 'Several players per page: scores, ranks and notes. Individual evaluations are left out to keep each card small.'}
                 </Text>
               </View>
-              {clubMode && teamLogoUrl ? (
+              {clubMode && (organizationLogoUrl || teamLogoUrl) ? (
                 <Pressable
                   onPress={() => setPrintLogo((v) => !v)}
                   className="flex-row items-center gap-2"
@@ -180,7 +182,7 @@ export default function ExportScreen() {
                     {printLogo ? <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>✓</Text> : null}
                   </View>
                   <Text className="text-sm flex-1" style={{ color: colors.ink }}>
-                    Print the team logo at the top of every page
+                    Print the organization and team logos at the top of every page
                   </Text>
                 </Pressable>
               ) : null}
