@@ -99,7 +99,7 @@ export default function ExportScreen() {
   const handleShare = async () => {
     const link = await shareMut.mutateAsync(tryout.name);
     await Share.share({
-      message: `TryoutHQ results for ${tryout.name}: https://tryouthq.app/?share=${link.token}\nExpires: ${new Date(link.expiresAt).toLocaleDateString()}`,
+      message: `SquadOwl results for ${tryout.name}: https://tryouthq.app/?share=${link.token}\nExpires: ${new Date(link.expiresAt).toLocaleDateString()}`,
     });
   };
 

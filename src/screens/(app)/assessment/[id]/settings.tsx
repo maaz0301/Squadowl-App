@@ -458,7 +458,7 @@ export default function SettingsScreen() {
       <Modal visible={showAssessor} title="Add Assessor" onClose={() => setShowAssessor(false)}>
         <View className="gap-3">
           <Text className="text-sm" style={{ color: colors.inkMuted }}>
-            They'll get an email invitation. If they don't have a TryoutHQ account yet, they can create one with this
+            They'll get an email invitation. If they don't have a SquadOwl account yet, they can create one with this
             address and the invitation will be waiting for them.
           </Text>
           <Input label="Name" value={assessorName} onChangeText={setAssessorName} />

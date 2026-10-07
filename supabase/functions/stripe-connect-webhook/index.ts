@@ -3,7 +3,7 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { stripe, cryptoProvider } from '../_shared/stripe.ts';
 import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
 
-// TryoutHQ's cut of every registration fee collected through Connect — kept in
+// SquadOwl's cut of every registration fee collected through Connect — kept in
 // sync with create-registration-payment/index.ts.
 const PLATFORM_FEE_RATE = 0.005;
 

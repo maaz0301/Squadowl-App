@@ -189,7 +189,7 @@ export default function ShareDirectoryScreen() {
             No coach found for {searchedEmail}
           </Text>
           <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
-            Double-check the address, or ask them to create a TryoutHQ account first.
+            Double-check the address, or ask them to create a SquadOwl account first.
           </Text>
         </Card>
       ) : (

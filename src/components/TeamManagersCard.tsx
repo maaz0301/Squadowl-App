@@ -181,7 +181,7 @@ export function TeamManagersCard({ teamId, teamName, readOnly, tierOverride }: P
               onPress={handleInvite}
             />
             <Text className="text-xs" style={{ color: colors.inkMuted }}>
-              They'll get an email with an Accept Invitation button. If they don't have a TryoutHQ
+              They'll get an email with an Accept Invitation button. If they don't have a SquadOwl
               account yet, the email asks them to create one, access is granted automatically when they do.
             </Text>
           </View>

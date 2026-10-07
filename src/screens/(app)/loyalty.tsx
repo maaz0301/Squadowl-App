@@ -88,7 +88,7 @@ export default function LoyaltyScreen() {
       const signupLink = `${APP_CONFIG.webUrl}/signup?ref=${encodeURIComponent(code)}`;
       await Share.share({
         message:
-          `Join me on TryoutHQ, sign up with my referral code applied: ${signupLink}\n\n` +
+          `Join me on SquadOwl, sign up with my referral code applied: ${signupLink}\n\n` +
           `Or enter this code by hand when you sign up: ${code}`,
       });
     } catch (e: any) {

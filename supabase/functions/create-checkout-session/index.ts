@@ -123,7 +123,7 @@ serve(async (req) => {
         : {
             price_data: {
               currency: 'cad',
-              product_data: { name: 'TryoutHQ Additional Team' },
+              product_data: { name: 'SquadOwl Additional Team' },
               unit_amount: EXTRA_TEAM_PRICE_CENTS,
               recurring: { interval: 'year' },
             },
@@ -140,7 +140,7 @@ serve(async (req) => {
         price_data: {
           currency: 'cad',
           product_data: {
-            name: `TryoutHQ ${tierInfo.name}`,
+            name: `SquadOwl ${tierInfo.name}`,
           },
           unit_amount: tierInfo[interval],
           recurring: {
@@ -212,7 +212,7 @@ serve(async (req) => {
         duration: discount.duration,
         ...(discount.duration === 'repeating' ? { duration_in_months: Number(discount.durationMonths) } : {}),
         max_redemptions: 1,
-        name: `TryoutHQ code ${discount.code}`,
+        name: `SquadOwl code ${discount.code}`,
         metadata: { accountId, discountCodeId: discount.id, discountCode: discount.code },
       });
       couponId = coupon.id;
@@ -222,7 +222,7 @@ serve(async (req) => {
         currency: 'cad',
         duration: 'once',
         max_redemptions: 1,
-        name: 'TryoutHQ loyalty credit',
+        name: 'SquadOwl loyalty credit',
         metadata: { accountId },
       });
       couponId = coupon.id;

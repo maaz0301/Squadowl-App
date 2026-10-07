@@ -23,7 +23,7 @@ export default function VerifyEmailScreen() {
       await restoreSession(true);
       const currentUser = useAuthStore.getState().session?.user;
       if (currentUser?.emailVerified) {
-        Alert.alert('Verified!', 'Your email has been verified. Welcome to TryoutHQ!');
+        Alert.alert('Verified!', 'Your email has been verified. Welcome to SquadOwl!');
       } else {
         setStatusMsg('Email is not verified yet. Please check your inbox and tap the link.');
       }

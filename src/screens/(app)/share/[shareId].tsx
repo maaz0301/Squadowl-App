@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Alert, Text, View } from 'react-native';
-import { useRoute } from '@react-navigation/native';
+import { useIsFocused, useRoute } from '@react-navigation/native';
 
 import {
   Avatar,
@@ -66,7 +66,8 @@ export default function ShareDetailScreen() {
   const [commentBody, setCommentBody] = useState('');
   const [tryoutPickerVisible, setTryoutPickerVisible] = useState(false);
 
-  const shareQuery = useAthleteShareQuery(shareId);
+  const isFocused = useIsFocused();
+  const shareQuery = useAthleteShareQuery(shareId, { poll: isFocused });
   const commentsQuery = useShareCommentsQuery(shareId);
   // The picker below shows names only — see useTryoutSummariesQuery.
   const tryoutsQuery = useTryoutSummariesQuery();

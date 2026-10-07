@@ -52,10 +52,10 @@ export default function LoginScreen() {
         <Image
           source={
             isDark
-              ? require('../../../assets/TryoutHQ--full-logo.png')
-              : require('../../../assets/TryoutHQ-logo-light-full.png')
+              ? require('../../../assets/SquadOwl-full-logo-dark.png')
+              : require('../../../assets/SquadOwl-full-logo-light.png')
           }
-          style={{ width: '100%', height: 120, resizeMode: 'contain' }}
+          style={{ width: '100%', height: 200, resizeMode: 'contain' }}
         />
         <Text className="text-base text-center mt-2 font-medium" style={{ color: colors.inkMuted }}>
           Sign in to manage tryouts and evaluate players

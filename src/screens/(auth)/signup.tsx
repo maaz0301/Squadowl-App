@@ -67,10 +67,10 @@ export default function SignupScreen() {
         <Image
           source={
             isDark
-              ? require('../../../assets/TryoutHQ--full-logo.png')
-              : require('../../../assets/TryoutHQ-logo-light-full.png')
+              ? require('../../../assets/SquadOwl-full-logo-dark.png')
+              : require('../../../assets/SquadOwl-full-logo-light.png')
           }
-          style={{ width: '100%', height: 90, resizeMode: 'contain' }}
+          style={{ width: '100%', height: 180, resizeMode: 'contain' }}
         />
       </View>
 

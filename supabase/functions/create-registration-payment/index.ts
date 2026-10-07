@@ -8,7 +8,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// TryoutHQ's cut of every registration fee collected through Connect.
+// SquadOwl's cut of every registration fee collected through Connect.
 const PLATFORM_FEE_RATE = 0.005;
 
 serve(async (req: Request) => {

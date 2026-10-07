@@ -12,15 +12,15 @@ function page(kind: 'return' | 'refresh'): string {
   const heading = kind === 'return' ? "You're all set" : 'Almost there';
   const body =
     kind === 'return'
-      ? "Stripe has your details. Head back to TryoutHQ to see your connected status."
-      : 'Your Stripe session needs a fresh link. Head back to TryoutHQ and tap Connect with Stripe again.';
+      ? "Stripe has your details. Head back to SquadOwl to see your connected status."
+      : 'Your Stripe session needs a fresh link. Head back to SquadOwl and tap Connect with Stripe again.';
 
   return `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>TryoutHQ</title>
+<title>SquadOwl</title>
 <meta http-equiv="refresh" content="0;url=${deepLink}" />
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0b0f14; color: #f2f4f7;
@@ -36,7 +36,7 @@ function page(kind: 'return' | 'refresh'): string {
   <div class="card">
     <h1>${heading}</h1>
     <p>${body}</p>
-    <a class="button" href="${deepLink}">Return to TryoutHQ</a>
+    <a class="button" href="${deepLink}">Return to SquadOwl</a>
   </div>
 </body>
 </html>`;

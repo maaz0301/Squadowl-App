@@ -3,12 +3,12 @@ import { Image, StatusBar, StyleSheet, View } from 'react-native';
 import Video from 'react-native-video';
 
 /**
- * A near-black backdrop the brand animation sits on, so it reads as one
- * deliberate brand screen rather than a boxed-in video on a white flash.
+ * A white backdrop the brand animation sits on (the SquadOwl logo art is on
+ * white), so it reads as one deliberate brand screen rather than a boxed-in video.
  * It also covers the gap between the native splash hiding and the first
  * video frame being decoded.
  */
-const SPLASH_BACKDROP = '#080c16';
+const SPLASH_BACKDROP = '#ffffff';
 
 /**
  * Hard ceiling on how long the splash may hold the app back. The animation is
@@ -56,7 +56,7 @@ export function SplashScreen({ onFinish }: SplashScreenProps) {
       <StatusBar hidden />
       {videoFailed ? (
         <Image
-          source={require('../../../assets/TryoutHQ--full-logo.png')}
+          source={require('../../../assets/SquadOwl-full-logo-light.png')}
           style={styles.logo}
           resizeMode="contain"
         />

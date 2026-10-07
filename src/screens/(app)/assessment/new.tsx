@@ -789,7 +789,7 @@ export default function NewAssessmentScreen() {
           <Input label="Name" value={assessorName} onChangeText={setAssessorName} />
           <Input label="Email" value={assessorEmail} onChangeText={setAssessorEmail} autoCapitalize="none" keyboardType="email-address" />
           <Text className="text-xs" style={{ color: colors.inkMuted }}>
-            They'll be emailed an invitation when the evaluation is created. If they don't have a TryoutHQ account
+            They'll be emailed an invitation when the evaluation is created. If they don't have a SquadOwl account
             yet, they can create one with this address and the invitation will be waiting for them.
           </Text>
         </View>

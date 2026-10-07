@@ -17,7 +17,7 @@ function money(n: number): string {
   return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-// Stripe's Canada (CAD) fee schedule, separate from TryoutHQ's own 0.5%
+// Stripe's Canada (CAD) fee schedule, separate from SquadOwl's own 0.5%
 // platform fee. Verified June 2026 — re-check against Stripe's published
 // rates before updating any of these numbers.
 const FEE_SCHEDULE: { type: string; fee: string; note: string }[] = [
@@ -49,7 +49,7 @@ const FEE_SCHEDULE: { type: string; fee: string; note: string }[] = [
   {
     type: 'Stripe Connect (platform fee)',
     fee: '0.25% + CAD$0.25',
-    note: "Required for collecting the 0.5% TryoutHQ platform fee.",
+    note: "Required for collecting the 0.5% SquadOwl platform fee.",
   },
 ];
 
@@ -183,7 +183,7 @@ export default function PaymentsScreen() {
               </Text>
               <Text className="text-sm" style={{ color: colors.inkMuted }}>
                 Connect a Stripe account to start collecting registration fees. Stripe's
-                processing fee (2.9% + $0.30 CAD) and TryoutHQ's 0.5% platform fee are deducted
+                processing fee (2.9% + $0.30 CAD) and SquadOwl's 0.5% platform fee are deducted
                 automatically, the rest is paid out straight to you.
               </Text>
               {/* An account that exists but can't take charges is mid-onboarding
@@ -222,7 +222,7 @@ export default function PaymentsScreen() {
                   <Text className="text-xs" style={{ color: colors.inkMuted }}>
                     Stripe account {connect.status.accountId}
                     {connect.status.country ? ` · ${connect.status.country}` : ''} ·{' '}
-                    {(connect.status.platformFeeRate * 100).toFixed(1)}% TryoutHQ fee + Stripe's
+                    {(connect.status.platformFeeRate * 100).toFixed(1)}% SquadOwl fee + Stripe's
                     processing fee per transaction
                   </Text>
                 </>
@@ -337,7 +337,7 @@ export default function PaymentsScreen() {
         <>
           <Text className="text-base mb-4" style={{ color: colors.inkMuted }}>
             These are Stripe's own processing fees (CAD), deducted automatically per transaction
-            before funds reach your account, separate from TryoutHQ's 0.5% platform fee. Verified
+            before funds reach your account, separate from SquadOwl's 0.5% platform fee. Verified
             June 2026.
           </Text>
 
@@ -372,7 +372,7 @@ export default function PaymentsScreen() {
             </View>
             <View className="flex-row justify-between gap-2">
               <Text className="text-base flex-1" style={{ color: colors.inkMuted }}>
-                TryoutHQ platform fee (0.5%)
+                SquadOwl platform fee (0.5%)
               </Text>
               <Text className="text-base" style={{ color: colors.ink }}>
                 −$0.50
@@ -388,7 +388,7 @@ export default function PaymentsScreen() {
             </View>
           </View>
           <Text className="text-base" style={{ color: colors.inkMuted }}>
-            Stripe fees are paid by the coach (subscriber), not by TryoutHQ.
+            Stripe fees are paid by the coach (subscriber), not by SquadOwl.
           </Text>
         </>
       </Modal>

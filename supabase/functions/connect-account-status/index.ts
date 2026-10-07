@@ -8,7 +8,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// TryoutHQ's cut of every registration fee collected through Connect — kept in
+// SquadOwl's cut of every registration fee collected through Connect — kept in
 // sync with create-registration-payment/index.ts and stripe-connect-webhook/index.ts.
 const PLATFORM_FEE_RATE = 0.005;
 

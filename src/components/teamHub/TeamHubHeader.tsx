@@ -54,7 +54,7 @@ export function TeamHubHeader({ name, subtitle, logoUrl, onChat, chatBadge, onEd
         </Pressable>
 
         <Image
-          source={logoUrl ? { uri: logoUrl } : require('../../../assets/TryoutHQ-logo.png')}
+          source={logoUrl ? { uri: logoUrl } : require('../../../assets/SquadOwl-logo.png')}
           style={{ width: 38, height: 38, borderRadius: logoUrl ? 19 : 0 }}
           resizeMode={logoUrl ? 'cover' : 'contain'}
         />

@@ -51,9 +51,9 @@ export function Header({ title, subtitle, showBack, showLogo, onBack, right }: H
           </Pressable>
         ) : null}
         
-        {showLogo || title?.toLowerCase() === 'tryouthq' ? (
+        {showLogo || title?.toLowerCase() === 'squadowl' ? (
           <Image
-            source={require('../../../assets/TryoutHQ-logo.png')}
+            source={require('../../../assets/SquadOwl-logo.png')}
             style={{ width: 32, height: 32 }}
             resizeMode="contain"
           />

@@ -29,7 +29,7 @@ import { useUser } from '@/state/authStore';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { EXPO_PUBLIC_WEB_URL } from '@env';
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, FlatList, Platform, Pressable, Share, Text, View } from 'react-native';
 import RNFS from 'react-native-fs';
@@ -48,7 +48,9 @@ export default function RegistrationsScreen() {
   const effectiveTier = useEffectivePlanTier(tryoutQuery.data?.teamId);
   // Free plans share one pool of players across evaluations and teams.
   const accountPlayers = useAccountPlayerCount(effectiveTier === 'free');
-  const regsQuery = useRegistrationsQuery(id!);
+  // Poll only while this tab is on screen; the tab navigator keeps it mounted.
+  const isFocused = useIsFocused();
+  const regsQuery = useRegistrationsQuery(id!, { poll: isFocused });
   const ensureCloud = useEnsureCloudSessionMutation();
   // Only the destination's headcount is read below, so the light list is
   // enough — see useTryoutSummariesQuery.

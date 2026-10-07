@@ -82,7 +82,7 @@ port = 587
 user = "apikey"
 pass = "env(SENDGRID_SMTP_PASS)"
 admin_email = "noreply@tryouthq.ca"
-sender_name = "TryoutHQ"
+sender_name = "SquadOwl"
 
 [auth.sms]
 enable_signup = false

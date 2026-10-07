@@ -143,7 +143,7 @@ function EditTeamForm({
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
                   Saving this creates (or reuses) this team's season and adds everyone currently on
                   the roster to it, each player's guardian will then be asked to pay this fee, plus
-                  TryoutHQ's 0.5% platform fee, from their portal.
+                  SquadOwl's 0.5% platform fee, from their portal.
                 </Text>
               </Card>
             ) : null}

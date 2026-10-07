@@ -28,8 +28,8 @@ export default function SuspendedAccountScreen() {
           <Text className="text-base" style={{ color: colors.inkMuted }}>
             {user?.organization ? `${user.organization} ` : 'This account '}
             {trialEnded
-              ? 'no longer has access. Your teams and evaluations are safe, contact TryoutHQ to continue.'
-              : 'has been suspended. Your data has not been deleted, contact TryoutHQ to restore access.'}
+              ? 'no longer has access. Your teams and evaluations are safe, contact SquadOwl to continue.'
+              : 'has been suspended. Your data has not been deleted, contact SquadOwl to restore access.'}
           </Text>
           {user?.suspendedReason ? (
             <Text className="text-sm" style={{ color: colors.inkMuted }}>

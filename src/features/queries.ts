@@ -549,18 +549,18 @@ export function useTryoutRealtimeSync(id: string | undefined) {
       }, 1000);
     };
 
-    // Subscribe to insert/update events on the evaluations table for this specific tryout
+    // Subscribe to insert/update events on the evaluations table for this specific tryout.
+    // evaluation_scores is deliberately NOT subscribed: it has no tryout_id, so a
+    // filter isn't possible and an unfiltered channel wakes every open tryout on
+    // every score saved anywhere (and Realtime re-checks RLS per subscriber per
+    // row). saveEvaluation touches the evaluation row after its scores land, which
+    // fires this filtered event instead.
     const uniqueId = Math.random().toString(36).slice(2, 9);
     const channel = getSupabase()
       .channel(`realtime:tryout_${id}_${uniqueId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'evaluations', filter: `tryout_id=eq.${id}` },
-        () => triggerInvalidate()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'evaluation_scores' },
         () => triggerInvalidate()
       )
       .subscribe();
@@ -939,12 +939,34 @@ export function useSaveEvaluationMutation(tryoutId: string) {
 }
 
 // ---- Registration ----
-export function useRegistrationsQuery(tryoutId: string) {
+/**
+ * The full registrations list. Polls every 20s so a coach watching a QR link
+ * sees sign-ups arrive; pass `poll: false` while the screen isn't in view
+ * (tab navigators keep unfocused screens mounted, and they'd keep re-downloading
+ * every registration for a list nobody is looking at).
+ */
+export function useRegistrationsQuery(tryoutId: string, options?: { poll?: boolean }) {
   return useQuery({
     queryKey: queryKeys.registrations(tryoutId),
     queryFn: () => getDataSource().listRegistrations(tryoutId),
     enabled: !!tryoutId,
-    refetchInterval: 20_000,
+    refetchInterval: options?.poll === false ? false : 20_000,
+  });
+}
+
+/**
+ * Pending-registration count for the tab badge. The badge used to be derived
+ * from useRegistrationsQuery, which re-downloaded every registration row every
+ * 20s on every assessment screen just to count a few. The key sits under
+ * queryKeys.registrations(tryoutId), so every registration mutation that
+ * invalidates that prefix refreshes this too.
+ */
+export function usePendingRegistrationCountQuery(tryoutId: string) {
+  return useQuery({
+    queryKey: [...queryKeys.registrations(tryoutId), 'pending-count'] as const,
+    queryFn: () => getDataSource().countPendingRegistrations(tryoutId),
+    enabled: !!tryoutId,
+    refetchInterval: 60_000,
   });
 }
 
@@ -2148,7 +2170,7 @@ export function useSharedAthletesForCoachQuery() {
   });
 }
 
-export function useAthleteShareQuery(shareId?: string) {
+export function useAthleteShareQuery(shareId?: string, options?: { poll?: boolean }) {
   return useQuery({
     queryKey: queryKeys.athleteShare(shareId ?? ''),
     queryFn: () => getDataSource().getAthleteShare(shareId!),
@@ -2156,7 +2178,7 @@ export function useAthleteShareQuery(shareId?: string) {
     // Scores on a share are a live overlay on top of the frozen snapshot (see
     // liveAthleteShareAssessments) — poll while this screen is open so a coach
     // watching a pending evaluation come in doesn't have to manually refresh.
-    refetchInterval: 15_000,
+    refetchInterval: options?.poll === false ? false : 15_000,
   });
 }
 

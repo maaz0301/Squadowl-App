@@ -5,7 +5,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { useTryoutQuery, useRegistrationsQuery, useTryoutRealtimeSync } from '@/features/queries';
+import { useTryoutQuery, usePendingRegistrationCountQuery, useTryoutRealtimeSync } from '@/features/queries';
 import { useSessionStore } from '@/state/sessionStore';
 import { useEvaluationAccess } from '@/features/useEvaluationAccess';
 import { Button, EmptyState, Header, Screen } from '@/components/ui';
@@ -83,8 +83,7 @@ export default function AssessmentTabNavigator() {
   const tryoutQuery = useTryoutQuery(id);
   const tryout = tryoutQuery.data;
 
-  const regsQuery = useRegistrationsQuery(id!);
-  const pendingRegs = (regsQuery.data ?? []).filter(r => r.status === 'pending').length;
+  const pendingRegs = usePendingRegistrationCountQuery(id!).data ?? 0;
 
   // A guardian of one of its players belongs in the athlete view, not here:
   // no roster, scoring or editing.
