@@ -1,5 +1,31 @@
+import { Platform } from 'react-native';
 import messaging from '@react-native-firebase/messaging';
 import { getSupabase } from './supabase';
+
+/**
+ * The device token, or null when this device can't receive pushes (an iOS
+ * simulator, or a build without the aps-environment entitlement). That is an
+ * expected state, not a failure, so it logs a warning rather than an error —
+ * errors surface as a red toast in dev builds. Anything else still throws.
+ */
+async function getDeviceToken(): Promise<string | null> {
+  try {
+    if (Platform.OS === 'ios') {
+      // Required before getToken() on iOS; a no-op if already registered.
+      await messaging().registerDeviceForRemoteMessages();
+    }
+    return await messaging().getToken();
+  } catch (error: any) {
+    // `unregistered`: no APNs registration. `unknown` + aps-environment: the build
+    // lacks the push entitlement (unsigned simulator builds). Both mean "no push here".
+    const msg = String(error?.message ?? '');
+    if (error?.code === 'messaging/unregistered' || msg.includes('aps-environment')) {
+      console.warn('FCM: push notifications are unavailable on this device/build.');
+      return null;
+    }
+    throw error;
+  }
+}
 
 export class FCMManager {
   private static isInitialized = false;
@@ -31,7 +57,7 @@ export class FCMManager {
 
       if (enabled) {
         console.log('FCM Authorization status:', authStatus);
-        const token = await messaging().getToken();
+        const token = await getDeviceToken();
         if (token) {
           await this.saveTokenToSupabase(token);
         }
@@ -76,7 +102,7 @@ export class FCMManager {
   static async login(userId: string) {
     try {
       console.log(`FCM: Logging in user ${userId}`);
-      const token = await messaging().getToken();
+      const token = await getDeviceToken();
       if (token) {
         await this.saveTokenToSupabase(token);
       }
@@ -92,7 +118,7 @@ export class FCMManager {
       const { data: { session } } = await supabase.auth.getSession();
       const userId = session?.user?.id;
 
-      const token = await messaging().getToken();
+      const token = await getDeviceToken();
       if (token) {
         if (userId) {
           console.log(`FCM: Removing token registration for user ${userId}`);
