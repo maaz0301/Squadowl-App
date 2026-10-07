@@ -23,6 +23,7 @@ import {
   useTeamsQuery,
 } from '@/features/queries';
 import { PLAYERS_PER_PAGE_OPTIONS, reportLogoUrls, type PlayersPerPage } from '@/lib/reportPdf';
+import { REPORT_SORT_OPTIONS, type ReportSort } from '@/data/resultsExport';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { canUseFeature, getPlanDefinition } from '@/data/plans';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
@@ -42,6 +43,7 @@ export default function ExportScreen() {
   const [isExporting, setIsExporting] = useState<string | null>(null);
   const [playersPerPage, setPlayersPerPage] = useState<PlayersPerPage>(1);
   const [continuous, setContinuous] = useState(false);
+  const [sortBy, setSortBy] = useState<ReportSort>('jersey');
   const [printLogo, setPrintLogo] = useState(true);
   // The team's own logo, for club accounts. A hook, so it runs before the
   // loading/error guards below.
@@ -73,7 +75,7 @@ export default function ExportScreen() {
         tryout,
         format,
         format === 'pdf'
-          ? { playersPerPage, continuous: continuous && playersPerPage === 1, logoUrls: reportLogoUrls({ club: clubMode && printLogo, organizationLogoUrl, teamLogoUrl }) }
+          ? { playersPerPage, continuous: continuous && playersPerPage === 1, logoUrls: reportLogoUrls({ club: clubMode && printLogo, organizationLogoUrl, teamLogoUrl }), sortBy }
           : undefined,
       );
     } catch (e: any) {
@@ -164,6 +166,16 @@ export default function ExportScreen() {
                     ? 'One player per page, with every evaluation listed.'
                     : 'Several players per page: scores, ranks and notes. Individual evaluations are left out to keep each card small.'}
                 </Text>
+              </View>
+              <View>
+                <Text className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: colors.inkMuted }}>
+                  Order players by
+                </Text>
+                <View className="flex-row flex-wrap">
+                  {REPORT_SORT_OPTIONS.map((o) => (
+                    <Chip key={o.key} label={o.label} active={sortBy === o.key} onPress={() => setSortBy(o.key)} />
+                  ))}
+                </View>
               </View>
               {clubMode && (organizationLogoUrl || teamLogoUrl) ? (
                 <Pressable

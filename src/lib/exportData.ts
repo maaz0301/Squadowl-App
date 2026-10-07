@@ -147,7 +147,7 @@ function wrapSegments(segments: TextSegment[], f: PDFFont, size: number, maxWidt
  */
 async function renderFullResultsPdf(tryout: Tryout, opts: ReportPdfOptions = {}): Promise<string> {
   const docInfo = buildReportDocInfo(tryout);
-  const cards = buildPlayerFullResults(tryout);
+  const cards = buildPlayerFullResults(tryout, opts.sortBy);
 
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -272,8 +272,8 @@ async function renderFullResultsPdf(tryout: Tryout, opts: ReportPdfOptions = {})
     const tableRight = PAGE_WIDTH - MARGIN;
     const col2X = scoreX - 10;
     const col3X = rankX - 10;
-    const headerHeight = 20;
-    const rowHeight = 16;
+    const headerHeight = 24;
+    const rowHeight = 24;
     const tableHeight = headerHeight + rowHeight * metricRows.length;
 
     ensureSpace(tableHeight + 8);
@@ -285,17 +285,18 @@ async function renderFullResultsPdf(tryout: Tryout, opts: ReportPdfOptions = {})
     page.drawLine({ start: { x: col3X, y: tableTop }, end: { x: col3X, y: tableBottom }, thickness: 0.75, color: BLACK });
     page.drawLine({ start: { x: tableLeft, y: tableTop - headerHeight }, end: { x: tableRight, y: tableTop - headerHeight }, thickness: 1, color: BLACK });
 
-    const headerTextY = tableTop - headerHeight + 6;
-    page.drawText('METRIC', { x: MARGIN + 6, y: headerTextY, size: 9, font: fontBold, color: GRAY });
-    page.drawText('SCORE', { x: scoreX, y: headerTextY, size: 9, font: fontBold, color: GRAY });
-    page.drawText('RANK', { x: rankX, y: headerTextY, size: 9, font: fontBold, color: GRAY });
+    const headerTextY = tableTop - headerHeight + 8;
+    page.drawText('METRIC', { x: MARGIN + 6, y: headerTextY, size: 10, font: fontBold, color: GRAY });
+    page.drawText('SCORE', { x: scoreX, y: headerTextY, size: 10, font: fontBold, color: GRAY });
+    page.drawText('RANK', { x: rankX, y: headerTextY, size: 10, font: fontBold, color: GRAY });
 
     let rowTop = tableTop - headerHeight;
     metricRows.forEach((m, i) => {
-      const rowTextY = rowTop - rowHeight + 5;
-      page.drawText(pdfSafe(m.label), { x: MARGIN + 6, y: rowTextY, size: 9, font, color: BLACK });
-      page.drawText(pdfSafe(m.score), { x: scoreX, y: rowTextY, size: 9, font, color: BLACK });
-      page.drawText(pdfSafe(m.rank), { x: rankX, y: rowTextY, size: 9, font, color: BLACK });
+      // Scores are the thing people read off the page, so they are bold and larger than the labels.
+      const rowTextY = rowTop - rowHeight + 7;
+      page.drawText(pdfSafe(m.label), { x: MARGIN + 6, y: rowTextY, size: 11, font, color: BLACK });
+      page.drawText(pdfSafe(m.score), { x: scoreX, y: rowTextY - 1, size: 14, font: fontBold, color: BLACK });
+      page.drawText(pdfSafe(m.rank), { x: rankX, y: rowTextY, size: 11, font, color: BLACK });
       rowTop -= rowHeight;
       if (i < metricRows.length - 1) {
         page.drawLine({ start: { x: tableLeft, y: rowTop }, end: { x: tableRight, y: rowTop }, thickness: 0.5, color: RULE });
@@ -316,15 +317,15 @@ async function renderFullResultsPdf(tryout: Tryout, opts: ReportPdfOptions = {})
       ensureSpace(36);
       const header = `Eval ${ev.index} • ${ev.date} • ${ev.evaluator} • ${ev.session}`;
       const scoreLine = ev.values.map((v) => `${v.abbr}:${v.text || '-'}`).join(' • ');
-      drawWrapped(header, { size: 9, f: fontBold, color: BLUE, gap: 13 });
-      drawWrapped(scoreLine, { size: 8, color: BLUE, gap: 11 });
+      drawWrapped(header, { size: 10, f: fontBold, color: BLUE, gap: 14 });
+      drawWrapped(scoreLine, { size: 9.5, color: BLUE, gap: 13 });
       drawSegments(
         [
           { text: 'Rec: ' },
           { text: `${ev.recommendation || '-'} |`, color: BLUE },
           { text: `Str: ${ev.strengths || '-'} | Imp: ${ev.improve || '-'}` },
         ],
-        { size: 8.5, gap: 11 },
+        { size: 9.5, gap: 13 },
       );
       y -= 6;
     }
