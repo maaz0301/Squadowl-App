@@ -17,3 +17,7 @@ export const APP_CONFIG = {
  * only has to land them on the sign-in screen, which explains the rest.
  */
 export const ASSESSOR_INVITE_URL = `${APP_CONFIG.webUrl}/login?invite=assessor`;
+
+/** Public legal pages, hosted on the web app so one copy serves the site and every store listing. */
+export const PRIVACY_POLICY_URL = `${APP_CONFIG.webUrl}/privacy`;
+export const TERMS_OF_SERVICE_URL = `${APP_CONFIG.webUrl}/terms`;

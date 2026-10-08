@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Text, View, Alert, Pressable, Switch, ScrollView } from 'react-native';
+import { Text, View, Alert, Linking, Pressable, Switch, ScrollView } from 'react-native';
 import { InAppBrowser } from 'react-native-inappbrowser-reborn';
 import { useNavigation } from '@react-navigation/native';
 
 import { useThemeColors, useTheme } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Header, Input, Screen, Avatar, Modal } from '@/components/ui';
 import { BottomNav } from '@/components/BottomNav';
+import { LegalLinks } from '@/components/LegalLinks';
+import { PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '@/config/app';
 import { FeatureBlockGate } from '@/components/FeatureBlockGate';
 import { useThemeStore } from '@/state/themeStore';
 import { useUser, useAuthStore, usePermissions } from '@/state/authStore';
@@ -372,6 +374,8 @@ export default function ProfileScreen() {
             {!(platformBlockedFeatures ?? []).includes('loyalty') ? (
               <Button label="Loyalty Program" variant="ghost" onPress={() => navigation.navigate('Loyalty')} />
             ) : null}
+            <Button label="Privacy Policy" variant="ghost" onPress={() => Linking.openURL(PRIVACY_POLICY_URL)} />
+            <Button label="Terms of Service" variant="ghost" onPress={() => Linking.openURL(TERMS_OF_SERVICE_URL)} />
           </Card>
 
           <Card className="mb-4 gap-2">
@@ -392,6 +396,9 @@ export default function ProfileScreen() {
           </Card>
         </>
       )}
+
+      {/* Everyone else finds these in Quick Links; guardians have no Quick Links card. */}
+      {isGuardianOnly ? <LegalLinks /> : null}
 
       <Card className="mb-4 gap-2">
         <Text className="font-display font-bold" style={{ color: colors.danger }}>

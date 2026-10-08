@@ -8,6 +8,7 @@ import { LoginFormSchema } from '@/data/types';
 import { useAuthStore } from '@/state/authStore';
 import { useTheme } from '@/theme/ThemeProvider';
 import { Button, Input, Screen, ThemeToggle } from '@/components/ui';
+import { LegalLinks } from '@/components/LegalLinks';
 import { APP_CONFIG } from '@/config/app';
 
 export default function LoginScreen() {
@@ -127,6 +128,8 @@ export default function LoginScreen() {
             </Text>
           </Pressable>
         </View>
+
+        <LegalLinks prefix />
       </View>
     </Screen>
   );

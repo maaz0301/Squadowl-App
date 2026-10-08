@@ -8,6 +8,7 @@ import { SignupFormSchema } from '@/data/types';
 import { useAuthStore } from '@/state/authStore';
 import { useTheme } from '@/theme/ThemeProvider';
 import { Button, Input, Screen, Header, ThemeToggle } from '@/components/ui';
+import { LegalLinks } from '@/components/LegalLinks';
 import { flushPendingReferralCode, savePendingReferralCode } from '@/lib/pendingReferral';
 
 export default function SignupScreen() {
@@ -157,6 +158,8 @@ export default function SignupScreen() {
             </Text>
           </Pressable>
         </View>
+
+        <LegalLinks prefix />
       </View>
     </Screen>
   );
