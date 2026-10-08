@@ -1,7 +1,18 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      react-native-fs declares these two. The app never needs them: every file it
+      writes goes to the app's own cache directory, and every file it reads is a
+      copy the image picker or document picker already placed in that cache. They
+      do nothing on a targetSdk 36 app but still show up on the Play listing as
+      storage access, so they are removed from the merged manifest.
+    -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove" />
 
     <!--
       Lets an export be opened on the device instead of only sent somewhere.
