@@ -313,6 +313,11 @@ export default function SettingsScreen() {
             ) : null}
           </Text>
         ) : null}
+        {tryout.rink ? (
+          <View className="flex-row">
+            <MapLink location={tryout.rink} label={tryout.name} size="sm" />
+          </View>
+        ) : null}
         {tryout.cloud?.id ? <Badge label={`Code: ${tryout.cloud.id}`} variant="brand" /> : null}
         <Button label="Edit Details" variant="secondary" size="sm" onPress={openEdit} />
       </Card>

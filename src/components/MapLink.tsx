@@ -41,8 +41,8 @@ export function MapLink({
   size?: 'sm' | 'md';
   /**
    * `chip` is the standalone button used beside "Add to calendar"; `inline`
-   * turns the location text itself into the tappable target, for rows too
-   * tight for another button.
+   * is just the address as text, for use inside a line of text (pair it with
+   * a chip for the directions).
    */
   variant?: 'chip' | 'inline';
   /** Draws the button that opens the picker, for screens with their own styling. */
@@ -105,19 +105,11 @@ export function MapLink({
   }
 
   if (variant === 'inline') {
-    return (
-      <>
-        <Text
-          onPress={() => setOpen(true)}
-          accessibilityRole="link"
-          accessibilityLabel={a11yLabel}
-          style={{ color: colors.primary, textDecorationLine: 'underline' }}
-        >
-          📍 {place}
-        </Text>
-        {picker}
-      </>
-    );
+    // Plain address text. It used to be a tappable "📍 address" that mounted the
+    // picker Modal inside the surrounding <Text>; a Modal nested in Text lays
+    // out at the screen's top-left corner and froze the calendar. Directions
+    // lives on the chip next to it, which renders the picker outside any Text.
+    return <>{place}</>;
   }
 
   return (

@@ -49,8 +49,10 @@ export function HubEventCard({
   return (
     <Pressable
       onPress={onPress}
-      className="flex-row items-center gap-3 rounded-lg mb-2 pr-3 py-3"
+      className={`flex-row items-center gap-3 rounded-lg pr-3 py-3 ${expanded ? '' : 'mb-2'}`}
       style={{
+        // Open: the tile's body continues straight under this bar.
+        ...(expanded ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : null),
         backgroundColor: s.panelBg,
         borderWidth: 1,
         borderColor: selected ? s.orangeBorder : s.panelBorder,

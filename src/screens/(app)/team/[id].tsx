@@ -162,12 +162,15 @@ export default function TeamDetailScreen() {
   const [showAddEvent, setShowAddEvent] = useState(false);
   const [tab, setTab] = useState(route.params?.tab === 'settings' ? 'settings' : 'schedule');
   const [openRsvpEventId, setOpenRsvpEventId] = useState<string | null>(null);
+  // The event whose attendance (Team Status + RSVPs) is unfolded inside its tile.
+  const [attendanceEventId, setAttendanceEventId] = useState<string | null>(null);
   // The event Team Status, RSVPs and the action row are pointed at.
   // Arriving from the Calendar screen with an event opens that event straight away.
   const focusEventId: string | null = route.params?.eventId ?? null;
   const [selectedEventId, setSelectedEventId] = useState<string | null>(focusEventId);
   // Whether the selected event's details are showing under its card.
-  const [eventDetailsOpen, setEventDetailsOpen] = useState(true);
+  // Tiles start folded to their date bar; arriving with an event opens that one.
+  const [eventDetailsOpen, setEventDetailsOpen] = useState(!!focusEventId);
   const [showAllEvents, setShowAllEvents] = useState(!!focusEventId);
   // Past events: the Schedule tab leads with what's coming, and this switches it
   // to what already happened, so photos and videos added to a game stay reachable.
@@ -1562,7 +1565,7 @@ export default function TeamDetailScreen() {
                       <View key={ev.id}>
                         <HubEventCard
                           event={ev}
-                          selected={selectedEvent?.id === ev.id}
+                          selected={open}
                           expanded={open}
                           playerCount={playerCount}
                           evaluatorCount={evaluatorCount}
@@ -1572,18 +1575,24 @@ export default function TeamDetailScreen() {
                             setEventDetailsOpen(selectedEvent?.id === ev.id ? !eventDetailsOpen : true);
                             setSelectedEventId(ev.id);
                             setOpenRsvpEventId(null);
+                            setAttendanceEventId(null);
                           }}
                         />
-                        {/* Every event offers Add to calendar, not only the one that is open. */}
-                        {!open ? (
-                          <View className="mb-2 flex-row px-1">
-                            <AddToCalendar event={ev} teamName={team.name} size="sm" />
-                          </View>
-                        ) : null}
-                        {open ? (<View className="mb-4">{(() => {
+                        {open ? (<View
+                          className="mb-2 px-3 pt-1 pb-3"
+                          style={{
+                            borderWidth: 1,
+                            borderTopWidth: 0,
+                            borderLeftWidth: 3,
+                            borderColor: colors.primary,
+                            borderBottomLeftRadius: 8,
+                            borderBottomRightRadius: 8,
+                          }}
+                        >{(() => {
                     const ev = selectedEvent;
                     const rsvp = rsvpByEvent.get(ev.id) ?? EMPTY_RSVP;
                     const expanded = openRsvpEventId === ev.id;
+                    const attendanceOpen = attendanceEventId === ev.id;
                     // Only the open panel pays for filtering/slicing its roster.
                     const q = expanded ? rsvpSearch.trim().toLowerCase() : '';
                     const matchedRows = !expanded
@@ -1595,6 +1604,40 @@ export default function TeamDetailScreen() {
                     const remaining = matchedRows.length - shownRows.length;
                     return (
                       <>
+                        {/* Attached notes first: info, videos, photos and comments. */}
+                        {teamSeasonId ? (
+                          <EventDiscussion
+                            seasonId={teamSeasonId}
+                            eventId={ev.id}
+                            canManage={canEditTeam}
+                            currentUserId={user?.id}
+                          />
+                        ) : null}
+
+                        <HubRowCard
+                          icon={HUB_ICONS.chart}
+                          title={attendanceOpen ? 'Hide attendance' : 'Attendance'}
+                          caption={
+                            ev.availabilityPending
+                              ? 'Loading RSVPs...'
+                              : `${rsvp.counts.yes} yes · ${rsvp.counts.maybe} maybe · ${rsvp.counts.no} no · ${rsvp.counts.pending} pending`
+                          }
+                          onPress={() => {
+                            setAttendanceEventId(attendanceOpen ? null : ev.id);
+                            setOpenRsvpEventId(null);
+                          }}
+                          trailing={
+                            <HubIcon
+                              d={attendanceOpen ? HUB_ICONS.chevronUp : HUB_ICONS.chevronDown}
+                              size={16}
+                              color={colors.inkMuted}
+                              strokeWidth={2.5}
+                            />
+                          }
+                        />
+
+                        {attendanceOpen ? (
+                        <View className="mt-3">
                         <HubSectionLabel icon={HUB_ICONS.chart} label="Team Status" />
                         {/* The event lands a round trip or two before its RSVPs do
                             (see getSeason's staged read), a tally of zeroes in the
@@ -1707,14 +1750,7 @@ export default function TeamDetailScreen() {
                         )}
                       </View>
                     ) : null}
-
-                        {teamSeasonId ? (
-                          <EventDiscussion
-                            seasonId={teamSeasonId}
-                            eventId={ev.id}
-                            canManage={canEditTeam}
-                            currentUserId={user?.id}
-                          />
+                        </View>
                         ) : null}
 
                         <View className="flex-row flex-wrap justify-between gap-2 mt-3">
@@ -1753,24 +1789,7 @@ export default function TeamDetailScreen() {
                   })
                 )}
 
-                {selectedEvent ? (
-                  <View className="mb-6">
-                    <AddToCalendar
-                      event={selectedEvent}
-                      teamName={team.name}
-                      renderTrigger={(open) => (
-                        <HubRowCard
-                          icon={HUB_ICONS.calendar}
-                          title="Add to Calendar"
-                          caption="Sync this event with your calendar"
-                          onPress={open}
-                        />
-                      )}
-                    />
-                  </View>
-                ) : (
-                  <View className="mb-3" />
-                )}
+                <View className="mb-3" />
 
                 <HubSectionLabel icon={HUB_ICONS.calendar} label="Season Hub" />
                 {canEditTeam ? (
