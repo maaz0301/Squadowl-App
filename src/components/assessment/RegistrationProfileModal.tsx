@@ -38,6 +38,8 @@ interface RegistrationProfileModalProps {
   onClose: () => void;
   /** Omitted for non-pending registrations, which have nowhere left to go. */
   onAddToRoster?: () => void;
+  /** Wording for the add button: "Add to Roster" for an evaluation, "Add to Team" on a team's own page. */
+  addLabel?: string;
   onDismiss?: () => void;
   /** The evaluation's own names. */
   labels?: import('@/data/types').CustomLabels;
@@ -52,6 +54,7 @@ export function RegistrationProfileModal({
   registration,
   onClose,
   onAddToRoster,
+  addLabel = 'Add to Roster',
   onDismiss,
   labels,
 }: RegistrationProfileModalProps) {
@@ -67,7 +70,7 @@ export function RegistrationProfileModal({
       footer={
         <View className="mt-4 gap-2">
           {r?.status === 'pending' && onAddToRoster ? (
-            <Button label="Add to Roster" onPress={onAddToRoster} />
+            <Button label={addLabel} onPress={onAddToRoster} />
           ) : null}
           {r?.status === 'pending' && onDismiss ? (
             <Button label="Dismiss" variant="ghost" onPress={onDismiss} />

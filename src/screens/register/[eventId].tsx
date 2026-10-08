@@ -63,10 +63,16 @@ export default function PublicRegistration() {
       setIsSuccess(true);
     } catch (err) {
       console.error(err);
+      // A closed, switched-off or unknown link is a different problem from a
+      // glitch, and retrying will not help: say so instead of "try again".
+      const closed = err instanceof Error && /invalid or closed registration code/i.test(err.message);
+      const message = closed
+        ? 'This registration link is closed or no longer valid. Please contact the organizer for a new one.'
+        : 'Failed to register. Please try again.';
       if (Platform.OS === 'web') {
-        window.alert('Failed to register. Please try again.');
+        window.alert(message);
       } else {
-        Alert.alert('Error', 'Failed to register. Please try again.');
+        Alert.alert('Error', message);
       }
     } finally {
       setIsSubmitting(false);

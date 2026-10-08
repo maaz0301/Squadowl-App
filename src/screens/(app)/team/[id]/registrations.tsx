@@ -332,6 +332,7 @@ export default function TeamRegistrationsScreen() {
       </Modal>
 
       <RegistrationProfileModal
+        addLabel="Add to Team"
         registration={viewing}
         onClose={() => setViewingId(null)}
         onAddToRoster={() => {
