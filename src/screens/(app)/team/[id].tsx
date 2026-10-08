@@ -1614,6 +1614,7 @@ export default function TeamDetailScreen() {
                           />
                         ) : null}
 
+                        <View className="mt-3">
                         <HubRowCard
                           icon={HUB_ICONS.chart}
                           title={attendanceOpen ? 'Hide attendance' : 'Attendance'}
@@ -1635,6 +1636,7 @@ export default function TeamDetailScreen() {
                             />
                           }
                         />
+                        </View>
 
                         {attendanceOpen ? (
                         <View className="mt-3">
