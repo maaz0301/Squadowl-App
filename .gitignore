@@ -13,6 +13,10 @@ expo-env.d.ts
 .kotlin/
 *.orig.*
 *.jks
+# Play upload key and its passwords. debug.keystore stays tracked on purpose.
+android/keystore.properties
+*.keystore
+!android/app/debug.keystore
 *.p8
 *.p12
 *.key
