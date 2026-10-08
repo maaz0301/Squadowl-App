@@ -329,22 +329,19 @@ export default function GuardianPortalScreen() {
   return (
     <Screen padded={false}>
       <View className="px-4 pb-2">
-        <Header
-          title="Guardian Portal"
-          showBack
-          right={
-            <View className="flex-row items-center gap-2">
-              <ChatIconButton onPress={openChat} badge={<UnreadPill count={totalUnread} />} />
-              <Button label="Library" size="sm" variant="secondary" onPress={() => navigation.navigate('Library')} />
-              <Button
-                label="Share"
-                size="sm"
-                variant="secondary"
-                onPress={() => navigation.navigate('ShareDirectory', { athleteId: playerId })}
-              />
-            </View>
-          }
-        />
+        {/* The title gets the whole row; at this width the three actions beside it
+            squeezed "Guardian Portal" onto three lines. */}
+        <Header title="Guardian Portal" showBack />
+        <View className="flex-row items-center justify-end gap-2 -mt-1">
+          <ChatIconButton onPress={openChat} badge={<UnreadPill count={totalUnread} />} />
+          <Button label="Library" size="sm" variant="secondary" onPress={() => navigation.navigate('Library')} />
+          <Button
+            label="Share"
+            size="sm"
+            variant="secondary"
+            onPress={() => navigation.navigate('ShareDirectory', { athleteId: playerId })}
+          />
+        </View>
 
         <View className="flex-row items-center gap-4 mb-4 mt-2">
           <Avatar first={athlete.firstName} last={athlete.lastName} size={64} uri={athlete.avatarUrl} />
