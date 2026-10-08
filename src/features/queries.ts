@@ -17,6 +17,7 @@ import type {
   TeamRosterCursor,
   Tryout,
   UserProfile,
+  ChatReportReason,
 } from '@/data/types';
 import { queryKeys } from '@/lib/queryClient';
 import { getSupabase } from '@/lib/supabase';
@@ -2341,6 +2342,44 @@ export function useDeleteTeamMessageMutation(seasonId: string) {
   return useMutation({
     mutationFn: (messageId: string) => getDataSource().deleteTeamMessage(messageId),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.teamMessages(seasonId) }),
+  });
+}
+
+/** People the user has blocked in team chat. */
+export function useBlockedChatUsersQuery() {
+  return useQuery({
+    queryKey: queryKeys.chatBlockedUsers,
+    queryFn: () => getDataSource().listBlockedChatUsers(),
+  });
+}
+
+/** Blocking or unblocking changes what every open chat and unread badge shows. */
+function invalidateChatForBlocks(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: queryKeys.chatBlockedUsers });
+  qc.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'season' && q.queryKey[2] === 'messages' });
+  qc.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'teamMessages' });
+}
+
+export function useBlockChatUserMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => getDataSource().blockChatUser(userId),
+    onSuccess: () => invalidateChatForBlocks(qc),
+  });
+}
+
+export function useUnblockChatUserMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => getDataSource().unblockChatUser(userId),
+    onSuccess: () => invalidateChatForBlocks(qc),
+  });
+}
+
+export function useReportTeamMessageMutation() {
+  return useMutation({
+    mutationFn: ({ messageId, reason, details }: { messageId: string; reason: ChatReportReason; details?: string }) =>
+      getDataSource().reportTeamMessage(messageId, reason, details),
   });
 }
 

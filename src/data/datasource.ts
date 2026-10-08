@@ -38,6 +38,8 @@ import type {
   Team,
   TeamBuilderResult,
   TeamMessage,
+  BlockedChatUser,
+  ChatReportReason,
   Tryout,
   TryoutSummary,
   UserProfile,
@@ -330,6 +332,13 @@ export interface DataSource {
   countUnreadTeamMessages(seasonId: string, sinceMs: number): Promise<number>;
   sendTeamMessage(seasonId: string, body: string): Promise<TeamMessage>;
   deleteTeamMessage(messageId: string): Promise<void>;
+  /** People the signed-in user has blocked in chat. Empty (never an error) if blocking is unavailable. */
+  listBlockedChatUsers(): Promise<BlockedChatUser[]>;
+  /** Hides this person's chat messages from the signed-in user. */
+  blockChatUser(userId: string): Promise<void>;
+  unblockChatUser(userId: string): Promise<void>;
+  /** Flags a message for the platform operators to review. */
+  reportTeamMessage(messageId: string, reason: ChatReportReason, details?: string): Promise<void>;
   getAthleteHistory(athleteId: string): Promise<AthleteHistory>;
   /**
    * Highest session number each player in an assessment has already been

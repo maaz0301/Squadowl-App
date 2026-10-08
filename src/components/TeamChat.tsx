@@ -11,6 +11,7 @@ import {
   useTeamChatRealtimeSync,
   useTeamMessagesQuery,
 } from '@/features/queries';
+import { useChatSafety } from '@/components/ChatSafety';
 import { useAuthStore } from '@/state/authStore';
 import { useChatReadStore } from '@/state/chatReadStore';
 import type { TeamMessage } from '@/data/types';
@@ -90,6 +91,7 @@ function Bubble({
   colors,
   isDark,
   onLongPress,
+  onMore,
 }: {
   message: TeamMessage;
   mine: boolean;
@@ -97,6 +99,8 @@ function Bubble({
   colors: any;
   isDark: boolean;
   onLongPress: () => void;
+  /** Opens report and block for someone else's message. */
+  onMore?: () => void;
 }) {
   // Outgoing keeps the brand tint (WhatsApp's own green would fight the palette);
   // incoming is the neutral surface, same contrast relationship as the original.
@@ -117,7 +121,13 @@ function Bubble({
 
   return (
     <View className={`px-2 ${mine ? 'items-end' : 'items-start'}`} style={{ marginTop: startsRun ? 8 : 2 }}>
-      <Pressable onLongPress={mine ? onLongPress : undefined} delayLongPress={350} className="max-w-[82%]">
+      <View className="flex-row items-start" style={{ maxWidth: '92%' }}>
+      <Pressable
+        onLongPress={mine ? onLongPress : onMore}
+        delayLongPress={350}
+        className="shrink"
+        style={{ maxWidth: '88%' }}
+      >
         <View
           style={{
             backgroundColor: bubbleColor,
@@ -168,6 +178,21 @@ function Bubble({
           </Text>
         </View>
       </Pressable>
+      {!mine && onMore ? (
+        <Pressable
+          onPress={onMore}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel={`Report or block ${message.authorName}`}
+          className="items-center justify-center"
+          style={{ width: 28, height: 28 }}
+        >
+          <Text className="text-lg font-bold" style={{ color: colors.inkMuted }}>
+            ⋯
+          </Text>
+        </Pressable>
+      ) : null}
+      </View>
     </View>
   );
 }
@@ -196,6 +221,7 @@ export function TeamChat({
   const sendMessage = useSendTeamMessageMutation();
   const deleteMessage = useDeleteTeamMessageMutation(seasonId ?? '');
   useTeamChatRealtimeSync(seasonId);
+  const safety = useChatSafety();
 
   // Having the conversation on screen is what counts as reading it, so the
   // cursor follows the newest loaded message rather than waiting for a scroll
@@ -267,6 +293,18 @@ export function TeamChat({
   return (
     <View className="flex-1">
       {typeToConfirm.modal}
+      {safety.modals}
+      {safety.blockedCount > 0 ? (
+        <Pressable
+          onPress={safety.openBlocked}
+          className="-mx-4 px-4 py-2"
+          style={{ backgroundColor: colors.tile, borderBottomWidth: 1, borderBottomColor: colors.border }}
+        >
+          <Text className="text-xs font-bold" style={{ color: colors.primary }}>
+            Blocked people ({safety.blockedCount})
+          </Text>
+        </Pressable>
+      ) : null}
       <View className="flex-1 -mx-4" style={{ backgroundColor: wallpaper }}>
         {messagesQuery.isLoading ? (
           <View className="flex-1 items-center justify-center gap-2">
@@ -306,6 +344,7 @@ export function TeamChat({
                   colors={colors}
                   isDark={isDark}
                   onLongPress={() => confirmDelete(item.message)}
+                  onMore={() => safety.openActions(item.message)}
                 />
               </View>
             )}

@@ -121,6 +121,7 @@ export const queryKeys = {
   sharedAthletes: ['sharedAthletes'] as const,
   athleteShare: (shareId: string) => ['athleteShare', shareId] as const,
   shareComments: (shareId: string) => ['shareComments', shareId] as const,
+  chatBlockedUsers: ['chatBlockedUsers'] as const,
   teamMessages: (seasonId: string) => ['teamMessages', seasonId] as const,
   // The read cursor is part of the key so opening the chat (which moves the
   // cursor) invalidates the badge's count by construction, rather than needing
