@@ -30,7 +30,7 @@ import { MapLink, MapLocationHint } from '@/components/MapLink';
 import { describeInviteResult, inviteNeedsAttention } from '@/lib/inviteResult';
 import { durationOf, endFromDuration } from '@/data/timeRange';
 import { Avatar, Badge, Button, Card, Chip, DateField, ErrorState, Header, Input, LoadingState, Modal, Screen, TimeField, TypeToConfirmModal, useTypeToConfirm, DurationField } from '@/components/ui';
-import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useDeleteTeamMutation, useArchiveTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterQuery, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonsQuery, useTeamCalendarLinksQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useAddAthletesToEventsMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation, useAccountPlayerCount } from '@/features/queries';
+import { useTeamsQuery, useAssessmentAthletesQuery, useTryoutSummariesQuery, useDeleteTeamMutation, useArchiveTeamMutation, useUpdateTryoutMutation, useCreateTryoutMutation, useTeamRosterQuery, useTeamRosterPagesQuery, useTeamRosterAthleteIdsQuery, useAddTeamRosterPlayersMutation, useAddManualTeamPlayerMutation, useImportTeamRosterPlayersMutation, useUploadTeamPlayerPhotoMutation, useRemoveTeamRosterPlayerMutation, useRemoveTeamRosterPlayersMutation, useTeamRosterInvitesMutation, useSeasonSummariesQuery, useSeasonsQuery, useTeamCalendarLinksQuery, useSeasonQuery, useSeasonRealtimeSync, useAddTeamEventMutation, useUpdateSeasonEventMutation, useDeleteSeasonEventMutation, useAddAthletesToEventsMutation, useSetAvailabilityMutation, useGenerateTestDataMutation, useClearTestDataMutation, useAccountPlayerCount, usePendingTeamRegistrationCountQuery } from '@/features/queries';
 import { useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import { canUseFeature, effectiveTierForTeam, isAtPlayerLimit, canUseDummyData, playerRoom, playersTowardCap, assessmentRoom } from '@/data/plans';
@@ -130,6 +130,9 @@ export default function TeamDetailScreen() {
   const accountPlayersFree = useAccountPlayerCount((user?.planTier ?? 'free') === 'free');
   const { canManageTeam } = usePermissions();
   const teamManagedForPerm = teamsQuery.data?.find((t) => t.id === id)?.managed;
+  // Sign-ups that came in through the team's registration link, for the button's badge.
+  // Only staff and delegated managers can see registrations, so nobody else asks.
+  const pendingTeamRegistrations = usePendingTeamRegistrationCountQuery(id, canManageTeam || !!teamManagedForPerm);
   const [editing, setEditing] = useState(false);
   const [showAttachModal, setShowAttachModal] = useState(false);
   const [showAddPlayers, setShowAddPlayers] = useState(false);
@@ -1236,6 +1239,18 @@ export default function TeamDetailScreen() {
                       setRosterSort('recent');
                       setRosterSelectMode(true);
                     }}
+                  />
+                ) : null}
+                {canEditTeam ? (
+                  <Button
+                    label={
+                      (pendingTeamRegistrations.data ?? 0) > 0
+                        ? `Registration Link (${pendingTeamRegistrations.data})`
+                        : 'Registration Link'
+                    }
+                    size="sm"
+                    variant="secondary"
+                    onPress={() => navigation.navigate('TeamRegistrations', { id })}
                   />
                 ) : null}
                 {canEditTeam && playerCount > 0 ? (
