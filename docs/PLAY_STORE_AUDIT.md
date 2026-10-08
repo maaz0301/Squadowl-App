@@ -11,7 +11,7 @@ This is a code and configuration audit. It reports what the project declares and
 | Area | Status | Note |
 |---|---|---|
 | Target API level | Pass | `targetSdk` 36, `compileSdk` 36, `minSdk` 24 |
-| Release signing | **Blocker** | The release build is signed with the debug keystore |
+| Release signing | Done in code, needs your key | Release builds use a real upload key from `android/keystore.properties` or env vars, and `bundleRelease` refuses to build without it. See `docs/ANDROID_RELEASE.md`. |
 | Privacy policy | Added, needs deploy and review | Pages `/privacy` and `/terms` and links in the app and web were added 8 Oct 2026 (see 5.5) |
 | Subscription payments | **High risk** | Plans are bought through Stripe in an in-app browser, not Google Play Billing |
 | User generated content | **High risk** | Chat, comments and photos exist, but no report or block mechanism was found |
@@ -85,7 +85,7 @@ Collected and stored in Supabase (Postgres). All traffic is HTTPS to Supabase, S
 | Push token | Device | Notifications | Firebase (Google) |
 | Payment data | Coaches and parents | Plan and fee payments | **Stripe only. Card data never touches the app or the database.** Stripe customer and subscription ids are stored. |
 | Email delivery content | Users | Invites and reminders | Resend or SendGrid (email processors) |
-| AI request text | Coaches | "Build teams" prompt, positions, player count (roster names are not sent for that call) | Anthropic via a Supabase Edge Function. **Verify** the other AI actions in `generate-ai-insights` and list exactly what each sends. |
+| AI request text | Coaches | Only when a coach runs an AI feature. **Summary and compare** send athlete name, position, evaluation scores, evaluator name and the coach's written strengths and improvement comments. **Team builder** sends each athlete's name, position, year of birth, friend-group names and ranking scores, plus the coach's instruction. **Team builder rules** sends only the instruction, the list of position labels and a player count. Contact details, medical notes, full dates of birth and payment data are never sent (checked in `generate-ai-insights`, 8 Oct 2026). | Anthropic, via a Supabase Edge Function |
 
 Suggested form answers:
 - Data collected: Yes. Personal info (name, email, phone, DOB), Health info (medical notes), Photos and videos, Messages, App activity, Device or other ids (push token), Financial info (via Stripe only).
@@ -174,7 +174,7 @@ declared, so no Digital Asset Links file is needed. If checkout is removed from 
 ## 7. Action list
 
 **Must fix before submission**
-1. Replace debug signing with a real upload key and enroll in Play App Signing.
+1. ~~Replace debug signing~~ Done in code (8 Oct 2026). You still create the upload key and enroll in Play App Signing; see `docs/ANDROID_RELEASE.md`.
 2. ~~Publish a privacy policy URL~~ Done in code. Deploy it, review the text, and enter the URL in Play Console.
 3. Decide the plan purchase approach on Android (5.1).
 4. Add report and block controls for chat and comments (5.2).
@@ -183,7 +183,7 @@ declared, so no Digital Asset Links file is needed. If checkout is removed from 
 
 **Should fix**
 7. Remove `react-native-vision-camera` and the server only npm packages if unused.
-8. List exactly what each AI action sends to Anthropic and disclose it.
+8. ~~List exactly what each AI action sends to Anthropic~~ Done (section 4); the privacy policy now matches it.
 9. Test on a 16 KB page size device.
 10. Prepare store assets: screenshots, feature graphic, content rating questionnaire (answer for UGC, no violence, no gambling).
 
