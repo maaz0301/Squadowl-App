@@ -71,7 +71,7 @@ export function ContextVideos({ context, contextId, accountId: accountIdProp, ti
       const uploaded = await compressAndUploadVideo({
         file: picked,
         context,
-        title: picked.name,
+        title: picked.name.replace(/\.[^.]+$/, ''),
         accountId,
         onProgress: setProgress,
       });
