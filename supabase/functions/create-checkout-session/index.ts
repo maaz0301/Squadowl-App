@@ -8,6 +8,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+/** CAD cents per year for each video storage size. Mirrors VIDEO_STORAGE_PLANS in src/data/videoStorage.ts. */
+const VIDEO_STORAGE_PRICES_CAD: Record<number, number> = { 1: 1500, 5: 2500, 20: 4000 };
+
 /**
  * What this checkout's single line item comes to, in cents — needed to size a
  * loyalty-credit coupon against it. Inline `price_data` carries the amount
@@ -37,13 +40,19 @@ serve(async (req) => {
   }
 
   try {
-    const { planTier, interval: rawInterval, addOn, quantity: rawQuantity, origin, applyCredits, discountCode: rawDiscountCode } = await req.json();
+    const { planTier, interval: rawInterval, addOn, quantity: rawQuantity, storageGb: rawStorageGb, origin, applyCredits, discountCode: rawDiscountCode } = await req.json();
     const interval: 'year' | 'month' = rawInterval === 'month' ? 'month' : 'year';
     const webOrigin = resolveWebOrigin(origin);
     // Add-on team licenses (Club: CAD$10/team/year beyond the 6 included) go through
     // the same checkout, but they must not touch plan_tier — see the metadata below.
     const isTeamLicense = addOn === 'team_licenses';
     const licenseQuantity = Math.max(1, Math.min(100, Math.round(Number(rawQuantity) || 1)));
+    // Video storage add-on (1, 5 or 20 GB per year, shared by every team on the account).
+    const isVideoStorage = addOn === 'video_storage';
+    const storageGb = Number(rawStorageGb);
+    if (isVideoStorage && !VIDEO_STORAGE_PRICES_CAD[storageGb]) {
+      throw new Error('Choose 1 GB, 5 GB or 20 GB of video storage.');
+    }
 
     const authHeader = req.headers.get('Authorization')!;
     if (!authHeader) {
@@ -83,6 +92,22 @@ serve(async (req) => {
       throw new Error('Additional teams are only available on the Coach+ and Club plans. Upgrade first.');
     }
 
+    // Video storage is a Coach+ and Club add-on, and an account holds one storage
+    // subscription at a time (changing size goes through manage-video-storage).
+    if (isVideoStorage) {
+      if (account?.plan_tier !== 'club' && account?.plan_tier !== 'coach_plus') {
+        throw new Error('Video storage is only available on the Coach+ and Club plans. Upgrade first.');
+      }
+      const { data: current } = await supabaseAdmin
+        .from('accounts')
+        .select('video_storage_gb')
+        .eq('id', accountId)
+        .single();
+      if ((current?.video_storage_gb ?? 0) > 0) {
+        throw new Error('This account already has video storage. Change its size from the Storage screen.');
+      }
+    }
+
     if (!customerId) {
       // Create a stripe customer
       const customer = await stripe.customers.create({
@@ -110,14 +135,28 @@ serve(async (req) => {
     /** CAD$20/team/year — mirrors EXTRA_TEAM_PRICE_CENTS in src/data/plans.ts. */
     const EXTRA_TEAM_PRICE_CENTS = 2000;
 
-    const envKey = isTeamLicense
+    const envKey = isVideoStorage
+      ? `STRIPE_PRICE_ID_VIDEO_STORAGE_${storageGb}GB_YEARLY`
+      : isTeamLicense
       ? 'STRIPE_PRICE_ID_TEAM_LICENSE_YEARLY'
       : `STRIPE_PRICE_ID_${String(planTier ?? '').toUpperCase()}_${interval === 'year' ? 'YEARLY' : 'MONTHLY'}`;
     const rawPriceId = Deno.env.get(envKey);
     const priceId = rawPriceId && rawPriceId.trim() !== '' && rawPriceId !== 'undefined' && rawPriceId !== 'null' ? rawPriceId.trim() : null;
 
     let lineItem: any;
-    if (isTeamLicense) {
+    if (isVideoStorage) {
+      lineItem = priceId
+        ? { price: priceId, quantity: 1 }
+        : {
+            price_data: {
+              currency: 'cad',
+              product_data: { name: `SquadOwl Video Storage ${storageGb} GB` },
+              unit_amount: VIDEO_STORAGE_PRICES_CAD[storageGb],
+              recurring: { interval: 'year' },
+            },
+            quantity: 1,
+          };
+    } else if (isTeamLicense) {
       lineItem = priceId
         ? { price: priceId, quantity: licenseQuantity }
         : {
@@ -158,7 +197,7 @@ serve(async (req) => {
     const discountCode = typeof rawDiscountCode === 'string' ? rawDiscountCode.trim() : '';
     let discount: any = null;
     if (discountCode) {
-      if (isTeamLicense) {
+      if (isTeamLicense || isVideoStorage) {
         throw new Error('Discount codes apply to plan upgrades only.');
       }
       const { data: check, error: checkErr } = await supabaseAdmin.rpc('check_discount_code', {
@@ -234,11 +273,24 @@ serve(async (req) => {
       line_items: [lineItem],
       mode: 'subscription' as const,
       ...(couponId ? { discounts: [{ coupon: couponId }] } : {}),
+      // Stamped on the subscription itself so its own lifecycle events (renewal,
+      // cancellation) can be told apart from the plan subscription's.
+      ...(isVideoStorage
+        ? { subscription_data: { metadata: { accountId, type: 'video_storage', storageGb: String(storageGb) } } }
+        : {}),
       success_url: webOrigin ? `${webOrigin}/upgrade?success=true` : `aastryout://upgrade?success=true`,
       cancel_url: webOrigin ? `${webOrigin}/upgrade?canceled=true` : `aastryout://upgrade?canceled=true`,
       // A team-license purchase deliberately carries no planTier: the webhook keys off
       // `type` and only increments extra_team_licenses, leaving the plan alone.
-      metadata: isTeamLicense
+      metadata: isVideoStorage
+        ? {
+            accountId: accountId,
+            type: 'video_storage',
+            storageGb: String(storageGb),
+            interval: 'year',
+            referralCreditsCents: String(creditCents),
+          }
+        : isTeamLicense
         ? {
             accountId: accountId,
             type: 'team_license',

@@ -145,3 +145,8 @@ entrypoint = "./functions/resend-invite/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/season-calendar-feed/index.ts"
+
+# Called by a scheduler with the service role key or VIDEO_MAINTENANCE_SECRET, not by a signed-in user.
+[functions.video-storage-maintenance]
+enabled = true
+verify_jwt = false

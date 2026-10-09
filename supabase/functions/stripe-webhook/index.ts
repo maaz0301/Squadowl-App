@@ -184,6 +184,28 @@ async function resolvePendingPlanChange(
   }
 }
 
+/**
+ * Cancels the account's video storage subscription once its plan has fallen
+ * below Coach+. The storage then lapses (set_video_storage via the resulting
+ * customer.subscription.deleted event) and the maintenance function deletes the
+ * videos. Failures are logged, not thrown: the plan reconcile already succeeded.
+ */
+async function cancelOrphanedVideoStorage(accountId: string): Promise<void> {
+  try {
+    const { data } = await supabaseAdmin
+      .from('accounts')
+      .select('video_storage_sub_id, video_storage_source')
+      .eq('id', accountId)
+      .maybeSingle();
+    if (data?.video_storage_sub_id && data.video_storage_source === 'stripe') {
+      await stripe.subscriptions.cancel(data.video_storage_sub_id, { prorate: false });
+      console.log(`Cancelled video storage subscription ${data.video_storage_sub_id} for account ${accountId}.`);
+    }
+  } catch (err: any) {
+    console.error('Could not cancel orphaned video storage subscription:', err.message || err);
+  }
+}
+
 serve(async (req: Request) => {
   const signature = req.headers.get('Stripe-Signature');
   
@@ -263,6 +285,25 @@ serve(async (req: Request) => {
           } else {
             console.log(`Recorded discount code ${session.metadata?.discountCode} for account ${accountId}.`);
           }
+        }
+
+        // Video storage add-on: switches the account's storage size on. It is state, not a
+        // counter, so a redelivered event just writes the same values again.
+        if (accountId && session.metadata?.type === 'video_storage') {
+          const gb = Number(session.metadata?.storageGb) || 0;
+          const { error } = await supabaseAdmin.rpc('set_video_storage', {
+            p_account_id: accountId,
+            p_gb: gb,
+            p_source: 'stripe',
+            p_subscription_id: (session.subscription as string) ?? null,
+            p_cancel_at: null,
+          });
+          if (error) {
+            console.error('Error activating video storage:', error);
+            return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+          }
+          console.log(`Video storage ${gb} GB active for account ${accountId}.`);
+          break;
         }
 
         // Add-on team licenses (Club: CAD$10/team/year beyond the 6 included) carry no
@@ -368,6 +409,31 @@ serve(async (req: Request) => {
       case 'customer.subscription.deleted': {
         const subscription = event.data.object;
 
+        // The video storage add-on is its own subscription. Its lifecycle moves the
+        // storage entitlement only and never the plan tier. A scheduled cancellation
+        // keeps the storage on until the paid period ends (cancel_at), which is when
+        // the maintenance function deletes the videos.
+        if (subscription.metadata?.type === 'video_storage' && subscription.metadata?.accountId) {
+          const live =
+            event.type !== 'customer.subscription.deleted' &&
+            ['active', 'trialing', 'past_due'].includes(subscription.status);
+          const cancelAtSec = subscription.cancel_at_period_end
+            ? (subscription.cancel_at ?? subscription.current_period_end ?? null)
+            : (subscription.cancel_at ?? null);
+          const { error: storageError } = await supabaseAdmin.rpc('set_video_storage', {
+            p_account_id: subscription.metadata.accountId,
+            p_gb: live ? Number(subscription.metadata.storageGb) || 0 : 0,
+            p_source: 'stripe',
+            p_subscription_id: subscription.id,
+            p_cancel_at: live && cancelAtSec ? new Date(cancelAtSec * 1000).toISOString() : null,
+          });
+          if (storageError) {
+            console.error('Error updating video storage:', storageError);
+            return new Response(JSON.stringify({ error: storageError.message }), { status: 500 });
+          }
+          break;
+        }
+
         // An add-on team-license subscription is a second subscription on the same
         // customer, so it never matches accounts.stripe_subscription_id below. Cancelling
         // it gives the extra teams back instead of touching the plan tier.
@@ -444,6 +510,8 @@ serve(async (req: Request) => {
 
             for (const sub of all.data) {
               if (!ENTITLING.includes(sub.status)) continue;
+              // Video storage is an add-on, not a plan: it never entitles or blocks a tier.
+              if (sub.metadata?.type === 'video_storage') continue;
               entitlingCount++;
               // Team-license subscriptions resolve to no tier and are skipped.
               const tier = await resolvePlanTierFromSubscription(sub, priceIdToTier);
@@ -526,6 +594,13 @@ serve(async (req: Request) => {
               `Reconciled account ${account.id} to plan tier "${updates.plan_tier}" ` +
                 `(status "${updates.subscription_status}") from customer ${customerId ?? 'unknown'}'s subscriptions.`,
             );
+          }
+
+          // Storage is a Coach+ and Club add-on. Once the plan is below that the videos are
+          // going, so stop billing for the storage too.
+          const reconciledTier = String(updates.plan_tier ?? account.plan_tier);
+          if (!error && reconciledTier !== 'coach_plus' && reconciledTier !== 'club') {
+            await cancelOrphanedVideoStorage(account.id);
           }
 
           if (!error && droppedToFree) {
