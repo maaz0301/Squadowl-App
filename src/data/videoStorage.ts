@@ -74,6 +74,8 @@ export interface AccountVideo {
   status: 'pending' | 'ready';
   createdBy: string;
   createdAt: number;
+  /** Players and guardians may download this video (the coach's switch, copied onto each video). */
+  viewersCanDownload: boolean;
   /** Short-lived signed address, present on the reads that ask for one. */
   url?: string;
 }

@@ -9600,6 +9600,7 @@ export class SupabaseDataSource implements DataSource {
       status: r.status as 'pending' | 'ready',
       createdBy: r.created_by as string,
       createdAt: toMs(r.created_at as string),
+      viewersCanDownload: !!r.viewers_can_download,
       url,
     };
   }
