@@ -43,6 +43,8 @@ interface RegistrationProfileModalProps {
   onDismiss?: () => void;
   /** The evaluation's own names. */
   labels?: import('@/data/types').CustomLabels;
+  /** The evaluation's sport, which sets its default wording (Skater, not Player, for skating). */
+  sport?: string | null;
 }
 
 /**
@@ -57,8 +59,9 @@ export function RegistrationProfileModal({
   addLabel = 'Add to Roster',
   onDismiss,
   labels,
+  sport,
 }: RegistrationProfileModalProps) {
-  const terms = useTerms(labels);
+  const terms = useTerms(labels, sport);
   const colors = useThemeColors();
   const r = registration;
 

@@ -68,8 +68,8 @@ export function useRestoreTeamMutation() {
 export function useCreateTeamMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ name, season }: { name: string; season?: string }) =>
-      withTimeout(getDataSource().createTeam(name, season), 15000),
+    mutationFn: ({ name, season, sport }: { name: string; season?: string; sport?: string }) =>
+      withTimeout(getDataSource().createTeam(name, season, sport), 15000),
     // Seeded synchronously so the team is already in the cache the instant
     // navigation lands on TeamDetail — that screen derives `team` from this
     // list with `.find()`, and without this the invalidate below is still a
@@ -933,6 +933,29 @@ export function useSaveEvaluationMutation(tryoutId: string) {
       qc.invalidateQueries({ queryKey: queryKeys.results(tryoutId), refetchType: 'none' });
       qc.invalidateQueries({ queryKey: queryKeys.profile, refetchType: 'none' });
       // The player card's history and season-over-season read this; without it the card shows "not scored" until reloaded.
+      qc.invalidateQueries({ queryKey: ['athleteHistory'] });
+      qc.invalidateQueries({ queryKey: ['playerProfile'] });
+      qc.invalidateQueries({ queryKey: ['sessionProgress', tryoutId] });
+    },
+  });
+}
+
+/**
+ * Removes one evaluation (a single session's scores for a player). The coach's
+ * way out of a session that was entered against the wrong player or the wrong
+ * test, since a save needs at least one score.
+ */
+export function useDeleteEvaluationMutation(tryoutId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (evalId: string) => getDataSource().deleteEvaluation(tryoutId, evalId),
+    onSuccess: (_void, evalId) => {
+      qc.setQueryData<Tryout | undefined>(queryKeys.tryout(tryoutId), (oldData) =>
+        oldData ? { ...oldData, evals: oldData.evals.filter((e) => e.id !== evalId) } : oldData,
+      );
+      qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId), refetchType: 'none' });
+      qc.invalidateQueries({ queryKey: queryKeys.results(tryoutId), refetchType: 'none' });
+      qc.invalidateQueries({ queryKey: queryKeys.profile, refetchType: 'none' });
       qc.invalidateQueries({ queryKey: ['athleteHistory'] });
       qc.invalidateQueries({ queryKey: ['playerProfile'] });
       qc.invalidateQueries({ queryKey: ['sessionProgress', tryoutId] });

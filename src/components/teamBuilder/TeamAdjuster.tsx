@@ -72,9 +72,12 @@ export function TeamAdjuster({
   onRedo,
   onDone,
   labels,
+  sport,
 }: {
   /** The evaluation's own names. */
   labels?: import('@/data/types').CustomLabels;
+  /** The evaluation's sport, which sets its default wording (Skater, not Player, for skating). */
+  sport?: string | null;
   teams: TeamBuilderTeam[];
   unassigned: string[];
   playerById: Map<string, Player>;
@@ -88,7 +91,7 @@ export function TeamAdjuster({
   onDone: () => void;
 }) {
   const colors = useThemeColors();
-  const terms = useTerms(labels);
+  const terms = useTerms(labels, sport);
 
   const zones = useMemo<Zone[]>(() => {
     // Same rule as the team cards on the Team Builder screen: an overall of 0 is

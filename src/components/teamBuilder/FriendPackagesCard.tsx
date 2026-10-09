@@ -95,7 +95,7 @@ interface Props {
 export function FriendPackagesCard({ tryout, disabled }: Props) {
   const typeToConfirm = useTypeToConfirm();
   const colors = useThemeColors();
-  const terms = useTerms(tryout.settings.customLabels);
+  const terms = useTerms(tryout.settings.customLabels, tryout.sport);
   const updateTryout = useUpdateTryoutMutation();
   const qc = useQueryClient();
 

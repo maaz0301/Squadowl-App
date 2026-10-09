@@ -20,7 +20,7 @@ export default function RosterLibraryScreen() {
   const navigation = useNavigation<any>();
   const tryoutsQuery = useTryoutsQuery(true);
   const currentTryoutQuery = useTryoutQuery(id);
-  const terms = useTerms(currentTryoutQuery.data?.settings.customLabels);
+  const terms = useTerms(currentTryoutQuery.data?.settings.customLabels, currentTryoutQuery.data?.sport);
   // A team someone else owns is run on that team's plan, not the viewer's own.
   const effectiveTier = useEffectivePlanTier(currentTryoutQuery.data?.teamId);
   const user = useUser();

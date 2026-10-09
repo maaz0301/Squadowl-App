@@ -6,6 +6,7 @@ import { DummyDataModal } from '@/components/DummyDataModal';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { PlanGate } from '@/components/PlanGate';
 import { Badge, Button, Card, EmptyState, ErrorState, Header, LoadingState, Modal, Screen, Tabs, useTypeToConfirm } from '@/components/ui';
+import { flagRegistrationDuplicates } from '@/data/duplicates';
 import { isAtPlayerLimit, playerRoom, playersTowardCap } from '@/data/plans';
 import { useCanUseDummyData } from '@/features/useCanUseDummyData';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
@@ -45,7 +46,7 @@ export default function RegistrationsScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
-  const terms = useTerms(tryoutQuery.data?.settings.customLabels);
+  const terms = useTerms(tryoutQuery.data?.settings.customLabels, tryoutQuery.data?.sport);
   // A team someone else owns is run on that team's plan, not the viewer's own.
   const effectiveTier = useEffectivePlanTier(tryoutQuery.data?.teamId);
   // Free plans share one pool of players across evaluations and teams.
@@ -112,6 +113,13 @@ export default function RegistrationsScreen() {
     return all.filter((r) => r.status === 'pending');
   }, [regsQuery.data, tab]);
 
+  // Registrations that look like someone already on the roster, or like another
+  // registration in this queue, so a coach is warned before filing a second copy.
+  const dupFlags = useMemo(
+    () => flagRegistrationDuplicates(regsQuery.data ?? [], tryoutQuery.data?.roster ?? []),
+    [regsQuery.data, tryoutQuery.data?.roster],
+  );
+
   if (tryoutQuery.isLoading) return <LoadingState message="Loading..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
     return <ErrorState message="Could not load registrations." onRetry={() => tryoutQuery.refetch()} />;
@@ -151,7 +159,32 @@ export default function RegistrationsScreen() {
   // The "Add to Roster" on a card means the whole ticked group when that card is
   // one of them — tapping it on one of several ticked players used to place only
   // that one, which is how a multi-select "sent one player".
-  const addFromCard = (regId: string) => setPlacing(selected.has(regId) && selectedIds.length > 1 ? selectedIds : [regId]);
+  // Opens the destination picker, first asking about any registration that looks
+  // like a player already on the roster or registered twice.
+  const requestPlacing = async (ids: string[]) => {
+    const flagged = ids.filter((regId) => dupFlags.has(regId));
+    if (flagged.length > 0) {
+      const regs = regsQuery.data ?? [];
+      const who = flagged.length === 1
+        ? (() => { const r = regs.find((x) => x.id === flagged[0]); return r ? `${r.firstName} ${r.lastName}`.trim() : 'This registration'; })()
+        : `${flagged.length} of these registrations`;
+      const detail = flagged.length === 1
+        ? `${dupFlags.get(flagged[0])}\n\nAdd them anyway?`
+        : `${flagged.slice(0, 3).map((regId) => {
+            const r = regs.find((x) => x.id === regId);
+            return `- ${r ? `${r.firstName} ${r.lastName}`.trim() : regId}: ${dupFlags.get(regId)}`;
+          }).join('\n')}\n\nAdd them anyway?`;
+      const ok = await new Promise<boolean>((resolve) =>
+        Alert.alert('Possible duplicate', flagged.length === 1 ? `${who}\n${detail}` : detail, [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Add anyway', onPress: () => resolve(true) },
+        ], { cancelable: true, onDismiss: () => resolve(false) }),
+      );
+      if (!ok) return;
+    }
+    setPlacing(ids);
+  };
+  const addFromCard = (regId: string) => requestPlacing(selected.has(regId) && selectedIds.length > 1 ? selectedIds : [regId]);
 
   const runPlacement = async (destination: RosterDestination) => {
     const ids = placing ?? [];
@@ -331,7 +364,7 @@ export default function RegistrationsScreen() {
                       <Button
                         label={`Add ${selectedIds.length} to Roster`}
                         size="sm"
-                        onPress={() => setPlacing(selectedIds)}
+                        onPress={() => requestPlacing(selectedIds)}
                       />
                     ) : null}
                   </>
@@ -429,6 +462,11 @@ export default function RegistrationsScreen() {
                   <Text className="text-sm" numberOfLines={1} style={{ color: colors.inkFaint }}>
                     {item.guardianEmail}
                   </Text>
+                  {pending && dupFlags.has(item.id) ? (
+                    <Text className="text-sm font-semibold" style={{ color: colors.warning }}>
+                      {dupFlags.get(item.id)}
+                    </Text>
+                  ) : null}
                 </Pressable>
               </View>
 
@@ -469,7 +507,7 @@ export default function RegistrationsScreen() {
             </Text>
           </View>
           <Button label="Clear" variant="ghost" onPress={() => setSelected(new Set())} />
-          <Button label={`Add ${selectedIds.length}`} onPress={() => setPlacing(selectedIds)} />
+          <Button label={`Add ${selectedIds.length}`} onPress={() => requestPlacing(selectedIds)} />
         </View>
       ) : null}
 
@@ -485,6 +523,7 @@ export default function RegistrationsScreen() {
 
       <Modal visible={showSimulate} title="Simulate Registration" onClose={() => setShowSimulate(false)}>
         <RegistrationForm
+          sport={tryoutQuery.data?.sport}
           loading={submitReg.isPending}
           onSubmit={async (data) => {
             await submitReg.mutateAsync(data);
@@ -510,12 +549,13 @@ export default function RegistrationsScreen() {
 
       <RegistrationProfileModal
         labels={tryoutQuery.data?.settings.customLabels}
+        sport={tryoutQuery.data?.sport}
         registration={viewing}
         onClose={() => setViewingId(null)}
         onAddToRoster={() => {
           if (!viewing) return;
           setViewingId(null);
-          setPlacing([viewing.id]);
+          requestPlacing([viewing.id]);
         }}
         onDismiss={() => {
           if (!viewing) return;
@@ -526,6 +566,7 @@ export default function RegistrationsScreen() {
 
       <AddToRosterModal
         labels={tryoutQuery.data?.settings.customLabels}
+        sport={tryoutQuery.data?.sport}
         visible={placing !== null}
         count={placing?.length ?? 0}
         currentTryoutId={id}

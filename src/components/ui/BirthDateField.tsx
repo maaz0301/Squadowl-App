@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
-import { MONTHS, buildDateOfBirth, daysInMonth, splitDateOfBirth, withYear } from '@/lib/birthDate';
+import { FUTURE_BIRTH_MESSAGE, MONTHS, buildDateOfBirth, daysInMonth, isFutureBirth, splitDateOfBirth, withYear } from '@/lib/birthDate';
 import { Button } from './Button';
 import { Modal } from './Modal';
 
@@ -115,8 +115,9 @@ function PickerField({
  * Year, month and day of birth. The year alone is still a complete answer (the
  * month and day are optional); choosing all three records the full date.
  */
-export function BirthDateField({ label, year = '', dateOfBirth = '', onChange, error }: BirthDateFieldProps) {
+export function BirthDateField({ label, year = '', dateOfBirth = '', onChange, error: errorProp }: BirthDateFieldProps) {
   const colors = useThemeColors();
+  const error = errorProp || (isFutureBirth(year, dateOfBirth) ? FUTURE_BIRTH_MESSAGE : undefined);
   const parts = splitDateOfBirth(dateOfBirth);
   // A month and day picked before the date was complete live only here until all
   // three are set, so choosing them in any order does not lose the first.

@@ -16,6 +16,7 @@ import {
   resolveWeights,
 } from '@/data/rubrics';
 import { SCORING_TYPES, type ScoringType, type RankingDirection } from '@/data/types';
+import { canHaveBenchmark, formatBenchmarkValue } from '@/data/benchmarks';
 
 /** Weights print as whole percentages where they are whole, e.g. "25%" / "16.7%". */
 function formatPct(value: number): string {
@@ -38,8 +39,16 @@ export default function RubricsScreen() {
   const [maxValStr, setMaxValStr] = useState('');
   const [rankingDirection, setRankingDirection] = useState<RankingDirection>('higher_is_better');
   const [weightStr, setWeightStr] = useState('');
+  // An optional target shown beside players' results, with a short explanation.
+  const [benchmarkOn, setBenchmarkOn] = useState(false);
+  const [benchmarkStr, setBenchmarkStr] = useState('');
+  const [benchmarkNote, setBenchmarkNote] = useState('');
+  // Key of the rubric being edited. Its key never changes, so saved scores and
+  // weights stay attached to it; the type and scale are fixed for the same reason.
+  const [editingKey, setEditingKey] = useState<string | null>(null);
 
   const handleScoringTypeChange = (type: ScoringType) => {
+    if (editingKey) return;
     setScoringType(type);
     if (type === 'time') {
       setRankingDirection('lower_is_better');
@@ -63,6 +72,9 @@ export default function RubricsScreen() {
 
   const weightNum = weightStr.trim() !== '' ? parseFloat(weightStr) : undefined;
   const weightValid = weightNum == null || (!isNaN(weightNum) && weightNum >= 1 && weightNum <= 100);
+  const benchmarkNum = benchmarkStr.trim() !== '' ? parseFloat(benchmarkStr) : undefined;
+  const benchmarkActive = benchmarkOn && canHaveBenchmark(scoringType);
+  const benchmarkValid = !benchmarkActive || (benchmarkNum != null && !isNaN(benchmarkNum));
 
   if (tryoutQuery.isLoading || !id) return <LoadingState message="Loading rubrics..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
@@ -79,9 +91,38 @@ export default function RubricsScreen() {
   const atCustomLimit =
     customLimit !== 'unlimited' && custom.length >= (customLimit as number);
 
+  const resetForm = () => {
+    setEditingKey(null);
+    setLabel('');
+    setUnit('');
+    setMinValStr('');
+    setMaxValStr('');
+    setWeightStr('');
+    setBenchmarkOn(false);
+    setBenchmarkStr('');
+    setBenchmarkNote('');
+  };
+
+  const startEdit = (r: (typeof custom)[number]) => {
+    setEditingKey(r.key);
+    setLabel(r.label);
+    setCategory(r.category ?? '');
+    setScoringType(r.scoringType ?? 'skill');
+    setScale(r.scale === '1-10' ? '1-10' : '1-5');
+    setUnit(r.unit ?? '');
+    setMinValStr(r.minVal != null ? String(r.minVal) : '');
+    setMaxValStr(r.maxVal != null ? String(r.maxVal) : '');
+    setRankingDirection(r.rankingDirection ?? 'higher_is_better');
+    setWeightStr(r.weight != null ? String(r.weight) : '');
+    setBenchmarkOn(r.benchmark != null);
+    setBenchmarkStr(r.benchmark != null ? String(r.benchmark) : '');
+    setBenchmarkNote(r.benchmarkNote ?? '');
+    Alert.alert(`Editing ${r.label}`, 'Scroll down to the form to change its name, category, unit, benchmarks or weight.');
+  };
+
   const addCustom = async () => {
-    if (!label.trim() || atCustomLimit || !weightValid) return;
-    const key = label.trim().toLowerCase().replace(/\s+/g, '_');
+    if (!label.trim() || (atCustomLimit && !editingKey) || !weightValid || !benchmarkValid) return;
+    const key = editingKey ?? label.trim().toLowerCase().replace(/\s+/g, '_');
 
     let defaultUnit = unit.trim();
     if (scoringType === 'time' && !defaultUnit) defaultUnit = 'sec';
@@ -104,9 +145,11 @@ export default function RubricsScreen() {
       maxVal: isMetric && maxNum != null && !isNaN(maxNum) ? maxNum : undefined,
       rankingDirection,
       weight: weightNum != null && !isNaN(weightNum) ? weightNum : undefined,
+      benchmark: benchmarkActive ? benchmarkNum : undefined,
+      benchmarkNote: benchmarkActive ? benchmarkNote.trim() || undefined : undefined,
     };
 
-    const next = [...custom, nextItem];
+    const next = editingKey ? custom.map((r) => (r.key === editingKey ? { ...r, ...nextItem } : r)) : [...custom, nextItem];
 
     await updateTryout.mutateAsync({
       id: tryout.id,
@@ -121,11 +164,7 @@ export default function RubricsScreen() {
     // Category is deliberately not cleared — a coach usually adds several
     // drills to the same category back to back (e.g. five Skating drills),
     // so keeping it selected saves re-picking it each time.
-    setLabel('');
-    setUnit('');
-    setMinValStr('');
-    setMaxValStr('');
-    setWeightStr('');
+    resetForm();
   };
 
   const removeCustom = async (keyToRemove: string) => {
@@ -216,6 +255,9 @@ export default function RubricsScreen() {
             details += ` · Range: ${r.minVal} to ${r.maxVal}`;
           }
           details += ` · Weight: ${formatPct(effectiveWeights[i])}${r.weight == null ? ' (auto)' : ''}`;
+          if (r.benchmark != null) {
+            details += ` · Benchmark: ${formatBenchmarkValue({ scoringType: r.scoringType, scale: r.scale, unit: r.unit }, r.benchmark)}`;
+          }
 
           return (
             <View key={r.key} className="flex-row items-center justify-between py-2 border-b" style={{ borderColor: colors.border }}>
@@ -233,6 +275,9 @@ export default function RubricsScreen() {
                 </Text>
               </View>
 
+              <Pressable onPress={() => startEdit(r)} hitSlop={8} className="px-2">
+                <Text style={{ color: colors.primary, fontSize: 14, fontWeight: 'bold' }}>Edit</Text>
+              </Pressable>
               <Pressable
                 onPress={() => removeCustom(r.key)}
                 hitSlop={8}
@@ -256,7 +301,7 @@ export default function RubricsScreen() {
       <PlanGate feature="customRubrics" title="Custom Rubrics" tierOverride={tier}>
         <Card accent className="gap-3">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>
-            Add Custom Drill / Category
+            {editingKey ? 'Edit Drill / Category' : 'Add Custom Drill / Category'}
           </Text>
 
           <Input
@@ -435,12 +480,61 @@ export default function RubricsScreen() {
             )}
           </View>
 
+          {canHaveBenchmark(scoringType) ? (
+            <View className="gap-2">
+              <Pressable onPress={() => setBenchmarkOn(!benchmarkOn)} className="flex-row items-center justify-between gap-3">
+                <Text className="flex-1 text-base" style={{ color: colors.ink }}>
+                  Add a benchmark (a target to show next to results)
+                </Text>
+                <Switch
+                  value={benchmarkOn}
+                  onValueChange={setBenchmarkOn}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#fff"
+                />
+              </Pressable>
+              {benchmarkOn ? (
+                <>
+                  <Input
+                    label={
+                      isMetricScoringType(scoringType)
+                        ? `Benchmark${unit.trim() ? ` (${unit.trim()})` : ''}`
+                        : scoringType === 'observation'
+                          ? 'Benchmark (1-100)'
+                          : `Benchmark (out of ${scale === '1-10' ? 10 : 5})`
+                    }
+                    value={benchmarkStr}
+                    onChangeText={setBenchmarkStr}
+                    keyboardType="decimal-pad"
+                    placeholder="e.g. 30"
+                  />
+                  <Input
+                    label="What this benchmark means (optional)"
+                    value={benchmarkNote}
+                    onChangeText={(t) => setBenchmarkNote(t.slice(0, 300))}
+                    placeholder="e.g. What a player aiming for the top team usually reaches"
+                  />
+                  {!benchmarkValid ? (
+                    <Text className="text-xs font-bold" style={{ color: colors.danger }}>
+                      Enter the benchmark as a number.
+                    </Text>
+                  ) : (
+                    <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                      Shown on the scoring screen and on each player's report card, beside their own result.
+                    </Text>
+                  )}
+                </>
+              ) : null}
+            </View>
+          ) : null}
+
           <Button
-            label="Add Rubric Category"
+            label={editingKey ? 'Save Changes' : 'Add Rubric Category'}
             onPress={addCustom}
             loading={updateTryout.isPending}
-            disabled={atCustomLimit || !label.trim() || !weightValid}
+            disabled={(atCustomLimit && !editingKey) || !label.trim() || !weightValid || !benchmarkValid}
           />
+          {editingKey ? <Button label="Cancel" variant="secondary" onPress={resetForm} /> : null}
         </Card>
       </PlanGate>
     </Screen>

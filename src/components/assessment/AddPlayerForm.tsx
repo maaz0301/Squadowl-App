@@ -9,9 +9,13 @@ import { useAthletesQuery } from '@/features/queries';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { POSITION_OPTIONS_BY_SPORT } from '@/data/positions';
+import { sportProfile } from '@/data/sportProfile';
+import { duplicatePrompt, findPossibleDuplicates, type DuplicateCandidate } from '@/data/duplicates';
 
 interface Props {
   loading?: boolean;
+  /** Who is already on the roster being added to. When set, saving a likely duplicate asks first. Leave unset when editing. */
+  existingPlayers?: (DuplicateCandidate & { jersey?: string | null })[];
   defaultValues?: Partial<AddPlayerFormType>;
   /** Drives the position picker's options — Hockey positions for a Hockey evaluation, and so on. */
   sport?: Sport;
@@ -25,8 +29,8 @@ interface Props {
   submitLabel?: string;
 }
 
-export function AddPlayerForm({ loading, defaultValues, sport, labels, onSubmit, submitLabel }: Props) {
-  const terms = useTerms(labels);
+export function AddPlayerForm({ loading, defaultValues, sport, labels, onSubmit, submitLabel, existingPlayers }: Props) {
+  const terms = useTerms(labels, sport);
   const colors = useThemeColors();
   const athletesQuery = useAthletesQuery();
   const [modalVisible, setModalVisible] = useState(false);
@@ -194,6 +198,7 @@ export function AddPlayerForm({ loading, defaultValues, sport, labels, onSubmit,
           <Input label={terms.jersey} onBlur={onBlur} onChangeText={onChange} value={value} error={error?.message} keyboardType="number-pad" />
         )}
       />
+      {sportProfile(sport).positions ? (
       <Controller
         control={control}
         name="pos"
@@ -244,6 +249,7 @@ export function AddPlayerForm({ loading, defaultValues, sport, labels, onSubmit,
           )
         }
       />
+      ) : null}
       <Controller
         control={control}
         name="yearOfBirth"
@@ -297,10 +303,29 @@ export function AddPlayerForm({ loading, defaultValues, sport, labels, onSubmit,
       />
       <Button
         label={submitLabel ?? `Save ${terms.player}`}
-        onPress={handleSubmit(onSubmit, (errors) => {
+        onPress={handleSubmit(async (data) => {
+          const matches = existingPlayers ? findPossibleDuplicates(data, existingPlayers) : [];
+          if (matches.length > 0) {
+            const ok = await new Promise<boolean>((resolve) =>
+              Alert.alert(
+                'Possible duplicate',
+                duplicatePrompt(matches, `${data.first} ${data.last}`.trim()),
+                [
+                  { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                  { text: 'Add anyway', onPress: () => resolve(true) },
+                ],
+                { cancelable: true, onDismiss: () => resolve(false) },
+              ),
+            );
+            if (!ok) return;
+          }
+          await onSubmit(data);
+        }, (errors) => {
           const emailError = errors.guardianEmail ?? errors.playerEmail;
           if (emailError) {
             Alert.alert('Invalid Email', emailError.message || 'Please enter a valid email address');
+          } else if (errors.yearOfBirth ?? errors.dateOfBirth) {
+            Alert.alert('Check the date of birth', (errors.yearOfBirth ?? errors.dateOfBirth)?.message || 'Enter a valid date of birth.');
           } else {
             Alert.alert('Validation Error', 'Please check the highlighted fields before saving.');
           }

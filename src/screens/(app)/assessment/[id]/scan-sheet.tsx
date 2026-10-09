@@ -1,7 +1,7 @@
 import { useTerms } from '@/lib/terms';
 import { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Chip, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
@@ -36,6 +36,7 @@ export default function ScanSheetScreen() {
   const id = useAssessmentId();
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const tryoutQuery = useTryoutQuery(id);
   const importScores = useImportScanScoresMutation();
 
@@ -49,7 +50,7 @@ export default function ScanSheetScreen() {
   const [reviewing, setReviewing] = useState(false);
 
   const tryout = tryoutQuery.data;
-  const terms = useTerms(tryout?.settings.customLabels);
+  const terms = useTerms(tryout?.settings.customLabels, tryout?.sport);
   const measures = useMemo(() => tryout?.settings.customRubrics ?? [], [tryout]);
 
   const rows = useMemo(
@@ -72,7 +73,11 @@ export default function ScanSheetScreen() {
     cellWarnings > 0 ||
     (sheet ? headingMatches(sheet.headers, measures, mapping).some((m) => m.kind === 'close') : false);
 
-  const back = () => navigation.navigate('AssessmentRoster');
+  // Opened from Results, Back returns there instead of to the roster.
+  const back = () =>
+    route.params?.from === 'results'
+      ? navigation.navigate('AssessmentFlow', { screen: 'AssessmentResults', params: { id } })
+      : navigation.navigate('AssessmentRoster');
 
   if (tryoutQuery.isLoading) return <LoadingState message="Loading evaluation..." />;
   if (tryoutQuery.isError || !tryout) {

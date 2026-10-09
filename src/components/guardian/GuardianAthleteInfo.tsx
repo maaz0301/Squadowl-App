@@ -9,7 +9,7 @@ import {
   useRemoveFamilyContactMutation,
   useUpdateGuardianAthleteMutation,
 } from '@/features/queries';
-import { formatBirth } from '@/lib/birthDate';
+import { FUTURE_BIRTH_MESSAGE, formatBirth, isFutureBirth } from '@/lib/birthDate';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 function Row({ label, value, last }: { label: string; value?: string; last?: boolean }) {
@@ -82,6 +82,10 @@ export function GuardianAthleteInfo({
   const save = async () => {
     if (!form.first.trim() || !form.last.trim()) {
       Alert.alert('Missing Info', 'First and last name are required.');
+      return;
+    }
+    if (isFutureBirth(form.yearOfBirth, form.dateOfBirth)) {
+      Alert.alert('Check the date of birth', FUTURE_BIRTH_MESSAGE);
       return;
     }
     try {

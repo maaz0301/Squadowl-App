@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, Alert, Platform } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 
@@ -8,6 +8,7 @@ import { Screen, Header, Button, Input, BirthDateField } from '@/components/ui';
 import { SupabaseDataSource } from '@/data/supabase/SupabaseDataSource';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { RegistrationSubmitSchema, type RegistrationSubmit } from '@/data/types';
+import { sportProfile } from '@/data/sportProfile';
 
 const ds = new SupabaseDataSource();
 
@@ -17,6 +18,18 @@ export default function PublicRegistration() {
   const colors = useThemeColors();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [sport, setSport] = useState<string | undefined>();
+  // The link's sport decides which fields apply; unknown keeps the standard form.
+  useEffect(() => {
+    if (!eventId) return;
+    let live = true;
+    void ds.getRegistrationLinkInfo(String(eventId).toUpperCase()).then((info) => {
+      if (live) setSport(info?.sport);
+    });
+    return () => {
+      live = false;
+    };
+  }, [eventId]);
 
   const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<RegistrationSubmit>({
     resolver: zodResolver(RegistrationSubmitSchema),
@@ -120,13 +133,15 @@ export default function PublicRegistration() {
             <Input label="Last Name" onBlur={onBlur} onChangeText={onChange} value={value} error={errors.lastName?.message} placeholder="Enter last name" />
           )}
         />
-        <Controller
-          control={control}
-          name="positionTryingOutFor"
-          render={({ field: { onChange, onBlur, value } }) => (
-            <Input label="Position (FWD/DEF/GTL)" onBlur={onBlur} onChangeText={onChange} value={value} error={errors.positionTryingOutFor?.message} autoCapitalize="characters" />
-          )}
-        />
+        {sportProfile(sport).positions ? (
+          <Controller
+            control={control}
+            name="positionTryingOutFor"
+            render={({ field: { onChange, onBlur, value } }) => (
+              <Input label="Position (FWD/DEF/GTL)" onBlur={onBlur} onChangeText={onChange} value={value} error={errors.positionTryingOutFor?.message} autoCapitalize="characters" />
+            )}
+          />
+        ) : null}
         <Controller
           control={control}
           name="yearOfBirth"

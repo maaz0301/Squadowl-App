@@ -75,7 +75,7 @@ export interface DataSource {
   archiveTeam(id: string): Promise<void>;
   /** Brings an archived team back, along with the seasons archived with it. */
   restoreTeam(id: string): Promise<Team>;
-  createTeam(name: string, season?: string): Promise<Team>;
+  createTeam(name: string, season?: string, sport?: string): Promise<Team>;
   updateTeam(id: string, updates: Partial<Team>): Promise<Team>;
   uploadTeamLogo(teamId: string, fileUri: string, fileType: string): Promise<string>;
   uploadOrganizationLogo(fileUri: string, fileType: string): Promise<string>;

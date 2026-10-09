@@ -52,6 +52,7 @@ function UploadIcon({ color }: { color: string }) {
  */
 export function ImportPlayersModal({
   labels,
+  sport,
   visible,
   onClose,
   target,
@@ -61,6 +62,8 @@ export function ImportPlayersModal({
 }: {
   /** The evaluation's own names, when opened from one. */
   labels?: import('@/data/types').CustomLabels;
+  /** The evaluation's sport, which sets its default wording (Skater, not Player, for skating). */
+  sport?: string | null;
   visible: boolean;
   onClose: () => void;
   /** Names what the players are being added to, for the copy. */
@@ -78,7 +81,7 @@ export function ImportPlayersModal({
   ) => Promise<PlayerImportResult>;
 }) {
   const colors = useThemeColors();
-  const terms = useTerms(labels);
+  const terms = useTerms(labels, sport);
 
   const [source, setSource] = useState<{ name: string; base64?: string } | null>(null);
   const [sheet, setSheet] = useState<ParsedSheet | null>(null);

@@ -61,7 +61,7 @@ export default function TeamBuilderScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
-  const terms = useTerms(tryoutQuery.data?.settings.customLabels);
+  const terms = useTerms(tryoutQuery.data?.settings.customLabels, tryoutQuery.data?.sport);
   const generate = useGenerateTeamBuilderMutation(id!);
   const resultsQuery = useTeamBuilderResultsQuery(id);
   const saveMut = useSaveTeamBuilderResultMutation(id!);
@@ -289,6 +289,7 @@ export default function TeamBuilderScreen() {
       <Screen insideTabBar>
         <TeamAdjuster
           labels={tryoutQuery.data?.settings.customLabels}
+          sport={tryoutQuery.data?.sport}
           teams={effectiveTeams}
           unassigned={effectiveUnassigned}
           playerById={playerById}

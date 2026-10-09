@@ -29,7 +29,7 @@ export default function CompareScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
-  const terms = useTerms(tryoutQuery.data?.settings.customLabels);
+  const terms = useTerms(tryoutQuery.data?.settings.customLabels, tryoutQuery.data?.sport);
   const aiCompare = useAiCompareMutation(id!);
   const [selected, setSelected] = useState<string[]>([]);
   const [loadingText, setLoadingText] = useState(LOADING_MESSAGES[0]);

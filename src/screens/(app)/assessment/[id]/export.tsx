@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Pressable, Share, Text, View } from 'react-native';
+import { Alert, Pressable, Share, Switch, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import RNFS from 'react-native-fs';
 import RNShare from 'react-native-share';
@@ -11,6 +11,7 @@ import {
   Chip,
   ErrorState,
   Header,
+  Input,
   LoadingState,
   Screen,
 } from '@/components/ui';
@@ -22,8 +23,22 @@ import {
   usePlatformBlockedFeaturesQuery,
   useTeamsQuery,
 } from '@/features/queries';
-import { PLAYERS_PER_PAGE_OPTIONS, reportLogoUrls, type PlayersPerPage } from '@/lib/reportPdf';
-import { REPORT_SORT_OPTIONS, type ReportSort } from '@/data/resultsExport';
+import {
+  DEFAULT_REPORT_CONTENT,
+  PLAYERS_PER_PAGE_OPTIONS,
+  reportLogoUrls,
+  type PlayersPerPage,
+  type ReportContent,
+  type ReportLayout,
+} from '@/lib/reportPdf';
+import {
+  buildPlayerFullResults,
+  isReportFilterActive,
+  reportFilterChoices,
+  reportSortOptions,
+  type ReportFilter,
+  type ReportSort,
+} from '@/data/resultsExport';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { canUseFeature, getPlanDefinition } from '@/data/plans';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
@@ -45,6 +60,13 @@ export default function ExportScreen() {
   const [continuous, setContinuous] = useState(false);
   const [sortBy, setSortBy] = useState<ReportSort>('jersey');
   const [printLogo, setPrintLogo] = useState(true);
+  const [layout, setLayout] = useState<ReportLayout>('cards');
+  const [content, setContent] = useState<ReportContent>(DEFAULT_REPORT_CONTENT);
+  const [topX, setTopX] = useState('');
+  const [minScore, setMinScore] = useState('');
+  const [scoredOnly, setScoredOnly] = useState(false);
+  const [positions, setPositions] = useState<string[]>([]);
+  const [birthYears, setBirthYears] = useState<string[]>([]);
   // The team's own logo, for club accounts. A hook, so it runs before the
   // loading/error guards below.
   const teamsQuery = useTeamsQuery();
@@ -66,7 +88,30 @@ export default function ExportScreen() {
   // Logos on the printed report are a Club-plan touch.
   const clubMode = tier === 'club';
 
+  const choices = reportFilterChoices(tryout);
+  const toggleIn = (list: string[], value: string) =>
+    list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+  const setContentFlag = (key: keyof ReportContent) => (on: boolean) => setContent((c) => ({ ...c, [key]: on }));
+
+  /** Only the filters the coach actually set; blank or invalid numbers are ignored. */
+  const top = parseInt(topX, 10);
+  const min = parseFloat(minScore);
+  const filter: ReportFilter = {
+    topX: Number.isFinite(top) && top > 0 ? top : undefined,
+    minScore: Number.isFinite(min) ? min : undefined,
+    scoredOnly: scoredOnly || undefined,
+    positions: positions.length ? positions : undefined,
+    birthYears: birthYears.length ? birthYears : undefined,
+  };
+  const filterActive = isReportFilterActive(filter);
+  const matchCount = buildPlayerFullResults(tryout, sortBy, filter).length;
+  const singlePage = layout === 'cards' && playersPerPage === 1;
+
   const handleExport = async (format: ExportFormat) => {
+    if (matchCount === 0) {
+      Alert.alert('No players match', 'Loosen the filters so at least one player is included.');
+      return;
+    }
     setIsExporting(format);
     try {
       await nextFrame();
@@ -75,8 +120,16 @@ export default function ExportScreen() {
         tryout,
         format,
         format === 'pdf'
-          ? { playersPerPage, continuous: continuous && playersPerPage === 1, logoUrls: reportLogoUrls({ club: clubMode && printLogo, organizationLogoUrl, teamLogoUrl }), sortBy }
-          : undefined,
+          ? {
+              playersPerPage,
+              continuous: continuous && playersPerPage === 1 && layout === 'cards',
+              logoUrls: reportLogoUrls({ club: clubMode && printLogo, organizationLogoUrl, teamLogoUrl }),
+              sortBy,
+              filter,
+              content,
+              layout,
+            }
+          : { sortBy, filter },
       );
     } catch (e: any) {
       console.error(e);
@@ -143,8 +196,9 @@ export default function ExportScreen() {
                     <Chip
                       key={n}
                       label={n === 1 ? '1 (full detail)' : String(n)}
-                      active={playersPerPage === n && !(n === 1 && continuous)}
+                      active={layout === 'cards' && playersPerPage === n && !(n === 1 && continuous)}
                       onPress={() => {
+                        setLayout('cards');
                         setPlayersPerPage(n);
                         setContinuous(false);
                       }}
@@ -152,15 +206,26 @@ export default function ExportScreen() {
                   ))}
                   <Chip
                     label="Continuous (no gaps)"
-                    active={continuous}
+                    active={layout === 'cards' && continuous}
                     onPress={() => {
+                      setLayout('cards');
                       setPlayersPerPage(1);
                       setContinuous(true);
                     }}
                   />
+                  <Chip
+                    label="Compact list"
+                    active={layout === 'list'}
+                    onPress={() => {
+                      setLayout('list');
+                      setContinuous(false);
+                    }}
+                  />
                 </View>
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                  {continuous
+                  {layout === 'list'
+                    ? 'A ranked list of names and scores only, with no comments, so a whole roster fits a page or two.'
+                    : continuous
                     ? 'Players run one after another with no blank space, each with every evaluation listed.'
                     : playersPerPage === 1
                     ? 'One player per page, with every evaluation listed.'
@@ -172,10 +237,147 @@ export default function ExportScreen() {
                   Order players by
                 </Text>
                 <View className="flex-row flex-wrap">
-                  {REPORT_SORT_OPTIONS.map((o) => (
+                  {reportSortOptions(tryout).map((o) => (
                     <Chip key={o.key} label={o.label} active={sortBy === o.key} onPress={() => setSortBy(o.key)} />
                   ))}
                 </View>
+              </View>
+              <View className="gap-3">
+                <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                  Include players
+                </Text>
+                <Input
+                  label="Top players only"
+                  placeholder="All players"
+                  keyboardType="number-pad"
+                  value={topX}
+                  onChangeText={(t) => setTopX(t.replace(/[^0-9]/g, ''))}
+                />
+                <Input
+                  label="Overall score at least"
+                  placeholder="Any score"
+                  keyboardType="decimal-pad"
+                  value={minScore}
+                  onChangeText={(t) => setMinScore(t.replace(/[^0-9.]/g, ''))}
+                />
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-sm flex-1 pr-3" style={{ color: colors.ink }}>
+                    Scored players only (leave out incomplete)
+                  </Text>
+                  <Switch
+                    value={scoredOnly}
+                    onValueChange={setScoredOnly}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor="#fff"
+                  />
+                </View>
+                {choices.positions.length > 0 ? (
+                  <View>
+                    <Text className="text-xs mb-1" style={{ color: colors.inkMuted }}>
+                      Position
+                    </Text>
+                    <View className="flex-row flex-wrap">
+                      {choices.positions.map((pos) => (
+                        <Chip
+                          key={pos}
+                          label={pos}
+                          active={positions.includes(pos)}
+                          onPress={() => setPositions((l) => toggleIn(l, pos))}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
+                {choices.birthYears.length > 0 ? (
+                  <View>
+                    <Text className="text-xs mb-1" style={{ color: colors.inkMuted }}>
+                      Age group (birth year)
+                    </Text>
+                    <View className="flex-row flex-wrap">
+                      {choices.birthYears.map((y) => (
+                        <Chip
+                          key={y}
+                          label={y}
+                          active={birthYears.includes(y)}
+                          onPress={() => setBirthYears((l) => toggleIn(l, y))}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
+                <Text className="text-xs" style={{ color: filterActive && matchCount === 0 ? colors.danger : colors.inkMuted }}>
+                  {filterActive
+                    ? `${matchCount} of ${tryout.roster.length} players will be included.`
+                    : 'Everyone is included. Pick any of the above to narrow it down.'}
+                </Text>
+              </View>
+              <View>
+                <Text className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color: colors.inkMuted }}>
+                  Show on the report
+                </Text>
+                <View className="flex-row items-center justify-between py-1">
+                  <Text className="text-sm flex-1 pr-3" style={{ color: colors.ink }}>
+                    Individual rubric scores
+                  </Text>
+                  <Switch
+                    value={content.rubricScores}
+                    onValueChange={setContentFlag('rubricScores')}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor="#fff"
+                  />
+                </View>
+                <View className="flex-row items-center justify-between py-1">
+                  <Text className="text-sm flex-1 pr-3" style={{ color: colors.ink }}>
+                    Overall ranking
+                  </Text>
+                  <Switch
+                    value={content.ranking}
+                    onValueChange={setContentFlag('ranking')}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor="#fff"
+                  />
+                </View>
+                <View className="flex-row items-center justify-between py-1">
+                  <Text className="text-sm flex-1 pr-3" style={{ color: colors.ink }}>
+                    Comments (recommendation, strengths, areas to improve)
+                  </Text>
+                  <Switch
+                    value={content.comments}
+                    onValueChange={setContentFlag('comments')}
+                    disabled={layout === 'list'}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor="#fff"
+                  />
+                </View>
+                <View className="flex-row items-center justify-between py-1">
+                  <Text className="text-sm flex-1 pr-3" style={{ color: colors.ink }}>
+                    Assessor name
+                  </Text>
+                  <Switch
+                    value={content.assessor}
+                    onValueChange={setContentFlag('assessor')}
+                    disabled={!singlePage}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor="#fff"
+                  />
+                </View>
+                <View className="flex-row items-center justify-between py-1">
+                  <Text className="text-sm flex-1 pr-3" style={{ color: colors.ink }}>
+                    Date of evaluation
+                  </Text>
+                  <Switch
+                    value={content.date}
+                    onValueChange={setContentFlag('date')}
+                    disabled={!singlePage}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor="#fff"
+                  />
+                </View>
+                {!singlePage ? (
+                  <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                    Assessor and date appear with each evaluation, which only the one-player-per-page layout lists.
+                  </Text>
+                ) : null}
               </View>
               {clubMode && (organizationLogoUrl || teamLogoUrl) ? (
                 <Pressable

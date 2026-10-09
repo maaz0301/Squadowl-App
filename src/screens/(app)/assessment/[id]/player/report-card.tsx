@@ -26,6 +26,7 @@ import {
 import { useAssessmentId, useAssessorMode } from '@/features/useAssessmentId';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { buildPlayerFullResults } from '@/data/resultsExport';
+import { benchmarkLines } from '@/data/benchmarks';
 import { playerDisplayName } from '@/data/rubrics';
 import type { PlayerReportCard, ReportCardAttachment } from '@/data/types';
 import { DocumentPickerUnavailable, pickAttachment, type PickedAttachment } from '@/lib/documentPicker';
@@ -108,6 +109,13 @@ export default function PlayerReportCardScreen() {
     if (!tryout || !player) return null;
     const scoped = { ...tryout, evals: tryout.evals.filter((e) => e.playerId !== player.id || chosen.has(e.id)) };
     return buildPlayerFullResults(scoped).find((c) => c.playerId === player.id) ?? null;
+  }, [tryout, player, chosen]);
+
+  // The rubrics' benchmarks beside this player's average over the chosen evaluations.
+  const benchmarks = useMemo(() => {
+    if (!tryout || !player) return [];
+    const scoped = { ...tryout, evals: tryout.evals.filter((e) => e.playerId !== player.id || chosen.has(e.id)) };
+    return benchmarkLines(scoped, player);
   }, [tryout, player, chosen]);
 
   if (tryoutQuery.isLoading) return <LoadingState />;
@@ -246,6 +254,7 @@ export default function PlayerReportCardScreen() {
         title,
         subtitle: [team?.name, tryout.name].filter(Boolean).join(' | '),
         card: reportCard,
+        benchmarks,
         coachComments,
         aiComments,
         attachments: [
@@ -386,6 +395,29 @@ export default function PlayerReportCardScreen() {
                 <Text style={{ color: colors.ink }}>
                   {m.score} · {m.rank}
                 </Text>
+              </View>
+            ))}
+          </Card>
+        ) : null}
+
+        {benchmarks.length > 0 ? (
+          <Card className="gap-2">
+            {label('Benchmarks')}
+            {benchmarks.map((b) => (
+              <View key={b.key} className="gap-0.5 border-b py-1" style={{ borderColor: colors.border }}>
+                <View className="flex-row justify-between gap-2">
+                  <Text className="flex-1 font-bold" style={{ color: colors.ink }}>
+                    {b.label}
+                  </Text>
+                  <Text style={{ color: b.met ? colors.success : colors.ink }}>
+                    {b.result || 'Not scored'} · benchmark {b.target}
+                  </Text>
+                </View>
+                {b.note ? (
+                  <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                    {b.note}
+                  </Text>
+                ) : null}
               </View>
             ))}
           </Card>

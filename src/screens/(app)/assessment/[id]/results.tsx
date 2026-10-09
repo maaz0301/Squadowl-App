@@ -18,6 +18,7 @@ import {
 import { useResultsQuery } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { getScoreHeatLevel, playerDisplayName } from '@/data/rubrics';
+import { compareResultsBestFirst, formatMetricRaw, metricSummaries } from '@/data/scoring';
 import { useSessionStore } from '@/state/sessionStore';
 
 export default function ResultsScreen() {
@@ -27,7 +28,7 @@ export default function ResultsScreen() {
   const route = useRoute<any>();
   const setCurrentPlayer = useSessionStore((s) => s.setCurrentPlayer);
   const { data: tryout, results, isLoading, isError, refetch } = useResultsQuery(id);
-  const terms = useTerms(tryout?.settings.customLabels);
+  const terms = useTerms(tryout?.settings.customLabels, tryout?.sport);
 
   const parentState = navigation.getParent()?.getState();
   const flowRoute = parentState?.routes?.find((r: any) => r.name === 'AssessmentFlow');
@@ -42,7 +43,7 @@ export default function ResultsScreen() {
     return <ErrorState message="Could not load results." onRetry={() => refetch()} />;
   }
 
-  const sorted = [...results].sort((a, b) => b.overall - a.overall);
+  const sorted = [...results].sort(compareResultsBestFirst(tryout));
   const skaters = sorted.filter((r) => r.player.pos?.toUpperCase() !== 'GTL');
   const goalies = sorted.filter((r) => r.player.pos?.toUpperCase() === 'GTL');
 
@@ -54,12 +55,20 @@ export default function ResultsScreen() {
           <Button label="Team Builder" size="sm" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentTeamBuilder', params: { id: id } })} />
           <Button label="Compare" size="sm" variant="secondary" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentCompare', params: { id: id } })} />
           {!isAssessorOnly && (
-            <Button
-              label="Export"
-              size="sm"
-              variant="secondary"
-              onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentExport', params: { id: id } })}
-            />
+            <>
+              <Button
+                label="Export"
+                size="sm"
+                variant="secondary"
+                onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentExport', params: { id: id } })}
+              />
+              <Button
+                label="Import"
+                size="sm"
+                variant="secondary"
+                onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentScanSheet', params: { id: id, from: 'results' } })}
+              />
+            </>
           )}
         </View>
       </View>
@@ -104,6 +113,15 @@ export default function ResultsScreen() {
                   <Text className="text-sm" style={{ color: colors.inkMuted }}>
                     #{item.player.jersey ?? '-'} · {item.player.pos ?? '-'}
                   </Text>
+                  {(() => {
+                    const metrics = metricSummaries(tryout, item.player);
+                    if (!metrics.length) return null;
+                    return (
+                      <Text className="text-xs" numberOfLines={1} style={{ color: colors.inkMuted }}>
+                        {metrics.map((m) => `${m.label} ${formatMetricRaw(m)}${m.capped ? ' (at max)' : ''}`).join(' · ')}
+                      </Text>
+                    );
+                  })()}
                 </View>
                 <View className="items-end gap-1">
                   <Text className="text-xl font-display font-bold" style={{ color: heatColor }}>

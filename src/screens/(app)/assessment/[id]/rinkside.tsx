@@ -41,7 +41,7 @@ export default function RinksideScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
-  const terms = useTerms(tryoutQuery.data?.settings.customLabels);
+  const terms = useTerms(tryoutQuery.data?.settings.customLabels, tryoutQuery.data?.sport);
   const saveEval = useSaveEvaluationMutation(id!);
   const rinksideIndex = useSessionStore((s) => s.rinksideIndex);
   const setRinksideIndex = useSessionStore((s) => s.setRinksideIndex);
@@ -531,6 +531,8 @@ export default function RinksideScreen() {
                     unit={s.unit}
                     minVal={s.minVal}
                     maxVal={s.maxVal}
+                    benchmark={s.benchmark}
+                    benchmarkNote={s.benchmarkNote}
                     value={workingScores[s.key]}
                     onChange={(v) => setWorkingScores({ ...workingScores, [s.key]: v })}
                   />

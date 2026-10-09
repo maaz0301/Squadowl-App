@@ -56,7 +56,7 @@ export default function RosterScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
-  const terms = useTerms(tryoutQuery.data?.settings.customLabels);
+  const terms = useTerms(tryoutQuery.data?.settings.customLabels, tryoutQuery.data?.sport);
   // A team someone else owns is run on that team's plan, not the viewer's own.
   const effectiveTier = useEffectivePlanTier(tryoutQuery.data?.teamId);
   // Free plans share one pool of players across evaluations and teams.
@@ -500,6 +500,7 @@ export default function RosterScreen() {
         }
       >
         <AddPlayerForm
+          existingPlayers={tryout.roster}
           sport={tryout.sport}
           labels={tryout.settings.customLabels}
           loading={addPlayer.isPending || uploadPhoto.isPending || inviteParticipant.isPending}
@@ -641,6 +642,7 @@ export default function RosterScreen() {
 
       <ImportPlayersModal
         labels={tryout.settings.customLabels}
+        sport={tryout.sport}
         visible={showImport}
         onClose={() => setShowImport(false)}
         target={tryout.name}

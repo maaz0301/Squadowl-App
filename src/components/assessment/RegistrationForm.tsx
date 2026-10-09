@@ -3,13 +3,16 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { RegistrationSubmitSchema, type RegistrationSubmit } from '@/data/types';
 import { BirthDateField, Button, Input } from '@/components/ui';
+import { sportProfile } from '@/data/sportProfile';
 
 interface Props {
   loading?: boolean;
+  /** The evaluation's sport; a sport without positions does not ask for one. */
+  sport?: string | null;
   onSubmit: (data: RegistrationSubmit) => Promise<void>;
 }
 
-export function RegistrationForm({ loading, onSubmit }: Props) {
+export function RegistrationForm({ loading, sport, onSubmit }: Props) {
   const { control, handleSubmit, watch, setValue } = useForm<RegistrationSubmit>({
     resolver: zodResolver(RegistrationSubmitSchema),
     defaultValues: {
@@ -55,13 +58,15 @@ export function RegistrationForm({ loading, onSubmit }: Props) {
           />
         )}
       />
-      <Controller
-        control={control}
-        name="positionTryingOutFor"
-        render={({ field: { onChange, onBlur, value } }) => (
-          <Input label="Position" onBlur={onBlur} onChangeText={onChange} value={value} />
-        )}
-      />
+      {sportProfile(sport).positions ? (
+        <Controller
+          control={control}
+          name="positionTryingOutFor"
+          render={({ field: { onChange, onBlur, value } }) => (
+            <Input label="Position" onBlur={onBlur} onChangeText={onChange} value={value} />
+          )}
+        />
+      ) : null}
       <Controller
         control={control}
         name="playerEmail"

@@ -4,6 +4,7 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { OBSERVATION_MAX, binaryLabels, getScoreHeatLevel, isBinaryScoringType, normalizeScore } from '@/data/rubrics';
 import { themeTokens } from '@/theme/tokens';
 import type { RankingDirection, ScoringType } from '@/data/types';
+import { formatBenchmarkValue } from '@/data/benchmarks';
 
 interface ScorePadProps {
   rubricKey?: string;
@@ -16,7 +17,37 @@ interface ScorePadProps {
   value?: number;
   rankingDirection?: RankingDirection;
   onChange: (value: number) => void;
+  /** Called when a measured entry is emptied, so a wrong figure can be taken back out. */
+  onClear?: () => void;
   onFocus?: () => void;
+  /** The coach's target for this rubric, shown under the entry with its explanation. */
+  benchmark?: number;
+  benchmarkNote?: string;
+}
+
+function BenchmarkHint({
+  benchmark,
+  note,
+  scale,
+  scoringType,
+  unit,
+}: {
+  benchmark?: number;
+  note?: string;
+  scale?: '1-5' | '1-10';
+  scoringType?: ScoringType;
+  unit?: string;
+}) {
+  const colors = useThemeColors();
+  if (benchmark == null) return null;
+  return (
+    <Text className="text-xs mt-1" style={{ color: colors.inkMuted }}>
+      <Text style={{ fontWeight: '700', color: colors.ink }}>
+        Benchmark: {formatBenchmarkValue({ scoringType, scale, unit }, benchmark)}
+      </Text>
+      {note ? ` · ${note}` : ''}
+    </Text>
+  );
 }
 
 export function ScorePad({
@@ -29,7 +60,10 @@ export function ScorePad({
   value,
   rankingDirection,
   onChange,
+  onClear,
   onFocus,
+  benchmark,
+  benchmarkNote,
 }: ScorePadProps) {
   const colors = useThemeColors();
   const [textVal, setTextVal] = useState(value != null ? String(value) : '');
@@ -153,6 +187,7 @@ export function ScorePad({
         <Text className="text-xs mt-1" style={{ color: colors.inkMuted }}>
           Observation range: 1 to {OBSERVATION_MAX} · {isLower ? '1 = best' : `${OBSERVATION_MAX} = best`}
         </Text>
+        <BenchmarkHint benchmark={benchmark} note={benchmarkNote} scale={scale} scoringType={scoringType} unit={unit} />
       </View>
     );
   }
@@ -166,6 +201,9 @@ export function ScorePad({
     const calculatedScore = !isNaN(parsed) && minVal != null && maxVal != null
       ? normalizeScore(parsed, scale, scoringType, minVal, maxVal, rankingDirection)
       : null;
+
+    const atBestBenchmark =
+      !isNaN(parsed) && minVal != null && maxVal != null && maxVal !== minVal && (isLower ? parsed <= minVal : parsed >= maxVal);
 
     return (
       <View className="mb-4">
@@ -192,6 +230,8 @@ export function ScorePad({
               const p = parseFloat(txt);
               if (!isNaN(p)) {
                 onChange(p);
+              } else if (txt.trim() === '') {
+                onClear?.();
               }
             }}
             onFocus={onFocus}
@@ -219,6 +259,13 @@ export function ScorePad({
             Benchmarked Range: Min = {minVal} {unitText} · Max = {maxVal} {unitText}
           </Text>
         ) : null}
+        {atBestBenchmark ? (
+          <Text className="text-xs mt-1 font-semibold" style={{ color: colors.primary }}>
+            This is at or past the {isLower ? 'Min' : 'Max'} benchmark, so it scores the full 5.0. Raise the benchmark in
+            Rubrics if players are reaching it easily.
+          </Text>
+        ) : null}
+        <BenchmarkHint benchmark={benchmark} note={benchmarkNote} scale={scale} scoringType={scoringType} unit={unit} />
       </View>
     );
   }
@@ -256,6 +303,7 @@ export function ScorePad({
           );
         })}
       </View>
+      <BenchmarkHint benchmark={benchmark} note={benchmarkNote} scale={scale} scoringType={scoringType} unit={unit} />
     </View>
   );
 }

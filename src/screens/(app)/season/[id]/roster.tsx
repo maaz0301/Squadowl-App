@@ -1,3 +1,4 @@
+import { duplicatePrompt, findPossibleDuplicates } from '@/data/duplicates';
 import { useTerms, sportLabel } from '@/lib/terms';
 import { useState } from 'react';
 import { FlatList, Pressable, Text, View, Alert } from 'react-native';
@@ -72,6 +73,19 @@ export default function SeasonRosterScreen() {
   const handleAdd = async () => {
     if (!firstName.trim() || !lastName.trim()) return;
     const name = `${firstName.trim()} ${lastName.trim()}`;
+    const matches = findPossibleDuplicates(
+      { first: firstName, last: lastName, playerEmail, guardianEmail },
+      players.map((p) => ({ first: p.firstName, last: p.lastName, playerEmail: p.playerEmail, guardianEmail: p.guardianEmail, jersey: p.jersey })),
+    );
+    if (matches.length > 0) {
+      const ok = await new Promise<boolean>((resolve) =>
+        Alert.alert('Possible duplicate', duplicatePrompt(matches, name), [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Add anyway', onPress: () => resolve(true) },
+        ], { cancelable: true, onDismiss: () => resolve(false) }),
+      );
+      if (!ok) return;
+    }
     const player = await addPlayer.mutateAsync({
       seasonId: id!,
       player: {

@@ -14,6 +14,7 @@ import {
   LayoutAnimation,
   type KeyboardEvent,
   AppState,
+  Switch,
 } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { useForm, Controller } from 'react-hook-form';
@@ -39,7 +40,7 @@ import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { capImportRows, dropExistingPlayers, withSkippedRows } from '@/data/bulkTeamImport';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { TeamPlanBadge } from '@/components/TeamPlanBadge';
-import { CreateEventFormSchema, type AddPlayerForm as AddPlayerFormValues, type CreateEventForm, type EventKind, type SeasonEvent } from '@/data/types';
+import { CreateEventFormSchema, type AddPlayerForm as AddPlayerFormValues, type CreateEventForm, type EventKind, type SeasonEvent, type Sport } from '@/data/types';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { TeamHubHeader } from '@/components/teamHub/TeamHubHeader';
 import { TeamHubTabs } from '@/components/teamHub/TeamHubTabs';
@@ -94,13 +95,14 @@ const RSVP_PAGE = 25;
 const TEAM_ROSTER_PAGE = 50;
 
 export default function TeamDetailScreen() {
-  const terms = useTerms();
   const route = useRoute<any>();
   const { id } = route.params || {};
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const setAssessorOnlyTryout = useSessionStore((s) => s.setAssessorOnlyTryout);
   const teamsQuery = useTeamsQuery();
+  // The team's sport sets the default wording (Skaters, not Players, for skating).
+  const terms = useTerms(undefined, teamsQuery.data?.find((t) => t.id === id)?.sport);
   // The badges, tab counts, Assessments tab and Attach modal only need names
   // and headcounts, so they run off this light read — see
   // useTryoutSummariesQuery.
@@ -1056,6 +1058,7 @@ export default function TeamDetailScreen() {
         [
           errors.title?.message,
           errors.date?.message,
+          errors.location?.message,
           errors.endTime ? 'The event ends before it starts. Pick a duration to set a new end.' : undefined,
           errors.endDate?.message,
           errors.repeatUntil?.message,
@@ -2317,6 +2320,8 @@ export default function TeamDetailScreen() {
         }}
       >
         <AddPlayerForm
+          existingPlayers={fullRosterQuery.data ?? listedPlayers}
+          sport={(team.sport as Sport | undefined) ?? undefined}
           loading={addManualPlayer.isPending || uploadTeamPlayerPhoto.isPending || sendInvites.isPending}
           onSubmit={submitManualPlayer}
           submitLabel="Save Player & Send Invite"
@@ -2389,18 +2394,32 @@ export default function TeamDetailScreen() {
           <Controller
             control={eventForm.control}
             name="location"
-            render={({ field: { onChange, onBlur, value } }) => (
-              <View>
-                <Input
-                  label="Location"
-                  placeholder="Venue and street address"
-                  onBlur={onBlur}
-                  onChangeText={onChange}
-                  value={value}
-                />
-                <MapLocationHint location={value} />
-              </View>
-            )}
+            render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => {
+              const tbd = (value ?? '').trim().toUpperCase() === 'TBD';
+              return (
+                <View>
+                  <Input
+                    label="Location"
+                    placeholder="Venue and street address"
+                    onBlur={onBlur}
+                    onChangeText={onChange}
+                    value={tbd ? '' : value}
+                    editable={!tbd}
+                    error={error?.message}
+                  />
+                  <View className="flex-row items-center justify-between mt-2">
+                    <Text className="text-sm" style={{ color: colors.ink }}>Location to be decided (TBD)</Text>
+                    <Switch
+                      value={tbd}
+                      onValueChange={(on) => onChange(on ? 'TBD' : '')}
+                      trackColor={{ false: colors.border, true: colors.primary }}
+                      thumbColor="#fff"
+                    />
+                  </View>
+                  <MapLocationHint location={value} />
+                </View>
+              );
+            }}
           />
           {editingEventId ? null : (
             <Controller

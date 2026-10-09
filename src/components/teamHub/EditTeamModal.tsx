@@ -5,7 +5,7 @@ import { launchImageLibrary } from 'react-native-image-picker';
 import { Avatar, Button, Card, Chip, Input, Modal } from '@/components/ui';
 import { TeamColorPicker } from '@/components/TeamColorPicker';
 import { useUpdateTeamMutation, useUploadTeamLogoMutation } from '@/features/queries';
-import type { Team } from '@/data/types';
+import { SPORTS, type Team } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
 function feeCentsFromInput(feeInput: string): number {
@@ -33,6 +33,7 @@ function EditTeamForm({
   const [brandColor, setBrandColor] = useState<string | null>(team.brandColor ?? null);
   const [name, setName] = useState(team.name);
   const [season, setSeason] = useState(team.season ?? '');
+  const [sport, setSport] = useState(team.sport ?? '');
   const [logo, setLogo] = useState<{ uri: string; type: string } | null>(null);
   const [collectsFees, setCollectsFees] = useState(team.collectsFees ?? false);
   const [feeInput, setFeeInput] = useState(
@@ -89,6 +90,8 @@ function EditTeamForm({
         updates: {
           name: name.trim(),
           season: season.trim() || undefined,
+          // Only sent when it changed, so a save never touches the column otherwise.
+          ...(sport !== (team.sport ?? '') ? { sport } : {}),
           logoUrl,
           brandColor: brandColor ?? '',
           ...feeUpdates,
@@ -116,6 +119,18 @@ function EditTeamForm({
         </Pressable>
         <Input label="Team name" value={name} onChangeText={setName} />
         <Input label="Season" value={season} onChangeText={setSeason} />
+
+        <View className="gap-2">
+          <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+            Sport
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            <Chip label="Not set" active={sport === ''} onPress={() => setSport('')} />
+            {SPORTS.map((s) => (
+              <Chip key={s} label={s} active={sport === s} onPress={() => setSport(s)} />
+            ))}
+          </View>
+        </View>
 
         <TeamColorPicker value={brandColor} onChange={setBrandColor} />
 

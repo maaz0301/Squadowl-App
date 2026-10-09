@@ -13,7 +13,7 @@ import { canUseFeature, isAtTeamLimit, playerRoom, teamRoom, assessmentRoom, own
 import { useCanUseDummyData } from '@/features/useCanUseDummyData';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import type { DummyTeamOptions } from '@/data/testDataGenerator';
-import type { Team } from '@/data/types';
+import { SPORTS, type Sport, type Team } from '@/data/types';
 import { getDataSource } from '@/data';
 import { queryKeys } from '@/lib/queryClient';
 import {
@@ -55,6 +55,7 @@ export default function NewTeamScreen() {
   const typeToConfirm = useTypeToConfirm();
   const [logo, setLogo] = useState<{ uri: string; type: string } | null>(null);
   const [brandColor, setBrandColor] = useState<string | null>(null);
+  const [sport, setSport] = useState<Sport>('Hockey');
   const [collectsFees, setCollectsFees] = useState(false);
   const [feeInput, setFeeInput] = useState('');
   const [managerEmail, setManagerEmail] = useState('');
@@ -169,7 +170,7 @@ export default function NewTeamScreen() {
     try {
       let team;
       try {
-        team = await createTeam.mutateAsync({ name: data.name, season: data.season });
+        team = await createTeam.mutateAsync({ name: data.name, season: data.season, sport });
       } catch (e: any) {
         showAlert('Error', e?.message || 'Failed to create team.');
         return;
@@ -196,7 +197,7 @@ export default function NewTeamScreen() {
           .mutateAsync({
             name: data.season ? `${data.name} ${data.season}` : `${data.name} Season`,
             teamName: data.name,
-            sport: 'Hockey',
+            sport,
             year: data.season,
             teamId: team.id,
           })
@@ -347,6 +348,20 @@ export default function NewTeamScreen() {
             <Input label="Season (optional)" onBlur={onBlur} onChangeText={onChange} value={value ?? ''} />
           )}
         />
+
+        <View className="gap-2">
+          <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+            Sport
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            {SPORTS.map((s) => (
+              <Chip key={s} label={s} active={sport === s} onPress={() => setSport(s)} />
+            ))}
+          </View>
+          <Text className="text-xs" style={{ color: colors.inkMuted }}>
+            Player cards, labels and the sign-up form follow the sport (a skating team has Skaters, with no positions).
+          </Text>
+        </View>
 
         <TeamColorPicker value={brandColor} onChange={setBrandColor} label="Team colour (optional)" />
 

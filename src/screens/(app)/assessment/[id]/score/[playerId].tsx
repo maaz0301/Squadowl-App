@@ -34,6 +34,7 @@ import {
 import { RECOMMENDATIONS, ScoreFormSchema, type ScoreForm } from '@/data/types';
 import {
   useAthleteHistoryQuery,
+  useDeleteEvaluationMutation,
   useSaveEvaluationMutation,
   useSessionProgressQuery,
   useTryoutQuery,
@@ -53,8 +54,9 @@ export default function ScoreScreen() {
   const navigation = useNavigation<any>();
   const [saving, setSaving] = useState(false);
   const tryoutQuery = useTryoutQuery(id);
-  const terms = useTerms(tryoutQuery.data?.settings.customLabels);
+  const terms = useTerms(tryoutQuery.data?.settings.customLabels, tryoutQuery.data?.sport);
   const saveEval = useSaveEvaluationMutation(id!);
+  const deleteEval = useDeleteEvaluationMutation(id!);
   const workingScores = useSessionStore((s) => s.workingScores);
   const setWorkingScores = useSessionStore((s) => s.setWorkingScores);
   const clearWorkingScores = useSessionStore((s) => s.clearWorkingScores);
@@ -424,6 +426,38 @@ export default function ScoreScreen() {
   const overall = weightedOverall(scores ?? {}, categories, weights);
 
   // `closeAfter` leaves the scoring screen once saved, instead of moving on to the next session.
+  const removeSession = () => {
+    if (!evalId) return;
+    Alert.alert(
+      'Remove this session?',
+      `All scores for ${currentSession} will be deleted for ${playerDisplayName(player)}. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setSaving(true);
+              if (autoSaveTimeoutRef.current) {
+                clearTimeout(autoSaveTimeoutRef.current);
+                autoSaveTimeoutRef.current = null;
+              }
+              await deleteEval.mutateAsync(evalId);
+              previousFormRef.current = '';
+              clearWorkingScores();
+              navigation.goBack();
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to remove the session.');
+            } finally {
+              setSaving(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const submit = (closeAfter: boolean) => handleSubmit(async (data) => {
     try {
       setSaving(true);
@@ -449,8 +483,11 @@ export default function ScoreScreen() {
       if (hasUnsavedChanges) {
         const hasScores = data.scores && Object.values(data.scores).some(val => val !== undefined && val !== null && val > 0);
         if (!hasScores) {
-          Alert.alert('No scores entered', 'Please grade at least one subskill before saving.');
+          // Every score was cleared on a saved session: that means "remove it".
+          // A save needs a score, so without this a wrong session was stuck.
           setSaving(false);
+          if (evalId) removeSession();
+          else Alert.alert('No scores entered', 'Please grade at least one subskill before saving.');
           return;
         }
 
@@ -624,12 +661,19 @@ export default function ScoreScreen() {
                   unit={s.unit}
                   minVal={s.minVal}
                   maxVal={s.maxVal}
+                  benchmark={s.benchmark}
+                  benchmarkNote={s.benchmarkNote}
                   value={scores?.[s.key]}
                   onFocus={revealField(s.key)}
                   onChange={(v) => {
                     const newScores = { ...workingScores, [s.key]: v };
                     setWorkingScores(newScores);
                     setValue('scores', newScores, { shouldDirty: true });
+                  }}
+                  onClear={() => {
+                    const { [s.key]: _removed, ...rest } = workingScores ?? {};
+                    setWorkingScores(rest);
+                    setValue('scores', rest, { shouldDirty: true });
                   }}
                 />
               </View>
@@ -701,6 +745,9 @@ export default function ScoreScreen() {
         </Text>
         <Button label="Done" onPress={onSubmit} loading={saving} />
         <Button label="Save & Close" variant="secondary" onPress={onSaveAndClose} disabled={saving} />
+        {isEditing ? (
+          <Button label="Remove this session" variant="ghost" onPress={removeSession} disabled={saving} />
+        ) : null}
       </View>
       </View>
         </ScrollView>
