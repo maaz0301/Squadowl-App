@@ -5,6 +5,7 @@ import { Button } from '@/components/ui';
 import {
   useDeleteAccountVideoMutation,
   useInvalidateVideoStorage,
+  useVideoContextAccountQuery,
   useVideoStorageQuery,
   useVideosForContextQuery,
 } from '@/features/queries';
@@ -38,11 +39,15 @@ interface ContextVideosProps {
  * may upload. Every upload is compressed first and counts against the account's
  * shared storage quota, which the server enforces.
  */
-export function ContextVideos({ context, contextId, accountId, title = 'Videos', readOnly }: ContextVideosProps) {
+export function ContextVideos({ context, contextId, accountId: accountIdProp, title = 'Videos', readOnly }: ContextVideosProps) {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const user = useUser();
-  const storage = useVideoStorageQuery(accountId, { enabled: !!contextId });
+  // The account is looked up from the thing the video belongs to, so a delegated
+  // team manager uses the club's storage rather than their own account's.
+  const resolved = useVideoContextAccountQuery(context, contextId, { enabled: !readOnly && !accountIdProp });
+  const accountId = accountIdProp ?? resolved.data ?? undefined;
+  const storage = useVideoStorageQuery(accountId, { enabled: !!contextId && !readOnly && (!!accountIdProp || resolved.isSuccess) });
   const videosQuery = useVideosForContextQuery(context, contextId ? [contextId] : []);
   const deleteVideo = useDeleteAccountVideoMutation();
   const invalidate = useInvalidateVideoStorage();

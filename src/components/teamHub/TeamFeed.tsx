@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, Text, TextInput, View } from 'react-native';
 
 import { Button, Chip, Input, Modal, useTypeToConfirm } from '@/components/ui';
+import { ContextVideos } from '@/components/video/ContextVideos';
 import {
   FeedUploadError,
   useAddPostCommentMutation,
@@ -290,6 +291,10 @@ function PostCard({
           ))}
         </View>
       ) : null}
+      {/* Coach videos posted to the team feed, from the account's video storage. */}
+      <View className="mt-2">
+        <ContextVideos context="team_post" contextId={post.id} readOnly={!canPost} title="Videos" />
+      </View>
       <PostComments seasonId={seasonId} post={post} canModerate={canPost} currentUserId={currentUserId} />
     </View>
   );

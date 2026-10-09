@@ -50,6 +50,7 @@ import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { PlanGate } from '@/components/PlanGate';
 import { PlayerProfileSection } from '@/components/player/PlayerProfileSection';
 import { PlayerLetterModal } from '@/components/player/PlayerLetterModal';
+import { ContextVideos } from '@/components/video/ContextVideos';
 
 export default function PlayerHubScreen() {
   const typeToConfirm = useTypeToConfirm();
@@ -629,6 +630,8 @@ export default function PlayerHubScreen() {
                       → {ev.improve}
                     </Text>
                   ) : null}
+                  {/* A video clip for this score row, from the account's video storage. */}
+                  <ContextVideos context="evaluation" contextId={ev.id} title="Video clips" />
                   <Button
                     label="Edit Score"
                     size="sm"

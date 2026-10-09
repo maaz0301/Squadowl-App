@@ -29,6 +29,7 @@ import { buildPlayerFullResults } from '@/data/resultsExport';
 import { playerDisplayName } from '@/data/rubrics';
 import type { PlayerReportCard, ReportCardAttachment } from '@/data/types';
 import { DocumentPickerUnavailable, pickAttachment, type PickedAttachment } from '@/lib/documentPicker';
+import { ContextVideos } from '@/components/video/ContextVideos';
 import { formatAiComments } from '@/lib/reportCardText';
 import { reportLogoUrls } from '@/lib/reportPdf';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
@@ -158,6 +159,11 @@ export default function PlayerReportCardScreen() {
     try {
       const picked = await pickAttachment();
       if (!picked) return;
+      // Videos go through account video storage (compressed and counted against the quota).
+      if (picked.type.startsWith('video/')) {
+        notify('Add videos below', 'Save the report card, then use Add video under Stored videos. Videos are compressed and kept in your video storage.');
+        return;
+      }
       if (picked.size > MAX_UPLOAD_BYTES) {
         notify('File too large', 'Uploads can be up to 50 MB. For a longer video, add a link instead.');
         return;
@@ -450,9 +456,9 @@ export default function PlayerReportCardScreen() {
               ))}
             </View>
           )}
-          <Button label="Upload a file or video" variant="secondary" onPress={addFile} />
+          <Button label="Upload a file" variant="secondary" onPress={addFile} />
           <Text className="text-xs" style={{ color: colors.inkMuted }}>
-            Up to 50 MB each. For longer videos, add a link below.
+            Files up to 50 MB each. Videos are added under Stored videos once the card is saved, or add a link below.
           </Text>
           <Input label="Link name" value={linkName} onChangeText={setLinkName} placeholder="Game 3 highlights" />
           <Input
@@ -479,6 +485,21 @@ export default function PlayerReportCardScreen() {
             <Text style={{ color: colors.ink }}>This link is a video</Text>
           </Pressable>
           <Button label="Add link" variant="secondary" size="sm" onPress={addLink} disabled={!linkUrl.trim()} />
+        </Card>
+
+        <Card className="gap-3">
+          {editingId ? (
+            <ContextVideos
+              context="report_card"
+              contextId={editingId}
+              accountId={savedCards.find((c) => c.id === editingId)?.accountId}
+              title="Stored videos"
+            />
+          ) : (
+            <Text className="text-sm" style={{ color: colors.inkMuted }}>
+              Save the report card first, then you can add videos from your video storage.
+            </Text>
+          )}
         </Card>
 
         <View className="gap-3">

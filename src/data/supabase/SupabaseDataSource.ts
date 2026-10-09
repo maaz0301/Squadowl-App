@@ -9674,12 +9674,13 @@ export class SupabaseDataSource implements DataSource {
     accountId?: string;
     onProgress?: (fraction: number) => void;
   }): Promise<import('../videoStorage').AccountVideo> {
-    const { supabase, accountId: own } = await this.ctx();
+    const { supabase } = await this.userCtx();
+    const accountId = args.accountId ?? (await this.ctx()).accountId;
     const { file } = args;
     if (file.type !== 'video/mp4') throw new Error('Videos are stored as MP4. Compress the video first.');
 
     const reserved = await supabase.rpc('reserve_account_video', {
-      p_account_id: args.accountId ?? own,
+      p_account_id: accountId,
       p_file_name: file.name,
       p_size_bytes: file.size,
       p_content_type: file.type,
@@ -9766,6 +9767,16 @@ export class SupabaseDataSource implements DataSource {
       p_viewers_can_download: perms.viewersCanDownload ?? null,
     });
     if (error) throw new Error(friendlyVideoError(error.message));
+  }
+
+  async getVideoContextAccount(
+    context: import('../videoStorage').VideoContext,
+    contextId: string,
+  ): Promise<string | null> {
+    const { supabase } = await this.userCtx();
+    const { data, error } = await supabase.rpc('video_context_account', { p_context: context, p_context_id: contextId });
+    if (error) throw new Error(friendlyVideoError(error.message));
+    return (data as string | null) ?? null;
   }
 
   async acknowledgeVideoDeletion(accountId: string): Promise<void> {

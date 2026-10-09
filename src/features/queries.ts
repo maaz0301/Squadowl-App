@@ -3062,6 +3062,20 @@ export function useVideosForContextQuery(
   });
 }
 
+/** The account that owns the storage for something videos attach to (a manager works in the club's account, not their own). */
+export function useVideoContextAccountQuery(
+  context: import('@/data/videoStorage').VideoContext,
+  contextId: string | undefined,
+  options?: { enabled?: boolean },
+) {
+  return useQuery({
+    queryKey: ['video-context-account', context, contextId ?? ''] as const,
+    queryFn: () => getDataSource().getVideoContextAccount(context, contextId!),
+    enabled: options?.enabled !== false && !!contextId,
+    staleTime: 10 * 60_000,
+  });
+}
+
 /** Everything a stored video touches: the meter, the Storage list, the lists it is attached to, the Library. */
 export function useInvalidateVideoStorage() {
   const qc = useQueryClient();

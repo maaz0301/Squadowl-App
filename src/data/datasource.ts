@@ -337,6 +337,8 @@ export interface DataSource {
   deleteAccountVideo(videoId: string): Promise<void>;
   getAccountVideoUrl(storagePath: string): Promise<string>;
   setVideoPermissions(accountId: string, perms: { managersCanUpload?: boolean; viewersCanDownload?: boolean }): Promise<void>;
+  /** The account whose storage a video for this Library item, report card, post or evaluation uses. */
+  getVideoContextAccount(context: import('./videoStorage').VideoContext, contextId: string): Promise<string | null>;
   /** Records that the coach typed DELETE before cancelling or downgrading a plan that holds videos. */
   acknowledgeVideoDeletion(accountId: string): Promise<void>;
   createVideoStorageCheckoutSession(gb: number, options?: { applyCredits?: boolean }): Promise<{ url: string }>;
