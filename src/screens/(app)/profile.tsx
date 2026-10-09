@@ -359,6 +359,7 @@ export default function ProfileScreen() {
               <Button label="Manage Organization Members" variant="ghost" onPress={() => navigation.navigate('OrganizationMembers')} />
             ) : null}
             <Button label="Athlete Hub" variant="ghost" onPress={() => navigation.navigate('AthleteHub')} />
+            <Button label="Video Storage" variant="ghost" onPress={() => navigation.navigate('Storage')} />
             <Button label="Archived" variant="ghost" onPress={() => navigation.navigate('ArchivedAssessments')} />
             <Button label="Send Feedback" variant="ghost" onPress={() => navigation.navigate('Feedback')} />
             {/* The portal is limited to an email allowlist held in the database

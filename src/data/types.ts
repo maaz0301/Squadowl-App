@@ -1481,6 +1481,8 @@ export interface LibraryItem {
   contentType?: string;
   /** Short-lived signed address for an uploaded file. */
   fileUrl?: string;
+  /** A video stored through the Video Storage Add-On (compressed, counted against the quota). */
+  video?: import('./videoStorage').AccountVideo;
   audience: LibraryAudienceFlags;
   createdAt: number;
   updatedAt: number;
@@ -1491,6 +1493,8 @@ export interface LibraryItemInput {
   title: string;
   body: string;
   url?: string;
+  /** The video was uploaded to account storage and is attached after the item exists. */
+  uploadedVideo?: boolean;
   audience: LibraryAudienceFlags;
 }
 

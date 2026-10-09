@@ -20,9 +20,23 @@ import {
 import {
   useCreateLibraryItemMutation,
   useDeleteLibraryItemMutation,
+  useInvalidateVideoStorage,
   useLibraryQuery,
   useUpdateLibraryItemMutation,
+  useVideoStorageQuery,
 } from '@/features/queries';
+import { getDataSource } from '@/data';
+import { StorageMeterCard } from '@/components/video/StorageMeter';
+import { VideoPlayerModal } from '@/components/video/VideoPlayerModal';
+import {
+  VIDEO_PHASE_LABEL,
+  formatBytes,
+  friendlyVideoError,
+  type LocalVideoFile,
+  type VideoUploadProgress,
+} from '@/data/videoStorage';
+import { compressAndUploadVideo, pickVideo, VideoCompressorUnavailable } from '@/lib/videoUpload';
+import { useNavigation } from '@react-navigation/native';
 import {
   DEFAULT_LIBRARY_AUDIENCE,
   LIBRARY_AUDIENCES,
@@ -60,6 +74,8 @@ interface FormState {
   url: string;
   audience: LibraryAudienceFlags;
   file: PickedAttachment | null;
+  /** A video chosen from the gallery, compressed and uploaded to account storage on save. */
+  video: LocalVideoFile | null;
 }
 
 const emptyForm = (): FormState => ({
@@ -69,6 +85,7 @@ const emptyForm = (): FormState => ({
   url: '',
   audience: { ...DEFAULT_LIBRARY_AUDIENCE },
   file: null,
+  video: null,
 });
 
 export default function LibraryScreen() {
@@ -80,6 +97,11 @@ export default function LibraryScreen() {
   const updateItem = useUpdateLibraryItemMutation();
   const deleteItem = useDeleteLibraryItemMutation();
   const typeToConfirm = useTypeToConfirm();
+  const navigation = useNavigation<any>();
+  const storage = useVideoStorageQuery();
+  const invalidateVideos = useInvalidateVideoStorage();
+  const [uploadProgress, setUploadProgress] = useState<VideoUploadProgress | null>(null);
+  const [playing, setPlaying] = useState<{ url: string; title: string } | null>(null);
 
   const [filter, setFilter] = useState<LibraryKind | 'all'>('all');
   const [search, setSearch] = useState('');
@@ -99,7 +121,11 @@ export default function LibraryScreen() {
 
   const isNew = editing === 'new';
   const showUrl = form.kind === 'link' || form.kind === 'video';
-  const showFile = isNew && (form.kind === 'file' || form.kind === 'video');
+  // Uploaded videos go through account storage (compressed, counted against the quota),
+  // so the plain file picker is for documents only.
+  const showFile = isNew && form.kind === 'file';
+  const showVideoUpload = isNew && form.kind === 'video';
+  const videoInfo = storage.data;
   const multipleClubs = new Set(items.map((i) => i.accountId)).size > 1;
 
   const openNew = () => {
@@ -114,6 +140,7 @@ export default function LibraryScreen() {
       url: item.url ?? '',
       audience: { ...item.audience },
       file: null,
+      video: null,
     });
     setEditing(item);
   };
@@ -133,7 +160,52 @@ export default function LibraryScreen() {
     }
   };
 
+  const chooseVideo = async () => {
+    try {
+      const picked = await pickVideo();
+      if (picked) setForm((f) => ({ ...f, video: picked }));
+    } catch (e) {
+      Alert.alert('Could not pick the video', e instanceof Error ? e.message : 'Please try again.');
+    }
+  };
+
+  /** Compress and upload the chosen video, create the item, then attach the video to it. */
+  const saveWithVideo = async () => {
+    if (!form.video) return;
+    if (!form.title.trim()) {
+      Alert.alert('Could not save', 'Give the item a title.');
+      return;
+    }
+    let videoId: string | null = null;
+    try {
+      const uploaded = await compressAndUploadVideo({
+        file: form.video,
+        context: 'library',
+        title: form.title.trim(),
+        onProgress: setUploadProgress,
+      });
+      videoId = uploaded.id;
+      const item = await createItem.mutateAsync({
+        input: { kind: 'video', title: form.title, body: form.body, url: form.url, audience: form.audience, uploadedVideo: true },
+      });
+      await getDataSource().attachAccountVideo(uploaded.id, 'library', item.id);
+      invalidateVideos();
+      setEditing(null);
+    } catch (e) {
+      // Nothing may be left holding quota that no item shows.
+      if (videoId) await getDataSource().deleteAccountVideo(videoId).catch(() => undefined);
+      if (e instanceof VideoCompressorUnavailable) Alert.alert('Update needed', e.message);
+      else Alert.alert('Could not save', friendlyVideoError(e instanceof Error ? e.message : undefined));
+    } finally {
+      setUploadProgress(null);
+    }
+  };
+
   const save = async () => {
+    if (isNew && form.kind === 'video' && form.video) {
+      await saveWithVideo();
+      return;
+    }
     try {
       if (isNew) {
         await createItem.mutateAsync({
@@ -212,6 +284,7 @@ export default function LibraryScreen() {
             ? 'Store files, notes, videos and links, then choose who can see each one.'
             : 'Files, notes, videos and links shared with you.'}
         </Text>
+        <StorageMeterCard onPress={() => navigation.navigate('Storage')} />
         <Input label="Search the library" value={search} onChangeText={setSearch} placeholder="Title or description" />
         <View className="mt-3 flex-row flex-wrap">
           <Chip label="All" active={filter === 'all'} onPress={() => setFilter('all')} />
@@ -330,6 +403,53 @@ export default function LibraryScreen() {
             </View>
           ) : null}
 
+          {showVideoUpload ? (
+            <View className="gap-1">
+              {videoInfo?.canUpload ? (
+                <>
+                  <Button
+                    variant="secondary"
+                    label={form.video ? 'Choose a different video' : 'Or upload a video'}
+                    onPress={chooseVideo}
+                    disabled={uploadProgress !== null}
+                  />
+                  {form.video ? (
+                    <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                      {form.video.name}
+                      {form.video.size ? ` (${formatBytes(form.video.size)} before compression)` : ''}
+                    </Text>
+                  ) : null}
+                  {uploadProgress ? (
+                    <View className="gap-1">
+                      <Text className="text-sm font-bold" style={{ color: colors.ink }}>
+                        {VIDEO_PHASE_LABEL[uploadProgress.phase]}... {Math.round(uploadProgress.fraction * 100)}%
+                      </Text>
+                      <View style={{ height: 8, borderRadius: 999, backgroundColor: colors.border, overflow: 'hidden' }}>
+                        <View style={{ width: `${Math.round(uploadProgress.fraction * 100)}%`, height: '100%', backgroundColor: colors.primary }} />
+                      </View>
+                    </View>
+                  ) : null}
+                  <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                    Compressed to 720p before it uploads, and counted against your video storage.
+                  </Text>
+                </>
+              ) : videoInfo?.canManage && videoInfo.planEligible ? (
+                <Button
+                  variant="secondary"
+                  label="Add video storage to upload a video"
+                  onPress={() => {
+                    setEditing(null);
+                    navigation.navigate('Storage');
+                  }}
+                />
+              ) : (
+                <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                  Uploading videos needs video storage on a Coach+ or Club plan. You can still paste a link.
+                </Text>
+              )}
+            </View>
+          ) : null}
+
           <View className="rounded-xl border p-3 gap-1" style={{ borderColor: colors.border }}>
             <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
               Who can view this
@@ -359,7 +479,7 @@ export default function LibraryScreen() {
           <Button
             label={isNew ? 'Add' : 'Save'}
             onPress={save}
-            loading={createItem.isPending || updateItem.isPending}
+            loading={createItem.isPending || updateItem.isPending || uploadProgress !== null}
           />
         </View>
       </Modal>
@@ -386,6 +506,15 @@ export default function LibraryScreen() {
             </Text>
           ) : null}
           <View className="mt-4 gap-2">
+            {reading?.video?.url ? (
+              <Button label="Play video" onPress={() => {
+                  // One modal at a time: iOS will not present the player over the open reader.
+                  const target = { url: reading.video!.url!, title: reading.title };
+                  setReading(null);
+                  setTimeout(() => setPlaying(target), 350);
+                }}
+              />
+            ) : null}
             {reading?.fileUrl ? (
               <Button
                 label={reading.kind === 'video' ? 'Play video' : 'Open file'}
@@ -403,6 +532,7 @@ export default function LibraryScreen() {
         </ScrollView>
       </Modal>
 
+      <VideoPlayerModal url={playing?.url ?? null} title={playing?.title ?? ''} onClose={() => setPlaying(null)} />
       {isGuardian ? null : <BottomNav active="library" />}
     </Screen>
   );

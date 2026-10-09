@@ -53,6 +53,7 @@ import {
   useRemoveGuardianAthleteMutation,
 } from '@/features/queries';
 import { APP_CONFIG } from '@/config/app';
+import { StorageMeterCard } from '@/components/video/StorageMeter';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { canUseFeature, isAtAssessmentLimit, isAtTeamLimit, ownedTryouts } from '@/data/plans';
 import { teamBrandSurfaces } from '@/lib/teamBrand';
@@ -634,6 +635,9 @@ export default function DashboardScreen() {
                 <QuickAccessGrid items={quickAccessItems} />
               </View>
             )}
+
+            {/* Video storage: how full the account's shared quota is. Tapping opens Storage. */}
+            {!isGuardianOnly ? <StorageMeterCard onPress={() => navigation.navigate('Storage')} /> : null}
 
             {!isGuardianOnly ? <SubscriptionEndingBanner /> : null}
 

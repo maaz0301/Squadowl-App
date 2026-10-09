@@ -310,6 +310,41 @@ export interface DataSource {
   createLibraryItem(input: import('./types').LibraryItemInput, file?: { uri: string; name: string; type: string; size: number }): Promise<import('./types').LibraryItem>;
   updateLibraryItem(id: string, updates: Partial<import('./types').LibraryItemInput>): Promise<import('./types').LibraryItem>;
   deleteLibraryItem(item: import('./types').LibraryItem): Promise<void>;
+
+  /**
+   * Video Storage Add-On. One quota per account covers videos in the Library, on
+   * player report cards, on evaluation score rows and in the team feed. The
+   * server enforces it (reserve_account_video / confirm_account_video); these
+   * only call it. A video is compressed to 720p MP4 on the device first, so
+   * `uploadAccountVideo` expects an MP4 and rejects anything else.
+   */
+  getVideoStorage(accountId?: string): Promise<import('./videoStorage').VideoStorageInfo>;
+  listAccountVideos(accountId?: string): Promise<import('./videoStorage').AccountVideo[]>;
+  /** Videos attached to the given parents, each with a short-lived playback address. */
+  listVideosForContext(
+    context: import('./videoStorage').VideoContext,
+    contextIds: string[],
+  ): Promise<import('./videoStorage').AccountVideo[]>;
+  uploadAccountVideo(args: {
+    file: import('./videoStorage').LocalVideoFile;
+    context: import('./videoStorage').VideoContext;
+    title?: string;
+    accountId?: string;
+    onProgress?: (fraction: number) => void;
+  }): Promise<import('./videoStorage').AccountVideo>;
+  /** Points an uploaded video at its Library item, report card, evaluation or post. */
+  attachAccountVideo(videoId: string, context: import('./videoStorage').VideoContext, contextId: string): Promise<void>;
+  deleteAccountVideo(videoId: string): Promise<void>;
+  getAccountVideoUrl(storagePath: string): Promise<string>;
+  setVideoPermissions(accountId: string, perms: { managersCanUpload?: boolean; viewersCanDownload?: boolean }): Promise<void>;
+  /** Records that the coach typed DELETE before cancelling or downgrading a plan that holds videos. */
+  acknowledgeVideoDeletion(accountId: string): Promise<void>;
+  createVideoStorageCheckoutSession(gb: number, options?: { applyCredits?: boolean }): Promise<{ url: string }>;
+  /** Stripe-billed storage only. Cancelling needs `confirm: 'DELETE'`. */
+  manageVideoStorage(
+    action: 'change' | 'cancel' | 'resume',
+    args?: { storageGb?: number; confirm?: string },
+  ): Promise<{ cancelAt?: string | null }>;
   /** Team news feed: coaches post and attach files; anyone who can open the season reads and comments. */
   listSeasonPosts(seasonId: string): Promise<import('./types').SeasonPost[]>;
   addSeasonPost(seasonId: string, input: { title: string; body: string }): Promise<import('./types').SeasonPost>;

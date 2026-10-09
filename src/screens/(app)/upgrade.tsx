@@ -12,7 +12,9 @@ import {
   useReferralSummaryQuery,
   usePlatformBlockedFeaturesQuery,
   usePlatformBlockedPlanTiersQuery,
+  useVideoStorageQuery,
 } from '@/features/queries';
+import { isVideoStorageTier } from '@/data/videoStorage';
 import {
   PLAN_DEFINITIONS,
   formatCad,
@@ -50,6 +52,10 @@ function confirmAsync(options: {
 export default function UpgradeScreen() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
+  // Videos are deleted when the plan ends or drops below Coach+, so anything that
+  // could do that goes through the video deletion warning first.
+  const videoStorage = useVideoStorageQuery().data;
+  const hasStoredVideos = (videoStorage?.videoCount ?? 0) > 0;
   const user = useUser();
   const restoreSession = useAuthStore((s) => s.restoreSession);
   const qc = useQueryClient();
@@ -236,6 +242,11 @@ export default function UpgradeScreen() {
       return;
     }
 
+    if (hasStoredVideos && !isVideoStorageTier(tier)) {
+      navigation.navigate('CancelVideoStorage', { reason: 'plan' });
+      return;
+    }
+
     const confirmed = await confirmDowngrade(tier);
     if (!confirmed) return;
 
@@ -400,7 +411,7 @@ export default function UpgradeScreen() {
             <Button
               label="Manage Subscription & Bills"
               variant="secondary"
-              onPress={openPortal}
+              onPress={hasStoredVideos ? () => navigation.navigate('CancelVideoStorage', { reason: 'plan' }) : openPortal}
               loading={loadingPortal}
             />
             <Text className="text-xs text-center mt-2" style={{ color: colors.inkMuted }}>
