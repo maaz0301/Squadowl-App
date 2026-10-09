@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Image, StatusBar, StyleSheet, View } from 'react-native';
+import { Image, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import Video from 'react-native-video';
+import { brand } from '@/theme/tokens';
 
 /**
  * A white backdrop the brand animation sits on (the SquadOwl logo art is on
@@ -11,29 +12,32 @@ import Video from 'react-native-video';
 const SPLASH_BACKDROP = '#ffffff';
 
 /**
- * Hard ceiling on how long the splash may hold the app back. The animation is
- * ~2.3s, but a decode stall or a device that never fires `onEnd` must not leave
- * the user staring at the splash forever.
+ * The clip is ~2.3s at full speed, which flew past before the tagline could be
+ * read. Played at this rate it runs ~4s. Lower = slower.
  */
-const MAX_SPLASH_MS = 5000;
+const PLAYBACK_RATE = 0.55;
 
 /**
- * How long the static-logo fallback sits on screen when the video can't play
- * at all — long enough to read as brand, short enough not to feel broken.
+ * Longest the Enter button may stay hidden. The splash now waits for a tap, so
+ * a decode stall or a device that never fires `onEnd` only needs to bring the
+ * button up eventually, not push the user into the app.
  */
-const FALLBACK_SPLASH_MS = 1200;
+const MAX_UNTIL_ENTER_MS = 8000;
+
+/** Same safety net when the video can't play and the static logo shows instead. */
+const FALLBACK_UNTIL_ENTER_MS = 800;
 
 type SplashScreenProps = {
-  /** Called once when the animation finishes (or is given up on). */
+  /** Called once when the user taps Enter. */
   onFinish?: () => void;
 };
 
 export function SplashScreen({ onFinish }: SplashScreenProps) {
   const [videoFailed, setVideoFailed] = useState(false);
+  const [canEnter, setCanEnter] = useState(false);
   const hasFinished = useRef(false);
 
-  // `onEnd`, the fallback timer and the safety timer can all race; whichever
-  // lands first wins and the rest become no-ops.
+  // A double tap on Enter must not fire onFinish twice.
   const finish = useCallback(() => {
     if (hasFinished.current) return;
     hasFinished.current = true;
@@ -41,15 +45,15 @@ export function SplashScreen({ onFinish }: SplashScreenProps) {
   }, [onFinish]);
 
   useEffect(() => {
-    const timer = setTimeout(finish, MAX_SPLASH_MS);
+    const timer = setTimeout(() => setCanEnter(true), MAX_UNTIL_ENTER_MS);
     return () => clearTimeout(timer);
-  }, [finish]);
+  }, []);
 
   useEffect(() => {
     if (!videoFailed) return;
-    const timer = setTimeout(finish, FALLBACK_SPLASH_MS);
+    const timer = setTimeout(() => setCanEnter(true), FALLBACK_UNTIL_ENTER_MS);
     return () => clearTimeout(timer);
-  }, [videoFailed, finish]);
+  }, [videoFailed]);
 
   return (
     <View style={[StyleSheet.absoluteFill, styles.container]}>
@@ -70,14 +74,22 @@ export function SplashScreen({ onFinish }: SplashScreenProps) {
           muted
           controls={false}
           repeat={false}
+          rate={PLAYBACK_RATE}
           playInBackground={false}
           // Don't take audio focus / duck other apps' audio for a muted clip.
           disableFocus
           ignoreSilentSwitch="ignore"
-          onEnd={finish}
+          onEnd={() => setCanEnter(true)}
           onError={() => setVideoFailed(true)}
         />
       )}
+      {canEnter ? (
+        <View style={styles.enterWrap} pointerEvents="box-none">
+          <Pressable onPress={finish} accessibilityRole="button" accessibilityLabel="Enter" style={styles.enter}>
+            <Text style={styles.enterLabel}>Enter</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -88,6 +100,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  enterWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 72,
+    alignItems: 'center',
+  },
+  enter: {
+    minWidth: 180,
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 999,
+    backgroundColor: brand.DEFAULT,
+  },
+  enterLabel: { color: '#ffffff', fontSize: 18, fontWeight: '700' },
   logo: {
     width: '70%',
     height: '40%',

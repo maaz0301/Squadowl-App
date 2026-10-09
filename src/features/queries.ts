@@ -1,4 +1,5 @@
 import { getDataSource } from '@/data';
+import type { DataSource } from '@/data/datasource';
 import { expandEventForms } from '@/lib/recurrence';
 import type { DummyDataOptions, DummyTeamOptions } from '@/data/testDataGenerator';
 import type { LetterKind } from '@/data/letters';
@@ -1970,6 +1971,19 @@ export function useAccountPlayerCount(enabled: boolean): number {
   return enabled ? (q.data ?? 0) : 0;
 }
 
+export const ATHLETE_HUB_PAGE = 60;
+
+/** The Athlete Hub list: small pages, searched on the server. */
+export function useAthleteHubQuery(search: string) {
+  return useInfiniteQuery({
+    queryKey: ['athletes', 'hub', search],
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => getDataSource().listAthleteHub(search, pageParam, ATHLETE_HUB_PAGE),
+    getNextPageParam: (last) => last.next ?? undefined,
+    retry: 1,
+  });
+}
+
 export function useAthletesQuery() {
   return useQuery({
     queryKey: ['athletes'],
@@ -2175,6 +2189,30 @@ export function useRemoveGuardianAthleteMutation() {
   return useMutation({
     mutationFn: (athleteId: string) => getDataSource().removeGuardianAthlete(athleteId),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.guardianRosters(userId) }),
+  });
+}
+
+export function useGuardianAthleteInfoQuery(athleteId: string | undefined) {
+  return useQuery({
+    queryKey: ['guardianAthleteInfo', athleteId ?? ''],
+    queryFn: () => getDataSource().getGuardianAthleteInfo(athleteId!),
+    enabled: !!athleteId,
+  });
+}
+
+/** A guardian editing their own athlete from the portal. */
+export function useUpdateGuardianAthleteMutation(athleteId: string) {
+  const qc = useQueryClient();
+  const userId = useAuthStore((s) => s.session?.user?.id);
+  return useMutation({
+    mutationFn: (patch: Parameters<DataSource['updateGuardianAthlete']>[1]) =>
+      getDataSource().updateGuardianAthlete(athleteId, patch),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.guardianRosters(userId) });
+      void qc.invalidateQueries({ queryKey: ['guardianAthleteInfo', athleteId] });
+      void qc.invalidateQueries({ queryKey: queryKeys.profile });
+      void qc.invalidateQueries({ queryKey: ['athletes'] });
+    },
   });
 }
 

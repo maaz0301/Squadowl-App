@@ -29,6 +29,7 @@ import { useUser } from '@/state/authStore';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { EXPO_PUBLIC_WEB_URL } from '@env';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, FlatList, Platform, Pressable, Share, Text, View } from 'react-native';
@@ -41,6 +42,7 @@ type RegTab = 'pending' | 'all' | 'dismissed';
 export default function RegistrationsScreen() {
   const id = useAssessmentId();
   const colors = useThemeColors();
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const tryoutQuery = useTryoutQuery(id);
   const terms = useTerms(tryoutQuery.data?.settings.customLabels);
@@ -453,8 +455,10 @@ export default function RegistrationsScreen() {
           the coach has scrolled while ticking players. */}
       {tab === 'pending' && selectedIds.length > 0 ? (
         <View
-          className="flex-row items-center gap-3 border-t px-4 py-4"
-          style={{ borderColor: colors.border, backgroundColor: colors.card }}
+          className="flex-row items-center gap-3 border-t px-4 pt-4"
+          // This screen has no bottom safe-area edge, and on Android the 3-button
+          // bar draws over the last 48dp, hiding the Add button.
+          style={{ borderColor: colors.border, backgroundColor: colors.card, paddingBottom: 16 + insets.bottom }}
         >
           <View className="flex-1">
             <Text className="text-xl font-display font-bold" style={{ color: colors.ink }}>

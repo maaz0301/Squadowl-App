@@ -30,6 +30,7 @@ import {
 } from '@/features/queries';
 import { queryKeys } from '@/lib/queryClient';
 import { useAuthStore } from '@/state/authStore';
+import { GuardianAthleteInfo } from '@/components/guardian/GuardianAthleteInfo';
 import { TeamFeed } from '@/components/teamHub/TeamFeed';
 import { EventDiscussion } from '@/components/EventDiscussion';
 import type { SeasonEvent } from '@/data/types';
@@ -335,12 +336,6 @@ export default function GuardianPortalScreen() {
         <View className="flex-row items-center justify-end gap-2 -mt-1">
           <ChatIconButton onPress={openChat} badge={<UnreadPill count={totalUnread} />} />
           <Button label="Library" size="sm" variant="secondary" onPress={() => navigation.navigate('Library')} />
-          <Button
-            label="Share"
-            size="sm"
-            variant="secondary"
-            onPress={() => navigation.navigate('ShareDirectory', { athleteId: playerId })}
-          />
         </View>
 
         <View className="flex-row items-center gap-4 mb-4 mt-2">
@@ -419,30 +414,9 @@ export default function GuardianPortalScreen() {
           )}
         </ScrollView>
       ) : (
-        <View className="px-4">
-          <Card className="mb-3">
-            <Text className="text-lg font-bold mb-2" style={{ color: colors.ink }}>
-              Basic Information
-            </Text>
-            <View className="flex-row justify-between py-2 border-b" style={{ borderBottomColor: colors.border }}>
-              <Text style={{ color: colors.inkMuted }}>First Name</Text>
-              <Text className="font-medium" style={{ color: colors.ink }}>{athlete.firstName}</Text>
-            </View>
-            <View className="flex-row justify-between py-2">
-              <Text style={{ color: colors.inkMuted }}>Last Name</Text>
-              <Text className="font-medium" style={{ color: colors.ink }}>{athlete.lastName}</Text>
-            </View>
-          </Card>
-
-          <Card>
-             <Text className="text-lg font-bold mb-2" style={{ color: colors.ink }}>
-              Account Link
-            </Text>
-            <Text className="text-sm" style={{ color: colors.inkMuted }}>
-              This athlete is linked to your guardian account. You will receive notifications and updates regarding their seasons and team events.
-            </Text>
-          </Card>
-        </View>
+        <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+          <GuardianAthleteInfo athleteId={playerId} firstName={athlete.firstName} lastName={athlete.lastName} />
+        </ScrollView>
       )}
 
       <Modal visible={chatPickerOpen} title="Choose a Team" onClose={() => setChatPickerOpen(false)}>

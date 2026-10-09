@@ -64,7 +64,7 @@ export default function AppNavigator() {
       {/* Guardian -> Coach athlete profile sharing */}
       <Stack.Screen name="ShareDirectory" component={require('../screens/(app)/guardian/share-directory').default} />
       <Stack.Screen name="ShareDetail" component={require('../screens/(app)/share/[shareId]').default} />
-      <Stack.Screen name="SharedAthletes" component={require('../screens/(app)/shared-athletes/index').default} />
+      <Stack.Screen name="AthleteHub" component={require('../screens/(app)/athlete-hub/index').default} />
     </Stack.Navigator>
   );
 }

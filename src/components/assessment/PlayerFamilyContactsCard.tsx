@@ -17,12 +17,15 @@ export function PlayerFamilyContactsCard({
   linkedGuardianId,
   guardianEmail,
   canInvite,
+  onRemove,
 }: {
   athleteId: string;
   athleteName: string;
   linkedGuardianId?: string;
   guardianEmail?: string;
   canInvite: boolean;
+  /** When set, each contact gets a Remove action (the guardian manages their own list). */
+  onRemove?: (contactId: string) => void;
 }) {
   const colors = useThemeColors();
   const contactsQuery = useFamilyContactsQuery(athleteId);
@@ -81,6 +84,9 @@ export function PlayerFamilyContactsCard({
                     onPress={() => invite(c)}
                     loading={invitingId === c.id}
                   />
+                ) : null}
+                {onRemove ? (
+                  <Button label="Remove" variant="ghost" size="sm" onPress={() => onRemove(c.id)} />
                 ) : null}
               </View>
             </View>

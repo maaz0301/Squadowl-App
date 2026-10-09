@@ -1,7 +1,7 @@
 import { Text, View } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
-import { Avatar, Card, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
+import { Avatar, Button, Card, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
 import { AssessmentHistory } from '@/components/player/AssessmentHistory';
 import { usePlayerProfileQuery } from '@/features/queries';
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -65,6 +65,38 @@ export default function PlayerProfileScreen() {
         <Row label="Guardian Email" value={profile.guardianEmail} colors={colors} />
         <Row label="Guardian Phone" value={profile.guardianPhone} colors={colors} />
       </Card>
+
+      {/* The full screens sit one tap away: edit, family contacts and invites on
+          the team's player card; scores, report cards and letters on the
+          evaluation's. Guardians have their own portal and never see these. */}
+      {isGuardian || (profile.teams.length === 0 && profile.assessments.length === 0) ? null : (
+        <Card className="mb-4 gap-2">
+          <Text className="font-display font-bold" style={{ color: colors.ink }}>
+            Manage Player
+          </Text>
+          {profile.teams.map((t) => (
+            <Button
+              key={`team-${t.teamId}`}
+              label={`Edit on ${t.teamName}`}
+              variant="secondary"
+              onPress={() => navigation.navigate('TeamPlayer', { id: t.teamId, playerId: athleteId })}
+            />
+          ))}
+          {profile.assessments.map((a) => (
+            <Button
+              key={`eval-${a.participantId}`}
+              label={`Reports in ${a.tryoutName}`}
+              variant="ghost"
+              onPress={() =>
+                navigation.navigate('AssessmentFlow', {
+                  screen: 'AssessmentPlayer',
+                  params: { id: a.tryoutId, playerId: a.participantId },
+                })
+              }
+            />
+          ))}
+        </Card>
+      )}
 
       {profile.canViewMedical ? (
         <Card className="mb-4 gap-2">

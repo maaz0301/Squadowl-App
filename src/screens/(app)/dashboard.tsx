@@ -530,10 +530,10 @@ export default function DashboardScreen() {
       : null,
     {
       key: 'athletes',
-      label: 'Athletes',
-      caption: 'Add, manage and track athlete profiles',
+      label: 'Athlete Hub',
+      caption: 'Find, edit and report on every athlete',
       icon: 'M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M22 11h-6',
-      onPress: () => navigation.navigate('SharedAthletes'),
+      onPress: () => navigation.navigate('AthleteHub'),
     },
   ];
   const quickAccessItems = quickAccessCandidates.filter((i): i is QuickAccessItem => i !== null);
