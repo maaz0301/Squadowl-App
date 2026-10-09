@@ -80,7 +80,7 @@ export default function ResultsScreen() {
         ListHeaderComponent={
           sorted.length === 0 ? null : (
             <View className="flex-row gap-2 mb-3">
-              <Badge label={`${skaters.length} Skaters`} variant="brand" />
+              <Badge label={tryout.sport === 'Skating' ? `${skaters.length} ${skaters.length === 1 ? terms.player : terms.players}` : `${skaters.length} Skaters`} variant="brand" />
               {tryout?.sport === 'Skating' ? null : <Badge label={`${goalies.length} Goalies`} variant="info" />}
             </View>
           )

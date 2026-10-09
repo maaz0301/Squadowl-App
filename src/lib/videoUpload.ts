@@ -59,18 +59,26 @@ export async function pickVideo(): Promise<LocalVideoFile | null> {
 /** Re-encodes to 720p H.264 MP4. `onProgress` is 0 to 1. */
 export async function compressVideo(file: LocalVideoFile, onProgress?: (fraction: number) => void): Promise<LocalVideoFile> {
   const compressor = loadCompressor();
-  const outUri = await compressor.compress(
-    file.uri,
-    {
-      // 'manual' with maxSize caps the longer edge at 1280 px, so landscape comes out
-      // 1280x720 and portrait 720x1280. Quality is left to the encoder's bitrate for that size.
-      compressionMethod: 'manual',
-      maxSize: MAX_LONG_EDGE,
-      // Re-encode even a small clip, so every stored file is the same H.264 MP4.
-      minimumFileSizeForCompress: 0,
-    },
-    (p) => onProgress?.(Math.max(0, Math.min(1, p))),
-  );
+  let outUri: string;
+  try {
+    outUri = await compressor.compress(
+      file.uri,
+      {
+        // 'manual' with maxSize caps the longer edge at 1280 px, so landscape comes out
+        // 1280x720 and portrait 720x1280. Quality is left to the encoder's bitrate for that size.
+        compressionMethod: 'manual',
+        maxSize: MAX_LONG_EDGE,
+        // Re-encode even a small clip, so every stored file is the same H.264 MP4.
+        minimumFileSizeForCompress: 0,
+      },
+      (p) => onProgress?.(Math.max(0, Math.min(1, p))),
+    );
+  } catch (e) {
+    // The JS side loads fine on an older binary, then throws when the native half is missing.
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/Compressor|linked|undefined/i.test(msg)) throw new VideoCompressorUnavailable();
+    throw e;
+  }
   const stat = await RNFS.stat(stripFileScheme(outUri));
   const base = file.name.replace(/\.[^.]+$/, '') || 'video';
   return {

@@ -16,7 +16,7 @@ import {
   resolveWeights,
 } from '@/data/rubrics';
 import { SCORING_TYPES, type ScoringType, type RankingDirection } from '@/data/types';
-import { canHaveBenchmark, formatBenchmarkValue } from '@/data/benchmarks';
+import { benchmarkMax, canHaveBenchmark, formatBenchmarkValue, isValidBenchmark } from '@/data/benchmarks';
 
 /** Weights print as whole percentages where they are whole, e.g. "25%" / "16.7%". */
 function formatPct(value: number): string {
@@ -74,7 +74,7 @@ export default function RubricsScreen() {
   const weightValid = weightNum == null || (!isNaN(weightNum) && weightNum >= 1 && weightNum <= 100);
   const benchmarkNum = benchmarkStr.trim() !== '' ? parseFloat(benchmarkStr) : undefined;
   const benchmarkActive = benchmarkOn && canHaveBenchmark(scoringType);
-  const benchmarkValid = !benchmarkActive || (benchmarkNum != null && !isNaN(benchmarkNum));
+  const benchmarkValid = !benchmarkActive || isValidBenchmark({ scoringType, scale }, benchmarkNum);
 
   if (tryoutQuery.isLoading || !id) return <LoadingState message="Loading rubrics..." />;
   if (tryoutQuery.isError || !tryoutQuery.data) {
@@ -516,7 +516,7 @@ export default function RubricsScreen() {
                   />
                   {!benchmarkValid ? (
                     <Text className="text-xs font-bold" style={{ color: colors.danger }}>
-                      Enter the benchmark as a number.
+                      {benchmarkMax({ scoringType, scale }) != null ? `Enter a number above 0 and up to ${benchmarkMax({ scoringType, scale })}.` : 'Enter a number above 0.'}
                     </Text>
                   ) : (
                     <Text className="text-xs" style={{ color: colors.inkMuted }}>

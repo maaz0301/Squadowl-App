@@ -1354,9 +1354,9 @@ export default function TeamDetailScreen() {
                 </Card>
               ) : !playerSearch.trim() ? (
                 <Card className="items-center py-6 gap-1">
-                  <Text className="font-bold" style={{ color: colors.ink }}>No players yet</Text>
+                  <Text className="font-bold" style={{ color: colors.ink }}>{`No ${terms.players.toLowerCase()} yet`}</Text>
                   <Text className="text-sm text-center" style={{ color: colors.inkMuted }}>
-                    Pull players in from any evaluation roster to build this team.
+                    {`Pull ${terms.players.toLowerCase()} in from any evaluation roster to build this team.`}
                   </Text>
                 </Card>
               ) : (

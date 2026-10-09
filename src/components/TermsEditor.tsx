@@ -3,6 +3,7 @@ import { Alert, Text, View } from 'react-native';
 
 import { Button, Card, Input } from '@/components/ui';
 import type { CustomLabels } from '@/data/types';
+import { sportProfile } from '@/data/sportProfile';
 import { DEFAULT_TERMS, LABEL_MAX_LENGTH, pluralize } from '@/lib/terms';
 import { useThemeColors } from '@/theme/ThemeProvider';
 
@@ -12,14 +13,18 @@ import { useThemeColors } from '@/theme/ThemeProvider';
  */
 export function TermsEditor({
   value,
+  sport: evalSport,
   saving,
   onSave,
 }: {
   value?: CustomLabels;
+  /** The evaluation's sport, so the defaults shown match its player card. */
+  sport?: string;
   saving: boolean;
   onSave: (labels: CustomLabels) => Promise<void>;
 }) {
   const colors = useThemeColors();
+  const profile = sportProfile(evalSport);
   const [player, setPlayer] = useState(value?.player ?? '');
   const [jersey, setJersey] = useState(value?.jersey ?? '');
   const [sport, setSport] = useState(value?.sport ?? '');
@@ -54,7 +59,7 @@ export function TermsEditor({
         Rename terms for this evaluation only. Leave a field blank to keep the standard name.
       </Text>
       <Input
-        label={`Player (default: ${DEFAULT_TERMS.player})`}
+        label={`Player (default: ${profile.player})`}
         value={player}
         onChangeText={setPlayer}
         placeholder="e.g. Skater"
@@ -64,7 +69,7 @@ export function TermsEditor({
         <Text className="text-xs" style={{ color: colors.inkFaint }}>Plural shown as "{pluralize(player.trim())}".</Text>
       ) : null}
       <Input
-        label={`Jersey # (default: ${DEFAULT_TERMS.jersey})`}
+        label={`Number label (default: ${profile.numberLabel})`}
         value={jersey}
         onChangeText={setJersey}
         placeholder="e.g. Skate Ontario #"
