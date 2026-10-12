@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Text, View, Pressable, Image } from 'react-native';
+import { Text, View, Pressable } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
 import { useForm, Controller } from 'react-hook-form';
@@ -7,12 +7,12 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { SignupFormSchema } from '@/data/types';
 import { useAuthStore } from '@/state/authStore';
 import { useTheme } from '@/theme/ThemeProvider';
-import { Button, Input, Screen, Header, ThemeToggle } from '@/components/ui';
+import { BrandLogo, Button, Input, Screen, Header, ThemeToggle } from '@/components/ui';
 import { LegalLinks } from '@/components/LegalLinks';
 import { flushPendingReferralCode, savePendingReferralCode } from '@/lib/pendingReferral';
 
 export default function SignupScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const signup = useAuthStore((s) => s.signup);
@@ -60,19 +60,12 @@ export default function SignupScreen() {
   });
 
   return (
-    <Screen scroll>
+    <Screen scroll extraScrollHeight={110}>
       <Header title="Create Account" showBack right={<ThemeToggle />} />
       
       {/* Brand Hero Banner */}
       <View className="items-center my-4">
-        <Image
-          source={
-            isDark
-              ? require('../../../assets/SquadOwl-full-logo-dark.png')
-              : require('../../../assets/SquadOwl-full-logo-light.png')
-          }
-          style={{ width: '100%', height: 180, resizeMode: 'contain' }}
-        />
+        <BrandLogo height={200} />
       </View>
 
       <View className="gap-4 mt-2">

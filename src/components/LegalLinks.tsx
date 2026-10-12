@@ -20,7 +20,7 @@ export function LegalLinks({ prefix = false }: { /** "By continuing you agree to
   const colors = useThemeColors();
   const link = (label: string, url: string) => (
     <Pressable onPress={() => open(url)} accessibilityRole="link" accessibilityLabel={label} hitSlop={8}>
-      <Text className="text-xs font-bold underline" style={{ color: colors.primary }}>
+      <Text className="text-base font-bold underline" style={{ color: colors.primary }}>
         {label}
       </Text>
     </Pressable>
@@ -32,12 +32,12 @@ export function LegalLinks({ prefix = false }: { /** "By continuing you agree to
       style={{ columnGap: 8, rowGap: 4 }}
     >
       {prefix ? (
-        <Text className="text-xs" style={{ color: colors.inkMuted }}>
+        <Text className="text-base" style={{ color: colors.inkMuted }}>
           By continuing you agree to the
         </Text>
       ) : null}
       {link('Terms of Service', TERMS_OF_SERVICE_URL)}
-      <Text className="text-xs" style={{ color: colors.inkMuted }}>
+      <Text className="text-base" style={{ color: colors.inkMuted }}>
         {prefix ? 'and' : '·'}
       </Text>
       {link('Privacy Policy', PRIVACY_POLICY_URL)}

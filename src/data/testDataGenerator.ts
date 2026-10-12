@@ -1,5 +1,5 @@
 import type { AddPlayerForm, CustomRubric, Recommendation, RegistrationSubmit, Sport } from './types';
-import type { SubSkill } from './rubrics';
+import { OBSERVATION_MAX, type SubSkill } from './rubrics';
 
 /**
  * Pure helpers for generating large batches of dummy player profiles with
@@ -130,6 +130,8 @@ export interface DummyDataOptions {
 
 /** Options for the New Team screen's dummy button. */
 export interface DummyTeamOptions {
+  /** The sport the dummy teams, their players' positions and rubrics are made for. Hockey when unset. */
+  sport?: Sport;
   /** Teams to create. Each gets one linked assessment. */
   teams: number;
   playersPerTeam: number;
@@ -322,15 +324,32 @@ export function generateDummyTeamNames(count: number): string[] {
  * assessments ship with `customRubrics: []`, and scoring needs at least one
  * rubric — these give the ranking/report pipeline something to chew on.
  */
-export function generateDummyRubrics(): CustomRubric[] {
+export function generateDummyRubrics(sport: Sport = 'Hockey'): CustomRubric[] {
+  // Every rubric carries an explicit weight and the nine add up to exactly 100%,
+  // so the rubric list never shows percentages that total more than that.
   return [
-    { key: 'dummy_skating', label: 'Skating / Movement', scoringType: 'skill', scale: '1-5', rankingDirection: 'higher_is_better', role: 'all' },
-    { key: 'dummy_skills', label: 'Technical Skills', scoringType: 'skill', scale: '1-5', rankingDirection: 'higher_is_better', role: 'all' },
-    { key: 'dummy_compete', label: 'Compete Level', scoringType: 'skill', scale: '1-10', rankingDirection: 'higher_is_better', role: 'all' },
-    { key: 'dummy_sprint', label: 'Sprint Time', scoringType: 'time', scale: '1-5', unit: 's', minVal: 4.5, maxVal: 7.5, rankingDirection: 'lower_is_better', role: 'all' },
-    { key: 'dummy_jump', label: 'Vertical Jump', scoringType: 'distance', scale: '1-5', unit: 'in', minVal: 8, maxVal: 40, rankingDirection: 'higher_is_better', role: 'all' },
-    { key: 'dummy_topspeed', label: 'Top Speed', scoringType: 'speed', scale: '1-5', unit: 'km/h', minVal: 8, maxVal: 24, rankingDirection: 'higher_is_better', role: 'all' },
+    { key: 'dummy_skating', label: dummyMovementLabel(sport), scoringType: 'skill', scale: '1-5', rankingDirection: 'higher_is_better', weight: 20, role: 'all' },
+    { key: 'dummy_skills', label: 'Technical Skills', scoringType: 'skill', scale: '1-5', rankingDirection: 'higher_is_better', weight: 15, role: 'all' },
+    { key: 'dummy_compete', label: 'Compete Level', scoringType: 'skill', scale: '1-10', rankingDirection: 'higher_is_better', weight: 10, role: 'all' },
+    { key: 'dummy_gamesense', label: 'Game Sense (Observed)', scoringType: 'observation', scale: '1-5', rankingDirection: 'higher_is_better', weight: 10, role: 'all' },
+    { key: 'dummy_sprint', label: 'Sprint Time', scoringType: 'time', scale: '1-5', unit: 's', minVal: 4.5, maxVal: 7.5, rankingDirection: 'lower_is_better', weight: 10, role: 'all' },
+    { key: 'dummy_jump', label: 'Vertical Jump', scoringType: 'distance', scale: '1-5', unit: 'in', minVal: 8, maxVal: 40, rankingDirection: 'higher_is_better', weight: 10, role: 'all' },
+    { key: 'dummy_topspeed', label: 'Top Speed', scoringType: 'speed', scale: '1-5', unit: 'km/h', minVal: 8, maxVal: 24, rankingDirection: 'higher_is_better', weight: 10, role: 'all' },
+    { key: 'dummy_coachable', label: 'Coachable', scoringType: 'yes_no', scale: '1-5', rankingDirection: 'higher_is_better', weight: 8, role: 'all' },
+    { key: 'dummy_forecheck', label: dummyEffectLabel(sport), scoringType: 'effectiveness', scale: '1-5', rankingDirection: 'higher_is_better', weight: 7, role: 'all' },
   ];
+}
+
+/** The first dummy rubric reads naturally for the sport the dummy team was made for. */
+function dummyMovementLabel(sport: Sport): string {
+  if (sport === 'Hockey' || sport === 'Ringette') return 'Skating';
+  if (sport === 'Skating') return 'Edge Control';
+  return 'Movement';
+}
+
+/** "Forecheck" only makes sense on the ice. */
+function dummyEffectLabel(sport: Sport): string {
+  return sport === 'Hockey' || sport === 'Ringette' ? 'Forecheck' : 'Defensive Effort';
 }
 
 /**
@@ -352,6 +371,17 @@ export function generateScoresForPlayer(
     if (type === 'skill') {
       const max = s.scale === '1-10' ? 10 : 5;
       scores[s.key] = clamp(Math.round(1 + a * (max - 1)), 1, max);
+    } else if (type === 'yes_no' || type === 'effectiveness') {
+      // Two-state call: the stronger the player, the likelier the positive one.
+      scores[s.key] = Math.random() < a ? 1 : 0;
+    } else if (type === 'observation') {
+      // 1–100 observation mark, flipped when the rubric ranks low numbers best.
+      const raw = 1 + a * (OBSERVATION_MAX - 1);
+      scores[s.key] = clamp(
+        Math.round(s.rankingDirection === 'lower_is_better' ? OBSERVATION_MAX + 1 - raw : raw),
+        1,
+        OBSERVATION_MAX,
+      );
     } else if (type === 'time') {
       // Lower is better: minVal = best (fast), maxVal = worst (slow).
       const best = s.minVal ?? 4.5;
@@ -389,6 +419,9 @@ export function clampScoreToRubric(value: unknown, s: SubSkill): number | null {
     const max = s.scale === '1-10' ? 10 : 5;
     return clamp(Math.round(n), 1, max);
   }
+  // Two-state rubrics only ever store 1 (Yes / Effective) or 0.
+  if (type === 'yes_no' || type === 'effectiveness') return n > 0 ? 1 : 0;
+  if (type === 'observation') return clamp(Math.round(n), 1, OBSERVATION_MAX);
   // time / distance / speed — benchmark bounds, in either direction.
   const a = s.minVal ?? (type === 'time' ? 4.5 : 8);
   const b = s.maxVal ?? (type === 'time' ? 7.5 : 40);

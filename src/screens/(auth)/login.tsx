@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Text, View, Pressable, Image } from 'react-native';
+import { Text, View, Pressable } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 import { useForm, Controller } from 'react-hook-form';
@@ -7,12 +7,12 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { LoginFormSchema } from '@/data/types';
 import { useAuthStore } from '@/state/authStore';
 import { useTheme } from '@/theme/ThemeProvider';
-import { Button, Input, Screen, ThemeToggle } from '@/components/ui';
+import { BrandLogo, Button, Input, Screen, ThemeToggle } from '@/components/ui';
 import { LegalLinks } from '@/components/LegalLinks';
 import { APP_CONFIG } from '@/config/app';
 
 export default function LoginScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const navigation = useNavigation<any>();
   const login = useAuthStore((s) => s.login);
   const sessionExpired = useAuthStore((s) => s.sessionExpired);
@@ -43,21 +43,14 @@ export default function LoginScreen() {
   });
 
   return (
-    <Screen scroll className="justify-center relative">
+    <Screen scroll extraScrollHeight={110} className="justify-center relative">
       <View className="absolute top-4 right-4 z-10">
         <ThemeToggle />
       </View>
       
       {/* Brand Hero Banner */}
       <View className="items-center mb-6 pt-6">
-        <Image
-          source={
-            isDark
-              ? require('../../../assets/SquadOwl-full-logo-dark.png')
-              : require('../../../assets/SquadOwl-full-logo-light.png')
-          }
-          style={{ width: '100%', height: 200, resizeMode: 'contain' }}
-        />
+        <BrandLogo height={220} />
         <Text className="text-base text-center mt-2 font-medium" style={{ color: colors.inkMuted }}>
           Sign in to manage tryouts and evaluate players
         </Text>

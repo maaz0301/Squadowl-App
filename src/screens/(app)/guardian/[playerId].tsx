@@ -347,6 +347,9 @@ export default function GuardianPortalScreen() {
             <Text className="text-base mt-1" style={{ color: colors.inkMuted }}>
               {athlete.seasons.length} Active Assignments
             </Text>
+            <Text className="text-sm mt-0.5 font-bold" style={{ color: colors.primary }}>
+              {[...new Set(athlete.seasons.map((se) => se.teamName).filter(Boolean))].join(' · ') || 'Not on a team yet'}
+            </Text>
           </View>
         </View>
 

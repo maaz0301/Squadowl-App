@@ -11,7 +11,7 @@ import type { VideoStorageGb } from '@/data/videoStorage';
  *
  *   1. A purchase library with its native module (for example react-native-iap or
  *      RevenueCat), added and rebuilt for both platforms.
- *   2. The three yearly subscription products created in App Store Connect and
+ *   2. The four yearly subscription products created in App Store Connect and
  *      Play Console, at the prices below (same as web), under the ids in
  *      VIDEO_STORAGE_IAP_PRODUCT_IDS (change them to match what you create).
  *   3. Server-side receipt validation that calls set_video_storage() with
@@ -27,7 +27,8 @@ export const NATIVE_VIDEO_STORAGE_IAP_ENABLED = false;
 export const VIDEO_STORAGE_IAP_PRODUCT_IDS: Record<VideoStorageGb, string> = {
   1: 'squadowl.videostorage.1gb.yearly',
   5: 'squadowl.videostorage.5gb.yearly',
-  20: 'squadowl.videostorage.20gb.yearly',
+  25: 'squadowl.videostorage.25gb.yearly',
+  100: 'squadowl.videostorage.100gb.yearly',
 };
 
 /** Whether the store's own purchase sheet should be used on this device. */

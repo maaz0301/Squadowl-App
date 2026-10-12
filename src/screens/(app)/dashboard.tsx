@@ -637,7 +637,7 @@ export default function DashboardScreen() {
             )}
 
             {/* Video storage: how full the account's shared quota is. Tapping opens Storage. */}
-            {!isGuardianOnly ? <StorageMeterCard onPress={() => navigation.navigate('Storage')} /> : null}
+            {!isGuardianOnly ? <StorageMeterCard onPress={() => navigation.navigate('Library')} /> : null}
 
             {!isGuardianOnly ? <SubscriptionEndingBanner /> : null}
 

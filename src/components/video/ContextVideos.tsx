@@ -162,7 +162,7 @@ export function ContextVideos({ context, contextId, accountId: accountIdProp, ti
       ) : null}
 
       {!readOnly && info?.canManage && info.planEligible && !info.entitled ? (
-        <Button variant="secondary" label="Add video storage" onPress={() => navigation.navigate('Storage')} />
+        <Button variant="secondary" label="Add video storage" onPress={() => navigation.navigate('Library')} />
       ) : null}
 
       <VideoPlayerModal url={playing?.url ?? null} title={playing?.title || playing?.fileName || 'Video'} onClose={() => setPlaying(null)} />

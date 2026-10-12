@@ -60,6 +60,7 @@ export default function ExportScreen() {
   const [continuous, setContinuous] = useState(false);
   const [sortBy, setSortBy] = useState<ReportSort>('jersey');
   const [printLogo, setPrintLogo] = useState(true);
+  const [printAppLogo, setPrintAppLogo] = useState(true);
   const [layout, setLayout] = useState<ReportLayout>('cards');
   const [content, setContent] = useState<ReportContent>(DEFAULT_REPORT_CONTENT);
   const [topX, setTopX] = useState('');
@@ -123,7 +124,12 @@ export default function ExportScreen() {
           ? {
               playersPerPage,
               continuous: continuous && playersPerPage === 1 && layout === 'cards',
-              logoUrls: reportLogoUrls({ club: clubMode && printLogo, organizationLogoUrl, teamLogoUrl }),
+              logoUrls: reportLogoUrls({
+                club: clubMode,
+                organizationLogoUrl: printLogo ? organizationLogoUrl : undefined,
+                teamLogoUrl: printLogo ? teamLogoUrl : undefined,
+                appLogo: printAppLogo,
+              }),
               sortBy,
               filter,
               content,
@@ -379,7 +385,7 @@ export default function ExportScreen() {
                   </Text>
                 ) : null}
               </View>
-              {clubMode && (organizationLogoUrl || teamLogoUrl) ? (
+              {(clubMode && organizationLogoUrl) || teamLogoUrl ? (
                 <Pressable
                   onPress={() => setPrintLogo((v) => !v)}
                   className="flex-row items-center gap-2"
@@ -396,7 +402,28 @@ export default function ExportScreen() {
                     {printLogo ? <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>✓</Text> : null}
                   </View>
                   <Text className="text-sm flex-1" style={{ color: colors.ink }}>
-                    Print the organization and team logos at the top of every page
+                    Print the team logo at the top of every page
+                  </Text>
+                </Pressable>
+              ) : null}
+              {(clubMode && organizationLogoUrl) || teamLogoUrl ? (
+                <Pressable
+                  onPress={() => setPrintAppLogo((v) => !v)}
+                  className="flex-row items-center gap-2"
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: printAppLogo }}
+                >
+                  <View
+                    className="h-5 w-5 items-center justify-center rounded border"
+                    style={{
+                      borderColor: colors.primary,
+                      backgroundColor: printAppLogo ? colors.primary : 'transparent',
+                    }}
+                  >
+                    {printAppLogo ? <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>✓</Text> : null}
+                  </View>
+                  <Text className="text-sm flex-1" style={{ color: colors.ink }}>
+                    Also print the SquadOwl logo
                   </Text>
                 </Pressable>
               ) : null}

@@ -9,7 +9,7 @@ const corsHeaders = {
 };
 
 /** CAD cents per year for each video storage size. Mirrors VIDEO_STORAGE_PLANS in src/data/videoStorage.ts. */
-const VIDEO_STORAGE_PRICES_CAD: Record<number, number> = { 1: 1500, 5: 2500, 20: 4000 };
+const VIDEO_STORAGE_PRICES_CAD: Record<number, number> = { 1: 2500, 5: 5000, 25: 15000, 100: 35000 };
 
 /**
  * What this checkout's single line item comes to, in cents — needed to size a
@@ -47,11 +47,11 @@ serve(async (req) => {
     // the same checkout, but they must not touch plan_tier — see the metadata below.
     const isTeamLicense = addOn === 'team_licenses';
     const licenseQuantity = Math.max(1, Math.min(100, Math.round(Number(rawQuantity) || 1)));
-    // Video storage add-on (1, 5 or 20 GB per year, shared by every team on the account).
+    // Video storage add-on (1, 5, 25 or 100 GB per year, shared by every team on the account).
     const isVideoStorage = addOn === 'video_storage';
     const storageGb = Number(rawStorageGb);
     if (isVideoStorage && !VIDEO_STORAGE_PRICES_CAD[storageGb]) {
-      throw new Error('Choose 1 GB, 5 GB or 20 GB of video storage.');
+      throw new Error('Choose 1 GB, 5 GB, 25 GB or 100 GB of video storage.');
     }
 
     const authHeader = req.headers.get('Authorization')!;
@@ -92,11 +92,11 @@ serve(async (req) => {
       throw new Error('Additional teams are only available on the Coach+ and Club plans. Upgrade first.');
     }
 
-    // Video storage is a Coach+ and Club add-on, and an account holds one storage
+    // Video storage is a Coach, Coach+ and Club add-on, and an account holds one storage
     // subscription at a time (changing size goes through manage-video-storage).
     if (isVideoStorage) {
-      if (account?.plan_tier !== 'club' && account?.plan_tier !== 'coach_plus') {
-        throw new Error('Video storage is only available on the Coach+ and Club plans. Upgrade first.');
+      if (!['coach', 'coach_plus', 'club'].includes(account?.plan_tier)) {
+        throw new Error('Video storage is only available on the Coach, Coach+ and Club plans. Upgrade first.');
       }
       const { data: current } = await supabaseAdmin
         .from('accounts')

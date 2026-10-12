@@ -28,6 +28,12 @@ interface ScreenProps extends ViewProps {
    * so screens keep tracking the light/dark theme.
    */
   backgroundColor?: string;
+  /**
+   * Extra room kept between the focused field and the keyboard on a `scroll`
+   * screen. Sign in and sign up raise it so the button under the last field
+   * scrolls clear of the keyboard too.
+   */
+  extraScrollHeight?: number;
   /** Pull-to-refresh for a `scroll` screen; see usePullToRefresh. */
   refreshControl?: React.ReactElement<RefreshControlProps>;
   children: React.ReactNode;
@@ -41,6 +47,7 @@ export function Screen({
   keyboardAvoiding = true,
   keyboardOffset = Platform.OS === 'ios' ? 88 : 0,
   insideTabBar = false,
+  extraScrollHeight,
   backgroundColor,
   refreshControl,
   children,
@@ -73,7 +80,7 @@ export function Screen({
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
       enableOnAndroid={true}
-      extraScrollHeight={Platform.OS === 'ios' ? 20 : 0}
+      extraScrollHeight={extraScrollHeight ?? (Platform.OS === 'ios' ? 20 : 0)}
       viewIsInsideTabBar={insideTabBar}
       refreshControl={refreshControl}
     >

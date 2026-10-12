@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Linking, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
@@ -95,6 +95,23 @@ export default function PlayerReportCardScreen() {
   const [linkUrl, setLinkUrl] = useState('');
   const [linkIsVideo, setLinkIsVideo] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [printAppLogo, setPrintAppLogo] = useState(true);
+
+  // Coming back to the builder reopens the card saved last, so it does not look
+  // as though the card vanished. "New" still starts a blank one.
+  const reopened = useRef(false);
+  useEffect(() => {
+    if (reopened.current || !cardsQuery.data) return;
+    reopened.current = true;
+    const latest = cardsQuery.data.filter((c) => !c.tryoutId || c.tryoutId === id).sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    if (!latest) return;
+    setEditingId(latest.id);
+    setTitle(latest.title);
+    setSelected(new Set(latest.evalIds));
+    setCoachComments(latest.coachComments);
+    setAiComments(latest.aiComments);
+    setKept(latest.attachments);
+  }, [cardsQuery.data, id]);
 
   const tryout = tryoutQuery.data;
   const playerEvals = useMemo(
@@ -261,7 +278,7 @@ export default function PlayerReportCardScreen() {
           ...kept.map((a) => ({ kind: a.kind, name: a.name, url: a.url })),
           ...files.map((f) => ({ kind: (f.type.startsWith('video/') ? 'video' : 'file') as 'video' | 'file', name: f.name })),
         ],
-        logoUrls: reportLogoUrls({ club: tier === 'club', organizationLogoUrl: user?.organizationLogoUrl, teamLogoUrl: team?.logoUrl }),
+        logoUrls: reportLogoUrls({ club: tier === 'club', organizationLogoUrl: user?.organizationLogoUrl, teamLogoUrl: team?.logoUrl, appLogo: printAppLogo }),
       });
     } catch (e) {
       notify('Export failed', e instanceof Error ? e.message : 'Could not build the PDF.');
@@ -380,46 +397,64 @@ export default function PlayerReportCardScreen() {
 
         {reportCard && reportCard.evalCount > 0 ? (
           <Card className="gap-1">
-            {label('Scores from the chosen evaluations')}
-            <View className="flex-row justify-between border-b py-1" style={{ borderColor: colors.border }}>
-              <Text className="font-bold" style={{ color: colors.primary }}>
-                Overall
+            {label('Report card')}
+            <View className="flex-row items-center gap-2 border-b py-1" style={{ borderColor: colors.border }}>
+              <Text className="flex-1 text-xs font-bold" style={{ color: colors.inkMuted }}>
+                MEASURE
               </Text>
-              <Text className="font-bold" style={{ color: colors.primary }}>
-                {reportCard.overallScore} · {reportCard.overallRank}
+              <Text className="w-20 text-right text-xs font-bold" style={{ color: colors.inkMuted }}>
+                RESULT
+              </Text>
+              <Text className="w-20 text-right text-xs font-bold" style={{ color: colors.inkMuted }}>
+                BENCHMARK
+              </Text>
+              <Text className="w-12 text-right text-xs font-bold" style={{ color: colors.inkMuted }}>
+                RANK
               </Text>
             </View>
-            {reportCard.metrics.map((m) => (
-              <View key={m.label} className="flex-row justify-between border-b py-1" style={{ borderColor: colors.border }}>
-                <Text style={{ color: colors.ink }}>{m.label}</Text>
-                <Text style={{ color: colors.ink }}>
-                  {m.score} · {m.rank}
-                </Text>
-              </View>
-            ))}
-          </Card>
-        ) : null}
-
-        {benchmarks.length > 0 ? (
-          <Card className="gap-2">
-            {label('Benchmarks')}
-            {benchmarks.map((b) => (
-              <View key={b.key} className="gap-0.5 border-b py-1" style={{ borderColor: colors.border }}>
-                <View className="flex-row justify-between gap-2">
-                  <Text className="flex-1 font-bold" style={{ color: colors.ink }}>
-                    {b.label}
-                  </Text>
-                  <Text style={{ color: b.met ? colors.success : colors.ink }}>
-                    {b.result || 'Not scored'} · benchmark {b.target}
-                  </Text>
+            <View className="flex-row items-center gap-2 border-b py-1" style={{ borderColor: colors.border }}>
+              <Text className="flex-1 font-bold" style={{ color: colors.primary }}>
+                Overall
+              </Text>
+              <Text className="w-20 text-right font-bold" style={{ color: colors.primary }}>
+                {reportCard.overallScore}
+              </Text>
+              <Text className="w-20 text-right" style={{ color: colors.inkMuted }}>
+                -
+              </Text>
+              <Text className="w-12 text-right font-bold" style={{ color: colors.primary }}>
+                {reportCard.overallRank}
+              </Text>
+            </View>
+            {reportCard.metrics.map((m) => {
+              const note = benchmarks.find((b) => b.label === m.label)?.note;
+              return (
+                <View key={m.label} className="border-b py-1" style={{ borderColor: colors.border }}>
+                  <View className="flex-row items-center gap-2">
+                    <Text className="flex-1" style={{ color: colors.ink }}>
+                      {m.label}
+                    </Text>
+                    <Text className="w-20 text-right font-bold" style={{ color: m.met ? colors.success : colors.ink }}>
+                      {m.actual || m.score}
+                    </Text>
+                    <Text className="w-20 text-right" style={{ color: colors.inkMuted }}>
+                      {m.benchmark || '-'}
+                    </Text>
+                    <Text className="w-12 text-right" style={{ color: colors.ink }}>
+                      {m.rank || '-'}
+                    </Text>
+                  </View>
+                  {note ? (
+                    <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                      {note}
+                    </Text>
+                  ) : null}
                 </View>
-                {b.note ? (
-                  <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                    {b.note}
-                  </Text>
-                ) : null}
-              </View>
-            ))}
+              );
+            })}
+            <Text className="pt-1 text-xs" style={{ color: colors.inkMuted }}>
+              Result is the player's average in the measure's own units. Rank is against the roster. Overall is the weighted score out of 5.
+            </Text>
           </Card>
         ) : null}
 
@@ -536,6 +571,24 @@ export default function PlayerReportCardScreen() {
 
         <View className="gap-3">
           <Button label={editingId ? 'Save changes' : 'Save report card'} onPress={saveCard} loading={save.isPending} />
+          {(tier === 'club' && user?.organizationLogoUrl) || team?.logoUrl ? (
+            <Pressable
+              onPress={() => setPrintAppLogo((v) => !v)}
+              className="flex-row items-center gap-2"
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: printAppLogo }}
+            >
+              <View
+                className="h-5 w-5 items-center justify-center rounded border"
+                style={{ borderColor: colors.primary, backgroundColor: printAppLogo ? colors.primary : 'transparent' }}
+              >
+                {printAppLogo ? <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>✓</Text> : null}
+              </View>
+              <Text className="flex-1" style={{ color: colors.ink }}>
+                Also print the SquadOwl logo beside your team logo
+              </Text>
+            </Pressable>
+          ) : null}
           <Button label="Download PDF" variant="secondary" onPress={exportPdf} loading={exporting} disabled={!reportCard} />
         </View>
       </ScrollView>

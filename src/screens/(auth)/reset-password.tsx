@@ -49,7 +49,7 @@ export default function ResetPasswordScreen() {
   });
 
   return (
-    <Screen scroll className="justify-start">
+    <Screen scroll extraScrollHeight={110} className="justify-start">
       <Header
         title="New Password"
         showBack={true}

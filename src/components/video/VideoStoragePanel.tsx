@@ -1,9 +1,8 @@
 import { useMemo } from 'react';
-import { Alert, Linking, ScrollView, Switch, Text, View } from 'react-native';
+import { Alert, Linking, Switch, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useMutation } from '@tanstack/react-query';
-import { usePullToRefresh } from '@/hooks/usePullToRefresh';
-import { Badge, Button, Card, EmptyState, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
+import { Badge, Button, Card } from '@/components/ui';
 import { StorageMeterBar } from '@/components/video/StorageMeter';
 import {
   useAccountVideosQuery,
@@ -38,16 +37,16 @@ const CONTEXT_LABEL: Record<VideoContext, string> = {
 const dateLabel = (ms: number) =>
   new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
 
-/** Account Settings -> Storage: the meter, plan, permissions and every stored video with its size. */
-export default function StorageScreen() {
+/**
+ * Video storage inside the Library: the meter, the plans and their prices, who
+ * may upload and download, and every stored video with its size and a Delete.
+ */
+export function VideoStoragePanel() {
   const colors = useThemeColors();
   const navigation = useNavigation<any>();
   const storage = useVideoStorageQuery();
   const info = storage.data;
   const videosQuery = useAccountVideosQuery(undefined, { enabled: !!info?.canManage });
-  const refreshControl = usePullToRefresh(async () => {
-    await Promise.all([storage.refetch(), videosQuery.refetch()]);
-  });
   const deleteVideo = useDeleteAccountVideoMutation();
   const setPerms = useSetVideoPermissionsMutation();
   const manage = useManageVideoStorageMutation();
@@ -67,15 +66,8 @@ export default function StorageScreen() {
 
   const videos = useMemo(() => videosQuery.data ?? [], [videosQuery.data]);
 
-  if (storage.isLoading) return <LoadingState message="Loading storage..." />;
-  if (storage.isError || !info) {
-    return (
-      <Screen>
-        <Header title="Storage" showBack />
-        <ErrorState message="Could not load your video storage." onRetry={() => storage.refetch()} />
-      </Screen>
-    );
-  }
+  // Staff and managers only; players and guardians never see account storage.
+  if (!info || (!info.canManage && !info.canUpload)) return null;
 
   const confirmDelete = (video: AccountVideo) =>
     Alert.alert('Delete video', `Delete "${video.title || video.fileName}"? This frees ${formatBytes(video.sizeBytes)}.`, [
@@ -129,20 +121,16 @@ export default function StorageScreen() {
   const ending = info.entitled && info.cancelAt != null;
 
   return (
-    <Screen padded={false}>
-      <View className="px-4">
-        <Header title="Storage" subtitle="Video storage for every team on this account" showBack />
-      </View>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 16 }} refreshControl={refreshControl}>
+    <View className="mb-4 gap-4">
         {/* Not on a plan that includes video storage */}
         {!info.planEligible ? (
           <Card className="gap-2">
             <Text className="font-display font-bold text-base" style={{ color: colors.ink }}>
-              Video storage needs Coach+ or Club
+              Video storage needs a paid plan
             </Text>
             <Text className="text-sm" style={{ color: colors.inkMuted }}>
               Upload compressed videos to the Library, report cards, evaluations and the team feed. It is sold as a yearly
-              add-on for Coach+ and Club plans.
+              add-on for Coach, Coach+ and Club plans.
             </Text>
             <Button label="See plans" onPress={() => navigation.navigate('Upgrade')} />
           </Card>
@@ -166,7 +154,7 @@ export default function StorageScreen() {
               >
                 <View>
                   <Text className="text-base font-bold" style={{ color: colors.ink }}>
-                    {plan.label}
+                    {plan.name} · {plan.label}
                   </Text>
                   <Text className="text-sm" style={{ color: colors.inkMuted }}>
                     {formatPlanPrice(plan)}
@@ -204,7 +192,7 @@ export default function StorageScreen() {
             <Card className="gap-3">
               <StorageMeterBar info={info} />
               <View className="flex-row flex-wrap items-center gap-2">
-                <Badge label={`${info.gb} GB plan`} variant="info" />
+                <Badge label={`${VIDEO_STORAGE_PLANS.find((p) => p.gb === info.gb)?.name ?? ''} ${info.gb} GB`.trim()} variant="info" />
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
                   {info.videoCount} video{info.videoCount === 1 ? '' : 's'}
                 </Text>
@@ -234,7 +222,7 @@ export default function StorageScreen() {
                 </Text>
                 <View className="flex-row items-center justify-between">
                   <Text className="flex-1 pr-3 text-base" style={{ color: colors.ink }}>
-                    Managers can upload
+                    Managers and assessors can upload
                   </Text>
                   <Switch
                     value={info.managersCanUpload}
@@ -255,7 +243,8 @@ export default function StorageScreen() {
                   />
                 </View>
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                  Who sees each Library video is set on the item itself with the Library audience toggles.
+                  Who sees each Library video is set on the item itself with the Library audience toggles. Videos managers and
+                  assessors upload count against this account's storage.
                 </Text>
               </Card>
             ) : null}
@@ -268,7 +257,7 @@ export default function StorageScreen() {
                 {VIDEO_STORAGE_PLANS.filter((p) => p.gb !== info.gb).map((plan) => (
                   <View key={plan.gb} className="flex-row items-center justify-between">
                     <Text className="text-base" style={{ color: colors.ink }}>
-                      {plan.label} · {formatPlanPrice(plan)}
+                      {plan.name} · {plan.label} · {formatPlanPrice(plan)}
                     </Text>
                     <Button size="sm" variant="secondary" label="Switch" onPress={() => changeSize(plan.gb)} loading={manage.isPending} />
                   </View>
@@ -281,7 +270,7 @@ export default function StorageScreen() {
         {info.canManage && videos.length > 0 ? (
           <View className="gap-2">
             <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-              Files
+              Stored videos
             </Text>
             {videos.map((video) => (
               <Card key={video.id} className="flex-row items-center gap-3">
@@ -297,8 +286,6 @@ export default function StorageScreen() {
               </Card>
             ))}
           </View>
-        ) : info.canManage && info.entitled ? (
-          <EmptyState title="No videos yet" message="Add a video from the Library, a report card, an evaluation or the team feed." />
         ) : null}
 
         {info.entitled && info.canManage && !ending ? (
@@ -309,7 +296,6 @@ export default function StorageScreen() {
             This storage is billed through {info.source === 'apple' ? 'the App Store' : 'Google Play'}.
           </Text>
         ) : null}
-      </ScrollView>
-    </Screen>
+    </View>
   );
 }

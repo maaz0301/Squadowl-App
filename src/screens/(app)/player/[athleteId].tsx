@@ -3,7 +3,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 
 import { Avatar, Button, Card, ErrorState, Header, LoadingState, Screen } from '@/components/ui';
 import { AssessmentHistory } from '@/components/player/AssessmentHistory';
-import { usePlayerProfileQuery } from '@/features/queries';
+import { usePlayerProfileQuery, usePlayerReportCardsQuery } from '@/features/queries';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { usePermissions } from '@/state/authStore';
 import { slugify } from '@/lib/exportCsv';
@@ -29,6 +29,8 @@ export default function PlayerProfileScreen() {
   const { isGuardian } = usePermissions();
   const profileQuery = usePlayerProfileQuery(athleteId, alsoAthleteIds);
   const profile = profileQuery.data;
+  const reportCardsQuery = usePlayerReportCardsQuery(isGuardian ? undefined : athleteId);
+  const reportCards = reportCardsQuery.data ?? [];
 
   if (profileQuery.isLoading) return <LoadingState />;
   if (profileQuery.isError || !profile) {
@@ -90,6 +92,39 @@ export default function PlayerProfileScreen() {
               onPress={() =>
                 navigation.navigate('AssessmentFlow', {
                   screen: 'AssessmentPlayer',
+                  params: { id: a.tryoutId, playerId: a.participantId },
+                })
+              }
+            />
+          ))}
+        </Card>
+      )}
+
+      {/* Saved report cards, listed here so a coach finds them again from the
+          player card, not only inside an evaluation. */}
+      {isGuardian || profile.assessments.length === 0 ? null : (
+        <Card className="mb-4 gap-2">
+          <Text className="font-display font-bold" style={{ color: colors.ink }}>
+            Report Cards
+          </Text>
+          <Text className="text-sm" style={{ color: colors.inkMuted }}>
+            {reportCards.length === 0
+              ? 'No report cards yet. Create one from an evaluation to share with the family.'
+              : `${reportCards.length} saved report card${reportCards.length === 1 ? '' : 's'}.`}
+          </Text>
+          {reportCards.slice(0, 5).map((c) => (
+            <Text key={c.id} className="text-sm" style={{ color: colors.ink }} numberOfLines={1}>
+              {c.title} · {new Date(c.updatedAt).toLocaleDateString()}
+            </Text>
+          ))}
+          {profile.assessments.map((a) => (
+            <Button
+              key={`rc-${a.participantId}`}
+              label={`Report cards in ${a.tryoutName}`}
+              variant="secondary"
+              onPress={() =>
+                navigation.navigate('AssessmentFlow', {
+                  screen: 'AssessmentReportCard',
                   params: { id: a.tryoutId, playerId: a.participantId },
                 })
               }

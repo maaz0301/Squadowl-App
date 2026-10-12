@@ -206,6 +206,24 @@ async function cancelOrphanedVideoStorage(accountId: string): Promise<void> {
   }
 }
 
+/**
+ * Storage size of a video storage subscription. A plan change made in Stripe's own page does not
+ * touch the metadata, so the price is read first: prices this app creates carry a lookup key naming
+ * their size. Older subscriptions have none and keep the size in their metadata, where the retired
+ * 20 GB size becomes the new 25 GB Pro size. The amount is the last resort.
+ */
+function storageGbOf(subscription: any): number {
+  const price = subscription.items?.data?.[0]?.price;
+  const fromKey = /^squadowl_video_storage_(\d+)gb_yearly$/.exec(price?.lookup_key ?? '');
+  const valid = [1, 5, 25, 100];
+  if (fromKey && valid.includes(Number(fromKey[1]))) return Number(fromKey[1]);
+  const fromMeta = Number(subscription.metadata?.storageGb) || 0;
+  if (fromMeta === 20) return 25;
+  if (valid.includes(fromMeta)) return fromMeta;
+  const bySize: Record<number, number> = { 2500: 1, 5000: 5, 15000: 25, 35000: 100 };
+  return bySize[price?.unit_amount] ?? 0;
+}
+
 serve(async (req: Request) => {
   const signature = req.headers.get('Stripe-Signature');
   
@@ -422,7 +440,7 @@ serve(async (req: Request) => {
             : (subscription.cancel_at ?? null);
           const { error: storageError } = await supabaseAdmin.rpc('set_video_storage', {
             p_account_id: subscription.metadata.accountId,
-            p_gb: live ? Number(subscription.metadata.storageGb) || 0 : 0,
+            p_gb: live ? storageGbOf(subscription) : 0,
             p_source: 'stripe',
             p_subscription_id: subscription.id,
             p_cancel_at: live && cancelAtSec ? new Date(cancelAtSec * 1000).toISOString() : null,

@@ -465,6 +465,7 @@ export default function NewTeamScreen() {
         maxTeams={dummyMaxTeams}
         teamsBlockedBy={dummyBlockedBy}
         maxPlayersPerTeam={playerRoom(dummyTier, 0)}
+        defaultSport={sport}
         visible={showDummy}
         loading={genDummy.isPending}
         progress={dummyProgress ?? undefined}

@@ -26,7 +26,7 @@ import {
   useVideoStorageQuery,
 } from '@/features/queries';
 import { getDataSource } from '@/data';
-import { StorageMeterCard } from '@/components/video/StorageMeter';
+import { VideoStoragePanel } from '@/components/video/VideoStoragePanel';
 import { VideoPlayerModal } from '@/components/video/VideoPlayerModal';
 import {
   VIDEO_PHASE_LABEL,
@@ -284,7 +284,7 @@ export default function LibraryScreen() {
             ? 'Store files, notes, videos and links, then choose who can see each one.'
             : 'Files, notes, videos and links shared with you.'}
         </Text>
-        <StorageMeterCard onPress={() => navigation.navigate('Storage')} />
+        <VideoStoragePanel />
         <Input label="Search the library" value={search} onChangeText={setSearch} placeholder="Title or description" />
         <View className="mt-3 flex-row flex-wrap">
           <Chip label="All" active={filter === 'all'} onPress={() => setFilter('all')} />
@@ -434,17 +434,12 @@ export default function LibraryScreen() {
                   </Text>
                 </>
               ) : videoInfo?.canManage && videoInfo.planEligible ? (
-                <Button
-                  variant="secondary"
-                  label="Add video storage to upload a video"
-                  onPress={() => {
-                    setEditing(null);
-                    navigation.navigate('Storage');
-                  }}
-                />
+                <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                  Choose a video storage size at the top of the Library to upload a video. You can still paste a link.
+                </Text>
               ) : (
                 <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                  Uploading videos needs video storage on a Coach+ or Club plan. You can still paste a link.
+                  Uploading videos needs video storage on a Coach, Coach+ or Club plan. You can still paste a link.
                 </Text>
               )}
             </View>

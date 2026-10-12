@@ -98,7 +98,7 @@ export default function CancelVideoStorageScreen() {
             Everything remains available until then. We will email you 7 days and 1 day before, and again when the videos
             are permanently deleted. You can keep your storage any time before that from Storage.
           </Text>
-          <Button label="Done" onPress={() => navigation.navigate('Storage')} />
+          <Button label="Done" onPress={() => navigation.navigate('Library')} />
         </View>
       </Screen>
     );

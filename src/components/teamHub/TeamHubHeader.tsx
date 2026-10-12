@@ -53,12 +53,6 @@ export function TeamHubHeader({ name, subtitle, logoUrl, onChat, chatBadge, onEd
           <HubIcon d={HUB_ICONS.chevronLeft} size={16} color={colors.ink} />
         </Pressable>
 
-        <Image
-          source={logoUrl ? { uri: logoUrl } : require('../../../assets/SquadOwl-logo.png')}
-          style={{ width: 38, height: 38, borderRadius: logoUrl ? 19 : 0 }}
-          resizeMode={logoUrl ? 'cover' : 'contain'}
-        />
-
         <View className="flex-1">
           <Text numberOfLines={1} className="text-lg font-display font-bold" style={{ color: colors.ink }}>
             {name} Hub
@@ -69,6 +63,21 @@ export function TeamHubHeader({ name, subtitle, logoUrl, onChat, chatBadge, onEd
             </Text>
           ) : null}
         </View>
+
+        {/* The team's own logo sits in the upper right corner; tapping it opens
+            Edit so a coach can change it. The SquadOwl mark stands in until one is set. */}
+        <Pressable
+          onPress={onEdit}
+          disabled={!onEdit}
+          accessibilityRole={onEdit ? 'button' : 'image'}
+          accessibilityLabel={onEdit ? 'Team logo, tap to change' : 'Team logo'}
+        >
+          <Image
+            source={logoUrl ? { uri: logoUrl } : require('../../../assets/SquadOwl-logo.png')}
+            style={{ width: 56, height: 56, borderRadius: logoUrl ? 28 : 0 }}
+            resizeMode={logoUrl ? 'cover' : 'contain'}
+          />
+        </Pressable>
       </View>
 
       <View className="flex-row items-center justify-end gap-2 mt-2">
