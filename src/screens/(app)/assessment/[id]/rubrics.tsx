@@ -17,6 +17,8 @@ import {
 } from '@/data/rubrics';
 import { SCORING_TYPES, type ScoringType, type RankingDirection } from '@/data/types';
 import { benchmarkMax, canHaveBenchmark, formatBenchmarkValue, isValidBenchmark } from '@/data/benchmarks';
+import { moveItem } from '@/lib/reorder';
+import { parseTimeText } from '@/lib/timeEntry';
 
 /** Weights print as whole percentages where they are whole, e.g. "25%" / "16.7%". */
 function formatPct(value: number): string {
@@ -72,7 +74,9 @@ export default function RubricsScreen() {
 
   const weightNum = weightStr.trim() !== '' ? parseFloat(weightStr) : undefined;
   const weightValid = weightNum == null || (!isNaN(weightNum) && weightNum >= 1 && weightNum <= 100);
-  const benchmarkNum = benchmarkStr.trim() !== '' ? parseFloat(benchmarkStr) : undefined;
+  // A time rubric also takes a clock reading ("1:30"), turned into its own unit.
+  const readNumber = (text: string) => (scoringType === 'time' ? parseTimeText(text, unit.trim() || 'sec') : parseFloat(text));
+  const benchmarkNum = benchmarkStr.trim() !== '' ? readNumber(benchmarkStr) : undefined;
   const benchmarkActive = benchmarkOn && canHaveBenchmark(scoringType);
   const benchmarkValid = !benchmarkActive || isValidBenchmark({ scoringType, scale }, benchmarkNum);
 
@@ -129,8 +133,8 @@ export default function RubricsScreen() {
     else if (scoringType === 'distance' && !defaultUnit) defaultUnit = 'ft';
     else if (scoringType === 'speed' && !defaultUnit) defaultUnit = 'mph';
 
-    const minNum = minValStr.trim() !== '' ? parseFloat(minValStr) : undefined;
-    const maxNum = maxValStr.trim() !== '' ? parseFloat(maxValStr) : undefined;
+    const minNum = minValStr.trim() !== '' ? readNumber(minValStr) : undefined;
+    const maxNum = maxValStr.trim() !== '' ? readNumber(maxValStr) : undefined;
 
     const isMetric = isMetricScoringType(scoringType);
 
@@ -165,6 +169,20 @@ export default function RubricsScreen() {
     // drills to the same category back to back (e.g. five Skating drills),
     // so keeping it selected saves re-picking it each time.
     resetForm();
+  };
+
+  // The order here is the order the drills are scored in, so coaches can fix a
+  // list they entered out of sequence.
+  const moveCustom = async (from: number, to: number) => {
+    if (to < 0 || to >= custom.length) return;
+    try {
+      await updateTryout.mutateAsync({
+        id: tryout.id,
+        updates: { settings: { ...tryout.settings, customRubrics: moveItem(custom, from, to) } },
+      });
+    } catch (err: any) {
+      showAlert('Error', err.message || 'Failed to change the order.');
+    }
   };
 
   const removeCustom = async (keyToRemove: string) => {
@@ -282,6 +300,28 @@ export default function RubricsScreen() {
                 </Text>
               </View>
 
+              <View className="items-center mr-1">
+                <Pressable
+                  onPress={() => moveCustom(i, i - 1)}
+                  disabled={i === 0 || updateTryout.isPending}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Move ${r.label} up`}
+                  className="px-2"
+                >
+                  <Text style={{ color: i === 0 ? colors.inkFaint : colors.primary, fontSize: 18, fontWeight: 'bold' }}>▲</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => moveCustom(i, i + 1)}
+                  disabled={i === custom.length - 1 || updateTryout.isPending}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Move ${r.label} down`}
+                  className="px-2"
+                >
+                  <Text style={{ color: i === custom.length - 1 ? colors.inkFaint : colors.primary, fontSize: 18, fontWeight: 'bold' }}>▼</Text>
+                </Pressable>
+              </View>
               <Pressable onPress={() => startEdit(r)} hitSlop={8} className="px-2">
                 <Text style={{ color: colors.primary, fontSize: 14, fontWeight: 'bold' }}>Edit</Text>
               </Pressable>
@@ -442,7 +482,7 @@ export default function RubricsScreen() {
                     label="Min Value"
                     value={minValStr}
                     onChangeText={setMinValStr}
-                    keyboardType="numeric"
+                    keyboardType={scoringType === 'time' ? 'default' : 'numeric'}
                     placeholder={rankingDirection === 'lower_is_better' ? '1 (Best)' : '1 (Worst)'}
                   />
                 </View>
@@ -451,7 +491,7 @@ export default function RubricsScreen() {
                     label="Max Value"
                     value={maxValStr}
                     onChangeText={setMaxValStr}
-                    keyboardType="numeric"
+                    keyboardType={scoringType === 'time' ? 'default' : 'numeric'}
                     placeholder={rankingDirection === 'lower_is_better' ? '10 (Worst)' : '10 (Best)'}
                   />
                 </View>
@@ -512,8 +552,8 @@ export default function RubricsScreen() {
                     }
                     value={benchmarkStr}
                     onChangeText={setBenchmarkStr}
-                    keyboardType="decimal-pad"
-                    placeholder="e.g. 30"
+                    keyboardType={scoringType === 'time' ? 'default' : 'decimal-pad'}
+                    placeholder={scoringType === 'time' ? 'e.g. 45 or 1:30' : 'e.g. 30'}
                   />
                   <Input
                     label="What this benchmark means (optional)"

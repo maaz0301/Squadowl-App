@@ -7,12 +7,14 @@ import { Badge, Button, Card, Chip, EmptyState, ErrorState, Header, LoadingState
 import { HomePanel, PanelRow } from '@/components/home/HomePanel';
 import { HubIcon } from '@/components/teamHub/HubIcon';
 import { HUB_ICONS } from '@/components/teamHub/hubTheme';
-import { useTryoutsQuery, useTryoutSummariesQuery } from '@/features/queries';
+import { useTeamsQuery, useTryoutsQuery, useTryoutSummariesQuery } from '@/features/queries';
 import { useSessionStore } from '@/state/sessionStore';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import {
   buildReportSummary,
+  filterTryoutsByTeam,
   listReportRubrics,
+  listReportTeams,
   topPerformersByRubric,
   REPORT_RECOMMENDATIONS,
   type EvaluationReportRow,
@@ -48,14 +50,22 @@ export default function ReportsScreen() {
 
   // Top performers can be ranked on the overall score or on any one measure.
   const [leaderFocus, setLeaderFocus] = useState('overall');
-  const rubricOptions = useMemo(() => listReportRubrics(tryoutsQuery.data ?? []), [tryoutsQuery.data]);
+  // ...and limited to one team's evaluations, or left on everyone.
+  const [leaderTeam, setLeaderTeam] = useState<string | null>(null);
+  const teamsQuery = useTeamsQuery();
+  const teamOptions = useMemo(
+    () => listReportTeams(tryoutsQuery.data ?? [], teamsQuery.data ?? []),
+    [tryoutsQuery.data, teamsQuery.data],
+  );
+  const leaderTryouts = useMemo(() => filterTryoutsByTeam(tryoutsQuery.data ?? [], leaderTeam), [tryoutsQuery.data, leaderTeam]);
+  const rubricOptions = useMemo(() => listReportRubrics(leaderTryouts), [leaderTryouts]);
   const focusRubric = rubricOptions.find((r) => r.key === leaderFocus);
   const leaders = useMemo(
     () =>
       focusRubric
-        ? topPerformersByRubric(tryoutsQuery.data ?? [], focusRubric.key)
-        : summary.topPerformers.map((p) => ({ ...p, unit: undefined as string | undefined })),
-    [focusRubric, tryoutsQuery.data, summary],
+        ? topPerformersByRubric(leaderTryouts, focusRubric.key)
+        : buildReportSummary(leaderTryouts).topPerformers.map((p) => ({ ...p, unit: undefined as string | undefined })),
+    [focusRubric, leaderTryouts],
   );
   const leaderValue = (n: number, unit?: string) =>
     !focusRubric
@@ -209,6 +219,14 @@ export default function ReportsScreen() {
             </Text>
           ) : (
             <View className="gap-2">
+              {teamOptions.length > 0 ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                  <Chip label="All teams" active={!leaderTeam} onPress={() => setLeaderTeam(null)} />
+                  {teamOptions.map((t) => (
+                    <Chip key={t.id} label={t.name} active={leaderTeam === t.id} onPress={() => setLeaderTeam(t.id)} />
+                  ))}
+                </ScrollView>
+              ) : null}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                 <Chip label="Overall" active={!focusRubric} onPress={() => setLeaderFocus('overall')} />
                 {rubricOptions.map((r) => (
@@ -220,6 +238,11 @@ export default function ReportsScreen() {
                   />
                 ))}
               </ScrollView>
+              {leaders.length === 0 ? (
+                <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                  No scored players for this team yet.
+                </Text>
+              ) : null}
               {leaders.map((p, i) => (
                 <Pressable
                   key={`${p.evaluationId}-${p.playerId}`}

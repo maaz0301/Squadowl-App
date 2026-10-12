@@ -20,6 +20,7 @@ import { BottomNav } from '@/components/BottomNav';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { PlayerFamilyContactsCard } from '@/components/assessment/PlayerFamilyContactsCard';
 import { formatBirth } from '@/lib/birthDate';
+import { formatHeight, heightToText } from '@/lib/height';
 
 function Row({ label, value, colors }: { label: string; value?: string; colors: any }) {
   return (
@@ -128,6 +129,7 @@ export default function TeamPlayerScreen() {
     // Left undefined rather than '' when the viewer can't see it, so saving
     // other fields never blanks out medical info this account isn't shown.
     medicalInfo: rosterEntry?.canViewMedical ? rosterEntry.medicalInfo : undefined,
+    height: heightToText(rosterEntry?.heightCm ?? fullPlayer?.heightCm),
     avatarUrl: rosterEntry?.avatarUrl ?? fullPlayer?.avatarUrl ?? '',
   };
 
@@ -184,6 +186,7 @@ export default function TeamPlayerScreen() {
         <Card className="mb-4 gap-2">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>Details</Text>
           <Row label="Date of Birth" value={formatBirth(rosterEntry?.dateOfBirth ?? fullPlayer?.dateOfBirth, yearOfBirth)} colors={colors} />
+          <Row label="Height" value={formatHeight(rosterEntry?.heightCm ?? fullPlayer?.heightCm)} colors={colors} />
           <Row label="Player Email" value={rosterEntry?.playerEmail ?? fullPlayer?.playerEmail} colors={colors} />
         </Card>
 

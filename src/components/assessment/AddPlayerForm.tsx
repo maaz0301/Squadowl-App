@@ -10,13 +10,14 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { POSITION_OPTIONS_BY_SPORT } from '@/data/positions';
 import { sportProfile } from '@/data/sportProfile';
+import { heightToText } from '@/lib/height';
 import { duplicatePrompt, findPossibleDuplicates, type DuplicateCandidate } from '@/data/duplicates';
 
 interface Props {
   loading?: boolean;
   /** Who is already on the roster being added to. When set, saving a likely duplicate asks first. Leave unset when editing. */
   existingPlayers?: (DuplicateCandidate & { jersey?: string | null })[];
-  defaultValues?: Partial<AddPlayerFormType>;
+  defaultValues?: Partial<AddPlayerFormType> & { heightCm?: number };
   /** Drives the position picker's options — Hockey positions for a Hockey evaluation, and so on. */
   sport?: Sport;
   /** The evaluation's own renames, so the form speaks its language. */
@@ -70,6 +71,7 @@ export function AddPlayerForm({ loading, defaultValues, sport, labels, onSubmit,
       currentLevel: defaultValues?.currentLevel || '',
       aboutChild: defaultValues?.aboutChild || '',
       medicalInfo: defaultValues?.medicalInfo || '',
+      height: defaultValues?.height ?? heightToText(defaultValues?.heightCm),
       friend1Name: defaultValues?.friend1Name || '',
       friend2Name: defaultValues?.friend2Name || '',
       avatarUrl: defaultValues?.avatarUrl || '',
@@ -110,6 +112,7 @@ export function AddPlayerForm({ loading, defaultValues, sport, labels, onSubmit,
     setValue('guardianEmail', a.guardianEmail || '');
     setValue('guardianPhone', a.guardianPhone || '');
     setValue('medicalInfo', a.medicalInfo || '');
+    setValue('height', heightToText(a.heightCm));
     setValue('aboutChild', a.aboutChild || '');
     const pos = a.currentPosition || (positionOptions.length > 0 || sport === 'Skating' ? '' : 'FWD');
     setPositionIsCustom(
@@ -292,6 +295,21 @@ export function AddPlayerForm({ loading, defaultValues, sport, labels, onSubmit,
         name="guardianPhone"
         render={({ field: { onChange, value }, fieldState: { error } }) => (
           <PhoneField label="Guardian Phone" onChange={onChange} value={value} error={error?.message} />
+        )}
+      />
+      <Controller
+        control={control}
+        name="height"
+        render={({ field: { onChange, onBlur, value }, fieldState: { error } }) => (
+          <Input
+            label="Height (optional)"
+            placeholder={`e.g. 168 cm or 5'6"`}
+            onBlur={onBlur}
+            onChangeText={onChange}
+            value={value}
+            error={error?.message}
+            autoCapitalize="none"
+          />
         )}
       />
       <Controller

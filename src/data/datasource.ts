@@ -1,4 +1,5 @@
 import type {
+  PlayerUpdate,
   AddPlayerForm,
   Assessor,
   AdminStats,
@@ -132,7 +133,7 @@ export interface DataSource {
 
   // Players
   addPlayer(tryoutId: string, form: AddPlayerForm): Promise<Player>;
-  updatePlayer(tryoutId: string, playerId: string, updates: Partial<Player>): Promise<Player>;
+  updatePlayer(tryoutId: string, playerId: string, updates: PlayerUpdate): Promise<Player>;
   deletePlayer(tryoutId: string, playerId: string): Promise<void>;
   /**
    * Delete several players from an assessment roster with bounded concurrency.

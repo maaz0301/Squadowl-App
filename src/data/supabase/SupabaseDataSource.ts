@@ -1,10 +1,11 @@
 /// <reference types="node" />
+import { parseHeightCm } from '@/lib/height';
 import { APP_CONFIG } from '@/config/app';
 import { getSupabase } from '@/lib/supabase';
 import { type Session, type SupabaseClient, isAuthRetryableFetchError } from '@supabase/supabase-js';
 import type { DataSource } from '../datasource';
 import type { SearchPlayer } from '../search';
-import { PLAN_TIERS, SPORTS } from '../types';
+import { PLAN_TIERS, SPORTS, type PlayerUpdate } from '../types';
 import { friendlyVideoError } from '../videoStorage';
 import { bulkImportPlayers, IMPORT_CREATE_CHUNK } from '../bulkTeamImport';
 import type { FeedbackAttachment, FeedbackReport, FeedbackSubmission } from '../extras';
@@ -374,7 +375,7 @@ function teamRosterSelect(inner = false): string {
   return (
     'id, team_id, athlete_id, jersey, position, source_tryout_id, created_at, ' +
     `athletes${inner ? '!inner' : ''}(id, first_name, last_name, year_of_birth, date_of_birth, avatar_url, ` +
-    'player_email, guardian_email, guardian_name, guardian_phone, guardian_user_id, medical_info, account_id)'
+    'player_email, guardian_email, guardian_name, guardian_phone, guardian_user_id, medical_info, height_cm, account_id)'
   );
 }
 
@@ -589,7 +590,7 @@ const PARTICIPANT_SELECT =
   'friend2_name, sort_out, waiver_accepted_at, registration_source, removed_at, created_at, ' +
   'updated_at, ' +
   'athletes(id, first_name, last_name, avatar_url, player_email, guardian_name, guardian_email, ' +
-  'guardian_phone, guardian_user_id, year_of_birth, date_of_birth, default_position, about, medical_info)';
+  'guardian_phone, guardian_user_id, year_of_birth, date_of_birth, default_position, about, medical_info, height_cm)';
 
 const EVALUATION_SELECT =
   'id, tryout_id, participant_id, evaluator_user_id, evaluator_name, session, strengths, improve, ' +
@@ -1031,6 +1032,7 @@ export class SupabaseDataSource implements DataSource {
       positionTryingOutFor: p.position_trying_out_for ?? undefined,
       aboutChild: a.about ?? undefined,
       medicalInfo: a.medical_info ?? undefined,
+      heightCm: a.height_cm != null ? Number(a.height_cm) : undefined,
       friend1Name: p.friend1_name ?? undefined,
       friend2Name: p.friend2_name ?? undefined,
       sortOut: p.sort_out || undefined,
@@ -2363,6 +2365,7 @@ export class SupabaseDataSource implements DataSource {
       guardianPhone: a.guardian_phone ?? undefined,
       linkedGuardianId: a.guardian_user_id ?? undefined,
       medicalInfo: canViewMedical ? (a.medical_info ?? undefined) : undefined,
+      heightCm: a.height_cm != null ? Number(a.height_cm) : undefined,
       canViewMedical,
       sourceTryoutId: r.source_tryout_id ?? undefined,
       sourceTryoutName,
@@ -2423,7 +2426,7 @@ export class SupabaseDataSource implements DataSource {
           // in here once per 20-registration chunk — re-read the entire team
           // roster once per chunk.
           .select(
-            'id, team_id, athlete_id, jersey, position, source_tryout_id, created_at, athletes(id, first_name, last_name, year_of_birth, date_of_birth, player_email, guardian_email, guardian_name, guardian_phone, guardian_user_id, medical_info, account_id)',
+            'id, team_id, athlete_id, jersey, position, source_tryout_id, created_at, athletes(id, first_name, last_name, year_of_birth, date_of_birth, player_email, guardian_email, guardian_name, guardian_phone, guardian_user_id, medical_info, height_cm, account_id)',
           ),
       ) as Row[];
       done += chunk.length;
@@ -2511,6 +2514,7 @@ export class SupabaseDataSource implements DataSource {
         guardian_phone: form.guardianPhone || null,
         player_email: form.playerEmail || null,
         medical_info: form.medicalInfo || null,
+        height_cm: parseHeightCm(form.height),
         about: form.aboutChild || null,
         avatar_url: form.avatarUrl || null,
       };
@@ -2581,6 +2585,7 @@ export class SupabaseDataSource implements DataSource {
     // a jersey number never has it in the form and must not blank out a field
     // their own read never showed them.
     if (form.medicalInfo !== undefined) athletePatch.medical_info = form.medicalInfo || null;
+    if (form.height !== undefined) athletePatch.height_cm = parseHeightCm(form.height);
 
     unwrap(await supabase.from('athletes').update(athletePatch).eq('id', athleteId));
 
@@ -4106,6 +4111,7 @@ export class SupabaseDataSource implements DataSource {
         guardian_phone: form.guardianPhone || null,
         player_email: form.playerEmail || null,
         medical_info: form.medicalInfo || null,
+        height_cm: parseHeightCm(form.height),
         about: form.aboutChild || null,
         avatar_url: form.avatarUrl || null,
       };
@@ -4137,7 +4143,7 @@ export class SupabaseDataSource implements DataSource {
     return this.fetchPlayer(participant.id);
   }
 
-  async updatePlayer(tryoutId: string, playerId: string, updates: Partial<Player>): Promise<Player> {
+  async updatePlayer(tryoutId: string, playerId: string, updates: PlayerUpdate): Promise<Player> {
     const { supabase } = await this.ctx();
 
     const athletePatch: Row = {};
@@ -4150,6 +4156,7 @@ export class SupabaseDataSource implements DataSource {
     if (updates.guardianPhone !== undefined) athletePatch.guardian_phone = updates.guardianPhone || null;
     if (updates.playerEmail !== undefined) athletePatch.player_email = updates.playerEmail || null;
     if (updates.medicalInfo !== undefined) athletePatch.medical_info = updates.medicalInfo || null;
+    if (updates.height !== undefined) athletePatch.height_cm = parseHeightCm(updates.height);
     if (updates.aboutChild !== undefined) athletePatch.about = updates.aboutChild || null;
     if (updates.currentPosition !== undefined)
       athletePatch.default_position = updates.currentPosition || null;
@@ -8344,6 +8351,7 @@ export class SupabaseDataSource implements DataSource {
         guardianEmail: a.guardian_email ?? undefined,
         guardianPhone: a.guardian_phone ?? undefined,
         medicalInfo: a.medical_info ?? undefined,
+        heightCm: a.height_cm != null ? Number(a.height_cm) : undefined,
         aboutChild: a.about ?? undefined,
         currentPosition: a.default_position ?? undefined,
         currentTeam: recentPart?.current_team ?? undefined,
@@ -8607,7 +8615,7 @@ export class SupabaseDataSource implements DataSource {
 
     const { data: athleteRow } = await supabase
       .from('athletes')
-      .select('id, first_name, last_name, avatar_url, player_email, guardian_name, guardian_email, guardian_phone, guardian_user_id, default_position, year_of_birth, date_of_birth, about, medical_info, account_id')
+      .select('id, first_name, last_name, avatar_url, player_email, guardian_name, guardian_email, guardian_phone, guardian_user_id, default_position, year_of_birth, date_of_birth, about, medical_info, height_cm, account_id')
       .eq('id', athleteId)
       .maybeSingle();
     if (!athleteRow) throw new Error('Athlete not found');
@@ -8664,6 +8672,7 @@ export class SupabaseDataSource implements DataSource {
       dateOfBirth: athleteRow.date_of_birth ?? undefined,
       aboutChild: athleteRow.about ?? undefined,
       medicalInfo: canViewMedical ? (athleteRow.medical_info ?? undefined) : undefined,
+      heightCm: athleteRow.height_cm != null ? Number(athleteRow.height_cm) : undefined,
       playerEmail: athleteRow.player_email ?? undefined,
       guardianName: athleteRow.guardian_name ?? undefined,
       guardianEmail: athleteRow.guardian_email ?? undefined,

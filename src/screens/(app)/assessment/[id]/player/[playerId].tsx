@@ -44,7 +44,8 @@ import {
   usePlatformBlockedFeaturesQuery,
 } from '@/features/queries';
 import { useAssessmentId, useAssessorMode } from '@/features/useAssessmentId';
-import { playerDisplayName, weightedOverall, getPlayerCategories, isGoaliePosition } from '@/data/rubrics';
+import { playerDisplayName, weightedOverall, getPlayerCategories, isGoaliePosition, isBinaryScoringType } from '@/data/rubrics';
+import { formatRawResult } from '@/data/benchmarks';
 import { LETTER_KIND_LABELS } from '@/data/letters';
 import { AddPlayerForm } from '@/components/assessment/AddPlayerForm';
 import { PlanGate } from '@/components/PlanGate';
@@ -609,6 +610,13 @@ export default function PlayerHubScreen() {
           ) : (
             evals.map((ev) => {
               const overall = weightedOverall(ev.scores ?? {}, categories, weights);
+              const rawResults = categories
+        .flatMap((c) => c.subskills)
+        .flatMap((sub) => {
+          const v = ev.scores?.[sub.key];
+          if (v == null || (!isBinaryScoringType(sub.scoringType) && !(v > 0))) return [];
+          return [{ key: sub.key, label: sub.label, text: formatRawResult(sub, v) }];
+        });
               return (
                 <Card key={ev.id} className="mb-2 gap-1">
                   <View className="flex-row justify-between">
@@ -620,6 +628,21 @@ export default function PlayerHubScreen() {
                   <Text className="text-sm" style={{ color: colors.inkMuted }}>
                     {ev.evaluator}
                   </Text>
+                  {/* What was actually entered for each measure, in its own units. */}
+                  {rawResults.length > 0 ? (
+                    <View className="mt-1 gap-0.5">
+                      {rawResults.map((r) => (
+                        <View key={r.key} className="flex-row justify-between">
+                          <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                            {r.label}
+                          </Text>
+                          <Text className="text-sm font-bold" style={{ color: colors.ink }}>
+                            {r.text}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
                   {ev.strengths ? (
                     <Text className="text-sm mt-1" style={{ color: colors.ink }}>
                       + {ev.strengths}

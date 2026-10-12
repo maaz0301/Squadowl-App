@@ -6,6 +6,7 @@ import { usePlayerProfileQuery } from '@/features/queries';
 import { slugify } from '@/lib/exportCsv';
 import { formatBirth } from '@/lib/birthDate';
 import { useThemeColors } from '@/theme/ThemeProvider';
+import { formatHeight } from '@/lib/height';
 
 /**
  * Everything the full player profile screen shows, inline: the player's details
@@ -58,6 +59,7 @@ export function PlayerProfileSection({
         {row('Position', profile.currentPosition)}
         {row('Level', profile.currentLevel)}
         {row('Jersey', profile.jersey)}
+        {row('Height', formatHeight(profile.heightCm))}
         {row('Player Email', profile.playerEmail)}
         {row('Guardian', profile.guardianName)}
         {row('Guardian Email', profile.guardianEmail)}

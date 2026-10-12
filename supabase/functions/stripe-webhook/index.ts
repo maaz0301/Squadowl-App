@@ -214,7 +214,7 @@ async function cancelOrphanedVideoStorage(accountId: string): Promise<void> {
  */
 function storageGbOf(subscription: any): number {
   const price = subscription.items?.data?.[0]?.price;
-  const fromKey = /^squadowl_video_storage_(\d+)gb_yearly$/.exec(price?.lookup_key ?? '');
+  const fromKey = /^squadowl_video_storage_(\d+)gb(?:_\d+)?_yearly$/.exec(price?.lookup_key ?? '');
   const valid = [1, 5, 25, 100];
   if (fromKey && valid.includes(Number(fromKey[1]))) return Number(fromKey[1]);
   const fromMeta = Number(subscription.metadata?.storageGb) || 0;

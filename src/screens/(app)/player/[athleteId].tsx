@@ -9,6 +9,7 @@ import { usePermissions } from '@/state/authStore';
 import { slugify } from '@/lib/exportCsv';
 import { formatBirth } from '@/lib/birthDate';
 import { playerDisplayName } from '@/data/rubrics';
+import { formatHeight } from '@/lib/height';
 
 function Row({ label, value, colors }: { label: string; value?: string; colors: any }) {
   return (
@@ -62,6 +63,7 @@ export default function PlayerProfileScreen() {
         ) : null}
         <Row label="Position" value={profile.currentPosition} colors={colors} />
         <Row label="Date of Birth" value={formatBirth(profile.dateOfBirth, profile.yearOfBirth)} colors={colors} />
+        <Row label="Height" value={formatHeight(profile.heightCm)} colors={colors} />
         <Row label="Player Email" value={profile.playerEmail} colors={colors} />
         <Row label="Guardian" value={profile.guardianName} colors={colors} />
         <Row label="Guardian Email" value={profile.guardianEmail} colors={colors} />

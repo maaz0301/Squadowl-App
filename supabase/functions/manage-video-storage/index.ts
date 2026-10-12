@@ -40,15 +40,19 @@ function json(body: unknown, status = 200): Response {
 async function priceForGb(gb: number): Promise<string> {
   const configured = Deno.env.get(`STRIPE_PRICE_ID_VIDEO_STORAGE_${gb}GB_YEARLY`)?.trim();
   if (configured && configured !== 'undefined' && configured !== 'null') return configured;
-  // One price per size, found again by its lookup key so repeated calls agree.
+  // One price per size, found again by its lookup key so repeated calls agree. The key keeps its original
+  // form because the webhook reads the size from it. A price made at an older rate (the 1 GB and 5 GB
+  // sizes were $15 and $25) is replaced by a new one that takes the key over, never reused.
   const lookupKey = `squadowl_video_storage_${gb}gb_yearly`;
   const found = await stripe.prices.list({ lookup_keys: [lookupKey], active: true, limit: 1 });
-  if (found.data[0]) return found.data[0].id;
+  const existing = found.data[0];
+  if (existing && existing.unit_amount === PRICES_CAD[gb] && existing.currency === 'cad') return existing.id;
   const price = await stripe.prices.create({
     currency: 'cad',
     unit_amount: PRICES_CAD[gb],
     recurring: { interval: 'year' },
     lookup_key: lookupKey,
+    transfer_lookup_key: !!existing,
     product_data: { name: `SquadOwl Video Storage ${gb} GB` },
   });
   return price.id;
