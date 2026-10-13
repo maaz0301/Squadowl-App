@@ -535,6 +535,10 @@ export default function RinksideScreen() {
                     benchmarkNote={s.benchmarkNote}
                     value={workingScores[s.key]}
                     onChange={(v) => setWorkingScores({ ...workingScores, [s.key]: v })}
+                    onClear={() => {
+                      const { [s.key]: _removed, ...rest } = workingScores;
+                      setWorkingScores(rest);
+                    }}
                   />
                 ))}
               </View>

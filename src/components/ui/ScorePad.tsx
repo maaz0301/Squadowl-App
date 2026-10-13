@@ -160,7 +160,7 @@ function BenchmarkHint({
   );
 }
 
-export function ScorePad({
+function ScorePadBase({
   label,
   scale = '1-5',
   scoringType = 'skill',
@@ -486,5 +486,35 @@ function BinaryButton({ label, selected, tone, onPress }: BinaryButtonProps) {
         {label}
       </Text>
     </Pressable>
+  );
+}
+
+/**
+ * One test's entry, with a line under it saying plainly whether it counts. A test the
+ * skater did not take is left empty, and an empty test is left out of the overall
+ * score (typing 0 would count as a real, worst result), so "Did not attempt" clears it.
+ */
+export function ScorePad(props: ScorePadProps) {
+  const colors = useThemeColors();
+  const { value, onClear } = props;
+  if (!onClear) return <ScorePadBase {...props} />;
+  return (
+    <View>
+      <ScorePadBase {...props} />
+      <View className="flex-row items-center justify-between" style={{ marginTop: -10, marginBottom: 16 }}>
+        {value == null ? (
+          <Text className="text-xs italic" style={{ color: colors.inkMuted }}>
+            Not scored: left out of the overall score
+          </Text>
+        ) : (
+          <>
+            <Text className="text-xs" style={{ color: colors.inkMuted }}>Counts toward the overall score</Text>
+            <Pressable onPress={onClear} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Mark ${props.label} as not attempted`}>
+              <Text className="text-xs font-bold" style={{ color: colors.primary }}>Did not attempt</Text>
+            </Pressable>
+          </>
+        )}
+      </View>
+    </View>
   );
 }
