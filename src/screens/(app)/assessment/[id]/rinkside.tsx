@@ -1,6 +1,6 @@
 import { useTerms } from '@/lib/terms';
 import { NotAttemptedAll } from '@/components/ui/NotAttemptedAll';
-import { isNotAttempted, withNotAttempted, withScore, withoutScore } from '@/lib/notAttempted';
+import { NOT_ATTEMPTED_SUFFIX, isNotAttempted, withNotAttempted, withScore, withoutScore } from '@/lib/notAttempted';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { Dimensions, ScrollView, Text, View, Alert } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -348,7 +348,9 @@ export default function RinksideScreen() {
     }
 
     const hasScores = workingScores && Object.values(workingScores).some(val => val !== undefined && val !== null && val > 0);
-    if (!hasScores) {
+    // Every test marked "did not attempt" is saved too (N/A on the reports), just with nothing to average.
+    const hasNotAttempted = Object.keys(workingScores ?? {}).some((k) => k.endsWith(NOT_ATTEMPTED_SUFFIX));
+    if (!hasScores && !hasNotAttempted) {
       clearWorkingScores();
       setRecommendation('');
       getNextNavigation();
