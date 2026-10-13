@@ -49,8 +49,8 @@ function PickerField({
         onPress={() => setOpen(true)}
         accessibilityRole="button"
         accessibilityLabel={title}
-        className="flex-1 min-w-0 rounded-md pl-2.5 pr-2 py-3 border min-h-[48px] flex-row items-center justify-between"
-        style={{ backgroundColor: colors.field, borderColor: hasError ? colors.danger : colors.border }}
+        className="flex-1 min-w-0 rounded-md py-3 border min-h-[48px] flex-row items-center justify-between"
+        style={{ backgroundColor: colors.field, borderColor: hasError ? colors.danger : colors.border, paddingLeft: 12, paddingRight: 8 }}
       >
         <Text className="text-base flex-1" numberOfLines={1} ellipsizeMode="clip" style={{ color: chosen ? colors.ink : colors.placeholder }}>
           {chosen ? chosen.label : placeholder}
