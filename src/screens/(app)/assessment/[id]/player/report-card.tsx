@@ -399,7 +399,7 @@ export default function PlayerReportCardScreen() {
           </View>
         </Card>
 
-        {reportCard && reportCard.evalCount > 0 ? (
+        {reportCard && (reportCard.evalCount > 0 || reportCard.metrics.length > 0) ? (
           <Card className="gap-1">
             {label('Report card')}
             <View className="flex-row items-center gap-2 border-b py-1" style={{ borderColor: colors.border }}>
@@ -421,13 +421,13 @@ export default function PlayerReportCardScreen() {
                 Overall
               </Text>
               <Text className="w-20 text-right font-bold" style={{ color: colors.primary }}>
-                {reportCard.overallScore}
+                {reportCard.overallScore || '-'}
               </Text>
               <Text className="w-20 text-right" style={{ color: colors.inkMuted }}>
                 -
               </Text>
               <Text className="w-12 text-right font-bold" style={{ color: colors.primary }}>
-                {reportCard.overallRank}
+                {reportCard.overallRank || '-'}
               </Text>
             </View>
             {reportCard.metrics.map((m) => {
