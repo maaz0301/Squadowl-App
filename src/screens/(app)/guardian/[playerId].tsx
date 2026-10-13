@@ -117,12 +117,12 @@ function EventCard({ item, playerId, colors }: { item: SeasonEvent & { seasonNam
           <Pressable
             onPress={() => handleRsvp('no')}
             className="flex-1 py-2 items-center rounded-md"
-            style={{ backgroundColor: rsvp === 'no' ? colors.error : colors.tile }}
+            style={{ backgroundColor: rsvp === 'no' ? colors.danger : colors.tile }}
           >
             <Text className="font-bold" style={{ color: rsvp === 'no' ? '#fff' : colors.ink }}>No</Text>
           </Pressable>
         </View>
-        <EventDiscussion seasonId={item.seasonId} eventId={item.id} currentUserId={userId} />
+        <EventDiscussion seasonId={item.seasonId} eventId={item.id} currentUserId={userId} hideVideo />
       </View>
     </Card>
   );
@@ -276,7 +276,7 @@ export default function GuardianPortalScreen() {
   if (!athlete) {
     return (
       <Screen>
-        <Header title="Guardian Portal" showBack />
+        <Header title="My Athletes" showBack />
         <EmptyState title="Player not found" message="We couldn't find this player in your roster." />
       </Screen>
     );
@@ -332,10 +332,9 @@ export default function GuardianPortalScreen() {
       <View className="px-4 pb-2">
         {/* The title gets the whole row; at this width the three actions beside it
             squeezed "Guardian Portal" onto three lines. */}
-        <Header title="Guardian Portal" showBack />
+        <Header title="My Athletes" showBack />
         <View className="flex-row items-center justify-end gap-2 -mt-1">
           <ChatIconButton onPress={openChat} badge={<UnreadPill count={totalUnread} />} />
-          <Button label="Library" size="sm" variant="secondary" onPress={() => navigation.navigate('Library')} />
         </View>
 
         <View className="flex-row items-center gap-4 mb-4 mt-2">

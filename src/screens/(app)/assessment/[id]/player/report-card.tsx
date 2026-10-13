@@ -25,12 +25,14 @@ import {
 } from '@/features/queries';
 import { useAssessmentId, useAssessorMode } from '@/features/useAssessmentId';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
+import { getDataSource } from '@/data';
 import { buildPlayerFullResults } from '@/data/resultsExport';
 import { benchmarkLines } from '@/data/benchmarks';
 import { playerDisplayName } from '@/data/rubrics';
 import type { PlayerReportCard, ReportCardAttachment } from '@/data/types';
 import { DocumentPickerUnavailable, pickAttachment, type PickedAttachment } from '@/lib/documentPicker';
 import { ContextVideos } from '@/components/video/ContextVideos';
+import { TaggedVideos } from '@/components/video/TaggedVideos';
 import { formatAiComments } from '@/lib/reportCardText';
 import { reportLogoUrls } from '@/lib/reportPdf';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
@@ -267,6 +269,8 @@ export default function PlayerReportCardScreen() {
     setExporting(true);
     try {
       const { exportPlayerReportCard } = await import('@/lib/exportData');
+      // Saved uploads get a long-lived address so the exported PDF can open them.
+      const fileLinks = await getDataSource().getReportCardFileLinks(kept.map((a) => a.path).filter((x): x is string => !!x));
       await exportPlayerReportCard({
         title,
         subtitle: [team?.name, tryout.name].filter(Boolean).join(' | '),
@@ -275,7 +279,7 @@ export default function PlayerReportCardScreen() {
         coachComments,
         aiComments,
         attachments: [
-          ...kept.map((a) => ({ kind: a.kind, name: a.name, url: a.url })),
+          ...kept.map((a) => ({ kind: a.kind, name: a.name, url: a.url ?? (a.path ? fileLinks[a.path] : undefined) })),
           ...files.map((f) => ({ kind: (f.type.startsWith('video/') ? 'video' : 'file') as 'video' | 'file', name: f.name })),
         ],
         logoUrls: reportLogoUrls({ club: tier === 'club', organizationLogoUrl: user?.organizationLogoUrl, teamLogoUrl: team?.logoUrl, appLogo: printAppLogo }),
@@ -555,6 +559,7 @@ export default function PlayerReportCardScreen() {
         </Card>
 
         <Card className="gap-3">
+          <TaggedVideos athleteId={player.athleteId} />
           {editingId ? (
             <ContextVideos
               context="report_card"

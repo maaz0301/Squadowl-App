@@ -83,6 +83,8 @@ export const SCORING_TYPES = [
   'time',
   'distance',
   'speed',
+  /** A raw count (reps, goals, passes); scored against min/max benchmarks like the other measurements. */
+  'quantity',
   /** Free 1–100 observation score; `rankingDirection` decides whether 1 or 100 is the best mark. */
   'observation',
   /** Two-state pass/fail — stored as 1 (yes) or 0 (no). */
@@ -1506,6 +1508,8 @@ export interface LibraryItem {
   /** A video stored through the Video Storage Add-On (compressed, counted against the quota). */
   video?: import('./videoStorage').AccountVideo;
   audience: LibraryAudienceFlags;
+  /** The player this item is tagged to; it also shows on that player's report card screen. */
+  athleteId?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -1518,6 +1522,8 @@ export interface LibraryItemInput {
   /** The video was uploaded to account storage and is attached after the item exists. */
   uploadedVideo?: boolean;
   audience: LibraryAudienceFlags;
+  /** Tag a player (null clears the tag on update). */
+  athleteId?: string | null;
 }
 
 // --- Player report cards ---------------------------------------------------------
@@ -1565,3 +1571,17 @@ export interface PlayerReportCardInput {
   /** Attachments already on the card that should stay (uploads are added separately). */
   attachments: ReportCardAttachment[];
 }
+
+export type DiscountCodePreview =
+  | { valid: false; message: string }
+  | {
+      valid: true;
+      code: string;
+      kind: 'percent' | 'amount';
+      percentOff?: number;
+      amountOffCents?: number;
+      duration: 'once' | 'forever' | 'repeating';
+      durationMonths?: number;
+      /** Empty = every paid plan. */
+      planTiers: string[];
+    };

@@ -40,11 +40,14 @@ export function EventDiscussion({
   seasonId,
   eventId,
   canManage = false,
+  hideVideo = false,
   currentUserId,
 }: {
   seasonId: string;
   eventId: string;
   canManage?: boolean;
+  /** Guardians do not get video options; those live on the subscriber's hub screens. */
+  hideVideo?: boolean;
   /** Lets a user remove their own comment. */
   currentUserId?: string;
 }) {
@@ -92,10 +95,11 @@ export function EventDiscussion({
   const confirm = (title: string, onYes: () => void) =>
     typeToConfirm.ask({ title: 'Remove', message: title, confirmLabel: 'Remove', onConfirm: onYes });
 
+  const visibleFiles = hideVideo ? files.data?.filter((f) => kindOf(f) !== 'video') : files.data;
   const counts = { video: 0, info: 0, image: 0 };
-  for (const f of files.data ?? []) counts[kindOf(f)] += 1;
+  for (const f of visibleFiles ?? []) counts[kindOf(f)] += 1;
   const indicators = [
-    { key: 'video', icon: HUB_ICONS.video, label: 'Video', count: files.data ? counts.video : undefined },
+    ...(hideVideo ? [] : [{ key: 'video', icon: HUB_ICONS.video, label: 'Video', count: files.data ? counts.video : undefined }]),
     { key: 'info', icon: HUB_ICONS.info, label: 'Info', count: files.data ? counts.info : undefined },
     { key: 'image', icon: HUB_ICONS.image, label: 'Photo', count: files.data ? counts.image : undefined },
     { key: 'comments', icon: HUB_ICONS.chat, label: 'Comments', count: comments.data?.length },
@@ -138,10 +142,10 @@ export function EventDiscussion({
           <View className="gap-1.5">
             <Text className="text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>Files</Text>
             {files.isLoading ? <ActivityIndicator /> : null}
-            {files.data?.length === 0 ? (
+            {visibleFiles?.length === 0 ? (
               <Text className="text-sm" style={{ color: colors.inkFaint }}>No files attached.</Text>
             ) : null}
-            {files.data?.map((f) => (
+            {visibleFiles?.map((f) => (
               <View key={f.id} className="flex-row items-center justify-between rounded-md border px-3 py-2" style={{ borderColor: colors.border, backgroundColor: colors.tile }}>
                 <Pressable className="flex-1 pr-2" disabled={!f.url} onPress={() => f.url && Linking.openURL(f.url)}>
                   <Text className="text-sm font-semibold" numberOfLines={1} style={{ color: colors.primary }}>{f.name}</Text>

@@ -143,6 +143,8 @@ export default function NewAssessmentScreen() {
       if (!defaultUnit) defaultUnit = 'ft';
     } else if (rubricType === 'speed') {
       if (!defaultUnit) defaultUnit = 'mph';
+    } else if (rubricType === 'quantity') {
+      if (!defaultUnit) defaultUnit = 'reps';
     }
     const minNum = rubricMinStr.trim() !== '' ? parseFloat(rubricMinStr) : undefined;
     const maxNum = rubricMaxStr.trim() !== '' ? parseFloat(rubricMaxStr) : undefined;
@@ -693,7 +695,7 @@ export default function NewAssessmentScreen() {
                 value={rubricUnit}
                 onChangeText={setRubricUnit}
                 placeholder={
-                  rubricType === 'time' ? 'e.g. sec, s, min' : rubricType === 'speed' ? 'e.g. mph, km/h' : 'e.g. ft, m, inches'
+                  rubricType === 'time' ? 'e.g. sec, s, min' : rubricType === 'speed' ? 'e.g. mph, km/h' : rubricType === 'quantity' ? 'e.g. reps, goals, passes' : 'e.g. ft, m, inches'
                 }
               />
 

@@ -1,8 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, Linking, Switch, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useMutation } from '@tanstack/react-query';
-import { Badge, Button, Card } from '@/components/ui';
+import { Badge, Button, Card, Input } from '@/components/ui';
 import { StorageMeterBar } from '@/components/video/StorageMeter';
 import {
   useAccountVideosQuery,
@@ -16,6 +16,9 @@ import {
   VIDEO_STORAGE_PLANS,
   formatBytes,
   formatPlanPrice,
+  discountedPriceCents,
+  formatCents,
+  type StorageDiscount,
   type AccountVideo,
   type VideoContext,
   type VideoStorageGb,
@@ -52,13 +55,37 @@ export function VideoStoragePanel() {
   const manage = useManageVideoStorageMutation();
   const native = useNativeVideoStoragePurchase();
 
+  // A founder-issued discount code. Only for the Stripe checkout; App Store and Google Play
+  // purchases are priced by the store and take their own offer codes instead.
+  const [codeInput, setCodeInput] = useState('');
+  const [applied, setApplied] = useState<(StorageDiscount & { code: string; duration: string }) | null>(null);
+  const [checkingCode, setCheckingCode] = useState(false);
+  const applyCode = async () => {
+    const value = codeInput.trim();
+    if (!value) return;
+    setCheckingCode(true);
+    try {
+      const r = await getDataSource().previewDiscountCode(value, 'video_storage');
+      if (!r.valid) {
+        Alert.alert('Discount code', r.message);
+        return;
+      }
+      setApplied({ code: r.code, kind: r.kind, percentOff: r.percentOff, amountOffCents: r.amountOffCents, duration: r.duration });
+      setCodeInput('');
+    } catch (e) {
+      Alert.alert('Discount code', e instanceof Error ? e.message : 'That code could not be checked.');
+    } finally {
+      setCheckingCode(false);
+    }
+  };
+
   const buy = useMutation({
     mutationFn: async (gb: VideoStorageGb) => {
       if (native) {
         await purchaseVideoStorageNative(gb);
         return;
       }
-      const res = await getDataSource().createVideoStorageCheckoutSession(gb);
+      const res = await getDataSource().createVideoStorageCheckoutSession(gb, { discountCode: applied?.code });
       if (res?.url) await Linking.openURL(res.url);
     },
     onError: (e) => Alert.alert('Could not start the purchase', e instanceof Error ? e.message : 'Try again.'),
@@ -146,6 +173,28 @@ export function VideoStoragePanel() {
               One yearly add-on, shared by every team on your account. Videos are compressed to 720p before they upload, and
               are never deleted because of age.
             </Text>
+            {native ? null : applied ? (
+              <View className="flex-row items-center justify-between rounded-xl border p-3" style={{ borderColor: colors.primary }}>
+                <Text className="flex-1 text-sm font-bold" style={{ color: colors.ink }}>
+                  Code {applied.code} applied:{' '}
+                  {applied.kind === 'percent' ? `${applied.percentOff}% off` : `${formatCents(applied.amountOffCents ?? 0)} off`}
+                  {applied.duration === 'once' ? ' your first year' : applied.duration === 'forever' ? ' every year' : ''}
+                </Text>
+                <Button size="sm" variant="ghost" label="Remove" onPress={() => setApplied(null)} />
+              </View>
+            ) : (
+              <View className="gap-2">
+                <Input
+                  label="Discount code"
+                  value={codeInput}
+                  onChangeText={(v) => setCodeInput(v.toUpperCase())}
+                  placeholder="Enter a code"
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                />
+                <Button size="sm" variant="secondary" label="Apply" loading={checkingCode} disabled={!codeInput.trim()} onPress={applyCode} />
+              </View>
+            )}
             {VIDEO_STORAGE_PLANS.map((plan) => (
               <View
                 key={plan.gb}
@@ -157,7 +206,14 @@ export function VideoStoragePanel() {
                     {plan.name} · {plan.label}
                   </Text>
                   <Text className="text-sm" style={{ color: colors.inkMuted }}>
-                    {formatPlanPrice(plan)}
+                    {applied && !native ? (
+                      <>
+                        <Text style={{ textDecorationLine: 'line-through' }}>{formatPlanPrice(plan)}</Text>
+                        <Text style={{ color: colors.primary, fontWeight: 'bold' }}>{`  ${formatCents(discountedPriceCents(plan.priceCents, applied))}`}</Text>
+                      </>
+                    ) : (
+                      formatPlanPrice(plan)
+                    )}
                   </Text>
                 </View>
                 <Button

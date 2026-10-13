@@ -217,11 +217,14 @@ function storageGbOf(subscription: any): number {
   const fromKey = /^squadowl_video_storage_(\d+)gb(?:_\d+)?_yearly$/.exec(price?.lookup_key ?? '');
   const valid = [1, 5, 25, 100];
   if (fromKey && valid.includes(Number(fromKey[1]))) return Number(fromKey[1]);
+  // Before the metadata: a size changed in Stripe's own page (an upgrade) never updates it, so with
+  // prices that carry no lookup key the metadata would keep reporting the size the customer left.
+  const bySize: Record<number, number> = { 2500: 1, 5000: 5, 15000: 25, 35000: 100 };
+  if (price?.currency === 'cad' && bySize[price?.unit_amount]) return bySize[price.unit_amount];
   const fromMeta = Number(subscription.metadata?.storageGb) || 0;
   if (fromMeta === 20) return 25;
   if (valid.includes(fromMeta)) return fromMeta;
-  const bySize: Record<number, number> = { 2500: 1, 5000: 5, 15000: 25, 35000: 100 };
-  return bySize[price?.unit_amount] ?? 0;
+  return 0;
 }
 
 serve(async (req: Request) => {
@@ -308,7 +311,21 @@ serve(async (req: Request) => {
         // Video storage add-on: switches the account's storage size on. It is state, not a
         // counter, so a redelivered event just writes the same values again.
         if (accountId && session.metadata?.type === 'video_storage') {
-          const gb = Number(session.metadata?.storageGb) || 0;
+          // A payment that has not cleared yet (a delayed method) leaves the storage off; the
+          // subscription's own update event switches it on once Stripe marks it active.
+          if (session.payment_status === 'unpaid') {
+            console.log(`Video storage checkout ${session.id} is not paid yet; waiting for the subscription to go active.`);
+            break;
+          }
+          let gb = Number(session.metadata?.storageGb) || 0;
+          if (![1, 5, 25, 100].includes(gb) && session.subscription) {
+            // Never write a size that is not one of ours: that would switch a paying customer's storage off.
+            gb = storageGbOf(await stripe.subscriptions.retrieve(session.subscription as string));
+          }
+          if (![1, 5, 25, 100].includes(gb)) {
+            console.error(`Video storage checkout ${session.id} has no valid size; storage not activated.`);
+            return new Response(JSON.stringify({ error: 'Unknown video storage size' }), { status: 500 });
+          }
           const { error } = await supabaseAdmin.rpc('set_video_storage', {
             p_account_id: accountId,
             p_gb: gb,

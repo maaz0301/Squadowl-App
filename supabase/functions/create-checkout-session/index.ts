@@ -197,12 +197,12 @@ serve(async (req) => {
     const discountCode = typeof rawDiscountCode === 'string' ? rawDiscountCode.trim() : '';
     let discount: any = null;
     if (discountCode) {
-      if (isTeamLicense || isVideoStorage) {
-        throw new Error('Discount codes apply to plan upgrades only.');
+      if (isTeamLicense) {
+        throw new Error('Discount codes do not apply to additional teams.');
       }
       const { data: check, error: checkErr } = await supabaseAdmin.rpc('check_discount_code', {
         p_code: discountCode,
-        p_plan_tier: String(planTier ?? '').toLowerCase(),
+        p_plan_tier: isVideoStorage ? 'video_storage' : String(planTier ?? '').toLowerCase(),
         p_account_id: accountId,
       });
       if (checkErr) {
@@ -289,6 +289,8 @@ serve(async (req) => {
             storageGb: String(storageGb),
             interval: 'year',
             referralCreditsCents: String(creditCents),
+            // Tells the webhook which discount code to record a use of.
+            ...(discount ? { discountCodeId: discount.id, discountCode: discount.code } : {}),
           }
         : isTeamLicense
         ? {

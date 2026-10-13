@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Text, View, Alert, Pressable, Platform, Switch } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Button, Card, Chip, ErrorState, Header, Input, LoadingState, Screen, Badge } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
@@ -17,13 +19,98 @@ import {
 } from '@/data/rubrics';
 import { SCORING_TYPES, type ScoringType, type RankingDirection } from '@/data/types';
 import { benchmarkMax, canHaveBenchmark, formatBenchmarkValue, isValidBenchmark } from '@/data/benchmarks';
-import { moveItem } from '@/lib/reorder';
+import { moveItem, useOptimisticOrder } from '@/lib/reorder';
 import { parseTimeText } from '@/lib/timeEntry';
 
 /** Weights print as whole percentages where they are whole, e.g. "25%" / "16.7%". */
 function formatPct(value: number): string {
   const rounded = Math.round(value * 10) / 10;
   return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}%`;
+}
+
+const NO_RUBRICS: never[] = [];
+
+/**
+ * One rubric row with a grip on the left: press and hold it, then drag. The row
+ * follows the finger and, on release, lands where the finger left it (judged by
+ * the neighbours' measured heights). The new order shows at once; saving happens behind it.
+ */
+function DraggableRow({
+  index,
+  total,
+  heightOf,
+  onMeasure,
+  onMove,
+  gripColor,
+  borderColor,
+  children,
+}: {
+  index: number;
+  total: number;
+  heightOf: (index: number) => number;
+  onMeasure: (height: number) => void;
+  onMove: (from: number, to: number) => void;
+  gripColor: string;
+  borderColor: string;
+  children: ReactNode;
+}) {
+  const translateY = useSharedValue(0);
+  const lifted = useSharedValue(0);
+
+  const drop = (dy: number) => {
+    let target = index;
+    let rest = dy;
+    if (dy > 0) {
+      for (let j = index + 1; j < total && rest > heightOf(j) / 2; j++) {
+        rest -= heightOf(j);
+        target = j;
+      }
+    } else {
+      for (let j = index - 1; j >= 0 && -rest > heightOf(j) / 2; j--) {
+        rest += heightOf(j);
+        target = j;
+      }
+    }
+    if (target !== index) onMove(index, target);
+  };
+
+  const pan = Gesture.Pan()
+    .activateAfterLongPress(150)
+    .onStart(() => {
+      lifted.value = 1;
+    })
+    .onUpdate((e) => {
+      translateY.value = e.translationY;
+    })
+    .onEnd((e) => {
+      runOnJS(drop)(e.translationY);
+    })
+    .onFinalize(() => {
+      lifted.value = 0;
+      translateY.value = 0;
+    });
+
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }, { scale: lifted.value ? 1.02 : 1 }],
+    zIndex: lifted.value ? 10 : 0,
+    opacity: lifted.value ? 0.92 : 1,
+    elevation: lifted.value ? 4 : 0,
+  }));
+
+  return (
+    <Animated.View
+      onLayout={(e) => onMeasure(e.nativeEvent.layout.height)}
+      className="flex-row items-center justify-between py-2 border-b"
+      style={[{ borderColor }, style]}
+    >
+      <GestureDetector gesture={pan}>
+        <View accessibilityLabel="Hold and drag to reorder" hitSlop={8} className="pr-2 justify-center self-stretch">
+          <Text style={{ color: gripColor, fontSize: 20 }}>⠿</Text>
+        </View>
+      </GestureDetector>
+      {children}
+    </Animated.View>
+  );
 }
 
 export default function RubricsScreen() {
@@ -71,6 +158,9 @@ export default function RubricsScreen() {
   // the loading render would change hook order. A delegated team's tryout
   // gates against the owning club's tier, not the viewer's own.
   const tier = useEffectivePlanTier(tryoutQuery.data?.teamId);
+  // Also a hook, so before the guards below.
+  const rowHeights = useRef<Record<string, number>>({});
+  const [orderedCustom, setOrder] = useOptimisticOrder(tryoutQuery.data?.settings.customRubrics ?? NO_RUBRICS);
 
   const weightNum = weightStr.trim() !== '' ? parseFloat(weightStr) : undefined;
   const weightValid = weightNum == null || (!isNaN(weightNum) && weightNum >= 1 && weightNum <= 100);
@@ -88,7 +178,7 @@ export default function RubricsScreen() {
   }
 
   const tryout = tryoutQuery.data;
-  const custom = tryout.settings.customRubrics ?? [];
+  const custom = orderedCustom;
   const existingCategories = Array.from(new Set(custom.map((r) => r.category).filter((c): c is string => !!c)));
   const plan = getPlanDefinition(tier);
   const customLimit = plan.limits.customRubrics;
@@ -132,6 +222,7 @@ export default function RubricsScreen() {
     if (scoringType === 'time' && !defaultUnit) defaultUnit = 'sec';
     else if (scoringType === 'distance' && !defaultUnit) defaultUnit = 'ft';
     else if (scoringType === 'speed' && !defaultUnit) defaultUnit = 'mph';
+    else if (scoringType === 'quantity' && !defaultUnit) defaultUnit = 'reps';
 
     const minNum = minValStr.trim() !== '' ? readNumber(minValStr) : undefined;
     const maxNum = maxValStr.trim() !== '' ? readNumber(maxValStr) : undefined;
@@ -173,16 +264,21 @@ export default function RubricsScreen() {
 
   // The order here is the order the drills are scored in, so coaches can fix a
   // list they entered out of sequence.
-  const moveCustom = async (from: number, to: number) => {
-    if (to < 0 || to >= custom.length) return;
+  const saveOrder = async (next: typeof custom) => {
+    setOrder([...next]);
     try {
       await updateTryout.mutateAsync({
         id: tryout.id,
-        updates: { settings: { ...tryout.settings, customRubrics: moveItem(custom, from, to) } },
+        updates: { settings: { ...tryout.settings, customRubrics: [...next] } },
       });
     } catch (err: any) {
+      setOrder(null);
       showAlert('Error', err.message || 'Failed to change the order.');
     }
+  };
+  const moveCustom = (from: number, to: number) => {
+    if (from === to || to < 0 || to >= custom.length) return;
+    void saveOrder(moveItem(custom, from, to));
   };
 
   const removeCustom = async (keyToRemove: string) => {
@@ -285,7 +381,18 @@ export default function RubricsScreen() {
           }
 
           return (
-            <View key={r.key} className="flex-row items-center justify-between py-2 border-b" style={{ borderColor: colors.border }}>
+            <DraggableRow
+              key={r.key}
+              index={i}
+              total={custom.length}
+              heightOf={(j) => rowHeights.current[custom[j]?.key ?? ''] ?? 0}
+              onMeasure={(h) => {
+                rowHeights.current[r.key] = h;
+              }}
+              onMove={moveCustom}
+              gripColor={colors.inkFaint}
+              borderColor={colors.border}
+            >
               <View className="flex-1 mr-2 gap-1">
                 <View className="flex-row items-center flex-wrap gap-2">
                   <Text className="font-bold text-base" style={{ color: colors.ink }}>
@@ -303,7 +410,7 @@ export default function RubricsScreen() {
               <View className="items-center mr-1">
                 <Pressable
                   onPress={() => moveCustom(i, i - 1)}
-                  disabled={i === 0 || updateTryout.isPending}
+                  disabled={i === 0}
                   hitSlop={8}
                   accessibilityRole="button"
                   accessibilityLabel={`Move ${r.label} up`}
@@ -313,7 +420,7 @@ export default function RubricsScreen() {
                 </Pressable>
                 <Pressable
                   onPress={() => moveCustom(i, i + 1)}
-                  disabled={i === custom.length - 1 || updateTryout.isPending}
+                  disabled={i === custom.length - 1}
                   hitSlop={8}
                   accessibilityRole="button"
                   accessibilityLabel={`Move ${r.label} down`}
@@ -334,7 +441,7 @@ export default function RubricsScreen() {
                   ✕
                 </Text>
               </Pressable>
-            </View>
+            </DraggableRow>
           );
         })}
 
@@ -443,7 +550,7 @@ export default function RubricsScreen() {
                 value={unit}
                 onChangeText={setUnit}
                 placeholder={
-                  scoringType === 'time' ? 'e.g. sec, s, min' : scoringType === 'speed' ? 'e.g. mph, km/h' : 'e.g. ft, m, inches'
+                  scoringType === 'time' ? 'e.g. sec, s, min' : scoringType === 'speed' ? 'e.g. mph, km/h' : scoringType === 'quantity' ? 'e.g. reps, goals, passes' : 'e.g. ft, m, inches'
                 }
               />
 

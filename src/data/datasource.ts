@@ -296,6 +296,11 @@ export interface DataSource {
     newFiles?: { uri: string; name: string; type: string; size: number }[],
   ): Promise<import('./types').PlayerReportCard>;
   deletePlayerReportCard(card: import('./types').PlayerReportCard): Promise<void>;
+  /**
+   * Long-lived addresses for uploaded report card files, so a PDF export can link to
+   * them and the family can open them from the document. Keyed by storage path.
+   */
+  getReportCardFileLinks(paths: string[]): Promise<Record<string, string>>;
   /** AI comments for one player drawn only from the chosen evaluations. */
   generateReportCardComments(
     tryoutId: string,
@@ -342,7 +347,9 @@ export interface DataSource {
   getVideoContextAccount(context: import('./videoStorage').VideoContext, contextId: string): Promise<string | null>;
   /** Records that the coach typed DELETE before cancelling or downgrading a plan that holds videos. */
   acknowledgeVideoDeletion(accountId: string): Promise<void>;
-  createVideoStorageCheckoutSession(gb: number, options?: { applyCredits?: boolean }): Promise<{ url: string }>;
+  /** Whether a founder-issued discount code can be used by this account right now (preview only; checkout checks it again). */
+  previewDiscountCode(code: string, planTier?: string): Promise<import('./types').DiscountCodePreview>;
+  createVideoStorageCheckoutSession(gb: number, options?: { applyCredits?: boolean; discountCode?: string }): Promise<{ url: string }>;
   /** Stripe-billed storage only. Cancelling needs `confirm: 'DELETE'`. */
   manageVideoStorage(
     action: 'change' | 'cancel' | 'resume',
@@ -387,6 +394,8 @@ export interface DataSource {
   getSessionProgress(tryoutId: string): Promise<Record<string, number>>;
   getPlayerProfile(athleteId: string, alsoAthleteIds?: string[]): Promise<PlayerProfile>;
   listAthletes(): Promise<Athlete[]>;
+  /** Players whose name starts with the search words, a few at a time (for pickers; never loads the full list). */
+  searchAthletes(term: string, limit?: number): Promise<Athlete[]>;
   /** Lean list for the Athlete Hub: names, photo, position and contacts only. */
   listAthleteHub(
     search: string,

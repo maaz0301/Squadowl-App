@@ -27,6 +27,7 @@ import {
 } from '@/features/queries';
 import { getDataSource } from '@/data';
 import { VideoStoragePanel } from '@/components/video/VideoStoragePanel';
+import { PlayerTagField } from '@/components/video/PlayerTagField';
 import { VideoPlayerModal } from '@/components/video/VideoPlayerModal';
 import {
   VIDEO_PHASE_LABEL,
@@ -73,6 +74,8 @@ interface FormState {
   body: string;
   url: string;
   audience: LibraryAudienceFlags;
+  /** The player a video is tagged to, shown on that player's report card screen. */
+  athleteId: string | null;
   file: PickedAttachment | null;
   /** A video chosen from the gallery, compressed and uploaded to account storage on save. */
   video: LocalVideoFile | null;
@@ -84,6 +87,7 @@ const emptyForm = (): FormState => ({
   body: '',
   url: '',
   audience: { ...DEFAULT_LIBRARY_AUDIENCE },
+  athleteId: null,
   file: null,
   video: null,
 });
@@ -139,6 +143,7 @@ export default function LibraryScreen() {
       body: item.body,
       url: item.url ?? '',
       audience: { ...item.audience },
+      athleteId: item.athleteId ?? null,
       file: null,
       video: null,
     });
@@ -186,7 +191,7 @@ export default function LibraryScreen() {
       });
       videoId = uploaded.id;
       const item = await createItem.mutateAsync({
-        input: { kind: 'video', title: form.title, body: form.body, url: form.url, audience: form.audience, uploadedVideo: true },
+        input: { kind: 'video', title: form.title, body: form.body, url: form.url, audience: form.audience, athleteId: form.athleteId, uploadedVideo: true },
       });
       await getDataSource().attachAccountVideo(uploaded.id, 'library', item.id);
       invalidateVideos();
@@ -209,13 +214,13 @@ export default function LibraryScreen() {
     try {
       if (isNew) {
         await createItem.mutateAsync({
-          input: { kind: form.kind, title: form.title, body: form.body, url: form.url, audience: form.audience },
+          input: { kind: form.kind, title: form.title, body: form.body, url: form.url, audience: form.audience, athleteId: form.kind === 'video' ? form.athleteId : null },
           file: form.kind === 'file' || form.kind === 'video' ? (form.file ?? undefined) : undefined,
         });
       } else if (editing) {
         await updateItem.mutateAsync({
           id: editing.id,
-          updates: { title: form.title, body: form.body, url: form.url, audience: form.audience },
+          updates: { title: form.title, body: form.body, url: form.url, audience: form.audience, ...(form.kind === 'video' ? { athleteId: form.athleteId } : {}) },
         });
       }
       setEditing(null);
@@ -443,6 +448,10 @@ export default function LibraryScreen() {
                 </Text>
               )}
             </View>
+          ) : null}
+
+          {form.kind === 'video' ? (
+            <PlayerTagField value={form.athleteId} onChange={(athleteId) => setForm((f) => ({ ...f, athleteId }))} />
           ) : null}
 
           <View className="rounded-xl border p-3 gap-1" style={{ borderColor: colors.border }}>
