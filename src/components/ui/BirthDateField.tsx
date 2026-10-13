@@ -49,13 +49,13 @@ function PickerField({
         onPress={() => setOpen(true)}
         accessibilityRole="button"
         accessibilityLabel={title}
-        className="flex-1 rounded-md px-3 py-3 border min-h-[48px] flex-row items-center justify-between"
+        className="flex-1 min-w-0 rounded-md pl-2.5 pr-2 py-3 border min-h-[48px] flex-row items-center justify-between"
         style={{ backgroundColor: colors.field, borderColor: hasError ? colors.danger : colors.border }}
       >
-        <Text className="text-base" numberOfLines={1} style={{ color: chosen ? colors.ink : colors.placeholder }}>
+        <Text className="text-base flex-1" numberOfLines={1} ellipsizeMode="clip" style={{ color: chosen ? colors.ink : colors.placeholder }}>
           {chosen ? chosen.label : placeholder}
         </Text>
-        <Text style={{ color: colors.inkMuted, fontSize: 14 }}>▾</Text>
+        <Text style={{ color: colors.inkMuted, fontSize: 12, marginLeft: 2 }}>▾</Text>
       </Pressable>
 
       <Modal
@@ -151,7 +151,7 @@ export function BirthDateField({ label, year = '', dateOfBirth = '', onChange, e
           {label}
         </Text>
       ) : null}
-      <View className="flex-row gap-2">
+      <View className="flex-row gap-1.5">
         <PickerField
           title="Year of Birth"
           placeholder="Year"
