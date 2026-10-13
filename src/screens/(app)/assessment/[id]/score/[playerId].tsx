@@ -1,4 +1,6 @@
 import { useTerms } from '@/lib/terms';
+import { NotAttemptedAll } from '@/components/ui/NotAttemptedAll';
+import { isNotAttempted, withNotAttempted, withScore, withoutScore } from '@/lib/notAttempted';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -638,6 +640,15 @@ export default function ScoreScreen() {
         </View>
       </ScrollView>
 
+      <NotAttemptedAll
+        keys={categories.flatMap((c) => c.subskills.map((s) => s.key))}
+        scores={workingScores}
+        onChange={(next) => {
+          setWorkingScores(next);
+          setValue('scores', next, { shouldDirty: true });
+        }}
+      />
+
       {categories.map((cat) => {
         const catAvg = categoryAverage(scores ?? {}, cat.subskills);
         return (
@@ -665,15 +676,21 @@ export default function ScoreScreen() {
                   benchmarkNote={s.benchmarkNote}
                   value={scores?.[s.key]}
                   onFocus={revealField(s.key)}
+                  notAttempted={isNotAttempted(workingScores, s.key)}
                   onChange={(v) => {
-                    const newScores = { ...workingScores, [s.key]: v };
+                    const newScores = withScore(workingScores, s.key, v);
                     setWorkingScores(newScores);
                     setValue('scores', newScores, { shouldDirty: true });
                   }}
                   onClear={() => {
-                    const { [s.key]: _removed, ...rest } = workingScores ?? {};
+                    const rest = withoutScore(workingScores, s.key);
                     setWorkingScores(rest);
                     setValue('scores', rest, { shouldDirty: true });
+                  }}
+                  onNotAttempted={() => {
+                    const next = withNotAttempted(workingScores, s.key);
+                    setWorkingScores(next);
+                    setValue('scores', next, { shouldDirty: true });
                   }}
                 />
               </View>

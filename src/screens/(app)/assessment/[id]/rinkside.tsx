@@ -1,4 +1,6 @@
 import { useTerms } from '@/lib/terms';
+import { NotAttemptedAll } from '@/components/ui/NotAttemptedAll';
+import { isNotAttempted, withNotAttempted, withScore, withoutScore } from '@/lib/notAttempted';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { Dimensions, ScrollView, Text, View, Alert } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -508,6 +510,8 @@ export default function RinksideScreen() {
             </View>
           )}
 
+          <NotAttemptedAll keys={categories.flatMap((c) => c.subskills.map((s) => s.key))} scores={workingScores} onChange={setWorkingScores} />
+
           {categories.map((cat) => {
             const catAvg = categoryAverage(workingScores, cat.subskills);
             return (
@@ -534,11 +538,10 @@ export default function RinksideScreen() {
                     benchmark={s.benchmark}
                     benchmarkNote={s.benchmarkNote}
                     value={workingScores[s.key]}
-                    onChange={(v) => setWorkingScores({ ...workingScores, [s.key]: v })}
-                    onClear={() => {
-                      const { [s.key]: _removed, ...rest } = workingScores;
-                      setWorkingScores(rest);
-                    }}
+                    notAttempted={isNotAttempted(workingScores, s.key)}
+                    onChange={(v) => setWorkingScores(withScore(workingScores, s.key, v))}
+                    onClear={() => setWorkingScores(withoutScore(workingScores, s.key))}
+                    onNotAttempted={() => setWorkingScores(withNotAttempted(workingScores, s.key))}
                   />
                 ))}
               </View>

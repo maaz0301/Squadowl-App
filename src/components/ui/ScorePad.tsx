@@ -129,6 +129,10 @@ interface ScorePadProps {
   onChange: (value: number) => void;
   /** Called when a measured entry is emptied, so a wrong figure can be taken back out. */
   onClear?: () => void;
+  /** Marks the test as not attempted: no result, and reports print N/A for it. */
+  onNotAttempted?: () => void;
+  /** The test is marked as not attempted. */
+  notAttempted?: boolean;
   onFocus?: () => void;
   /** The coach's target for this rubric, shown under the entry with its explanation. */
   benchmark?: number;
@@ -496,20 +500,28 @@ function BinaryButton({ label, selected, tone, onPress }: BinaryButtonProps) {
  */
 export function ScorePad(props: ScorePadProps) {
   const colors = useThemeColors();
-  const { value, onClear } = props;
-  if (!onClear) return <ScorePadBase {...props} />;
+  const { value, onClear, onNotAttempted, notAttempted } = props;
+  const markNotAttempted = onNotAttempted ?? onClear;
+  if (!markNotAttempted) return <ScorePadBase {...props} />;
   return (
     <View>
       <ScorePadBase {...props} />
       <View className="flex-row items-center justify-between" style={{ marginTop: -10, marginBottom: 16 }}>
-        {value == null ? (
-          <Text className="text-xs italic" style={{ color: colors.inkMuted }}>
-            Not scored: left out of the overall score
-          </Text>
+        {notAttempted ? (
+          <>
+            <Text className="flex-1 text-xs font-bold" style={{ color: colors.inkMuted }}>N/A: did not attempt, left out of the overall score</Text>
+            {onClear ? (
+              <Pressable onPress={onClear} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Undo not attempted for ${props.label}`}>
+                <Text className="text-xs font-bold" style={{ color: colors.primary }}>Undo</Text>
+              </Pressable>
+            ) : null}
+          </>
         ) : (
           <>
-            <Text className="text-xs" style={{ color: colors.inkMuted }}>Counts toward the overall score</Text>
-            <Pressable onPress={onClear} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Mark ${props.label} as not attempted`}>
+            <Text className={value == null ? 'text-xs italic' : 'text-xs'} style={{ color: colors.inkMuted }}>
+              {value == null ? 'Not scored: left out of the overall score' : 'Counts toward the overall score'}
+            </Text>
+            <Pressable onPress={markNotAttempted} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Mark ${props.label} as not attempted`}>
               <Text className="text-xs font-bold" style={{ color: colors.primary }}>Did not attempt</Text>
             </Pressable>
           </>
