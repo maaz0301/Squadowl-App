@@ -1,6 +1,6 @@
 import { useTerms } from '@/lib/terms';
 import { NotAttemptedAll } from '@/components/ui/NotAttemptedAll';
-import { isNotAttempted, withNotAttempted, withScore, withoutScore } from '@/lib/notAttempted';
+import { NOT_ATTEMPTED_SUFFIX, isNotAttempted, withNotAttempted, withScore, withoutScore } from '@/lib/notAttempted';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -480,6 +480,7 @@ export default function ScoreScreen() {
       }
 
       const currentFormStr = JSON.stringify(data);
+      let notAttemptedOnly = false;
       const hasUnsavedChanges = previousFormRef.current !== currentFormStr;
 
       if (hasUnsavedChanges) {
@@ -487,21 +488,27 @@ export default function ScoreScreen() {
         if (!hasScores) {
           // Every score was cleared on a saved session: that means "remove it".
           // A save needs a score, so without this a wrong session was stuck.
-          setSaving(false);
-          if (evalId) removeSession();
-          else Alert.alert('No scores entered', 'Please grade at least one subskill before saving.');
-          return;
+          // Every test was marked "did not attempt" on a session that is not saved yet:
+          // nothing to save, so move on quietly instead of asking for a score.
+          const onlyNotAttempted = !evalId && Object.keys(data.scores ?? {}).some((k) => k.endsWith(NOT_ATTEMPTED_SUFFIX));
+          if (!onlyNotAttempted) {
+            setSaving(false);
+            if (evalId) removeSession();
+            else Alert.alert('No scores entered', 'Please grade at least one subskill before saving.');
+            return;
+          }
+          notAttemptedOnly = true;
+        } else {
+          await saveEval.mutateAsync({
+            playerId: playerId!,
+            form: data,
+            evalId: evalId ?? undefined,
+          });
+          previousFormRef.current = currentFormStr;
         }
-
-        await saveEval.mutateAsync({
-          playerId: playerId!,
-          form: data,
-          evalId: evalId ?? undefined,
-        });
-        previousFormRef.current = currentFormStr;
       }
 
-      if (playerId) {
+      if (playerId && !notAttemptedOnly) {
         markSessionCompleted(playerId, data.session);
       }
 
@@ -509,6 +516,8 @@ export default function ScoreScreen() {
       if (!closeAfter && currentIdx !== -1 && currentIdx < SESSIONS.length - 1) {
         const nextSess = SESSIONS[currentIdx + 1];
         const nextEvalId = scoredSessions.get(nextSess) || null;
+        // A session skipped entirely moves on empty, so its N/A marks are not carried over.
+        if (notAttemptedOnly) clearWorkingScores();
         navigation.setParams({ evalId: nextEvalId, session: nextSess });
       } else {
         clearWorkingScores();
