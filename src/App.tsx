@@ -13,6 +13,8 @@ import { useAuthStore } from './state/authStore';
 import { getSupabase } from './lib/supabase';
 import { usePushNotifications } from './hooks/usePushNotifications';
 import { featureForRoute, trackFeatureUse } from './lib/analytics';
+import { UpdateRequiredGate } from './components/UpdateRequiredGate';
+import { installErrorReporting } from './lib/errorReporting';
 
 // react-native-keyboard-aware-scroll-view (used by every <Screen scroll>
 // screen, e.g. login/signup/forgot-password) polls whether the focused
@@ -87,6 +89,11 @@ export default function App() {
   usePushNotifications();
 
   useEffect(() => {
+    // Uncaught errors show up in the founder dashboard's error alerts.
+    installErrorReporting();
+  }, []);
+
+  useEffect(() => {
     // Hide the native splash screen once the JS app has booted
     SplashScreen.hide();
   }, []);
@@ -132,7 +139,9 @@ export default function App() {
               onReady={trackCurrentRoute}
               onStateChange={trackCurrentRoute}
             >
-              <RootNavigator />
+              <UpdateRequiredGate>
+                <RootNavigator />
+              </UpdateRequiredGate>
             </NavigationContainer>
           </QueryClientProvider>
         </AppThemeProvider>

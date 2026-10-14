@@ -9256,7 +9256,25 @@ export class SupabaseDataSource implements DataSource {
       console.warn('Could not check platform feature blocks:', error.message);
       return [];
     }
-    return ((data as string[] | null) ?? []).filter(isBlockableFeature);
+    const platform = ((data as string[] | null) ?? []).filter(isBlockableFeature);
+
+    // Sections the founder switched off for just this club (accounts.blocked_features).
+    // Best effort: a guardian has no account, and an older database has no column.
+    try {
+      const { accountId } = await this.ctx();
+      const { data: club, error: clubError } = await supabase
+        .from('accounts')
+        .select('blocked_features')
+        .eq('id', accountId)
+        .maybeSingle();
+      if (!clubError) {
+        const own = (((club as Record<string, any> | null)?.blocked_features ?? []) as string[]).filter(isBlockableFeature);
+        return Array.from(new Set([...platform, ...own]));
+      }
+    } catch {
+      // No account context: platform-wide blocks only.
+    }
+    return platform;
   }
 
   async getPlatformBlockedPlanTiers(): Promise<PlanTier[]> {

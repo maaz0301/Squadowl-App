@@ -11,6 +11,7 @@ import {
 } from '../_shared/ics.ts';
 import { hasMappableLocation, mapUrl } from '../_shared/maps.ts';
 import { pushForEmail } from '../_shared/push.ts';
+import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
 
 const SENDGRID_API_KEY = Deno.env.get('SENDGRID_API_KEY') || '';
 const FROM_EMAIL = Deno.env.get('SENDGRID_FROM_EMAIL') || 'noreply@tryouthq.ca';
@@ -835,6 +836,23 @@ serve(async (req: Request) => {
     // list, which the catch below reports back to the caller unchanged.
     if (!sgRes.ok) {
       throw new Error(`SendGrid ${sgRes.status}: ${await sgRes.text()}`);
+    }
+
+    // Kept so the founder console can send this same email again when someone says it never
+    // arrived. Secrets never go in: an invite's temporary password and a reset code are not
+    // stored, and those two types are marked not resendable (they have their own re-issue paths).
+    try {
+      const SECRET_KEYS = ['password', 'code', 'token'];
+      const stored = Object.fromEntries(Object.entries(payload ?? {}).filter(([k]) => !SECRET_KEYS.includes(k)));
+      await supabaseAdmin.from('email_outbox').insert({
+        to_email: String(to).toLowerCase(),
+        type,
+        subject,
+        payload: stored,
+        resendable: !['org_invite', 'password_reset'].includes(type),
+      });
+    } catch (e) {
+      console.warn('Could not record the email in the outbox:', e);
     }
 
     // The same news in the recipient's phone notification bar, when they have
