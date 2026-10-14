@@ -140,7 +140,18 @@ serve(async (req) => {
       : isTeamLicense
       ? 'STRIPE_PRICE_ID_TEAM_LICENSE_YEARLY'
       : `STRIPE_PRICE_ID_${String(planTier ?? '').toUpperCase()}_${interval === 'year' ? 'YEARLY' : 'MONTHLY'}`;
-    const rawPriceId = Deno.env.get(envKey);
+    // A price the founder set from the console (plan_prices) wins over the configured one.
+    let overriddenPriceId: string | null = null;
+    if (!isVideoStorage && !isTeamLicense) {
+      const { data: overridden } = await supabaseAdmin
+        .from('plan_prices')
+        .select('stripe_price_id')
+        .eq('tier', String(planTier ?? '').toLowerCase())
+        .eq('billing_interval', interval === 'year' ? 'year' : 'month')
+        .maybeSingle();
+      overriddenPriceId = overridden?.stripe_price_id ?? null;
+    }
+    const rawPriceId = overriddenPriceId ?? Deno.env.get(envKey);
     const priceId = rawPriceId && rawPriceId.trim() !== '' && rawPriceId !== 'undefined' && rawPriceId !== 'null' ? rawPriceId.trim() : null;
 
     let lineItem: any;

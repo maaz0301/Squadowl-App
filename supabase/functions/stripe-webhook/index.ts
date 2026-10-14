@@ -19,8 +19,20 @@ import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
  * (no Dashboard price ID configured) — see TIER_PRICES_CAD below, which
  * mirrors PLAN_DEFINITIONS in src/data/plans.ts.
  */
+/** Prices the founder set from the console (plan_prices): Stripe price id → tier. Loaded per request. */
+let overrideTiers: Record<string, string> = {};
+
+async function loadPriceOverrides(): Promise<void> {
+  try {
+    const { data } = await supabaseAdmin.from('plan_prices').select('tier, stripe_price_id');
+    overrideTiers = Object.fromEntries((data ?? []).map((r: any) => [r.stripe_price_id, r.tier]));
+  } catch (e) {
+    console.error('Could not load plan price overrides:', e);
+  }
+}
+
 function buildPriceIdToTier(): Record<string, string> {
-  const map: Record<string, string> = {};
+  const map: Record<string, string> = { ...overrideTiers };
   const envKeys: [string, string][] = [
     ['STRIPE_PRICE_ID_COACH_MONTHLY', 'coach'],
     ['STRIPE_PRICE_ID_COACH_YEARLY', 'coach'],
@@ -235,6 +247,7 @@ serve(async (req: Request) => {
   }
 
   try {
+    await loadPriceOverrides();
     const body = await req.text();
     // @ts-ignore: Deno global
     const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') as string;
@@ -297,6 +310,14 @@ serve(async (req: Request) => {
               p_discount_cents: Math.round(Number(session.total_details?.amount_discount) || 0),
             },
           );
+          if (!discountError && redemption !== null && session.amount_total != null) {
+            // What the customer actually paid, so the founder console can show revenue per code.
+            const { error: paidError } = await supabaseAdmin
+              .from('discount_code_redemptions')
+              .update({ amount_paid_cents: Math.round(Number(session.amount_total)) })
+              .eq('checkout_session_id', session.id);
+            if (paidError) console.error('Error recording discount code revenue:', paidError);
+          }
           if (discountError) {
             // The customer already has the discount; don't make Stripe redeliver
             // the whole event over the bookkeeping.
