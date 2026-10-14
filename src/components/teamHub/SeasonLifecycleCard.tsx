@@ -36,6 +36,9 @@ export function SeasonLifecycleCard({
   const updateTeam = useUpdateTeamMutation();
   const createSeason = useCreateSeasonMutation();
   const [starting, setStarting] = useState(false);
+  // Whether a season was still open when the dialog opened, so the warning does not
+  // flip on for the season this very dialog just created.
+  const [openAtStart, setOpenAtStart] = useState(false);
   const [name, setName] = useState('');
   const [year, setYear] = useState('');
   const [division, setDivision] = useState('');
@@ -45,6 +48,7 @@ export function SeasonLifecycleCard({
     setYear(nextYear);
     setName(nextYear ? `${nextYear} ${team.name}` : `${team.name} Season`);
     setDivision(currentSeason?.division ?? '');
+    setOpenAtStart(!!currentSeason);
     setStarting(true);
   };
 
@@ -111,7 +115,7 @@ export function SeasonLifecycleCard({
 
       <Modal visible={starting} title="Start New Season" onClose={() => setStarting(false)}>
         <View className="gap-3">
-          {currentSeason ? (
+          {openAtStart && currentSeason ? (
             <Text className="text-xs" style={{ color: colors.warning }}>
               "{currentSeason.name}" is still active. End it first, or both seasons stay open on this team.
             </Text>
@@ -123,7 +127,6 @@ export function SeasonLifecycleCard({
             The team's current players are added to the new season.
           </Text>
           <Button label="Start season" loading={createSeason.isPending || updateTeam.isPending} onPress={start} />
-          <Button label="Cancel" variant="ghost" onPress={() => setStarting(false)} />
         </View>
       </Modal>
     </>

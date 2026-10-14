@@ -593,6 +593,9 @@ export default function DashboardScreen() {
               }
             />
 
+            {/* Founder announcements reach everyone, guardians included, and sit at the top so they are seen. */}
+            <AnnouncementBanner />
+
             {/* Compact brand banner — a strip, not a splash, so the sections below
                 stay above the fold. */}
             {!isGuardianOnly && (
@@ -639,9 +642,6 @@ export default function DashboardScreen() {
 
             {/* Video storage: how full the account's shared quota is. Tapping opens Storage. */}
             {!isGuardianOnly ? <StorageMeterCard onPress={() => navigation.navigate('Library')} /> : null}
-
-            {/* Founder announcements reach everyone, guardians included. */}
-            <AnnouncementBanner />
 
             {!isGuardianOnly ? <SubscriptionEndingBanner /> : null}
 

@@ -4,8 +4,24 @@
     {
       "name": "web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "/Users/muhammadmaaz/Documents/GitHub/Athlete-Assessment-web"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "/Users/muhammadmaaz/Documents/GitHub/Athlete-Assessment-web"
+      ],
       "port": 3000
+    },
+    {
+      "name": "metro",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "react-native",
+        "start",
+        "--port",
+        "8081"
+      ],
+      "port": 8081
     }
   ]
 }
