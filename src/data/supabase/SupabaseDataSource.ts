@@ -6810,6 +6810,25 @@ export class SupabaseDataSource implements DataSource {
           }
         }
       }
+
+      // The team's own roster comes along too, so a season started on an
+      // existing team (e.g. next year's) begins with the players already on it.
+      const { data: teamPlayers } = await supabase
+        .from('team_roster')
+        .select('athlete_id, jersey')
+        .eq('team_id', form.teamId);
+      if (teamPlayers && teamPlayers.length > 0) {
+        const CHUNK = 200;
+        const rows = teamPlayers.map((p: Row) => ({ season_id: seasonId, athlete_id: p.athlete_id, jersey: p.jersey ?? null }));
+        for (let i = 0; i < rows.length; i += CHUNK) {
+          await supabase
+            .from('season_roster')
+            .upsert(rows.slice(i, i + CHUNK), { onConflict: 'season_id,athlete_id', ignoreDuplicates: true });
+        }
+        rosterRows = unwrap(
+          await supabase.from('season_roster').select('*, athletes(*)').eq('season_id', seasonId),
+        ) as Row[];
+      }
     }
 
     // A season one statement old has no events, no availability and no portal
@@ -9275,6 +9294,32 @@ export class SupabaseDataSource implements DataSource {
       // No account context: platform-wide blocks only.
     }
     return platform;
+  }
+
+  async getSupportAccessUntil(): Promise<number | null> {
+    const { supabase, accountId } = await this.ctx();
+    const { data, error } = await supabase.from('accounts').select('support_access_until').eq('id', accountId).maybeSingle();
+    if (error) throw new Error(error.message);
+    const until = (data as Row | null)?.support_access_until as string | null | undefined;
+    return until && toMs(until) > Date.now() ? toMs(until) : null;
+  }
+
+  async setSupportAccess(days: number): Promise<number | null> {
+    const { supabase, accountId } = await this.ctx();
+    const { data, error } = await supabase.rpc('set_support_access', { p_account_id: accountId, p_days: days });
+    if (error) throw new Error(error.message);
+    return data ? toMs(data as string) : null;
+  }
+
+  async getPlanPriceOverrides(): Promise<{ tier: string; interval: 'month' | 'year'; amountCents: number }[]> {
+    const { data, error } = await getSupabase().rpc('plan_price_overrides');
+    // Older database or offline: the built-in prices stand.
+    if (error) return [];
+    return ((data ?? []) as Row[]).map((r) => ({
+      tier: r.tier,
+      interval: r.billing_interval,
+      amountCents: Number(r.amount_cents),
+    }));
   }
 
   async getPlatformBlockedPlanTiers(): Promise<PlanTier[]> {

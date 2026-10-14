@@ -12,6 +12,7 @@ import {
   useReferralSummaryQuery,
   usePlatformBlockedFeaturesQuery,
   usePlatformBlockedPlanTiersQuery,
+  usePlanPriceOverridesQuery,
   useVideoStorageQuery,
 } from '@/features/queries';
 import { isVideoStorageTier } from '@/data/videoStorage';
@@ -60,6 +61,8 @@ export default function UpgradeScreen() {
   const restoreSession = useAuthStore((s) => s.restoreSession);
   const qc = useQueryClient();
   const { data: platformBlockedFeatures } = usePlatformBlockedFeaturesQuery();
+  // Prices the founder changed from the console; re-renders this screen once they arrive.
+  usePlanPriceOverridesQuery();
   const { data: blockedPlanTiers } = usePlatformBlockedPlanTiersQuery();
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
   const [loadingPortal, setLoadingPortal] = useState(false);

@@ -34,6 +34,7 @@ import { EditEvaluationModal } from '@/components/assessment/EditEvaluationModal
 import type { TryoutSummary } from '@/data/types';
 import { UsageNudgeBanner } from '@/components/UsageNudgeBanner';
 import { SubscriptionEndingBanner } from '@/components/SubscriptionEndingBanner';
+import { AnnouncementBanner } from '@/components/AnnouncementBanner';
 import { useAuthStore, useUser, usePermissions } from '@/state/authStore';
 import { useSessionStore } from '@/state/sessionStore';
 import {
@@ -638,6 +639,9 @@ export default function DashboardScreen() {
 
             {/* Video storage: how full the account's shared quota is. Tapping opens Storage. */}
             {!isGuardianOnly ? <StorageMeterCard onPress={() => navigation.navigate('Library')} /> : null}
+
+            {/* Founder announcements reach everyone, guardians included. */}
+            <AnnouncementBanner />
 
             {!isGuardianOnly ? <SubscriptionEndingBanner /> : null}
 

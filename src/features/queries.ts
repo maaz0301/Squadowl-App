@@ -1,4 +1,5 @@
 import { getDataSource } from '@/data';
+import { applyPlanPriceOverrides } from '@/data/plans';
 import type { DataSource } from '@/data/datasource';
 import { expandEventForms } from '@/lib/recurrence';
 import type { DummyDataOptions, DummyTeamOptions } from '@/data/testDataGenerator';
@@ -3273,5 +3274,37 @@ export function useDeleteOrgInfoFileMutation() {
   return useMutation({
     mutationFn: (file: import('@/data/types').FeedFile) => getDataSource().deleteOrgInfoFile(file),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['org-info'] }),
+  });
+}
+
+
+/** Whether (and until when) this club lets the founder's support team "View as" it. */
+export function useSupportAccessQuery(enabled = true) {
+  return useQuery({
+    queryKey: ['supportAccess'],
+    queryFn: () => getDataSource().getSupportAccessUntil(),
+    enabled,
+  });
+}
+
+export function useSetSupportAccessMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (days: number) => getDataSource().setSupportAccess(days),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['supportAccess'] }),
+  });
+}
+
+/** Everyone reads this to show the current prices; applying them before the data lands keeps every price on screen in step. */
+export function usePlanPriceOverridesQuery(enabled = true) {
+  return useQuery({
+    queryKey: ['planPriceOverrides'],
+    queryFn: async () => {
+      const overrides = await getDataSource().getPlanPriceOverrides();
+      applyPlanPriceOverrides(overrides);
+      return overrides;
+    },
+    enabled,
+    staleTime: 5 * 60_000,
   });
 }

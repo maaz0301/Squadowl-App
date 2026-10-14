@@ -525,6 +525,12 @@ export interface DataSource {
    * Doesn't affect anyone already subscribed to a blocked tier.
    */
   getPlatformBlockedPlanTiers(): Promise<import('./types').PlanTier[]>;
+  /** Until when the founder's support team may "View as" this account (web), or null when not allowed. */
+  getSupportAccessUntil(): Promise<number | null>;
+  /** Allows support to view this account for `days` (1 to 30), or revokes it with 0. Returns the new end. */
+  setSupportAccess(days: number): Promise<number | null>;
+  /** Prices the founder changed from the console, applied over the built-in plan prices. */
+  getPlanPriceOverrides(): Promise<{ tier: string; interval: 'month' | 'year'; amountCents: number }[]>;
   /**
    * Plan tiers the founder has switched the dummy-data testing tools off for —
    * see `platform_settings.dummy_data_blocked_plan_tiers` in the web repo. Empty means

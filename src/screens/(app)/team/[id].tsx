@@ -51,6 +51,7 @@ import { HubActionTile } from '@/components/teamHub/HubActionTile';
 import { HubEventCard } from '@/components/teamHub/HubEventCard';
 import { TeamFeed } from '@/components/teamHub/TeamFeed';
 import { EditTeamModal } from '@/components/teamHub/EditTeamModal';
+import { SeasonLifecycleCard } from '@/components/teamHub/SeasonLifecycleCard';
 import { HubIcon } from '@/components/teamHub/HubIcon';
 import { TeamStatusTiles } from '@/components/teamHub/TeamStatusTiles';
 import { HUB_ICONS } from '@/components/teamHub/hubTheme';
@@ -2007,6 +2008,8 @@ export default function TeamDetailScreen() {
                 </View>
               </Card>
             ) : null}
+
+            <SeasonLifecycleCard team={team} currentSeason={seasonQuery.data ?? undefined} />
 
             {/* A delegated manager runs the team but doesn't own it — deleting
                 the club's team isn't theirs to do, and the teams RLS grants

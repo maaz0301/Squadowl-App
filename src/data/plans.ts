@@ -55,6 +55,19 @@ export interface PlanDefinition {
   };
 }
 
+/**
+ * Prices the founder changed from the console (plan_prices). Applied over the
+ * built-in amounts above so every price shown follows what checkout charges.
+ */
+export function applyPlanPriceOverrides(
+  overrides: { tier: string; interval: BillingInterval; amountCents: number }[],
+): void {
+  for (const o of overrides) {
+    const plan = PLAN_DEFINITIONS.find((p) => p.tier === o.tier);
+    if (plan?.pricing) plan.pricing[o.interval].amountCents = o.amountCents;
+  }
+}
+
 /** Stripe's own cut, shown as a sub-item under "Stripe payments" on every paid tier. */
 const STRIPE_FEE_SUBITEMS = ['0.5% of registration fees collected', 'Stripe: 2.9% ' , 'CAD$0.30 per transaction'];
 

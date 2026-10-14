@@ -3,6 +3,7 @@ import { Alert, FlatList, Platform, Text, View } from 'react-native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { Badge, Button, Card, Header, Input, Screen, Tabs, Modal, useTypeToConfirm } from '@/components/ui';
 import { FeatureBlockGate } from '@/components/FeatureBlockGate';
+import { SupportAccessCard } from '@/components/SupportAccessCard';
 import {
   useOrgMembersQuery,
   useInviteMemberMutation,
@@ -126,6 +127,12 @@ export default function OrganizationMembersScreen() {
           className="mb-4"
         />
       </View>
+
+      {canManageOrganization && tab === 'staff' && (
+        <View className="px-4">
+          <SupportAccessCard />
+        </View>
+      )}
 
       {canManageOrganization && tab === 'staff' && (
         <View className="px-4 mb-4">
