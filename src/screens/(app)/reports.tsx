@@ -220,14 +220,15 @@ export default function ReportsScreen() {
           ) : (
             <View className="gap-2">
               {teamOptions.length > 0 ? (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <ScrollView horizontal showsHorizontalScrollIndicator keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 6 }}>
                   <Chip label="All teams" active={!leaderTeam} onPress={() => setLeaderTeam(null)} />
                   {teamOptions.map((t) => (
                     <Chip key={t.id} label={t.name} active={leaderTeam === t.id} onPress={() => setLeaderTeam(t.id)} />
                   ))}
                 </ScrollView>
               ) : null}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {/* One line that scrolls sideways; the scroll bar stays visible so it is clear there are more measures. */}
+              <ScrollView horizontal showsHorizontalScrollIndicator keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 6 }}>
                 <Chip label="Overall" active={!focusRubric} onPress={() => setLeaderFocus('overall')} />
                 {rubricOptions.map((r) => (
                   <Chip
