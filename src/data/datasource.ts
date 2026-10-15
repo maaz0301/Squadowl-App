@@ -131,7 +131,8 @@ export interface DataSource {
   rejectAssignedTryout(tryoutId: string): Promise<void>;
   /** Marks the caller's own assessor row 'completed' — off their hub, scores untouched. */
   completeAssignedTryout(tryoutId: string): Promise<void>;
-  getTryout(id: string): Promise<Tryout | null>;
+  /** `registrations: false` leaves the registrations out: the assessment screens never show them, and a QR link can bring thousands. */
+  getTryout(id: string, opts?: { registrations?: boolean }): Promise<Tryout | null>;
   createTryout(form: CreateAssessmentForm): Promise<Tryout>;
   updateTryout(id: string, updates: Partial<Tryout>): Promise<Tryout>;
   archiveTryout(id: string): Promise<Tryout>;

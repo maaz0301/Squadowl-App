@@ -211,7 +211,7 @@ export default function RubricsScreen() {
     setBenchmarkOn(r.benchmark != null);
     setBenchmarkStr(r.benchmark != null ? String(r.benchmark) : '');
     setBenchmarkNote(r.benchmarkNote ?? '');
-    Alert.alert(`Editing ${r.label}`, 'Scroll down to the form to change its name, category, unit, benchmarks or weight.');
+    Alert.alert(`Editing ${r.label}`, 'Scroll down to the form to change its name, category, scoring type, unit, benchmarks or weight.');
   };
 
   const addCustom = async () => {

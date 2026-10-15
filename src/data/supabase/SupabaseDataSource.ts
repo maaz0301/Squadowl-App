@@ -2,6 +2,7 @@
 import { parseHeightCm } from '@/lib/height';
 import { APP_CONFIG } from '@/config/app';
 import { getSupabase } from '@/lib/supabase';
+import { applyNewerNotAttempted } from '@/lib/notAttempted';
 import { type Session, type SupabaseClient, isAuthRetryableFetchError } from '@supabase/supabase-js';
 import type { DataSource } from '../datasource';
 import type { SearchPlayer } from '../search';
@@ -1354,7 +1355,7 @@ export class SupabaseDataSource implements DataSource {
         headCoach: t.head_coach ?? undefined,
         assessors: (aByT[t.id] ?? []).map((a) => this.rowToAssessor(a)),
         roster,
-        evals: (eByT[t.id] ?? []).map((e) => this.rowToEval(e)),
+        evals: applyNewerNotAttempted((eByT[t.id] ?? []).map((e) => this.rowToEval(e))),
         registrations: (rByT[t.id] ?? []).map((r) => this.rowToRegistration(r)),
         settings,
         cloud: t.registration_code
@@ -3382,7 +3383,7 @@ export class SupabaseDataSource implements DataSource {
   }
 
 
-  async getTryout(id: string): Promise<Tryout | null> {
+  async getTryout(id: string, opts: { registrations?: boolean } = {}): Promise<Tryout | null> {
     const { supabase, accountId } = await this.ctx();
     const row = (
       await supabase.from('tryouts').select('*').eq('id', id).is('deleted_at', null).maybeSingle()
@@ -3398,7 +3399,7 @@ export class SupabaseDataSource implements DataSource {
       row.account_id !== accountId && row.team_id && (await this.viewerManagesTryoutTeam(id))
         ? { ...row, [VIEWER_MANAGES_TEAM]: true }
         : row;
-    const [assembled] = await this.assembleTryouts([tagged]);
+    const [assembled] = await this.assembleTryouts([tagged], opts);
     return assembled ?? null;
   }
 
