@@ -1046,6 +1046,8 @@ export function useAddRegistrationToRosterMutation(tryoutId: string) {
       }
       qc.invalidateQueries({ queryKey: queryKeys.registrations(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.profile });
+      // Reports read the tryouts list, so a change here has to mark it stale.
+      qc.invalidateQueries({ queryKey: ['tryouts'], refetchType: 'none' });
     },
   });
 }
@@ -2588,6 +2590,8 @@ export function useImportLibraryPlayersMutation() {
     }) => getDataSource().importLibraryPlayers(tryoutId, entries),
     onSuccess: (_, { tryoutId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
+      // Reports read the tryouts list, so a change here has to mark it stale.
+      qc.invalidateQueries({ queryKey: ['tryouts'], refetchType: 'none' });
     },
   });
 }
@@ -2767,6 +2771,8 @@ export function useImportScanScoresMutation() {
     onSuccess: (_, { tryoutId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.results(tryoutId) });
       qc.invalidateQueries({ queryKey: queryKeys.tryout(tryoutId) });
+      // Reports read the tryouts list, so a change here has to mark it stale.
+      qc.invalidateQueries({ queryKey: ['tryouts'], refetchType: 'none' });
     },
   });
 }
