@@ -18,6 +18,7 @@ import { PlanGate } from '@/components/PlanGate';
 import {
   useDeletePlayerReportCardMutation,
   useGenerateReportCardCommentsMutation,
+  useLibraryQuery,
   usePlayerReportCardsQuery,
   useSavePlayerReportCardMutation,
   useTeamsQuery,
@@ -34,6 +35,8 @@ import { DocumentPickerUnavailable, pickAttachment, type PickedAttachment } from
 import { ContextVideos } from '@/components/video/ContextVideos';
 import { TaggedVideos } from '@/components/video/TaggedVideos';
 import { formatAiComments } from '@/lib/reportCardText';
+import { addLibraryVideos } from '@/lib/reportCardLibrary';
+import { VideoPlayerModal } from '@/components/video/VideoPlayerModal';
 import { reportLogoUrls } from '@/lib/reportPdf';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { usePermissions, useUser } from '@/state/authStore';
@@ -92,6 +95,10 @@ export default function PlayerReportCardScreen() {
   const [coachComments, setCoachComments] = useState('');
   const [aiComments, setAiComments] = useState('');
   const [kept, setKept] = useState<ReportCardAttachment[]>([]);
+  const [pickingLibrary, setPickingLibrary] = useState(false);
+  const [libraryPick, setLibraryPick] = useState<Set<string>>(new Set());
+  const [playing, setPlaying] = useState<{ url: string; title: string } | null>(null);
+  const library = useLibraryQuery({ enabled: pickingLibrary || kept.some((a) => a.libraryItemId) });
   const [files, setFiles] = useState<PickedAttachment[]>([]);
   const [linkName, setLinkName] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
@@ -213,6 +220,23 @@ export default function PlayerReportCardScreen() {
     setLinkUrl('');
   };
 
+  const libraryVideos = (library.data ?? []).filter((i) => i.kind === 'video');
+
+  const addFromLibrary = () => {
+    const r = addLibraryVideos(kept, libraryVideos.filter((i) => libraryPick.has(i.id)));
+    setKept(r.next);
+    setLibraryPick(new Set());
+    setPickingLibrary(false);
+    if (r.unplayable) notify('Some videos were skipped', `${r.unplayable} chosen video${r.unplayable === 1 ? ' has' : 's have'} nothing to play yet.`);
+  };
+
+  /** A video from the Library plays in the app when it is stored; anything else opens its address. */
+  const openAttachment = (a: ReportCardAttachment) => {
+    const stored = a.libraryItemId && !a.url ? library.data?.find((i) => i.id === a.libraryItemId)?.video?.url : undefined;
+    if (stored) setPlaying({ url: stored, title: a.name });
+    else void openUrl(a.signedUrl ?? a.url);
+  };
+
   const runAi = async () => {
     if (chosen.size === 0) {
       notify('Select evaluations', 'Choose at least one evaluation for the AI to read.');
@@ -324,6 +348,7 @@ export default function PlayerReportCardScreen() {
   return (
     <Screen padded={false}>
       {typeToConfirm.modal}
+      <VideoPlayerModal url={playing?.url ?? null} title={playing?.title ?? ''} onClose={() => setPlaying(null)} />
       <View className="px-4">
         <Header title="Report Card" subtitle={`${name} | ${tryout.name}`} showBack onBack={() => navigation.goBack()} />
       </View>
@@ -430,12 +455,12 @@ export default function PlayerReportCardScreen() {
                 {reportCard.overallRank || '-'}
               </Text>
             </View>
-            {reportCard.metrics.map((m) => {
+            {reportCard.metrics.flatMap((m) => [{ ...m, indent: false }, ...(m.children ?? []).map((c) => ({ ...c, indent: true }))]).map((m) => {
               const note = benchmarks.find((b) => b.label === m.label)?.note;
               return (
-                <View key={m.label} className="border-b py-1" style={{ borderColor: colors.border }}>
+                <View key={`${m.indent ? 'drill' : 'cat'}:${m.label}`} className="border-b py-1" style={{ borderColor: colors.border }}>
                   <View className="flex-row items-center gap-2">
-                    <Text className="flex-1" style={{ color: colors.ink }}>
+                    <Text className="flex-1" style={{ color: m.indent ? colors.inkMuted : colors.ink, paddingLeft: m.indent ? 14 : 0, fontSize: m.indent ? 13 : undefined }}>
                       {m.label}
                     </Text>
                     <Text className="w-20 text-right font-bold" style={{ color: m.met ? colors.success : colors.ink }}>
@@ -509,9 +534,10 @@ export default function PlayerReportCardScreen() {
             <View className="gap-1.5">
               {kept.map((a, i) => (
                 <View key={`k-${i}`} className="flex-row items-center justify-between gap-2">
-                  <Pressable className="flex-1" onPress={() => openUrl(a.signedUrl ?? a.url)} disabled={!(a.signedUrl ?? a.url)}>
-                    <Text style={{ color: a.signedUrl || a.url ? colors.primary : colors.ink }} numberOfLines={1}>
+                  <Pressable className="flex-1" onPress={() => openAttachment(a)} disabled={!(a.signedUrl ?? a.url ?? a.libraryItemId)}>
+                    <Text style={{ color: a.signedUrl || a.url || a.libraryItemId ? colors.primary : colors.ink }} numberOfLines={2}>
                       {a.kind === 'video' ? 'Video' : a.kind === 'link' ? 'Link' : 'File'}: {a.name}
+                      {a.libraryItemId && !a.url ? ' (from your Library, plays in the app, not linked in the PDF)' : ''}
                     </Text>
                   </Pressable>
                   <Button label="Remove" size="sm" variant="ghost" onPress={() => setKept((p) => p.filter((_, j) => j !== i))} />
@@ -528,6 +554,71 @@ export default function PlayerReportCardScreen() {
             </View>
           )}
           <Button label="Upload a file" variant="secondary" onPress={addFile} />
+          <Button label="Add from your Library" variant="secondary" onPress={() => setPickingLibrary((v) => !v)} />
+          {pickingLibrary ? (
+            <View className="gap-2 rounded-xl border p-3" style={{ borderColor: colors.border }}>
+              {label('Library videos')}
+              {library.isLoading ? (
+                <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                  Loading your Library...
+                </Text>
+              ) : libraryVideos.length === 0 ? (
+                <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                  No videos in your Library yet.
+                </Text>
+              ) : (
+                libraryVideos.map((v) => {
+                  const already = kept.some((a) => a.libraryItemId === v.id);
+                  const on = already || libraryPick.has(v.id);
+                  return (
+                    <Pressable
+                      key={v.id}
+                      disabled={already}
+                      onPress={() =>
+                        setLibraryPick((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(v.id)) next.delete(v.id);
+                          else next.add(v.id);
+                          return next;
+                        })
+                      }
+                      className="flex-row items-center gap-2 py-1"
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: on, disabled: already }}
+                    >
+                      <View
+                        className="h-5 w-5 items-center justify-center rounded border"
+                        style={{ borderColor: colors.primary, backgroundColor: on ? colors.primary : 'transparent', opacity: already ? 0.5 : 1 }}
+                      >
+                        {on ? <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>✓</Text> : null}
+                      </View>
+                      <Text className="flex-1 text-sm" style={{ color: already ? colors.inkMuted : colors.ink }} numberOfLines={1}>
+                        {v.title}
+                        {already ? ' (added)' : ''}
+                      </Text>
+                    </Pressable>
+                  );
+                })
+              )}
+              <View className="flex-row gap-2">
+                <Button
+                  label={libraryPick.size ? `Add ${libraryPick.size} video${libraryPick.size === 1 ? '' : 's'}` : 'Add videos'}
+                  size="sm"
+                  onPress={addFromLibrary}
+                  disabled={libraryPick.size === 0}
+                />
+                <Button
+                  label="Cancel"
+                  size="sm"
+                  variant="ghost"
+                  onPress={() => {
+                    setPickingLibrary(false);
+                    setLibraryPick(new Set());
+                  }}
+                />
+              </View>
+            </View>
+          ) : null}
           <Text className="text-xs" style={{ color: colors.inkMuted }}>
             Files up to 50 MB each. Videos are added under Stored videos once the card is saved, or add a link below.
           </Text>
@@ -559,7 +650,7 @@ export default function PlayerReportCardScreen() {
         </Card>
 
         <Card className="gap-3">
-          <TaggedVideos athleteId={player.athleteId} />
+          <TaggedVideos athleteId={player.athleteId} person={{ first: player.first, last: player.last }} />
           {editingId ? (
             <ContextVideos
               context="report_card"

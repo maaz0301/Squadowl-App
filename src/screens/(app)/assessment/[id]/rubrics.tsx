@@ -133,11 +133,11 @@ export default function RubricsScreen() {
   const [benchmarkStr, setBenchmarkStr] = useState('');
   const [benchmarkNote, setBenchmarkNote] = useState('');
   // Key of the rubric being edited. Its key never changes, so saved scores and
-  // weights stay attached to it; the type and scale are fixed for the same reason.
+  // weights stay attached to it. The type can change (a count first set up as an
+  // observation, say); scores already saved keep their numbers, so saving asks first.
   const [editingKey, setEditingKey] = useState<string | null>(null);
 
   const handleScoringTypeChange = (type: ScoringType) => {
-    if (editingKey) return;
     setScoringType(type);
     if (type === 'time') {
       setRankingDirection('lower_is_better');
@@ -245,6 +245,21 @@ export default function RubricsScreen() {
     };
 
     const next = editingKey ? custom.map((r) => (r.key === editingKey ? { ...r, ...nextItem } : r)) : [...custom, nextItem];
+
+    // Changing what a drill measures keeps every score already saved on it, so say so before doing it.
+    const before = editingKey ? custom.find((r) => r.key === editingKey) : undefined;
+    const scored = before ? tryout.evals.filter((e) => e.scores?.[before.key] != null).length : 0;
+    if (before && scored > 0 && (before.scoringType ?? 'skill') !== scoringType) {
+      const go = await new Promise<boolean>((resolve) => {
+        const msg = `${scored} saved score${scored === 1 ? '' : 's'} will keep the same number${scored === 1 ? '' : 's'} and be read as ${SCORING_TYPE_LABELS[scoringType]}.`;
+        if (Platform.OS === 'web') return resolve(confirm(`Change scoring type?\n\n${msg}`));
+        Alert.alert('Change scoring type?', msg, [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Change', onPress: () => resolve(true) },
+        ]);
+      });
+      if (!go) return;
+    }
 
     await updateTryout.mutateAsync({
       id: tryout.id,

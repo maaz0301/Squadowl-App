@@ -264,7 +264,7 @@ async function renderFullResultsPdf(tryout: Tryout, opts: ReportPdfOptions = {})
     }
 
     const meta = pdfSafe(
-      `#${card.jersey || '-'} • ${card.pos || '-'} • Shoots ${card.shoots || '-'} • Evals ${card.evalCount}`,
+      [`#${card.jersey || '-'}`, ...(content.position ? [card.pos || '-'] : []), `Shoots ${card.shoots || '-'}`, `Evals ${card.evalCount}`].join(' • '),
     );
     page.drawText(pdfSafe(card.name), { x: MARGIN, y, size: 15, font: fontBold, color: BLACK });
     const metaWidth = font.widthOfTextAtSize(meta, 9);

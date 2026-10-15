@@ -334,6 +334,17 @@ export default function ExportScreen() {
                 </View>
                 <View className="flex-row items-center justify-between py-1">
                   <Text className="text-sm flex-1 pr-3" style={{ color: colors.ink }}>
+                    Position / level
+                  </Text>
+                  <Switch
+                    value={content.position}
+                    onValueChange={setContentFlag('position')}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor="#fff"
+                  />
+                </View>
+                <View className="flex-row items-center justify-between py-1">
+                  <Text className="text-sm flex-1 pr-3" style={{ color: colors.ink }}>
                     Overall ranking
                   </Text>
                   <Switch
