@@ -1259,7 +1259,7 @@ export class SupabaseDataSource implements DataSource {
     }
   }
 
-  private async assembleTryouts(tryoutRows: Row[]): Promise<Tryout[]> {
+  private async assembleTryouts(tryoutRows: Row[], opts: { registrations?: boolean } = {}): Promise<Tryout[]> {
     if (tryoutRows.length === 0) return [];
     // Who is asking — every assembled tryout carries `viewerIsOwner`, and the
     // screens read it to decide whether this caller gets the full coach
@@ -1271,7 +1271,9 @@ export class SupabaseDataSource implements DataSource {
       this.fetchAllByIn('tryout_participants', PARTICIPANT_SELECT, 'tryout_id', ids, PARTICIPANTS_PAGE),
       this.fetchAllByIn('tryout_assessors', '*', 'tryout_id', ids),
       this.fetchEvaluationsForTryouts(ids),
-      this.fetchAllByIn('registrations', '*', 'tryout_id', ids),
+      opts.registrations === false
+        ? Promise.resolve<Row[]>([])
+        : this.fetchAllByIn('registrations', '*', 'tryout_id', ids),
     ]);
     // Soft-removed players (see deletePlayer) stay in the table so their
     // evaluations still count toward the athlete's permanent profile history,
@@ -1292,6 +1294,13 @@ export class SupabaseDataSource implements DataSource {
     const rByT = byTryout(rRows);
 
     // Deduplicate evals by participant_id, evaluator_user_id, and session to hide existing corrupted duplicates
+    // Each row's timestamp is parsed once, not again on every comparison.
+    const createdMs = new Map<Row, number>();
+    const createdAt = (r: Row) => {
+      let ms = createdMs.get(r);
+      if (ms === undefined) createdMs.set(r, (ms = Date.parse(r.created_at)));
+      return ms;
+    };
     for (const tryoutId of Object.keys(eByT)) {
       const uniqueEvals = new Map<string, Row>();
       for (const e of eByT[tryoutId]) {
@@ -1305,7 +1314,7 @@ export class SupabaseDataSource implements DataSource {
         if (
           !existing ||
           currentScoresLen > existingScoresLen ||
-          (currentScoresLen === existingScoresLen && new Date(e.created_at) > new Date(existing.created_at))
+          (currentScoresLen === existingScoresLen && createdAt(e) > createdAt(existing))
         ) {
           uniqueEvals.set(key, e);
         }
@@ -3181,6 +3190,10 @@ export class SupabaseDataSource implements DataSource {
 
   async listTryouts(includeArchived = false): Promise<Tryout[]> {
     return this.assembleTryouts(await this.fetchVisibleTryoutRows(includeArchived));
+  }
+
+  async listTryoutsForReports(includeArchived = false): Promise<Tryout[]> {
+    return this.assembleTryouts(await this.fetchVisibleTryoutRows(includeArchived), { registrations: false });
   }
 
   /**

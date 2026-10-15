@@ -7,7 +7,7 @@ import { Badge, Button, Card, Chip, EmptyState, ErrorState, Header, LoadingState
 import { HomePanel, PanelRow } from '@/components/home/HomePanel';
 import { HubIcon } from '@/components/teamHub/HubIcon';
 import { HUB_ICONS } from '@/components/teamHub/hubTheme';
-import { useTeamsQuery, useTryoutsQuery, useTryoutSummariesQuery } from '@/features/queries';
+import { useReportTryoutsQuery, useTeamsQuery, useTryoutSummariesQuery } from '@/features/queries';
 import { useSessionStore } from '@/state/sessionStore';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import {
@@ -41,7 +41,7 @@ export default function ReportsScreen() {
   // heavy one carries every evaluation and score and fills in the numbers when it
   // lands. Waiting on the heavy one alone left a blank spinner for many seconds.
   const summariesQuery = useTryoutSummariesQuery(false);
-  const tryoutsQuery = useTryoutsQuery(false);
+  const tryoutsQuery = useReportTryoutsQuery(false);
 
   const refreshControl = usePullToRefresh(() => Promise.all([summariesQuery.refetch(), tryoutsQuery.refetch()]));
 
