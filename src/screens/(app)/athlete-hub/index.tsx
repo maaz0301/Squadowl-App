@@ -6,6 +6,7 @@ import { Avatar, Card, EmptyState, ErrorState, Header, Input, LoadingState, Scre
 import { useAthleteHubQuery } from '@/features/queries';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import { playerDisplayName } from '@/data/rubrics';
+import { foldAthletes } from '@/data/duplicates';
 
 /**
  * Every athlete under this subscription, whichever team or evaluation they came
@@ -24,7 +25,8 @@ export default function AthleteHubScreen() {
   }, [query]);
 
   const hubQuery = useAthleteHubQuery(search);
-  const athletes = useMemo(() => hubQuery.data?.pages.flatMap((p) => p.rows) ?? [], [hubQuery.data]);
+  // The same player added to several evaluations is several athlete records; show them once.
+  const athletes = useMemo(() => foldAthletes(hubQuery.data?.pages.flatMap((p) => p.rows) ?? []), [hubQuery.data]);
 
   const header = (
     <View className="px-4">
@@ -67,7 +69,7 @@ export default function AthleteHubScreen() {
             />
           }
           renderItem={({ item }) => (
-            <Pressable onPress={() => navigation.navigate('PlayerProfile', { athleteId: item.id })}>
+            <Pressable onPress={() => navigation.navigate('PlayerProfile', { athleteId: item.id, alsoAthleteIds: item.alsoIds })}>
               <Card className="mb-2 flex-row items-center gap-3">
                 <Avatar first={item.first} last={item.last} pos={item.currentPosition} size={44} uri={item.avatarUrl} />
                 <View className="flex-1">
