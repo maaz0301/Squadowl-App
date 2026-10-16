@@ -48,6 +48,18 @@ function ThemeToggleButton() {
   );
 }
 
+function Greeting({ name }: { name: string }) {
+  const colors = useThemeColors();
+  const hour = new Date().getHours();
+  const part = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+  return (
+    <View className="mb-4">
+      <Text className="text-sm" style={{ color: colors.inkMuted }}>Good {part},</Text>
+      <Text className="text-3xl font-display font-bold" style={{ color: colors.ink }}>{name}</Text>
+    </View>
+  );
+}
+
 /**
  * The home screen's top row: emblem and SQUADOWL wordmark on the left, then
  * search and the account avatar. `avatar` is passed in so the screen keeps
@@ -58,12 +70,16 @@ function ThemeToggleButton() {
 export function HomeTopBar({
   onSearch,
   avatar,
+  name,
 }: {
+  /** First name shown in the greeting under the wordmark row. */
+  name?: string;
   /** Omitted for guardians, who have nothing to search. */
   onSearch?: () => void;
   avatar: React.ReactNode;
 }) {
   return (
+    <View>
     <View className="flex-row items-center justify-between pt-3 pb-4">
       <View className="flex-row items-center gap-2">
         <Image
@@ -85,6 +101,8 @@ export function HomeTopBar({
         {onSearch ? <IconButton d={SEARCH} label="Search" onPress={onSearch} /> : null}
         {avatar}
       </View>
+    </View>
+    {name ? <Greeting name={name} /> : null}
     </View>
   );
 }

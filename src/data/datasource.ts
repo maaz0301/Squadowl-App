@@ -123,6 +123,15 @@ export interface DataSource {
    * runs on instead of the full listTryouts() read.
    */
   listSearchPlayers(): Promise<import('./search').SearchPlayer[]>;
+  /**
+   * Roster rows in this account's other evaluations that may be the same person (by athlete
+   * record, or by a name that starts alike), for combining evaluations on one report card.
+   * Narrowed on the server; the caller does the fuzzy judging (data/otherEvaluations.ts).
+   */
+  listPlayerEvaluationCandidates(
+    excludeTryoutId: string,
+    who: { athleteIds: string[]; first: string; last: string },
+  ): Promise<import('./otherEvaluations').EvaluationCandidate[]>;
   /** Tryouts the current user is invited to as an assessor (not owned by their account). */
   listAssignedTryouts(): Promise<Tryout[]>;
   /** listAssignedTryouts() in the light shape — see listTryoutSummaries(). */

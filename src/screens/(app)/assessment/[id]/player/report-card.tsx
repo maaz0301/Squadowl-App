@@ -16,7 +16,9 @@ import {
 } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
 import {
+  useCombinedTryoutsQueries,
   useDeletePlayerReportCardMutation,
+  useEvaluationCandidatesQuery,
   useGenerateReportCardCommentsMutation,
   useLibraryQuery,
   usePlayerReportCardsQuery,
@@ -27,9 +29,10 @@ import {
 import { useAssessmentId, useAssessorMode } from '@/features/useAssessmentId';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { getDataSource } from '@/data';
-import { buildPlayerFullResults } from '@/data/resultsExport';
-import { benchmarkLines } from '@/data/benchmarks';
+import { buildPlayerFullResults, type PlayerFullResults } from '@/data/resultsExport';
+import { benchmarkLines, type BenchmarkLine } from '@/data/benchmarks';
 import { playerDisplayName } from '@/data/rubrics';
+import { extraMarker, matchPlayerAcrossEvaluations, splitSavedEvalIds } from '@/data/otherEvaluations';
 import type { PlayerReportCard, ReportCardAttachment } from '@/data/types';
 import { DocumentPickerUnavailable, pickAttachment, type PickedAttachment } from '@/lib/documentPicker';
 import { ContextVideos } from '@/components/video/ContextVideos';
@@ -61,6 +64,88 @@ function safeExternalUrl(url?: string): string | null {
 function notify(title: string, message: string) {
   if (Platform.OS === 'web') (globalThis as any).alert?.(`${title}\n\n${message}`);
   else Alert.alert(title, message);
+}
+
+/** A yes/no question, answered by tapping a button; resolves false if dismissed. */
+function askYesNo(title: string, message: string, yes: string): Promise<boolean> {
+  if (Platform.OS === 'web') return Promise.resolve(!!(globalThis as any).confirm?.(`${title}\n\n${message}`));
+  return new Promise((resolve) =>
+    Alert.alert(
+      title,
+      message,
+      [
+        { text: 'Not the same', style: 'cancel', onPress: () => resolve(false) },
+        { text: yes, onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    ),
+  );
+}
+
+/** One evaluation's scores for the player: rubric results, benchmarks and the rank within that evaluation alone. */
+function ScoreTable({ card: reportCard, benchmarks }: { card: PlayerFullResults; benchmarks: BenchmarkLine[] }) {
+  const colors = useThemeColors();
+  return (
+    <>
+      <View className="flex-row items-center gap-2 border-b py-1" style={{ borderColor: colors.border }}>
+        <Text className="flex-1 text-xs font-bold" style={{ color: colors.inkMuted }}>
+          MEASURE
+        </Text>
+        <Text className="w-20 text-right text-xs font-bold" style={{ color: colors.inkMuted }}>
+          RESULT
+        </Text>
+        <Text className="w-20 text-right text-xs font-bold" style={{ color: colors.inkMuted }}>
+          BENCHMARK
+        </Text>
+        <Text className="w-12 text-right text-xs font-bold" style={{ color: colors.inkMuted }}>
+          RANK
+        </Text>
+      </View>
+      <View className="flex-row items-center gap-2 border-b py-1" style={{ borderColor: colors.border }}>
+        <Text className="flex-1 font-bold" style={{ color: colors.primary }}>
+          Overall
+        </Text>
+        <Text className="w-20 text-right font-bold" style={{ color: colors.primary }}>
+          {reportCard.overallScore || '-'}
+        </Text>
+        <Text className="w-20 text-right" style={{ color: colors.inkMuted }}>
+          -
+        </Text>
+        <Text className="w-12 text-right font-bold" style={{ color: colors.primary }}>
+          {reportCard.overallRank || '-'}
+        </Text>
+      </View>
+      {reportCard.metrics.flatMap((m) => [{ ...m, indent: false }, ...(m.children ?? []).map((c) => ({ ...c, indent: true }))]).map((m) => {
+        const note = benchmarks.find((b) => b.label === m.label)?.note;
+        return (
+          <View key={`${m.indent ? 'drill' : 'cat'}:${m.label}`} className="border-b py-1" style={{ borderColor: colors.border }}>
+            <View className="flex-row items-center gap-2">
+              <Text className="flex-1" style={{ color: m.indent ? colors.inkMuted : colors.ink, paddingLeft: m.indent ? 14 : 0, fontSize: m.indent ? 13 : undefined }}>
+                {m.label}
+              </Text>
+              <Text className="w-20 text-right font-bold" style={{ color: m.met ? colors.success : colors.ink }}>
+                {m.actual || m.score}
+              </Text>
+              <Text className="w-20 text-right" style={{ color: colors.inkMuted }}>
+                {m.benchmark || '-'}
+              </Text>
+              <Text className="w-12 text-right" style={{ color: colors.ink }}>
+                {m.rank || '-'}
+              </Text>
+            </View>
+            {note ? (
+              <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                {note}
+              </Text>
+            ) : null}
+          </View>
+        );
+      })}
+      <Text className="pt-1 text-xs" style={{ color: colors.inkMuted }}>
+        Result is the player's average in the measure's own units. Rank is against the roster. Overall is the weighted score out of 5.
+      </Text>
+    </>
+  );
 }
 
 export default function PlayerReportCardScreen() {
@@ -104,11 +189,21 @@ export default function PlayerReportCardScreen() {
   const [linkUrl, setLinkUrl] = useState('');
   const [linkIsVideo, setLinkIsVideo] = useState(false);
   const [exporting, setExporting] = useState(false);
+  // Other evaluations combined onto this card. `picked` null means every evaluation of the player in it.
+  const [extras, setExtras] = useState<{ tryoutId: string; playerId: string; picked: Set<string> | null }[]>([]);
+  const [addingEval, setAddingEval] = useState(false);
+  const [evalSearch, setEvalSearch] = useState('');
+  const [evalPick, setEvalPick] = useState<Set<string>>(new Set());
   const [printAppLogo, setPrintAppLogo] = useState(true);
 
   // Coming back to the builder reopens the card saved last, so it does not look
   // as though the card vanished. "New" still starts a blank one.
   const reopened = useRef(false);
+  const applySavedEvalIds = (saved: string[]) => {
+    const { evalIds, extras: marked } = splitSavedEvalIds(saved);
+    setSelected(new Set(evalIds));
+    setExtras(marked.map((m) => ({ ...m, picked: new Set(evalIds) })));
+  };
   useEffect(() => {
     if (reopened.current || !cardsQuery.data) return;
     reopened.current = true;
@@ -116,7 +211,7 @@ export default function PlayerReportCardScreen() {
     if (!latest) return;
     setEditingId(latest.id);
     setTitle(latest.title);
-    setSelected(new Set(latest.evalIds));
+    applySavedEvalIds(latest.evalIds);
     setCoachComments(latest.coachComments);
     setAiComments(latest.aiComments);
     setKept(latest.attachments);
@@ -144,6 +239,51 @@ export default function PlayerReportCardScreen() {
     return benchmarkLines(scoped, player);
   }, [tryout, player, chosen]);
 
+  // Each combined evaluation is worked out on its own, with its own ranks, never blended with the others.
+  const extraQueries = useCombinedTryoutsQueries(extras.map((x) => x.tryoutId));
+  const extraSections = useMemo(
+    () =>
+      extras.map((x, i) => {
+        const q = extraQueries[i];
+        const t = q?.data;
+        const row = t?.roster.find((r) => r.id === x.playerId);
+        const evals = t && row ? t.evals.filter((e) => e.playerId === row.id).sort((a, b) => a.createdAt - b.createdAt) : [];
+        const chosenIds = new Set(x.picked ?? evals.map((e) => e.id));
+        const scoped = t && row ? { ...t, evals: t.evals.filter((e) => e.playerId !== row.id || chosenIds.has(e.id)) } : null;
+        return {
+          tryoutId: x.tryoutId,
+          playerId: x.playerId,
+          name: t?.name ?? 'Evaluation',
+          loading: !!q?.isLoading,
+          error: !!q?.isError || (!!t && !row),
+          evals,
+          chosen: new Set(evals.filter((e) => chosenIds.has(e.id)).map((e) => e.id)),
+          card: scoped && row ? (buildPlayerFullResults(scoped).find((c) => c.playerId === row.id) ?? null) : null,
+          benchmarks: scoped && row ? benchmarkLines(scoped, row) : [],
+        };
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [extras, extraQueries.map((q) => q.dataUpdatedAt).join(',')],
+  );
+
+  const who = useMemo(
+    () =>
+      player
+        ? { athleteIds: [player.athleteId].filter((x): x is string => !!x), first: player.first, last: player.last }
+        : undefined,
+    [player],
+  );
+  const candidatesQuery = useEvaluationCandidatesQuery(id, who, addingEval);
+  const evalMatches = useMemo(() => {
+    if (!player || !candidatesQuery.data) return [];
+    const taken = new Set(extras.map((x) => x.tryoutId));
+    return matchPlayerAcrossEvaluations(
+      { athleteIds: who?.athleteIds ?? [], first: player.first, last: player.last, yearOfBirth: player.yearOfBirth, playerEmail: player.playerEmail },
+      candidatesQuery.data,
+    ).filter((m) => !taken.has(m.tryoutId));
+  }, [player, who, candidatesQuery.data, extras]);
+  const shownMatches = evalMatches.filter((m) => m.tryoutName.toLowerCase().includes(evalSearch.trim().toLowerCase()));
+
   if (tryoutQuery.isLoading) return <LoadingState />;
   if (tryoutQuery.isError || !tryout) {
     return <ErrorState message="Player not found." onRetry={() => tryoutQuery.refetch()} />;
@@ -165,7 +305,7 @@ export default function PlayerReportCardScreen() {
   const openCard = (c: PlayerReportCard) => {
     setEditingId(c.id);
     setTitle(c.title);
-    setSelected(new Set(c.evalIds));
+    applySavedEvalIds(c.evalIds);
     setCoachComments(c.coachComments);
     setAiComments(c.aiComments);
     setKept(c.attachments);
@@ -175,6 +315,7 @@ export default function PlayerReportCardScreen() {
     setEditingId(undefined);
     setTitle('Player Report Card');
     setSelected(null);
+    setExtras([]);
     setCoachComments('');
     setAiComments('');
     setKept([]);
@@ -188,6 +329,39 @@ export default function PlayerReportCardScreen() {
       else next.add(evalId);
       return next;
     });
+
+  const removeExtra = (tryoutId: string) => setExtras((prev) => prev.filter((x) => x.tryoutId !== tryoutId));
+  const toggleExtraEval = (tryoutId: string, evalId: string) =>
+    setExtras((prev) =>
+      prev.map((x) => {
+        if (x.tryoutId !== tryoutId) return x;
+        const sec = extraSections.find((e) => e.tryoutId === tryoutId);
+        const next = new Set(x.picked ?? sec?.evals.map((e) => e.id) ?? []);
+        if (next.has(evalId)) next.delete(evalId);
+        else next.add(evalId);
+        return { ...x, picked: next };
+      }),
+    );
+
+  const addPickedEvaluations = async () => {
+    const chosenMatches = evalMatches.filter((m) => evalPick.has(m.tryoutId));
+    const added: typeof extras = [];
+    for (const m of chosenMatches) {
+      if (m.uncertain) {
+        const ok = await askYesNo(
+          'Is this the same athlete?',
+          `${m.tryoutName} has "${m.playerName}", who ${m.why}. Is that ${name}? Only combine them if it is the same person.`,
+          'Same athlete',
+        );
+        if (!ok) continue;
+      }
+      added.push({ tryoutId: m.tryoutId, playerId: m.playerId, picked: null });
+    }
+    if (added.length) setExtras((prev) => [...prev, ...added]);
+    setEvalPick(new Set());
+    setAddingEval(false);
+    setEvalSearch('');
+  };
 
   const addFile = async () => {
     try {
@@ -262,6 +436,13 @@ export default function PlayerReportCardScreen() {
     }
   };
 
+  // The player's own evaluations here, then each combined evaluation as a marker plus the ones ticked in it.
+  const savedEvalIds = [
+    ...Array.from(chosen),
+    ...extraSections.flatMap((x) => [extraMarker(x.tryoutId, x.playerId), ...Array.from(x.chosen)]),
+  ];
+  const stillLoadingExtras = extraSections.some((x) => x.loading);
+
   const saveCard = async () => {
     if (!player.athleteId) {
       notify('Cannot save', 'This player has no athlete record yet.');
@@ -274,7 +455,7 @@ export default function PlayerReportCardScreen() {
           athleteId: player.athleteId,
           tryoutId: id!,
           title,
-          evalIds: Array.from(chosen),
+          evalIds: savedEvalIds,
           coachComments,
           aiComments,
           attachments: kept,
@@ -300,6 +481,10 @@ export default function PlayerReportCardScreen() {
         subtitle: [team?.name, tryout.name].filter(Boolean).join(' | '),
         card: reportCard,
         benchmarks,
+        evaluationName: tryout.name,
+        extras: extraSections
+          .filter((x) => x.card && x.card.evalCount > 0)
+          .map((x) => ({ name: x.name, card: x.card!, benchmarks: x.benchmarks })),
         coachComments,
         aiComments,
         attachments: [
@@ -373,7 +558,7 @@ export default function PlayerReportCardScreen() {
                     {editingId === c.id ? <Badge label="Open" variant="info" /> : null}
                   </View>
                   <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                    {new Date(c.updatedAt).toLocaleDateString()} · {c.evalIds.length} evaluation{c.evalIds.length === 1 ? '' : 's'}
+                    {new Date(c.updatedAt).toLocaleDateString()} · {splitSavedEvalIds(c.evalIds).evalIds.length} evaluation{splitSavedEvalIds(c.evalIds).evalIds.length === 1 ? '' : 's'}
                   </Text>
                 </View>
                 <Button label="Open" size="sm" variant="secondary" onPress={() => openCard(c)} />
@@ -424,68 +609,133 @@ export default function PlayerReportCardScreen() {
           </View>
         </Card>
 
+        <Card className="gap-2">
+          <View className="flex-row items-center justify-between gap-2">
+            <View className="flex-1">
+              {label('Other evaluations')}
+              <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                Combine {name}'s scores from other evaluations. Each stays in its own section with its own ranking.
+              </Text>
+            </View>
+            <Button label="+ Add Evaluation" size="sm" variant="secondary" onPress={() => setAddingEval((v) => !v)} />
+          </View>
+          {addingEval ? (
+            <View className="gap-2 rounded-xl border p-3" style={{ borderColor: colors.border }}>
+              <Input placeholder="Search evaluations" value={evalSearch} onChangeText={setEvalSearch} autoCapitalize="none" />
+              {candidatesQuery.isLoading ? (
+                <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                  Looking for {name} in your other evaluations...
+                </Text>
+              ) : candidatesQuery.isError ? (
+                <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                  Could not search your evaluations. Try again in a moment.
+                </Text>
+              ) : shownMatches.length === 0 ? (
+                <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                  {evalMatches.length === 0 ? (extras.length ? `Every other evaluation with ${name} is already added.` : `${name} is not in any other evaluation.`) : 'No evaluation matches that search.'}
+                </Text>
+              ) : (
+                shownMatches.map((m) => {
+                  const on = evalPick.has(m.tryoutId);
+                  return (
+                    <Pressable
+                      key={m.tryoutId}
+                      onPress={() =>
+                        setEvalPick((prev) => {
+                          const next = new Set(prev);
+                          if (on) next.delete(m.tryoutId);
+                          else next.add(m.tryoutId);
+                          return next;
+                        })
+                      }
+                      className="flex-row items-center gap-2 py-1"
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: on }}
+                    >
+                      <View
+                        className="h-5 w-5 items-center justify-center rounded border"
+                        style={{ borderColor: colors.primary, backgroundColor: on ? colors.primary : 'transparent' }}
+                      >
+                        {on ? <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>✓</Text> : null}
+                      </View>
+                      <Text className="flex-1 text-sm" style={{ color: colors.ink }} numberOfLines={2}>
+                        {m.tryoutName}
+                        {m.playerName && m.playerName !== name ? <Text style={{ color: colors.inkMuted }}> as {m.playerName}</Text> : null}
+                      </Text>
+                      {m.uncertain ? <Badge label="Confirm name" variant="warning" /> : null}
+                    </Pressable>
+                  );
+                })
+              )}
+              <View className="flex-row gap-2">
+                <Button
+                  label={evalPick.size ? `Add ${evalPick.size} evaluation${evalPick.size === 1 ? '' : 's'}` : 'Add evaluations'}
+                  size="sm"
+                  onPress={addPickedEvaluations}
+                  disabled={evalPick.size === 0}
+                />
+                <Button label="Cancel" size="sm" variant="ghost" onPress={() => { setAddingEval(false); setEvalPick(new Set()); setEvalSearch(''); }} />
+              </View>
+            </View>
+          ) : null}
+        </Card>
+
         {reportCard && (reportCard.evalCount > 0 || reportCard.metrics.length > 0) ? (
           <Card className="gap-1">
-            {label('Report card')}
-            <View className="flex-row items-center gap-2 border-b py-1" style={{ borderColor: colors.border }}>
-              <Text className="flex-1 text-xs font-bold" style={{ color: colors.inkMuted }}>
-                MEASURE
-              </Text>
-              <Text className="w-20 text-right text-xs font-bold" style={{ color: colors.inkMuted }}>
-                RESULT
-              </Text>
-              <Text className="w-20 text-right text-xs font-bold" style={{ color: colors.inkMuted }}>
-                BENCHMARK
-              </Text>
-              <Text className="w-12 text-right text-xs font-bold" style={{ color: colors.inkMuted }}>
-                RANK
-              </Text>
-            </View>
-            <View className="flex-row items-center gap-2 border-b py-1" style={{ borderColor: colors.border }}>
-              <Text className="flex-1 font-bold" style={{ color: colors.primary }}>
-                Overall
-              </Text>
-              <Text className="w-20 text-right font-bold" style={{ color: colors.primary }}>
-                {reportCard.overallScore || '-'}
-              </Text>
-              <Text className="w-20 text-right" style={{ color: colors.inkMuted }}>
-                -
-              </Text>
-              <Text className="w-12 text-right font-bold" style={{ color: colors.primary }}>
-                {reportCard.overallRank || '-'}
-              </Text>
-            </View>
-            {reportCard.metrics.flatMap((m) => [{ ...m, indent: false }, ...(m.children ?? []).map((c) => ({ ...c, indent: true }))]).map((m) => {
-              const note = benchmarks.find((b) => b.label === m.label)?.note;
-              return (
-                <View key={`${m.indent ? 'drill' : 'cat'}:${m.label}`} className="border-b py-1" style={{ borderColor: colors.border }}>
-                  <View className="flex-row items-center gap-2">
-                    <Text className="flex-1" style={{ color: m.indent ? colors.inkMuted : colors.ink, paddingLeft: m.indent ? 14 : 0, fontSize: m.indent ? 13 : undefined }}>
-                      {m.label}
-                    </Text>
-                    <Text className="w-20 text-right font-bold" style={{ color: m.met ? colors.success : colors.ink }}>
-                      {m.actual || m.score}
-                    </Text>
-                    <Text className="w-20 text-right" style={{ color: colors.inkMuted }}>
-                      {m.benchmark || '-'}
-                    </Text>
-                    <Text className="w-12 text-right" style={{ color: colors.ink }}>
-                      {m.rank || '-'}
-                    </Text>
-                  </View>
-                  {note ? (
-                    <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                      {note}
-                    </Text>
-                  ) : null}
-                </View>
-              );
-            })}
-            <Text className="pt-1 text-xs" style={{ color: colors.inkMuted }}>
-              Result is the player's average in the measure's own units. Rank is against the roster. Overall is the weighted score out of 5.
-            </Text>
+            {label(extraSections.length ? `Report card: ${tryout.name}` : 'Report card')}
+            <ScoreTable card={reportCard} benchmarks={benchmarks} />
           </Card>
         ) : null}
+
+        {extraSections.map((x) => (
+          <Card key={x.tryoutId} className="gap-2">
+            <View className="flex-row items-center justify-between gap-2">
+              <View className="flex-1">{label(`Report card: ${x.name}`)}</View>
+              <Button label="Remove" size="sm" variant="ghost" onPress={() => removeExtra(x.tryoutId)} />
+            </View>
+            {x.loading ? (
+              <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                Loading...
+              </Text>
+            ) : x.error || !x.card ? (
+              <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                Could not load this evaluation.
+              </Text>
+            ) : (
+              <>
+                {x.evals.map((e, i) => {
+                  const on = x.chosen.has(e.id);
+                  return (
+                    <Pressable
+                      key={e.id}
+                      onPress={() => toggleExtraEval(x.tryoutId, e.id)}
+                      className="flex-row items-center gap-2 py-1"
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: on }}
+                    >
+                      <View
+                        className="h-5 w-5 items-center justify-center rounded border"
+                        style={{ borderColor: colors.primary, backgroundColor: on ? colors.primary : 'transparent' }}
+                      >
+                        {on ? <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>✓</Text> : null}
+                      </View>
+                      <Text className="flex-1 text-sm" style={{ color: colors.ink }}>
+                        Evaluation {i + 1}: {e.date} · {e.evaluator} · {e.session}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+                {x.card.evalCount > 0 ? (
+                  <ScoreTable card={x.card} benchmarks={x.benchmarks} />
+                ) : (
+                  <Text className="text-sm" style={{ color: colors.inkMuted }}>
+                    {x.evals.length === 0 ? 'No scores for this player in this evaluation yet.' : 'No evaluations ticked for this one.'}
+                  </Text>
+                )}
+              </>
+            )}
+          </Card>
+        ))}
 
         <Card className="gap-3">
           <Input
@@ -666,7 +916,7 @@ export default function PlayerReportCardScreen() {
         </Card>
 
         <View className="gap-3">
-          <Button label={editingId ? 'Save changes' : 'Save report card'} onPress={saveCard} loading={save.isPending} />
+          <Button label={editingId ? 'Save changes' : 'Save report card'} onPress={saveCard} loading={save.isPending} disabled={stillLoadingExtras} />
           {(tier === 'club' && user?.organizationLogoUrl) || team?.logoUrl ? (
             <Pressable
               onPress={() => setPrintAppLogo((v) => !v)}

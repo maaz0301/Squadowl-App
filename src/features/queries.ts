@@ -26,7 +26,7 @@ import { getSupabase } from '@/lib/supabase';
 import { useAuthStore } from '@/state/authStore';
 import { useChatReadStore } from '@/state/chatReadStore';
 import { useSessionStore } from '@/state/sessionStore';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 // ---- Auth ----
@@ -535,6 +535,30 @@ export function useTryoutQuery(id: string | undefined) {
     // default so stepping out of an assessment and back in renders instantly
     // from cache, with the refetch happening quietly behind the visible list.
     gcTime: 30 * 60 * 1000,
+  });
+}
+
+/** Roster rows in the account's other evaluations that may be this player (see data/otherEvaluations.ts). */
+export function useEvaluationCandidatesQuery(
+  tryoutId: string | undefined,
+  who: { athleteIds: string[]; first: string; last: string } | undefined,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ['evaluationCandidates', tryoutId, who?.athleteIds.join(','), who?.first, who?.last],
+    queryFn: () => getDataSource().listPlayerEvaluationCandidates(tryoutId!, who!),
+    enabled: enabled && !!tryoutId && !!who,
+    staleTime: 60_000,
+  });
+}
+
+/** The other evaluations combined onto a report card, each loaded like any evaluation. */
+export function useCombinedTryoutsQueries(ids: string[]) {
+  return useQueries({
+    queries: ids.map((id) => ({
+      queryKey: queryKeys.tryout(id),
+      queryFn: () => getDataSource().getTryout(id, { registrations: false }),
+    })),
   });
 }
 
@@ -2027,6 +2051,9 @@ export function useAthleteHubQuery(search: string) {
     initialPageParam: 0,
     queryFn: ({ pageParam }) => getDataSource().listAthleteHub(search, pageParam, ATHLETE_HUB_PAGE),
     getNextPageParam: (last) => last.next ?? undefined,
+    // Keep the previous results on screen while the next search loads, and reuse a recent answer.
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
     retry: 1,
   });
 }
