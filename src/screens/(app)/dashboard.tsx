@@ -567,6 +567,27 @@ export default function DashboardScreen() {
         onConfirm={confirmDeleteTeam}
         onCancel={() => setTeamToDelete(null)}
       />
+      {/* Fixed: stays put while the rest of the home screen scrolls. */}
+      <View className="px-4 pt-2">
+        <HomeTopBar
+          onSearch={isGuardianOnly ? undefined : () => navigation.navigate('Search')}
+          avatar={
+            <Pressable
+              onPress={() => navigation.navigate('Profile')}
+              hitSlop={8}
+              accessibilityLabel="Profile and settings"
+              className="ml-1"
+            >
+              <Avatar
+                first={(user?.displayName ?? 'Coach').split(' ')[0] ?? 'C'}
+                last={(user?.displayName ?? '').split(' ')[1] ?? ''}
+                size={40}
+                uri={user?.avatarUrl}
+              />
+            </Pressable>
+          }
+        />
+      </View>
       <FlatList
         key={isGuardianOnly ? 'guardian' : 'coach'}
         ref={listRef}
@@ -588,24 +609,6 @@ export default function DashboardScreen() {
         }}
         ListHeaderComponent={
           <View className="pt-2">
-            <HomeTopBar
-              onSearch={isGuardianOnly ? undefined : () => navigation.navigate('Search')}
-              avatar={
-                <Pressable
-                  onPress={() => navigation.navigate('Profile')}
-                  hitSlop={8}
-                  accessibilityLabel="Profile and settings"
-                  className="ml-1"
-                >
-                  <Avatar
-                    first={(user?.displayName ?? 'Coach').split(' ')[0] ?? 'C'}
-                    last={(user?.displayName ?? '').split(' ')[1] ?? ''}
-                    size={40}
-                    uri={user?.avatarUrl}
-                  />
-                </Pressable>
-              }
-            />
 
             {/* Founder announcements reach everyone, guardians included, and sit at the top so they are seen. */}
             <AnnouncementBanner />
