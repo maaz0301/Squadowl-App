@@ -92,23 +92,23 @@ export function RosterActions({
   // size don't fit a phone-width screen without truncating.
   return (
     <View className="gap-2">
-      <View className="flex-row flex-wrap justify-between gap-2">
+      <View className="flex-row flex-wrap justify-between" style={{ rowGap: 10 }}>
         {actions.map(({ label, icon: Icon, onPress }) => (
           <Pressable
             key={label}
             onPress={onPress}
             accessibilityRole="button"
             accessibilityLabel={label}
-            className="min-h-[56px] w-[48.5%] flex-row items-center justify-center gap-2.5 rounded-2xl border px-2 py-4 active:opacity-70"
+            className="min-h-[46px] w-[48.5%] flex-row items-center justify-center gap-2 rounded-xl border px-2 py-2.5 active:opacity-70"
             style={{ backgroundColor: colors.tile, borderColor: colors.border }}
           >
             <View
-              className="h-9 w-9 items-center justify-center rounded-full"
+              className="h-7 w-7 items-center justify-center rounded-full"
               style={{ backgroundColor: 'rgba(255,107,43,0.14)' }}
             >
-              <Icon color={colors.primary} size={18} />
+              <Icon color={colors.primary} size={15} />
             </View>
-            <Text className="text-lg font-bold" style={{ color: colors.ink }}>
+            <Text className="text-base font-bold" style={{ color: colors.ink }}>
               {label}
             </Text>
           </Pressable>

@@ -1,6 +1,6 @@
 import { useTerms, sportLabel } from '@/lib/terms';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, View, Alert } from 'react-native';
+import { ActivityIndicator, FlatList, LayoutAnimation, Pressable, ScrollView, Text, View, Alert } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
 
@@ -241,6 +241,7 @@ export default function DashboardScreen() {
   const setSavedTeamOrder = useTeamOrderStore((s) => s.setOrder);
   const orderedTeams = useMemo(() => applyTeamOrder(teamsQuery.data ?? [], savedTeamOrder), [teamsQuery.data, savedTeamOrder]);
   const teamRowHeights = useRef<Record<string, number>>({});
+  const [draggingTeam, setDraggingTeam] = useState(false);
   if (isGuardianOnly) {
     if (guardianQuery.isLoading) {
       return <LoadingState message="Loading portal..." />;
@@ -336,6 +337,7 @@ export default function DashboardScreen() {
   const standaloneTryouts = (tryoutsQuery.data ?? []).filter((t) => !t.teamId || !visibleTeamIds.has(t.teamId));
 
   const moveTeam = (from: number, to: number) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     if (user?.id) setSavedTeamOrder(user.id, reorderedTeamIds(orderedTeams, from, to));
   };
 
@@ -572,6 +574,7 @@ export default function DashboardScreen() {
         // The evaluation/team cards render inside the section panel in the header
         // (see below), so the list itself has no rows of its own.
         data={[] as any[]}
+        scrollEnabled={!draggingTeam}
         extraData={[navigatingId, busyId]}
         keyExtractor={(item) => item.id}
         onScroll={(e) => {
@@ -873,6 +876,7 @@ export default function DashboardScreen() {
                             }}
                             onMove={moveTeam}
                             gripColor={colors.inkFaint}
+                            onDragActive={setDraggingTeam}
                           >
                             {renderItem({ item })}
                           </DragReorderRow>

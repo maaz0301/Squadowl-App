@@ -12,6 +12,7 @@ import { ImportPlayersModal } from '@/components/roster/ImportPlayersModal';
 import { PlayerRow } from '@/components/roster/PlayerRow';
 import { LinkPlayerModal } from '@/components/LinkPlayerModal';
 import { playerDisplayName } from '@/data/rubrics';
+import type { Player } from '@/data/types';
 import { ChevronIcon, PlusIcon } from '@/components/roster/icons';
 import { RosterActions, RosterFilters, RosterSearch, RosterSelectToolbar, ScoreCta } from '@/components/roster/RosterControls';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
@@ -55,6 +56,9 @@ import { useUser } from '@/state/authStore';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { useSessionStore, type RosterFilter } from '@/state/sessionStore';
 import { useThemeColors } from '@/theme/ThemeProvider';
+
+/** Marks the row that holds the search and filters in the roster list. */
+const CONTROLS_ROW = { id: '__controls__' } as const;
 
 export default function RosterScreen() {
   const typeToConfirm = useTypeToConfirm();
@@ -358,130 +362,118 @@ export default function RosterScreen() {
   // still-running 1000-player generation, look like an empty assessment.
   const rosterPending = !hasPlayers && (tryoutQuery.isFetching || bulkWriting);
 
+  // Row 0 is the search, filters and sort chips; it is the sticky row, so it pins at the top.
+  const listData: (Player | typeof CONTROLS_ROW)[] = hasPlayers ? [CONTROLS_ROW, ...filteredRoster] : filteredRoster;
+
   return (
     <Screen padded={false}>
       {typeToConfirm.modal}
-      <View className="px-4">
-        <Header
-          title={tryout.name}
-          showBack
-          onBack={() => navigation.navigate('DashboardMain', { tab: 'assessments' })}
-        />
-      </View>
-      {hasPlayers ? (
-        <View className="gap-2 px-4 pb-3">
-          <UsageNudgeBanner
-            tier={effectiveTier}
-            metric="players"
-            count={tryout.roster.length}
-            label={terms.t('players in this roster')}
-          />
-
-          <ScoreCta
-            playersLabel={terms.players}
-            total={tryout.roster.length}
-            scored={scoredCount}
-            onPress={() =>
-              navigation.navigate('AssessmentFlow', {
-                screen: 'AssessmentRinkside',
-                params: { id: id, isAssessorOnly },
-              })
-            }
-          />
-
-          {selectMode ? (
-            <RosterSelectToolbar
-              allSelected={selectedIds.size > 0 && selectedIds.size === filteredRoster.length}
-              count={selectedIds.size}
-              deleting={deletingSelected}
-              onBack={exitSelectMode}
-              onToggleAll={() =>
-                setSelectedIds(
-                  selectedIds.size === filteredRoster.length
-                    ? new Set()
-                    : new Set(filteredRoster.map((p) => p.id)),
-                )
-              }
-              onDeleteSelected={deleteSelected}
-            />
-          ) : (
-            <RosterActions
-              onAdd={openAdd}
-              onLink={isAssessorOnly ? undefined : () => setShowLink(true)}
-              onImport={openImport}
-              onSelect={() => setSelectMode(true)}
-              onTools={() => setShowTools(true)}
-              onCompleteAssessing={canComplete ? () => complete() : undefined}
-              completingAssessing={completing}
-            />
-          )}
-
-          {tryout.assessors.length > 0 ? (
-            <View className="gap-1.5">
-              <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-                Scoring as
-              </Text>
-              {/* One scrolling row: an association tryout can have a dozen
-                  assessors, and wrapping them pushed the players themselves
-                  off the bottom of the screen. */}
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ paddingRight: 8 }}
-              >
-                {tryout.assessors.map((a, i) => {
-                  const isMe = !!((user?.email && a.email === user.email) || (user?.displayName && a.name === user.displayName));
-                  const tags = [];
-                  if (isMe) tags.push('You');
-                  if (a.role === 'lead') tags.push('Owner');
-                  const label = tags.length ? `${a.name} (${tags.join(', ')})` : a.name;
-
-                  const isActive = activeAssessor?.name === a.name && activeAssessor?.email === a.email;
-
-                  return (
-                    <Chip
-                      key={`${a.name}-${a.email}-${i}`}
-                      label={label}
-                      active={isActive}
-                      highlight={isMe}
-                      onPress={() => setActiveAssessor(isActive ? null : a)}
-                      className="mb-0"
-                    />
-                  );
-                })}
-              </ScrollView>
-            </View>
-          ) : null}
-
-          <RosterSearch
-            value={playerSearch}
-            onChange={setPlayerSearch}
-            playersLabel={terms.players}
-            jerseyLabel={terms.jersey}
-          />
-
-          <RosterFilters
-            active={activeFilter}
-            counts={filterCounts}
-            onSelect={setRosterFilter}
-          />
-
-          <View className="flex-row flex-wrap -mb-2">
-            <Chip label="Recent" active={rosterSort === 'recent'} onPress={() => setRosterSort('recent')} />
-            <Chip label="A–Z" active={rosterSort === 'name'} onPress={() => setRosterSort('name')} />
-            <Chip
-              label={rosterSort === 'age' ? AGE_SORT_LABEL[ageDir] : 'Age'}
-              active={rosterSort === 'age'}
-              onPress={() => (rosterSort === 'age' ? toggleAgeDir() : setRosterSort('age'))}
-            />
-          </View>
-        </View>
-      ) : null}
-
       <FlatList
-        data={filteredRoster}
+        data={listData}
         keyExtractor={(item) => item.id}
+        // The whole screen scrolls; the search, filters and sort chips pin to the top
+        // once the actions above them have scrolled away, and the players scroll under them.
+        stickyHeaderIndices={hasPlayers ? [1] : undefined}
+        ListHeaderComponent={
+          <View>
+            <View>
+              <Header
+                title={tryout.name}
+                showBack
+                onBack={() => navigation.navigate('DashboardMain', { tab: 'assessments' })}
+              />
+            </View>
+            {hasPlayers ? (
+              <View className="gap-2 pb-3">
+          <UsageNudgeBanner
+                    tier={effectiveTier}
+                    metric="players"
+                    count={tryout.roster.length}
+                    label={terms.t('players in this roster')}
+                  />
+
+                  <ScoreCta
+                    playersLabel={terms.players}
+                    total={tryout.roster.length}
+                    scored={scoredCount}
+                    onPress={() =>
+                      navigation.navigate('AssessmentFlow', {
+                        screen: 'AssessmentRinkside',
+                        params: { id: id, isAssessorOnly },
+                      })
+                    }
+                  />
+
+                  {selectMode ? (
+                    <RosterSelectToolbar
+                      allSelected={selectedIds.size > 0 && selectedIds.size === filteredRoster.length}
+                      count={selectedIds.size}
+                      deleting={deletingSelected}
+                      onBack={exitSelectMode}
+                      onToggleAll={() =>
+                        setSelectedIds(
+                          selectedIds.size === filteredRoster.length
+                            ? new Set()
+                            : new Set(filteredRoster.map((p) => p.id)),
+                        )
+                      }
+                      onDeleteSelected={deleteSelected}
+                    />
+                  ) : (
+                    <RosterActions
+                      onAdd={openAdd}
+                      onLink={isAssessorOnly ? undefined : () => setShowLink(true)}
+                      onImport={openImport}
+                      onSelect={() => setSelectMode(true)}
+                      onTools={() => setShowTools(true)}
+                      onCompleteAssessing={canComplete ? () => complete() : undefined}
+                      completingAssessing={completing}
+                    />
+                  )}
+
+                  {tryout.assessors.length > 0 ? (
+                    <View className="gap-1.5">
+                      <Text className="text-xs font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                        Scoring as
+                      </Text>
+                      {/* One scrolling row: an association tryout can have a dozen
+                          assessors, and wrapping them pushed the players themselves
+                          off the bottom of the screen. */}
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
+                        contentContainerStyle={{ paddingRight: 8 }}
+                      >
+                        {tryout.assessors.map((a, i) => {
+                          const isMe = !!((user?.email && a.email === user.email) || (user?.displayName && a.name === user.displayName));
+                          const tags = [];
+                          if (isMe) tags.push('You');
+                          if (a.role === 'lead') tags.push('Owner');
+                          const label = tags.length ? `${a.name} (${tags.join(', ')})` : a.name;
+
+                          const isActive = activeAssessor?.name === a.name && activeAssessor?.email === a.email;
+
+                          return (
+                            <Chip
+                              key={`${a.name}-${a.email}-${i}`}
+                              label={label}
+                              active={isActive}
+                              highlight={isMe}
+                              onPress={() => setActiveAssessor(isActive ? null : a)}
+                              className="mb-0"
+                            />
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                  ) : null}
+
+              </View>
+            ) : null}
+          </View>
+        }
+
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100, flexGrow: 1 }}
         // A tryout roster runs to hundreds of players. Without these the list
         // mounts ten screens' worth of rows before it paints anything, which
@@ -489,7 +481,6 @@ export default function RosterScreen() {
         initialNumToRender={12}
         maxToRenderPerBatch={12}
         windowSize={7}
-        removeClippedSubviews
         ListEmptyComponent={
           rosterPending ? (
             <View className="flex-1 items-center justify-center px-6 gap-3">
@@ -539,9 +530,35 @@ export default function RosterScreen() {
             </View>
           )
         }
-        renderItem={({ item }) => (
+        renderItem={({ item }) =>
+          item === CONTROLS_ROW ? (
+            <View className="gap-2 pb-2 pt-1" style={{ backgroundColor: colors.bg }}>
+          <RosterSearch
+                value={playerSearch}
+                onChange={setPlayerSearch}
+                playersLabel={terms.players}
+                jerseyLabel={terms.jersey}
+              />
+
+              <RosterFilters
+                active={activeFilter}
+                counts={filterCounts}
+                onSelect={setRosterFilter}
+              />
+
+              <View className="flex-row flex-wrap -mb-2">
+                <Chip label="Recent" active={rosterSort === 'recent'} onPress={() => setRosterSort('recent')} />
+                <Chip label="A–Z" active={rosterSort === 'name'} onPress={() => setRosterSort('name')} />
+                <Chip
+                  label={rosterSort === 'age' ? AGE_SORT_LABEL[ageDir] : 'Age'}
+                  active={rosterSort === 'age'}
+                  onPress={() => (rosterSort === 'age' ? toggleAgeDir() : setRosterSort('age'))}
+                />
+              </View>
+            </View>
+          ) : (
           <PlayerRow
-            player={item}
+            player={item as Player}
             evalCount={evalCountByPlayerId.get(item.id) ?? 0}
             hideUnscored={isAssessorOnly}
             selectable={selectMode}
@@ -551,7 +568,25 @@ export default function RosterScreen() {
             linkedTo={linkedToByPlayerId.get(item.id)}
             onUnlink={confirmUnlink}
           />
-        )}
+          )
+        }
+        ListFooterComponent={
+          hasPlayers && filteredRoster.length === 0 ? (
+            <EmptyState
+              title={terms.t('No players match')}
+              message={
+                playerSearch.trim()
+                  ? terms.t(`No players match "${playerSearch.trim()}".`)
+                  : terms.t(`No ${rosterFilter} players. Try a different filter.`)
+              }
+              actionLabel={playerSearch.trim() ? 'Clear search' : 'Show all'}
+              onAction={() => {
+                setPlayerSearch('');
+                setRosterFilter('all');
+              }}
+            />
+          ) : null
+        }
       />
 
       <LinkPlayerModal

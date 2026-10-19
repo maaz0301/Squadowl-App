@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 /**
  * A list row with a grip on the left: press and hold it, then drag. The row
@@ -15,6 +15,7 @@ export function DragReorderRow({
   onMeasure,
   onMove,
   gripColor,
+  onDragActive,
   children,
 }: {
   index: number;
@@ -23,6 +24,8 @@ export function DragReorderRow({
   onMeasure: (height: number) => void;
   onMove: (from: number, to: number) => void;
   gripColor: string;
+  /** Tells the parent a drag started or ended, so it can stop scrolling underneath the finger. */
+  onDragActive?: (active: boolean) => void;
   children: ReactNode;
 }) {
   const translateY = useSharedValue(0);
@@ -48,7 +51,8 @@ export function DragReorderRow({
   const pan = Gesture.Pan()
     .activateAfterLongPress(150)
     .onStart(() => {
-      lifted.value = 1;
+      lifted.value = withTiming(1, { duration: 120 });
+      if (onDragActive) runOnJS(onDragActive)(true);
     })
     .onUpdate((e) => {
       translateY.value = e.translationY;
@@ -57,15 +61,16 @@ export function DragReorderRow({
       runOnJS(drop)(e.translationY);
     })
     .onFinalize(() => {
-      lifted.value = 0;
+      lifted.value = withTiming(0, { duration: 120 });
       translateY.value = 0;
+      if (onDragActive) runOnJS(onDragActive)(false);
     });
 
   const style = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }, { scale: lifted.value ? 1.02 : 1 }],
-    zIndex: lifted.value ? 10 : 0,
-    opacity: lifted.value ? 0.92 : 1,
-    elevation: lifted.value ? 4 : 0,
+    transform: [{ translateY: translateY.value }, { scale: 1 + 0.03 * lifted.value }],
+    zIndex: lifted.value > 0 ? 10 : 0,
+    opacity: 1 - 0.08 * lifted.value,
+    elevation: lifted.value > 0 ? 4 : 0,
   }));
 
   return (
