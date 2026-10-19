@@ -30,19 +30,17 @@ export default function CalendarScreen() {
     () => withAllTeams(groupCalendarTeams(seasons ?? []), allTeams ?? []),
     [seasons, allTeams],
   );
-  const { events, teamByEvent, teamIdByEvent, rosterByEvent } = useMemo(() => {
+  const { events, teamByEvent, teamIdByEvent } = useMemo(() => {
     const teamByEvent = new Map<string, string>();
-    const rosterByEvent = new Map<string, number>();
     const teamIdByEvent = new Map<string, string>();
     const events = (seasons ?? []).flatMap((s) => {
       for (const ev of s.events) {
         teamByEvent.set(ev.id, s.teamName);
-        rosterByEvent.set(ev.id, s.roster.length);
         if (s.teamId) teamIdByEvent.set(ev.id, s.teamId);
       }
       return s.events;
     });
-    return { events, teamByEvent, teamIdByEvent, rosterByEvent };
+    return { events, teamByEvent, teamIdByEvent };
   }, [seasons]);
 
   const links = linksQuery.data ?? [];
@@ -64,18 +62,6 @@ export default function CalendarScreen() {
         <ErrorState message="Could not load the calendar." onRetry={() => seasonsQuery.refetch()} />
       ) : (
         <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={refreshControl}>
-          <MonthCalendar
-            events={events}
-            teamNameFor={(ev) => teamByEvent.get(ev.id)}
-            rosterSizeFor={(ev) => rosterByEvent.get(ev.id)}
-            onOpenEvent={(ev) => {
-              const teamId = teamIdByEvent.get(ev.id);
-              if (teamId) navigation.navigate('TeamDetail', { id: teamId, tab: 'schedule', eventId: ev.id });
-            }}
-          />
-
-          <View className="h-6" />
-
           {teams.length > 1 ? (
             <View className="mb-5">
               <Text className="mb-2 text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>Your calendars</Text>
@@ -104,6 +90,14 @@ export default function CalendarScreen() {
             </Text>
           ) : null}
 
+          <MonthCalendar
+            events={events}
+            teamNameFor={(ev) => teamByEvent.get(ev.id)}
+            onOpenEvent={(ev) => {
+              const teamId = teamIdByEvent.get(ev.id);
+              if (teamId) navigation.navigate('TeamDetail', { id: teamId, tab: 'schedule', eventId: ev.id });
+            }}
+          />
         </ScrollView>
       )}
 

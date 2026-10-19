@@ -1,7 +1,6 @@
 import { useTerms } from '@/lib/terms';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
 import { useThemeColors } from '@/theme/ThemeProvider';
 import {
@@ -13,11 +12,10 @@ import {
   ErrorState,
   Screen,
 } from '@/components/ui';
-import { PlayerCompareCard, COMPARE_MAX_PLAYERS } from '@/components/compare/PlayerCompareCard';
 import { PlanGate } from '@/components/PlanGate';
 import { useTryoutQuery, useAiCompareMutation, computePlayerResults } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
-import { getPlayerCategories, playerDisplayName } from '@/data/rubrics';
+import { playerDisplayName } from '@/data/rubrics';
 
 const LOADING_MESSAGES = [
   'Crunching the numbers…',
@@ -85,7 +83,7 @@ export default function CompareScreen() {
   const tryout = tryoutQuery.data;
   const toggle = (playerId: string) => {
     setSelected((prev) =>
-      prev.includes(playerId) ? prev.filter((p) => p !== playerId) : prev.length < COMPARE_MAX_PLAYERS ? [...prev, playerId] : prev,
+      prev.includes(playerId) ? prev.filter((p) => p !== playerId) : prev.length < 4 ? [...prev, playerId] : prev,
     );
   };
 
@@ -100,24 +98,13 @@ export default function CompareScreen() {
 
   return (
     <Screen padded={false}>
-      <View className="px-4 flex-row items-center justify-between py-4">
-        <Pressable
-          onPress={() => navigation.navigate('AssessmentResults')}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-          className="items-center justify-center"
-          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.tile }}
-        >
-          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-            <Path d="M15 18l-6-6 6-6" stroke={colors.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-          </Svg>
-        </Pressable>
-        <View className="items-center">
-          <Text className="text-lg font-bold" style={{ color: colors.ink }}>{terms.t('Player compare')}</Text>
-          <Text className="text-xs" style={{ color: colors.inkMuted }}>{`Select 2–${COMPARE_MAX_PLAYERS} athletes`}</Text>
-        </View>
-        <View style={{ width: 40, height: 40 }} />
+      <View className="px-4">
+        <Header
+          title={terms.t('Compare Players')}
+          subtitle="Select 2–4 athletes"
+          showBack
+          onBack={() => navigation.navigate('AssessmentResults')}
+        />
       </View>
 
       <FlatList
@@ -127,7 +114,6 @@ export default function CompareScreen() {
         ListHeaderComponent={
           selected.length >= 2 ? (
             <View className="gap-4 mb-4">
-              <PlayerCompareCard tryout={tryout} results={selectedResults} population={results} />
               <Card accent className="gap-2">
                 <PlanGate feature="aiSummaries" title="AI Compare">
                   <View>

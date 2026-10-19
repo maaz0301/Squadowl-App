@@ -2,7 +2,6 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 // Screens
-import HubScreen from '../screens/(app)/hub';
 import DashboardScreen from '../screens/(app)/dashboard';
 import SearchScreen from '../screens/(app)/search';
 import ProfileScreen from '../screens/(app)/profile';
@@ -14,7 +13,6 @@ export default function AppNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {/* Main screens */}
-      <Stack.Screen name="Hub" component={HubScreen} />
       <Stack.Screen name="DashboardMain" component={DashboardScreen} />
       <Stack.Screen name="Search" component={SearchScreen} />
       <Stack.Screen name="Profile" component={ProfileScreen} />

@@ -1,6 +1,5 @@
 import { useTerms } from '@/lib/terms';
-import { useState } from 'react';
-import { FlatList, Pressable, ScrollView, Text, View } from 'react-native';
+import { FlatList, Pressable, Text, View } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -18,10 +17,8 @@ import {
 } from '@/components/ui';
 import { useResultsQuery } from '@/features/queries';
 import { useAssessmentId } from '@/features/useAssessmentId';
-import { getPlayerCategories, getScoreHeatLevel, playerDisplayName } from '@/data/rubrics';
+import { getScoreHeatLevel, playerDisplayName } from '@/data/rubrics';
 import { compareResultsBestFirst, formatMetricRaw, metricSummaries } from '@/data/scoring';
-import { rosterPositionGroups } from '@/data/positions';
-import { ScoredDonut } from '@/components/compare/ScoredDonut';
 import { useSessionStore } from '@/state/sessionStore';
 
 export default function ResultsScreen() {
@@ -32,7 +29,6 @@ export default function ResultsScreen() {
   const setCurrentPlayer = useSessionStore((s) => s.setCurrentPlayer);
   const { data: tryout, results, isLoading, isError, refetch } = useResultsQuery(id);
   const terms = useTerms(tryout?.settings.customLabels, tryout?.sport);
-  const [tab, setTab] = useState('overall');
 
   const parentState = navigation.getParent()?.getState();
   const flowRoute = parentState?.routes?.find((r: any) => r.name === 'AssessmentFlow');
@@ -51,55 +47,25 @@ export default function ResultsScreen() {
   const skaters = sorted.filter((r) => r.player.pos?.toUpperCase() !== 'GTL');
   const goalies = sorted.filter((r) => r.player.pos?.toUpperCase() === 'GTL');
 
-  // The sport's own position groups (Defense for hockey, Infield for baseball...); a group nobody plays is left out.
-  const inGroup = (r: (typeof sorted)[number], codes: string[]) => codes.includes((r.player.pos ?? '').trim().toUpperCase());
-  const groups = rosterPositionGroups(tryout.sport, sorted.map((r) => r.player)).filter((g) =>
-    sorted.some((r) => inGroup(r, g.codes)),
-  );
-  const activeGroup = groups.find((g) => g.key === tab);
-  const visible = activeGroup ? sorted.filter((r) => inGroup(r, activeGroup.codes)) : sorted;
-  const scoredResults = sorted.filter((r) => r.evalCount > 0);
-  const ringColors = ['#FF6B2B', '#3B82F6', '#94A3B8', '#22C55E'];
-  // One ring per skill the assessment defines (its rubric categories, skaters and goalies alike): the
-  // share of the roster scored in it. Coverage stays 0-100 whatever scale a skill uses, and a skill
-  // nobody has been scored in yet still gets its (empty) ring.
-  const coverage = new Map<string, { label: string; n: number }>();
-  for (const r of sorted) {
-    for (const c of getPlayerCategories(tryout.sport, r.player.pos, tryout.settings.customRubrics)) {
-      const cur = coverage.get(c.key) ?? { label: c.label, n: 0 };
-      if (r.categoryScores[c.key] != null) cur.n += 1;
-      coverage.set(c.key, cur);
-    }
-  }
-  const rings = [...coverage.values()]
-    .slice(0, ringColors.length)
-    .map((c, i) => ({ label: c.label, pct: (c.n / Math.max(1, sorted.length)) * 100, color: ringColors[i] }));
-
   return (
     <Screen padded={false}>
-      <View className="px-4">
-        <Header title="Evaluation Results" showBack />
-      </View>
+      <Header title="Evaluation Results" showBack />
       <View className="px-4 py-3 gap-3">
-        <View className="flex-row gap-2">
-          <Button label="Builder" size="md" className="flex-1 px-1" textClassName="text-sm" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentTeamBuilder', params: { id: id } })} />
-          <Button label="Compare" size="sm" variant="secondary" className="flex-1 px-1" textClassName="text-sm" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentCompare', params: { id: id } })} />
+        <View className="flex-row flex-wrap gap-2 items-center">
+          <Button label="Team Builder" size="sm" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentTeamBuilder', params: { id: id } })} />
+          <Button label="Compare" size="sm" variant="secondary" onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentCompare', params: { id: id } })} />
           {!isAssessorOnly && (
             <>
               <Button
                 label="Export"
-                size="md"
+                size="sm"
                 variant="secondary"
-                className="flex-1"
-                textClassName="text-sm"
                 onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentExport', params: { id: id } })}
               />
               <Button
                 label="Import"
-                size="md"
+                size="sm"
                 variant="secondary"
-                className="flex-1"
-                textClassName="text-sm"
                 onPress={() => navigation.navigate('AssessmentFlow', { screen: 'AssessmentScanSheet', params: { id: id, from: 'results' } })}
               />
             </>
@@ -108,47 +74,21 @@ export default function ResultsScreen() {
       </View>
 
       <FlatList
-        data={visible}
+        data={sorted}
         keyExtractor={(item) => item.player.id}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24, flexGrow: 1 }}
         ListHeaderComponent={
           sorted.length === 0 ? null : (
-            <View className="gap-3 mb-3">
-              {rings.length > 0 ? <ScoredDonut scored={scoredResults.length} total={sorted.length} rings={rings} /> : null}
-              {groups.length > 0 ? (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ gap: 8 }}
-                >
-                  {[{ key: 'overall', label: 'Overall' }, ...groups].map((g) => {
-                    const on = tab === g.key;
-                    return (
-                      <Pressable
-                        key={g.key}
-                        onPress={() => setTab(g.key)}
-                        accessibilityRole="button"
-                        className="items-center justify-center px-5 py-3"
-                        style={{
-                          borderRadius: 14,
-                          borderWidth: 1,
-                          borderColor: on ? colors.primary : colors.border,
-                          backgroundColor: on ? colors.primary : colors.tile,
-                        }}
-                      >
-                        <Text style={{ fontSize: 15, fontWeight: '700', color: on ? '#fff' : colors.ink }}>{g.label}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-              ) : null}
+            <View className="flex-row gap-2 mb-3">
+              <Badge label={tryout.sport === 'Skating' ? `${skaters.length} ${skaters.length === 1 ? terms.player : terms.players}` : `${skaters.length} Skaters`} variant="brand" />
+              {tryout?.sport === 'Skating' ? null : <Badge label={`${goalies.length} Goalies`} variant="info" />}
             </View>
           )
         }
         ListEmptyComponent={
           <EmptyState
-            title={sorted.length > 0 ? 'No players in this group' : 'No results yet'}
-            message={sorted.length > 0 ? 'Pick another tab to see more players.' : terms.t('Score players to see the leaderboard.')}
+            title="No results yet"
+            message={terms.t('Score players to see the leaderboard.')}
           />
         }
         renderItem={({ item, index }) => {
@@ -161,8 +101,8 @@ export default function ResultsScreen() {
                 navigation.navigate('AssessmentFlow', { screen: 'AssessmentPlayer', params: { id: id, playerId: item.player.id, from: 'results' } });
               }}
             >
-              <Card className="mb-2 flex-row items-center gap-3" style={index === 0 ? { borderColor: colors.primary } : undefined}>
-                <Text className="text-xl font-display font-bold text-center" style={{ width: 28, color: colors.inkMuted }}>
+              <Card className="mb-2 flex-row items-center gap-3">
+                <Text className="text-xl font-display font-bold w-8" style={{ color: colors.inkMuted }}>
                   {index + 1}
                 </Text>
                 <Avatar first={item.player.first} last={item.player.last} pos={item.player.pos} size={40} uri={item.player.avatarUrl} />

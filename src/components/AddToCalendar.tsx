@@ -163,11 +163,11 @@ export function AddToCalendar({
         // Button.tsx's sizeStyles) — without it, the 📅 emoji's taller line
         // height (a platform quirk, worst on Android) makes this chip render
         // visibly taller than a plain-text Button sitting right next to it.
-        className={`rounded-lg border justify-center items-center ${size === 'sm' ? 'px-3 py-2.5 min-h-[46px]' : 'px-3.5 py-2.5'}`}
+        className={`rounded-lg border justify-center ${size === 'sm' ? 'px-2.5 py-1.5 min-h-[36px]' : 'px-3.5 py-2.5'}`}
         style={{ backgroundColor: colors.tile, borderColor: colors.border }}
       >
         <Text
-          className={`font-bold ${size === 'sm' ? 'text-sm' : 'text-base'}`}
+          className={`font-bold ${size === 'sm' ? 'text-xs' : 'text-sm'}`}
           style={{ color: colors.ink }}
         >
           📅 Add to calendar
