@@ -34,6 +34,7 @@ const LABELS: Record<BottomNavKey, string> = {
 /** Screens the More sheet opens — the secondary destinations that have no tab of their own. */
 const MORE_LINKS: { label: string; hint: string; route: string; feature?: 'billing' }[] = [
   { label: 'Archived', hint: 'Past evaluations and teams', route: 'ArchivedAssessments' },
+  { label: 'Rubrics Library', hint: 'Save rubrics once and reuse them on any evaluation', route: 'RubricLibrary' },
   { label: 'Athlete Hub', hint: 'Every athlete on your teams and evaluations', route: 'AthleteHub' },
   { label: 'Plans & Upgrade', hint: 'Your plan and what it includes', route: 'Upgrade', feature: 'billing' },
   { label: 'Send Feedback', hint: 'Tell us how it is going', route: 'Feedback' },

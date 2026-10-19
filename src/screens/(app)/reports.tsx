@@ -51,13 +51,15 @@ export default function ReportsScreen() {
   // Top performers can be ranked on the overall score or on any one measure.
   const [leaderFocus, setLeaderFocus] = useState('overall');
   // ...and limited to one team's evaluations, or left on everyone.
-  const [leaderTeam, setLeaderTeam] = useState<string | null>(null);
+  const [leaderTeams, setLeaderTeams] = useState<string[]>([]);
+  const toggleLeaderTeam = (id: string) =>
+    setLeaderTeams((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
   const teamsQuery = useTeamsQuery();
   const teamOptions = useMemo(
     () => listReportTeams(tryoutsQuery.data ?? [], teamsQuery.data ?? []),
     [tryoutsQuery.data, teamsQuery.data],
   );
-  const leaderTryouts = useMemo(() => filterTryoutsByTeam(tryoutsQuery.data ?? [], leaderTeam), [tryoutsQuery.data, leaderTeam]);
+  const leaderTryouts = useMemo(() => filterTryoutsByTeam(tryoutsQuery.data ?? [], leaderTeams), [tryoutsQuery.data, leaderTeams]);
   const rubricOptions = useMemo(() => listReportRubrics(leaderTryouts), [leaderTryouts]);
   const focusRubric = rubricOptions.find((r) => r.key === leaderFocus);
   const leaders = useMemo(
@@ -221,9 +223,9 @@ export default function ReportsScreen() {
             <View className="gap-2">
               {teamOptions.length > 0 ? (
                 <ScrollView horizontal showsHorizontalScrollIndicator keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 6 }}>
-                  <Chip label="All teams" active={!leaderTeam} onPress={() => setLeaderTeam(null)} />
+                  <Chip label="All teams" active={leaderTeams.length === 0} onPress={() => setLeaderTeams([])} />
                   {teamOptions.map((t) => (
-                    <Chip key={t.id} label={t.name} active={leaderTeam === t.id} onPress={() => setLeaderTeam(t.id)} />
+                    <Chip key={t.id} label={t.name} active={leaderTeams.includes(t.id)} onPress={() => toggleLeaderTeam(t.id)} />
                   ))}
                 </ScrollView>
               ) : null}

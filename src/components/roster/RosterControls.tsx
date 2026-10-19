@@ -66,10 +66,13 @@ export function RosterActions({
   onImport,
   onSelect,
   onTools,
+  onLink,
   onCompleteAssessing,
   completingAssessing,
 }: {
   onAdd: () => void;
+  /** Link players already in the account onto this evaluation. */
+  onLink?: () => void;
   onImport: () => void;
   onSelect: () => void;
   onTools: () => void;
@@ -111,6 +114,7 @@ export function RosterActions({
           </Pressable>
         ))}
       </View>
+      {onLink ? <Button label="+ Link Player" variant="secondary" onPress={onLink} /> : null}
       {onCompleteAssessing ? (
         <Button
           label="Complete Assessing"

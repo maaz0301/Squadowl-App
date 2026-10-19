@@ -6,7 +6,15 @@ import { useThemeColors } from '@/theme/ThemeProvider';
 import { Button, Card, Chip, ErrorState, Header, Input, LoadingState, Screen, Badge } from '@/components/ui';
 import { PlanGate } from '@/components/PlanGate';
 import { UsageNudgeBanner } from '@/components/UsageNudgeBanner';
-import { useTryoutQuery, useUpdateTryoutMutation } from '@/features/queries';
+import {
+  useCreateRubricLibraryItemMutation,
+  useRubricLibraryQuery,
+  useTryoutQuery,
+  useUpdateTryoutMutation,
+} from '@/features/queries';
+import { RubricLibraryPicker } from '@/components/RubricLibraryPicker';
+import { libraryInputFromRubric, rubricFromLibrary } from '@/data/rubricLibrary';
+import type { RubricLibraryItem } from '@/data/types';
 import { useAssessmentId } from '@/features/useAssessmentId';
 import { getPlanDefinition } from '@/data/plans';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
@@ -118,6 +126,9 @@ export default function RubricsScreen() {
   const colors = useThemeColors();
   const tryoutQuery = useTryoutQuery(id);
   const updateTryout = useUpdateTryoutMutation();
+  const [showLibrary, setShowLibrary] = useState(false);
+  const libraryQuery = useRubricLibraryQuery();
+  const saveToLibrary = useCreateRubricLibraryItemMutation();
 
   const [label, setLabel] = useState('');
   const [category, setCategory] = useState('');
@@ -296,6 +307,34 @@ export default function RubricsScreen() {
     void saveOrder(moveItem(custom, from, to));
   };
 
+  // Adds rubrics saved in the library, as copies with the same name so results line up across teams.
+  const addFromLibrary = async (picked: RubricLibraryItem[]) => {
+    const have = new Set(custom.map((r) => r.key));
+    const fresh = picked.map(rubricFromLibrary).filter((r) => !have.has(r.key));
+    if (fresh.length === 0) {
+      setShowLibrary(false);
+      showAlert('Already added', 'Those rubrics are already on this evaluation.');
+      return;
+    }
+    if (customLimit !== 'unlimited' && custom.length + fresh.length > (customLimit as number)) {
+      showAlert('Rubric limit reached', `Your plan allows ${customLimit} custom rubrics on an evaluation.`);
+      return;
+    }
+    setShowLibrary(false);
+    await saveOrder([...custom, ...fresh]);
+  };
+
+  const addToLibrary = (r: (typeof custom)[number]) => {
+    if ((libraryQuery.data ?? []).some((l) => l.name.trim().toLowerCase() === r.label.trim().toLowerCase())) {
+      showAlert('Already in your library', `"${r.label}" is already saved in the Rubrics Library.`);
+      return;
+    }
+    saveToLibrary.mutate(libraryInputFromRubric(r, tryout.sport), {
+      onSuccess: () => showAlert('Saved', `"${r.label}" is in your Rubrics Library.`),
+      onError: (e: any) => showAlert('Could not save', e?.message || 'Could not save this rubric to the library.'),
+    });
+  };
+
   const removeCustom = async (keyToRemove: string) => {
     const next = custom.filter((r) => r.key !== keyToRemove);
     const nextSkaterWeights = { ...tryout.settings.skaterWeights };
@@ -447,6 +486,9 @@ export default function RubricsScreen() {
               <Pressable onPress={() => startEdit(r)} hitSlop={8} className="px-2">
                 <Text style={{ color: colors.primary, fontSize: 14, fontWeight: 'bold' }}>Edit</Text>
               </Pressable>
+              <Pressable onPress={() => addToLibrary(r)} hitSlop={8} className="px-2" accessibilityLabel={`Save ${r.label} to Library`}>
+                <Text style={{ color: colors.primary, fontSize: 14, fontWeight: 'bold' }}>To Library</Text>
+              </Pressable>
               <Pressable
                 onPress={() => removeCustom(r.key)}
                 hitSlop={8}
@@ -468,6 +510,13 @@ export default function RubricsScreen() {
       </Card>
 
       <PlanGate feature="customRubrics" title="Custom Rubrics" tierOverride={tier}>
+        <Button label="+ Add from Library" variant="secondary" className="mb-3" onPress={() => setShowLibrary(true)} />
+        <RubricLibraryPicker
+          visible={showLibrary}
+          onClose={() => setShowLibrary(false)}
+          onPick={(items) => void addFromLibrary(items)}
+          disabledNames={custom.map((r) => r.label)}
+        />
         <Card accent className="gap-3">
           <Text className="font-display font-bold" style={{ color: colors.ink }}>
             {editingKey ? 'Edit Drill / Category' : 'Add Custom Drill / Category'}

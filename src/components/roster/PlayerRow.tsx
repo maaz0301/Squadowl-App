@@ -23,6 +23,8 @@ export const PlayerRow = memo(function PlayerRow({
   selected,
   onToggleSelect,
   onPress,
+  linkedTo,
+  onUnlink,
 }: {
   player: Player;
   evalCount: number;
@@ -38,6 +40,10 @@ export const PlayerRow = memo(function PlayerRow({
   selected?: boolean;
   onToggleSelect?: (playerId: string) => void;
   onPress: (playerId: string) => void;
+  /** Names of the other teams and evaluations this same player is linked to; empty for a player who is only here. */
+  linkedTo?: string;
+  /** Take this linked player off the evaluation (their results stay). Shown only when the player is linked elsewhere. */
+  onUnlink?: (playerId: string) => void;
 }) {
   const colors = useThemeColors();
   const scored = evalCount > 0;
@@ -101,6 +107,24 @@ export const PlayerRow = memo(function PlayerRow({
             </View>
           ) : null}
         </View>
+        {linkedTo ? (
+          <Text numberOfLines={2} className="mt-1 text-xs" style={{ color: colors.info }}>
+            Also on {linkedTo}
+          </Text>
+        ) : null}
+        {linkedTo && onUnlink && !selectable ? (
+          <Pressable
+            onPress={() => onUnlink(player.id)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Unlink ${playerDisplayName(player)}`}
+            className="mt-1 self-start"
+          >
+            <Text className="text-sm font-bold" style={{ color: colors.primary }}>
+              Unlink
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {/* Scored and unscored read as two different states, not two labels: a

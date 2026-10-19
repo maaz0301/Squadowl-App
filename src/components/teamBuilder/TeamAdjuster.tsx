@@ -1,9 +1,10 @@
 import { useTerms } from '@/lib/terms';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, BackHandler, FlatList, PanResponder, Pressable, ScrollView, Text, View } from 'react-native';
+import { Animated, BackHandler, FlatList, PanResponder, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
 import { Badge, Button, Modal } from '@/components/ui';
 import { playerDisplayName } from '@/data/rubrics';
+import { filterIdsByBirthYear, isBirthYearRangeActive, type BirthYearRange } from '@/lib/ageFilter';
 import type { TeamBuilderTeam } from '@/data/teamBuilder';
 import type { Player } from '@/data/types';
 import { useThemeColors } from '@/theme/ThemeProvider';
@@ -134,6 +135,14 @@ export function TeamAdjuster({
   // on a zone that no longer exists.
   const focusedZone = zones.find((z) => z.id === focusedZoneId) ?? zones[0];
 
+  // Narrows the unassigned pool by birth year so the right age group is on screen to drag from.
+  const [poolYears, setPoolYears] = useState<BirthYearRange>({ from: '', to: '' });
+  const filteringPool = focusedZone?.id === UNASSIGNED && isBirthYearRangeActive(poolYears);
+  const shownIds = useMemo(
+    () => (focusedZone?.id === UNASSIGNED ? filterIdsByBirthYear(focusedZone.playerIds, playerById, poolYears) : (focusedZone?.playerIds ?? [])),
+    [focusedZone, playerById, poolYears],
+  );
+
   const [dragging, setDragging] = useState<{ playerId: string; from: string } | null>(null);
   // True from the moment a hold has been long enough to mean a drag, before the
   // finger has moved. The list has to stop scrolling *then*: once the finger
@@ -221,19 +230,50 @@ export function TeamAdjuster({
         <Text className="text-sm font-display font-bold" style={{ color: focusedZone?.accent ?? colors.ink }}>
           {focusedZone?.name ?? '-'}
         </Text>
-        <Badge label={`${focusedZone?.playerIds.length ?? 0} players`} />
+        <Badge
+          label={filteringPool ? `${shownIds.length} of ${focusedZone?.playerIds.length ?? 0} players` : `${focusedZone?.playerIds.length ?? 0} players`}
+        />
       </View>
+
+      {focusedZone?.id === UNASSIGNED ? (
+        <View className="flex-row items-center gap-2 mb-2">
+          <Text className="text-xs font-bold" style={{ color: colors.inkMuted }}>
+            Born
+          </Text>
+          {(['from', 'to'] as const).map((k) => (
+            <TextInput
+              key={k}
+              value={poolYears[k]}
+              onChangeText={(v) => setPoolYears((cur) => ({ ...cur, [k]: v.replace(/\D/g, '') }))}
+              placeholder={k === 'from' ? 'From year' : 'To year'}
+              placeholderTextColor={colors.inkFaint}
+              keyboardType="number-pad"
+              maxLength={4}
+              accessibilityLabel={k === 'from' ? 'Born from year' : 'Born to year'}
+              className="rounded-lg border px-3 py-2 text-sm"
+              style={{ width: 96, color: colors.ink, borderColor: colors.border, backgroundColor: colors.tile }}
+            />
+          ))}
+          {isBirthYearRangeActive(poolYears) ? (
+            <Pressable onPress={() => setPoolYears({ from: '', to: '' })} hitSlop={8}>
+              <Text className="text-xs font-bold" style={{ color: colors.primary }}>
+                Clear
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
 
       <FlatList
         className="flex-1"
-        data={focusedZone?.playerIds ?? []}
+        data={shownIds}
         keyExtractor={(pid) => pid}
         // Dropping the responder mid-drag would strand the ghost, and the list
         // must not scroll away underneath a lifted row.
         scrollEnabled={!dragging && !holdingRow}
         ListEmptyComponent={
           <Text className="text-sm py-6 text-center" style={{ color: colors.inkMuted }}>
-            No players on this team. Drag someone in, or tap a player on another team.
+            {filteringPool ? 'No players born in that range.' : 'No players on this team. Drag someone in, or tap a player on another team.'}
           </Text>
         }
         renderItem={({ item: playerId }) => (

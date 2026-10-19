@@ -1,4 +1,6 @@
 import { useTerms, sportLabel } from '@/lib/terms';
+import { useAgeSortStore, AGE_SORT_LABEL } from '@/state/ageSortStore';
+import { compareByAge } from '@/lib/ageSort';
 import { useNavigation } from '@react-navigation/native';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Platform, Pressable, ScrollView, Text, View } from 'react-native';
@@ -8,6 +10,8 @@ import { DummyDataModal } from '@/components/DummyDataModal';
 import { DeleteProgressModal } from '@/components/DeleteProgressModal';
 import { ImportPlayersModal } from '@/components/roster/ImportPlayersModal';
 import { PlayerRow } from '@/components/roster/PlayerRow';
+import { LinkPlayerModal } from '@/components/LinkPlayerModal';
+import { playerDisplayName } from '@/data/rubrics';
 import { ChevronIcon, PlusIcon } from '@/components/roster/icons';
 import { RosterActions, RosterFilters, RosterSearch, RosterSelectToolbar, ScoreCta } from '@/components/roster/RosterControls';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
@@ -32,6 +36,9 @@ import {
   useAddPlayerMutation,
   useClearTestDataMutation,
   useDeletePlayersMutation,
+  useDeletePlayerMutation,
+  useLinkAthletesToTryoutMutation,
+  useAthleteLinksQuery,
   useGenerateTestDataMutation,
   useImportTryoutPlayersMutation,
   useSessionProgressQuery,
@@ -88,6 +95,9 @@ export default function RosterScreen() {
   const setCurrentPlayer = useSessionStore((s) => s.setCurrentPlayer);
   const user = useUser();
   const [showAdd, setShowAdd] = useState(false);
+  const [showLink, setShowLink] = useState(false);
+  const linkAthletes = useLinkAthletesToTryoutMutation(id!);
+  const unlinkPlayer = useDeletePlayerMutation(id!);
   const [showTools, setShowTools] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showTestGen, setShowTestGen] = useState(false);
@@ -103,6 +113,8 @@ export default function RosterScreen() {
   // is already in memory here, unlike the paginated team roster, so no extra
   // read is needed.
   const [rosterSort, setRosterSort] = useState<'recent' | 'name' | 'age'>('recent');
+  const ageDir = useAgeSortStore((s) => s.ageSortDir);
+  const toggleAgeDir = useAgeSortStore((s) => s.toggleAgeSortDir);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deletingSelected, setDeletingSelected] = useState(false);
@@ -183,21 +195,10 @@ export default function RosterScreen() {
     if (rosterSort === 'name') {
       result = [...result].sort((a, b) => a.first.localeCompare(b.first) || a.last.localeCompare(b.last));
     } else if (rosterSort === 'age') {
-      // Oldest first, the usual reading order for a roster sorted "by age". A
-      // missing/unparseable birth year sinks to the bottom on either sort
-      // rather than being guessed at as oldest.
-      result = [...result].sort((a, b) => {
-        const ayRaw = parseInt(a.yearOfBirth ?? '', 10);
-        const byRaw = parseInt(b.yearOfBirth ?? '', 10);
-        const ay = Number.isFinite(ayRaw) ? ayRaw : null;
-        const by = Number.isFinite(byRaw) ? byRaw : null;
-        if (ay == null) return by == null ? 0 : 1;
-        if (by == null) return -1;
-        return ay - by;
-      });
+      result = [...result].sort(compareByAge(ageDir));
     }
     return result;
-  }, [tryoutQuery.data, activeFilter, playerSearch, rosterSort, scoredIds]);
+  }, [tryoutQuery.data, activeFilter, playerSearch, rosterSort, ageDir, scoredIds]);
 
   // Every filter's count, whichever one is showing: a chip that says how many
   // players it would leave answers "how much is left to score?" without the
@@ -209,6 +210,26 @@ export default function RosterScreen() {
     return counts;
   }, [tryoutQuery.data, scoredIds]);
 
+  // Where each player on this roster is also linked, so a linked player shows "Also on ..." and can be unlinked.
+  const rosterAthleteIds = useMemo(
+    () => (isAssessorOnly ? [] : (tryoutQuery.data?.roster ?? []).map((p) => p.athleteId).filter((v): v is string => !!v)),
+    [tryoutQuery.data, isAssessorOnly],
+  );
+  const linksQuery = useAthleteLinksQuery(rosterAthleteIds);
+  const linkedToByPlayerId = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const p of tryoutQuery.data?.roster ?? []) {
+      const links = p.athleteId ? linksQuery.data?.[p.athleteId] : undefined;
+      if (!links) continue;
+      const names = [
+        ...links.teams.filter((t) => t.id !== tryoutQuery.data?.teamId).map((t) => t.name),
+        ...links.evaluations.filter((e) => e.id !== id).map((e) => e.name),
+      ];
+      if (names.length) out.set(p.id, [...new Set(names)].join(', '));
+    }
+    return out;
+  }, [linksQuery.data, tryoutQuery.data, id]);
+
   const { canComplete, completing, complete } = useCompleteAssessing(tryoutQuery.data);
 
   if (tryoutQuery.isLoading) return <LoadingState message="Loading roster..." />;
@@ -218,6 +239,41 @@ export default function RosterScreen() {
 
   const tryout = tryoutQuery.data;
   const capCount = playersTowardCap(effectiveTier, tryout.roster.length, accountPlayers);
+
+  const linkPlayers = async (athleteIds: string[]) => {
+    try {
+      const { linked, already } = await linkAthletes.mutateAsync(athleteIds);
+      setShowLink(false);
+      if (already.length > 0) {
+        Alert.alert(
+          'Already linked',
+          `${already.length} player${already.length === 1 ? ' was' : 's were'} already on this evaluation, so ${already.length === 1 ? 'it was' : 'they were'} not added again.${linked.length ? ` ${linked.length} linked.` : ''}`,
+        );
+      }
+    } catch (e: any) {
+      Alert.alert('Link Failed', e?.message || 'Could not link these players.');
+    }
+  };
+
+  const confirmUnlink = (playerId: string) => {
+    const player = tryout.roster.find((p) => p.id === playerId);
+    if (!player) return;
+    Alert.alert(
+      'Unlink player',
+      `Unlink ${playerDisplayName(player)} from ${tryout.name}? They stay on their other teams and evaluations, and every result is kept. You can link them again any time.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unlink',
+          style: 'destructive',
+          onPress: () =>
+            unlinkPlayer.mutate(playerId, {
+              onError: (e: any) => Alert.alert('Could not unlink', e?.message || 'Could not unlink this player.'),
+            }),
+        },
+      ],
+    );
+  };
 
   const openAdd = () => {
     if (isAtPlayerLimit(effectiveTier, capCount)) {
@@ -351,6 +407,7 @@ export default function RosterScreen() {
           ) : (
             <RosterActions
               onAdd={openAdd}
+              onLink={isAssessorOnly ? undefined : () => setShowLink(true)}
               onImport={openImport}
               onSelect={() => setSelectMode(true)}
               onTools={() => setShowTools(true)}
@@ -413,7 +470,11 @@ export default function RosterScreen() {
           <View className="flex-row flex-wrap -mb-2">
             <Chip label="Recent" active={rosterSort === 'recent'} onPress={() => setRosterSort('recent')} />
             <Chip label="A–Z" active={rosterSort === 'name'} onPress={() => setRosterSort('name')} />
-            <Chip label="Age" active={rosterSort === 'age'} onPress={() => setRosterSort('age')} />
+            <Chip
+              label={rosterSort === 'age' ? AGE_SORT_LABEL[ageDir] : 'Age'}
+              active={rosterSort === 'age'}
+              onPress={() => (rosterSort === 'age' ? toggleAgeDir() : setRosterSort('age'))}
+            />
           </View>
         </View>
       ) : null}
@@ -487,8 +548,19 @@ export default function RosterScreen() {
             selected={selectedIds.has(item.id)}
             onToggleSelect={toggleSelected}
             onPress={openPlayer}
+            linkedTo={linkedToByPlayerId.get(item.id)}
+            onUnlink={confirmUnlink}
           />
         )}
+      />
+
+      <LinkPlayerModal
+        visible={showLink}
+        where="this evaluation"
+        linkedAthleteIds={new Set(tryout.roster.map((p) => p.athleteId).filter((v): v is string => !!v))}
+        linking={linkAthletes.isPending}
+        onClose={() => setShowLink(false)}
+        onLink={(ids) => void linkPlayers(ids)}
       />
 
       <Modal

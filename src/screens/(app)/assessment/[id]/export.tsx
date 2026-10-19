@@ -71,7 +71,9 @@ export default function ExportScreen() {
   // The team's own logo, for club accounts. A hook, so it runs before the
   // loading/error guards below.
   const teamsQuery = useTeamsQuery();
-  const teamLogoUrl = teamsQuery.data?.find((t) => t.id === tryoutQuery.data?.teamId)?.logoUrl;
+  const exportTeam = teamsQuery.data?.find((t) => t.id === tryoutQuery.data?.teamId);
+  const teamLogoUrl = exportTeam?.logoUrl;
+  const teamName = exportTeam?.name;
   const organizationLogoUrl = useUser()?.organizationLogoUrl;
   // Hook, so it runs before the loading/error guards below — skipping it on
   // the loading render would change hook order. A delegated team's tryout
@@ -105,7 +107,7 @@ export default function ExportScreen() {
     birthYears: birthYears.length ? birthYears : undefined,
   };
   const filterActive = isReportFilterActive(filter);
-  const matchCount = buildPlayerFullResults(tryout, sortBy, filter).length;
+  const matchCount = buildPlayerFullResults(tryout, sortBy, filter, teamName).length;
   const singlePage = layout === 'cards' && playersPerPage === 1;
 
   const handleExport = async (format: ExportFormat) => {
@@ -134,8 +136,9 @@ export default function ExportScreen() {
               filter,
               content,
               layout,
+              teamName,
             }
-          : { sortBy, filter },
+          : { sortBy, filter, teamName },
       );
     } catch (e: any) {
       console.error(e);
@@ -187,7 +190,6 @@ export default function ExportScreen() {
           <Text className="text-sm font-bold uppercase" style={{ color: colors.inkMuted }}>
             Export Formats
           </Text>
-          <Button label="Export CSV" variant="secondary" onPress={() => handleExport('csv')} loading={isExporting === 'csv'} />
           {allowedFormats.includes('pdf') ? (
             <Card className="gap-3">
               <Text className="font-display font-bold" style={{ color: colors.ink }}>
@@ -438,7 +440,7 @@ export default function ExportScreen() {
                   </Text>
                 </Pressable>
               ) : null}
-              <Button label="Export PDF" variant="secondary" onPress={() => handleExport('pdf')} loading={isExporting === 'pdf'} />
+              <Button label="Export PDF" variant="primary" onPress={() => handleExport('pdf')} loading={isExporting === 'pdf'} />
             </Card>
           ) : (
             lockedFormat('PDF Export', 'pdf', 'Coach+')
@@ -448,6 +450,7 @@ export default function ExportScreen() {
           ) : (
             lockedFormat('XLSX Export', 'xlsx', 'Club')
           )}
+          <Button label="Export CSV" variant="secondary" onPress={() => handleExport('csv')} loading={isExporting === 'csv'} />
         </View>
       ) : (
         <PlanGate feature="exports" title="Exports" tierOverride={tier}>

@@ -1,5 +1,5 @@
 import { useTerms, sportLabel } from '@/lib/terms';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, View, Alert } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
@@ -36,6 +36,8 @@ import { UsageNudgeBanner } from '@/components/UsageNudgeBanner';
 import { SubscriptionEndingBanner } from '@/components/SubscriptionEndingBanner';
 import { AnnouncementBanner } from '@/components/AnnouncementBanner';
 import { useAuthStore, useUser, usePermissions } from '@/state/authStore';
+import { DragReorderRow } from '@/components/DragReorderRow';
+import { applyTeamOrder, reorderedTeamIds, useTeamOrderStore } from '@/lib/teamOrder';
 import { useSessionStore } from '@/state/sessionStore';
 import {
   useTeamsQuery,
@@ -234,6 +236,11 @@ export default function DashboardScreen() {
     );
   };
 
+  // Teams show in the coach's own order; a team they have not placed yet goes last.
+  const savedTeamOrder = useTeamOrderStore((s) => (user?.id ? s.orders[user.id] : undefined));
+  const setSavedTeamOrder = useTeamOrderStore((s) => s.setOrder);
+  const orderedTeams = useMemo(() => applyTeamOrder(teamsQuery.data ?? [], savedTeamOrder), [teamsQuery.data, savedTeamOrder]);
+  const teamRowHeights = useRef<Record<string, number>>({});
   if (isGuardianOnly) {
     if (guardianQuery.isLoading) {
       return <LoadingState message="Loading portal..." />;
@@ -328,7 +335,11 @@ export default function DashboardScreen() {
   const visibleTeamIds = new Set((teamsQuery.data ?? []).map((t) => t.id));
   const standaloneTryouts = (tryoutsQuery.data ?? []).filter((t) => !t.teamId || !visibleTeamIds.has(t.teamId));
 
-  const listData = isGuardianOnly ? [] : tab === 'teams' ? teamsQuery.data : standaloneTryouts;
+  const moveTeam = (from: number, to: number) => {
+    if (user?.id) setSavedTeamOrder(user.id, reorderedTeamIds(orderedTeams, from, to));
+  };
+
+  const listData = isGuardianOnly ? [] : tab === 'teams' ? orderedTeams : standaloneTryouts;
 
   const renderItem = ({ item }: { item: any }) => {
     if (tab === 'teams') {
@@ -850,9 +861,25 @@ export default function DashboardScreen() {
                   ) : (
                     // Cancels the last card's bottom margin so the panel's own padding sets the gap.
                     <View style={{ marginTop: tab === 'assessments' ? 12 : 0, marginBottom: -12 }}>
-                      {(listData ?? []).map((item: any) => (
-                        <View key={item.id}>{renderItem({ item })}</View>
-                      ))}
+                      {(listData ?? []).map((item: any, i: number) =>
+                        tab === 'teams' && orderedTeams.length > 1 ? (
+                          <DragReorderRow
+                            key={item.id}
+                            index={i}
+                            total={orderedTeams.length}
+                            heightOf={(j) => teamRowHeights.current[orderedTeams[j]?.id ?? ''] ?? 0}
+                            onMeasure={(h) => {
+                              teamRowHeights.current[item.id] = h;
+                            }}
+                            onMove={moveTeam}
+                            gripColor={colors.inkFaint}
+                          >
+                            {renderItem({ item })}
+                          </DragReorderRow>
+                        ) : (
+                          <View key={item.id}>{renderItem({ item })}</View>
+                        ),
+                      )}
                     </View>
                   )}
                 </HomePanel>

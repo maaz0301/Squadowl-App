@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { RubricLibraryPicker } from '@/components/RubricLibraryPicker';
+import { rubricFromLibrary } from '@/data/rubricLibrary';
+import type { RubricLibraryItem } from '@/data/types';
 import {
   Alert,
   LayoutAnimation,
@@ -74,6 +77,7 @@ export default function NewAssessmentScreen() {
   const [assessorEmail, setAssessorEmail] = useState('');
 
   const [pendingRubrics, setPendingRubrics] = useState<CustomRubric[]>([]);
+  const [showRubricLibrary, setShowRubricLibrary] = useState(false);
   const [showRubricForm, setShowRubricForm] = useState(false);
   const [rubricLabel, setRubricLabel] = useState('');
   const [rubricType, setRubricType] = useState<ScoringType>('skill');
@@ -174,6 +178,15 @@ export default function NewAssessmentScreen() {
     setRubricRankingDirection('higher_is_better');
     setRubricWeightStr('');
     setShowRubricForm(false);
+  };
+
+  const addLibraryRubrics = (picked: RubricLibraryItem[]) => {
+    setPendingRubrics((prev) => {
+      const have = new Set(prev.map((r) => r.key));
+      return [...prev, ...picked.map(rubricFromLibrary).filter((r) => !have.has(r.key))];
+    });
+    setRubricError(null);
+    setShowRubricLibrary(false);
   };
 
   const removeRubricFromList = (key: string) => {
@@ -527,10 +540,11 @@ export default function NewAssessmentScreen() {
             </View>
 
             <View>
+              <Text className="mb-1 text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
+                Rubrics *
+              </Text>
               <View className="flex-row items-center justify-between mb-2">
-                <Text className="flex-1 mr-2 text-sm font-bold uppercase tracking-wider" style={{ color: colors.inkMuted }}>
-                  Rubrics *
-                </Text>
+                <Button label="+ Add from Library" variant="ghost" onPress={() => setShowRubricLibrary(true)} />
                 <Button label="+ Add Rubric" variant="ghost" onPress={() => setShowRubricForm(true)} />
               </View>
               {rubricError ? (
@@ -599,6 +613,13 @@ export default function NewAssessmentScreen() {
         </View>
       </View>
       <LimitReachedModal visible={!!limitMsg} message={limitMsg || ''} onClose={() => setLimitMsg(null)} />
+
+      <RubricLibraryPicker
+        visible={showRubricLibrary}
+        onClose={() => setShowRubricLibrary(false)}
+        onPick={addLibraryRubrics}
+        disabledNames={pendingRubrics.map((r) => r.label)}
+      />
 
       <Modal
         visible={showRubricForm}

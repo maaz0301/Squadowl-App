@@ -148,8 +148,8 @@ function wrapSegments(segments: TextSegment[], f: PDFFont, size: number, maxWidt
  * only), and `logoUrls` prints a team or organization logo on every page.
  */
 async function renderFullResultsPdf(tryout: Tryout, opts: ReportPdfOptions = {}): Promise<string> {
-  const docInfo = buildReportDocInfo(tryout);
-  const cards = buildPlayerFullResults(tryout, opts.sortBy, opts.filter);
+  const docInfo = buildReportDocInfo(tryout, opts.teamName);
+  const cards = buildPlayerFullResults(tryout, opts.sortBy, opts.filter, opts.teamName);
   const content = opts.content ?? DEFAULT_REPORT_CONTENT;
 
   const pdfDoc = await PDFDocument.create();
@@ -264,7 +264,7 @@ async function renderFullResultsPdf(tryout: Tryout, opts: ReportPdfOptions = {})
     }
 
     const meta = pdfSafe(
-      [`#${card.jersey || '-'}`, ...(content.position ? [card.pos || '-'] : []), `Shoots ${card.shoots || '-'}`, `Evals ${card.evalCount}`].join(' • '),
+      [`#${card.jersey || '-'}`, ...(content.position ? [card.pos || '-'] : []), ...(card.birthDate ? [`Born ${card.birthDate}`] : []), `Shoots ${card.shoots || '-'}`, `Evals ${card.evalCount}`].join(' • '),
     );
     page.drawText(pdfSafe(card.name), { x: MARGIN, y, size: 15, font: fontBold, color: BLACK });
     const metaWidth = font.widthOfTextAtSize(meta, 9);
@@ -470,7 +470,7 @@ export async function exportTryoutData(
   let mimeType = 'text/plain';
 
   if (format === 'csv') {
-    const { infoLines, playerBlocks } = buildFullResultsCsvRows(tryout, pdfOptions?.sortBy, pdfOptions?.filter);
+    const { infoLines, playerBlocks } = buildFullResultsCsvRows(tryout, pdfOptions?.sortBy, pdfOptions?.filter, pdfOptions?.teamName);
     const blocks = playerBlocks.map((rows) => rows.map((r) => r.map(csvCell).join(',')).join('\n'));
     fileContent = [
       infoLines.map((r) => r.map(csvCell).join(',')).join('\n'),
@@ -483,7 +483,7 @@ export async function exportTryoutData(
     // PLYR/CAT/STR/IMP rows and eval tables, blocks separated by a blank row so
     // one player's card stays readable on a printed page — same layout as the
     // CSV export.
-    const { infoLines, playerBlocks } = buildFullResultsCsvRows(tryout, pdfOptions?.sortBy, pdfOptions?.filter);
+    const { infoLines, playerBlocks } = buildFullResultsCsvRows(tryout, pdfOptions?.sortBy, pdfOptions?.filter, pdfOptions?.teamName);
     const rows: (string | number)[][] = [...infoLines, []];
     playerBlocks.forEach((block, i) => {
       if (i > 0) rows.push([]);
@@ -556,7 +556,7 @@ export async function exportTeamBuilderData(
     page.drawText(pdfSafe(title), { x: 50, y: 750, size: 20, font: fontBold });
 
     let y = 700;
-    const xOffsets = [50, 170, 320, 380, 430, 500];
+    const xOffsets = [40, 140, 270, 320, 360, 440, 500];
 
     headers.forEach((h, i) => {
       page.drawText(pdfSafe(h), { x: xOffsets[i], y, size: 10, font: fontBold });
@@ -594,12 +594,14 @@ export const TEAM_ROSTER_EXPORT_HEADERS = [
   'Last Name',
   'Position',
   'Year of Birth',
+  'Date of Birth',
   'Height (cm)',
   'Player Email',
   'Guardian Name',
   'Guardian Email',
   'Guardian Phone',
   'Fee Status',
+  'Team',
   'Evaluation',
 ] as const;
 
@@ -610,7 +612,7 @@ const FEE_STATUS_LABEL: Record<'unpaid' | 'paid' | 'waived', string> = {
 };
 
 /** One row per player, ordered by last then first name so a printed copy reads like a roll call. */
-export function buildTeamRosterExportRows(players: TeamRosterPlayer[]): string[][] {
+export function buildTeamRosterExportRows(players: TeamRosterPlayer[], teamName = ''): string[][] {
   return [...players]
     .sort(
       (a, b) =>
@@ -623,12 +625,14 @@ export function buildTeamRosterExportRows(players: TeamRosterPlayer[]): string[]
       p.last ?? '',
       p.pos ?? '',
       p.yearOfBirth != null ? String(p.yearOfBirth) : '',
+      p.dateOfBirth ?? '',
       p.heightCm != null ? String(p.heightCm) : '',
       p.playerEmail ?? '',
       p.guardianName ?? '',
       p.guardianEmail ?? '',
       p.guardianPhone ?? '',
       p.feeStatus ? FEE_STATUS_LABEL[p.feeStatus] : '',
+      teamName,
       p.sourceTryoutName ?? '',
     ]);
 }
@@ -643,7 +647,7 @@ export async function exportTeamRosterData(
   format: 'xlsx' | 'pdf',
 ): Promise<void> {
   const headers = [...TEAM_ROSTER_EXPORT_HEADERS] as string[];
-  const rows = buildTeamRosterExportRows(players);
+  const rows = buildTeamRosterExportRows(players, team.name);
   const fileName = `${slugify(team.name, 'roster')}.${format}`;
   const title = team.season ? `${team.name} (${team.season})` : team.name;
 
@@ -652,18 +656,18 @@ export async function exportTeamRosterData(
 
   if (format === 'xlsx') {
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    ws['!cols'] = [8, 14, 16, 10, 13, 26, 20, 26, 16, 11, 22].map((wch) => ({ wch }));
+    ws['!cols'] = [8, 14, 16, 10, 13, 14, 11, 26, 20, 26, 16, 11, 20, 22].map((wch) => ({ wch }));
     const wb = XLSX.utils.book_new();
     // Sheet names are capped at 31 characters and can't hold : \ / ? * [ ]
     XLSX.utils.book_append_sheet(wb, ws, 'Roster');
     fileContent = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
     mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   } else {
-    // Landscape: eleven columns don't fit a portrait page at a readable size.
+    // Landscape: fourteen columns don't fit a portrait page at a readable size.
     const PAGE_W = 842;
     const PAGE_H = 595;
     const MARGIN = 36;
-    const widths = [34, 62, 70, 42, 46, 118, 84, 118, 68, 46, 98];
+    const widths = [30, 56, 62, 40, 36, 52, 36, 110, 80, 110, 66, 40, 70, 80];
     const scale = (PAGE_W - MARGIN * 2) / widths.reduce((sum, w) => sum + w, 0);
     const colX: number[] = [];
     let x = MARGIN;

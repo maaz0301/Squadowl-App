@@ -1,4 +1,5 @@
 import { useTerms } from '@/lib/terms';
+import { PastResultsPanel } from '@/components/player/PastResultsPanel';
 import { NotAttemptedAll } from '@/components/ui/NotAttemptedAll';
 import { NOT_ATTEMPTED_SUFFIX, isNotAttempted, withNotAttempted, withScore, withoutScore } from '@/lib/notAttempted';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -585,6 +586,8 @@ export default function ScoreScreen() {
           ) : null}
         </View>
       ) : null}
+
+      {isAssessorOnly ? null : <PastResultsPanel athleteId={player?.athleteId} excludeTryoutId={id} />}
 
       <ScrollView
         ref={sessionStripRef}
