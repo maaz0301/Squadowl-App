@@ -18,7 +18,9 @@ begin
   where lower(email) = lower('maaz.khan@ccript.com');
 
   if v_profile_id is null then
-    raise exception 'profile not found for maaz.khan@ccript.com';
+    -- One-off fix for an existing account: nothing to reset on a fresh database.
+    raise notice 'profile not found for maaz.khan@ccript.com, skipping';
+    return;
   end if;
 
   -- Wipe the owned account. Cascades (via account_id/tryout_id/season_id FKs
