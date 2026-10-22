@@ -41,7 +41,7 @@ import { useSessionStore } from '@/state/sessionStore';
 import { useUser } from '@/state/authStore';
 import { isAtAssessmentLimit, ownedTryouts } from '@/data/plans';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
-import { endFromDuration, isEndAfterStart } from '@/data/timeRange';
+import { endFromDuration } from '@/data/timeRange';
 import { LimitReachedModal } from '@/components/LimitReachedModal';
 import { buildLimitReachedMessage } from '@/lib/usageNudges';
 import { getDataSource } from '@/data';
@@ -65,6 +65,17 @@ export default function NewAssessmentScreen() {
   const updateTryout = useUpdateTryoutMutation();
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
   const [rubricError, setRubricError] = useState<string | null>(null);
+  // A short-lived banner confirming a rubric landed on the evaluation.
+  const [rubricNotice, setRubricNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showRubricNotice = (message: string) => {
+    setRubricNotice(message);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setRubricNotice(null), 4000);
+  };
+  useEffect(() => () => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+  }, []);
 
   // Rubrics and assessors used to only be reachable on the settings screen
   // after creation — a second step for something coaches expect to finish in
@@ -169,6 +180,7 @@ export default function NewAssessmentScreen() {
       },
     ]);
     setRubricError(null);
+    showRubricNotice('Rubric added');
     setRubricLabel('');
     setRubricType('skill');
     setRubricScale('1-5');
@@ -186,6 +198,7 @@ export default function NewAssessmentScreen() {
       return [...prev, ...picked.map(rubricFromLibrary).filter((r) => !have.has(r.key))];
     });
     setRubricError(null);
+    showRubricNotice(picked.length === 1 ? 'Rubric added' : `${picked.length} rubrics added`);
     setShowRubricLibrary(false);
   };
 
@@ -275,8 +288,6 @@ export default function NewAssessmentScreen() {
   const startTimeValue = watch('startTime');
   const tryoutDateValue = watch('tryoutDate');
   const endTimeValue = watch('endTime');
-  // A duration that carries past midnight would leave an end before the start.
-  const runsPastMidnight = !!duration && !!startTimeValue && !!endTimeValue && !isEndAfterStart(startTimeValue, endTimeValue);
   useEffect(() => {
     const end =
       duration && startTimeValue
@@ -515,7 +526,6 @@ export default function NewAssessmentScreen() {
               onChange={setDuration}
               placeholder={startTimeValue ? 'Select a duration' : 'Pick a start time first'}
               disabled={!startTimeValue}
-              error={runsPastMidnight ? 'This runs past midnight. Pick a shorter duration or an earlier start.' : undefined}
             />
             <View onLayout={rememberField('rink')}>
               <Controller
@@ -547,6 +557,13 @@ export default function NewAssessmentScreen() {
                 <Button label="+ Add from Library" variant="ghost" onPress={() => setShowRubricLibrary(true)} />
                 <Button label="+ Add Rubric" variant="ghost" onPress={() => setShowRubricForm(true)} />
               </View>
+              {rubricNotice ? (
+                <View className="mb-2 rounded-lg px-3 py-2" style={{ backgroundColor: colors.success }}>
+                  <Text className="text-base font-semibold" style={{ color: '#FFFFFF' }}>
+                    {rubricNotice}
+                  </Text>
+                </View>
+              ) : null}
               {rubricError ? (
                 <Text className="text-base font-medium mb-1" style={{ color: colors.danger }}>
                   {rubricError}

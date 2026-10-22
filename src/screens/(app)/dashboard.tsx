@@ -773,7 +773,10 @@ export default function DashboardScreen() {
                             </Text>
                           </View>
                           <Pressable
-                            hitSlop={8}
+                            // Kept clear of the arrow: padding on the button, a wide gap after it,
+                            // and no hit slop toward the arrow, so a tap on the arrow never deletes.
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 0 }}
+                            style={{ paddingHorizontal: 10, paddingVertical: 6, marginRight: 14 }}
                             accessibilityRole="button"
                             accessibilityLabel={`Delete ${ath.firstName} ${ath.lastName}`}
                             disabled={removeGuardianAthlete.isPending}

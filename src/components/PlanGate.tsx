@@ -54,6 +54,7 @@ const PLAN_REQUIRED: Partial<Record<keyof ReturnType<typeof getPlanDefinition>['
   exports: 'coach',
   teamBuilder: 'coach_plus',
   aiSummaries: 'coach_plus',
+  aiReportComments: 'coach_plus',
   shareLinks: 'coach_plus',
   seasonHub: 'coach',
   guardianPortal: 'coach',

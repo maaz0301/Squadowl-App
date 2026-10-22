@@ -34,7 +34,6 @@ import {
 } from '@/features/queries';
 import { getDataSource } from '@/data';
 import { useAssessmentId } from '@/features/useAssessmentId';
-import { END_BEFORE_START_MESSAGE, isEndAfterStart } from '@/data/timeRange';
 import { useUser } from '@/state/authStore';
 import { useEffectivePlanTier } from '@/features/useEffectivePlanTier';
 import { isAtAssessmentLimit, ownedTryouts } from '@/data/plans';
@@ -119,10 +118,6 @@ export default function SettingsScreen() {
   };
 
   const saveEdit = async () => {
-    if (!isEndAfterStart(startTime, endTime)) {
-      setEndTimeError(END_BEFORE_START_MESSAGE);
-      return;
-    }
     setEndTimeError('');
     await updateTryout.mutateAsync({
       id: tryout.id,

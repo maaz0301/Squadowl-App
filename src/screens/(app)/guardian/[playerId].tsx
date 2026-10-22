@@ -39,10 +39,11 @@ function money(cents: number): string {
   return `$${(cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function ExpandableText({ text, style, className }: { text: string, style?: any, className?: string }) {
+function ExpandableText({ text, style, className, onPress }: { text: string, style?: any, className?: string, onPress?: () => void }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <Pressable onPress={() => setExpanded(!expanded)}>
+    // When the text sits inside a tappable tile, a tap on it belongs to the tile.
+    <Pressable onPress={onPress ?? (() => setExpanded(!expanded))}>
       <Text className={className} style={style} numberOfLines={expanded ? undefined : 1}>
         {text}
       </Text>
@@ -130,7 +131,7 @@ function EventCard({ item, playerId, colors }: { item: SeasonEvent & { seasonNam
 
 import { useNavigation } from '@react-navigation/native';
 
-function SeasonCard({ item, colors, playerId }: { item: any; colors: any; playerId: string }) {
+function SeasonCard({ item, colors, playerId, onOpen }: { item: any; colors: any; playerId: string; onOpen: () => void }) {
   const qc = useQueryClient();
   const userId = useAuthStore((s) => s.session?.user?.id);
   const payFeeMutation = useCreateTeamFeePaymentMutation();
@@ -193,10 +194,11 @@ function SeasonCard({ item, colors, playerId }: { item: any; colors: any; player
   };
 
   return (
+    <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`Open ${item.teamName ?? item.name} schedule`}>
     <Card accent className="mb-3">
       <View className="flex-row justify-between items-start">
         <View className="flex-1 mr-2">
-          <ExpandableText text={item.name} className="text-lg font-display font-bold mb-1" style={{ color: colors.ink }} />
+          <ExpandableText text={item.name} className="text-lg font-display font-bold mb-1" style={{ color: colors.ink }} onPress={onOpen} />
           <Text className="text-sm mb-2" style={{ color: colors.inkMuted }}>
             Team: {item.teamName} · {item.sport}
           </Text>
@@ -228,6 +230,7 @@ function SeasonCard({ item, colors, playerId }: { item: any; colors: any; player
         />
       </View>
     </Card>
+    </Pressable>
   );
 }
 
@@ -238,6 +241,8 @@ export default function GuardianPortalScreen() {
   const colors = useThemeColors();
   const userId = useAuthStore((s) => s.session?.user?.id);
   const [tab, setTab] = useState('overview');
+  // Set when a team tile is opened: the Schedule tab then shows only that team's events.
+  const [scheduleSeasonId, setScheduleSeasonId] = useState<string | null>(null);
   // Only shown when the athlete is on more than one team — with just one,
   // the chat icon skips straight to it.
   const [chatPickerOpen, setChatPickerOpen] = useState(false);
@@ -306,6 +311,11 @@ export default function GuardianPortalScreen() {
     });
   }
 
+  const visibleEvents = scheduleSeasonId ? allEvents.filter((e) => e.seasonId === scheduleSeasonId) : allEvents;
+  const scheduleTeamName = scheduleSeasonId
+    ? athlete.seasons.find((se) => se.id === scheduleSeasonId)?.teamName
+    : undefined;
+
   const totalUnread = athlete.seasons.reduce((sum, se) => sum + (unreadBySeason[se.id] ?? 0), 0);
 
   // Shared by the header icon and the multi-team picker below.
@@ -360,7 +370,10 @@ export default function GuardianPortalScreen() {
             { key: 'info', label: 'Info' },
           ]}
           activeKey={tab}
-          onChange={setTab}
+          onChange={(key) => {
+            setScheduleSeasonId(null);
+            setTab(key);
+          }}
           className="mb-4"
         />
       </View>
@@ -376,12 +389,32 @@ export default function GuardianPortalScreen() {
               message="This athlete isn't assigned to any seasons yet."
             />
           }
-          renderItem={({ item }) => <SeasonCard item={item} colors={colors} playerId={playerId} />}
+          renderItem={({ item }) => (
+            <SeasonCard
+              item={item}
+              colors={colors}
+              playerId={playerId}
+              onOpen={() => {
+                setScheduleSeasonId(item.id);
+                setTab('schedule');
+              }}
+            />
+          )}
         />
       ) : tab === 'schedule' ? (
         <FlatList
-          data={allEvents}
+          data={visibleEvents}
           keyExtractor={(item) => item.id}
+          ListHeaderComponent={
+            scheduleSeasonId ? (
+              <View className="flex-row items-center justify-between mb-3">
+                <Text className="flex-1 mr-2 text-sm font-bold" style={{ color: colors.primary }}>
+                  Showing {scheduleTeamName ?? 'this team'} only
+                </Text>
+                <Button label="Show all teams" size="sm" variant="ghost" onPress={() => setScheduleSeasonId(null)} />
+              </View>
+            ) : null
+          }
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40, flexGrow: 1 }}
           ListEmptyComponent={
             <EmptyState

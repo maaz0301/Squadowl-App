@@ -748,7 +748,7 @@ export default function PlayerReportCardScreen() {
             placeholder="What to tell the family: strengths, what to work on, next steps."
             style={{ minHeight: 130, textAlignVertical: 'top' }}
           />
-          <PlanGate feature="aiReportComments" title="AI comments (Club plan)" tierOverride={tier}>
+          <PlanGate feature="aiReportComments" title="AI comments (Coach+ plan)" tierOverride={tier}>
             <View className="gap-2">
               <View className="flex-row items-center justify-between">
                 {label('AI comments')}
