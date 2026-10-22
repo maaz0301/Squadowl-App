@@ -60,6 +60,7 @@ export default function AppNavigator() {
       <Stack.Screen name="RubricLibrary" component={require('../screens/(app)/rubric-library').default} />
       <Stack.Screen name="CancelVideoStorage" component={require('../screens/(app)/storage/cancel').default} />
       <Stack.Screen name="Reports" component={require('../screens/(app)/reports').default} />
+      <Stack.Screen name="Compare" component={require('../screens/(app)/compare').default} />
       <Stack.Screen name="GuardianPortal" component={require('../screens/(app)/guardian/[playerId]').default} />
       <Stack.Screen name="GuardianAssessmentDetails" component={require('../screens/(app)/guardian/assessment').default} />
 

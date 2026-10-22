@@ -389,7 +389,7 @@ async function renderFullResultsPdf(tryout: Tryout, opts: ReportPdfOptions = {})
  * (share_download_paths.xml), so writing anywhere else — Documents included —
  * leaves it unable to mint a content:// URI and breaks both viewing and sharing.
  */
-async function writeAndDeliverFile(
+export async function writeAndDeliverFile(
   fileName: string,
   content: string,
   encoding: 'utf8' | 'base64',
