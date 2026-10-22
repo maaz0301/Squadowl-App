@@ -180,7 +180,7 @@ export default function NewAssessmentScreen() {
       },
     ]);
     setRubricError(null);
-    showRubricNotice('Rubric added');
+    showRubricNotice('Rubric created');
     setRubricLabel('');
     setRubricType('skill');
     setRubricScale('1-5');
