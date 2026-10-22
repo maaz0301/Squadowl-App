@@ -212,7 +212,7 @@ export function AddToCalendar({
                 Whole season
               </Text>
               <Text className="text-xs" style={{ color: colors.inkMuted }}>
-                Adds every event and keeps it up to date when events are added, changed or removed.
+                Adds every event and follows the schedule: events added, changed or removed show up the next time your calendar checks, usually within a few hours (Google can take up to a day).
               </Text>
               {seasonOptions.map((o) => (
                 <Pressable

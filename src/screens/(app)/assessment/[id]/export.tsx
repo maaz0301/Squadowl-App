@@ -24,6 +24,7 @@ import {
   useTeamsQuery,
 } from '@/features/queries';
 import {
+  compactMetricCapacity,
   DEFAULT_REPORT_CONTENT,
   PLAYERS_PER_PAGE_OPTIONS,
   reportLogoUrls,
@@ -109,6 +110,25 @@ export default function ExportScreen() {
   const filterActive = isReportFilterActive(filter);
   const matchCount = buildPlayerFullResults(tryout, sortBy, filter, teamName).length;
   const singlePage = layout === 'cards' && playersPerPage === 1;
+  // Several-per-page cards only have room for so many rubric rows; the rest print as "+N more".
+  const mostRubrics = Math.max(
+    0,
+    ...buildPlayerFullResults(tryout, sortBy, filter, teamName).map((c) => c.metrics.length),
+  );
+  const cardCapacity =
+    layout === 'cards' && playersPerPage !== 1 && content.rubricScores
+      ? compactMetricCapacity(
+          playersPerPage as Exclude<PlayersPerPage, 1>,
+          reportLogoUrls({
+            club: clubMode,
+            organizationLogoUrl: printLogo ? organizationLogoUrl : undefined,
+            teamLogoUrl: printLogo ? teamLogoUrl : undefined,
+            appLogo: printAppLogo,
+          }).length > 0,
+          content,
+        )
+      : null;
+  const rubricsCutOff = cardCapacity !== null && mostRubrics > cardCapacity;
 
   const handleExport = async (format: ExportFormat) => {
     if (matchCount === 0) {
@@ -439,6 +459,12 @@ export default function ExportScreen() {
                     Also print the SquadOwl logo
                   </Text>
                 </Pressable>
+              ) : null}
+              {rubricsCutOff ? (
+                <Text className="text-xs font-bold" style={{ color: colors.danger }}>
+                  Some players have {mostRubrics} rubrics, but this layout fits {cardCapacity} on a card, so the rest print
+                  as "+N more". Choose 1 player per page, or Compact list, to print every rubric.
+                </Text>
               ) : null}
               <Button label="Export PDF" variant="primary" onPress={() => handleExport('pdf')} loading={isExporting === 'pdf'} />
             </Card>
