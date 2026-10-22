@@ -1,0 +1,237 @@
+SQUADOWL DATABASE MIGRATION REPORT
+========================================================================
+Generated: 2026-10-21 20:25 UTC
+Old project : jvkrgejmbuplxznnhspa  (Tryoouthq, ap-southeast-2, Sydney)
+New project : tqsgdizemlclkmsimxdo  (SquadOwl, us-west-2, Oregon)
+No passwords, API keys or signing secrets are written in this file.
+Row counts are from the last full old-vs-new compare (about 17:55 UTC); the old project keeps changing.
+
+1. SUMMARY
+------------------------------------------------------------------------
+  Tables in public schema      : 72  (plus auth.users and auth.identities)
+  Tables migrated              : 74 of 74
+  Rows on OLD (all tables)     : 2,234,959
+  Rows on NEW (all tables)     : 2,234,919
+  Tables with identical count  : 60 of 74
+  Tables with a different count: 14 (old project kept taking writes after the Oct 20 export)
+  Auth users migrated          : 41129 of 41129  (passwords preserved, users sign in again once)
+  Edge functions deployed      : 26 of 26
+  Secrets set on new project   : 38 (38 on old)
+  Storage                      : 8 buckets, 58 files copied, 25 storage policies identical
+  Schema                       : identical to old (72 tables, 693 columns, 295 functions,
+                                 116 policies, 41 triggers, 201 indexes, 16 enums, 9 extensions)
+
+2. TABLE-BY-TABLE ROW COUNTS (old vs new)
+------------------------------------------------------------------------
+  table                                         old        new   status
+  _backup_20260915_orphaned_event_availability          1          1   same
+  _backup_20260915_orphaned_season_roster         21         21   same
+  account_info_files                              4          4   same
+  account_info_items                              4          4   same
+  account_video_purge_queue                       0          0   same
+  account_videos                                  3          3   same
+  accounts                                      121        121   same
+  analytics_feature_usage                       894        905   DIFF +11
+  analytics_visits                              263        265   DIFF +2
+  athlete_account_access                          3          3   same
+  athlete_family_contacts                        36         36   same
+  athlete_guardian_links                          0          0   same
+  athlete_share_comments                          1          1   same
+  athlete_shares                                  5          5   same
+  athletes                                  181,440    181,437   DIFF -3
+  auth.identities                            41,129     41,129   same
+  auth.users                                 41,129     41,129   same
+  client_error_log                                0          0   same
+  deleted_accounts                                9          9   same
+  discount_code_redemptions                       0          0   same
+  discount_codes                                  2          2   same
+  email_outbox                                   42         44   DIFF +2
+  evaluation_scores                         976,663    976,650   DIFF -13
+  evaluations                               441,600    441,595   DIFF -5
+  event_availability                         68,708     68,705   DIFF -3
+  event_rsvp_tokens                          10,130     10,130   same
+  fcm_tokens                                     62         62   same
+  feedback_reviewers                              1          1   same
+  feedback_submissions                            2          2   same
+  founder_audit_log                             195        195   same
+  founder_club_notes                              0          0   same
+  founder_staff                                   0          0   same
+  friend_package_members                          0          0   same
+  friend_packages                                 0          0   same
+  guardian_team_optouts                           1          1   same
+  letter_templates                                5          5   same
+  library_items                                  13         13   same
+  memberships                                   131        131   same
+  message_reports                                 0          0   same
+  parental_consents                               0          0   same
+  payments                                      140        141   DIFF +1
+  plan_prices                                     1          1   same
+  platform_admins                                 1          1   same
+  platform_announcements                          1          1   same
+  platform_settings                               1          1   same
+  player_letters                                 57         57   same
+  player_report_cards                            11         11   same
+  portal_invites                             16,421     16,421   same
+  profiles                                   41,129     41,129   same
+  referral_credits                                2          2   same
+  registrations                              35,225     35,225   same
+  rubric_library                                 16         15   DIFF -1
+  season_event_comments                           9          9   same
+  season_event_files                              7          7   same
+  season_events                                 166        166   same
+  season_messages                               182        182   same
+  season_post_comments                            1          1   same
+  season_post_files                               2          2   same
+  season_posts                                    4          4   same
+  season_roster                             117,840    117,836   DIFF -4
+  seasons                                       335        335   same
+  support_messages                                0          0   same
+  support_tickets                                 0          0   same
+  team_builder_results                           41         41   same
+  team_calendar_links                             1          1   same
+  team_license_purchases                          4          4   same
+  team_manager_invites                            0          0   same
+  team_managers                                  17         17   same
+  team_roster                                72,995     72,991   DIFF -4
+  teams                                         268        268   same
+  tryout_assessors                              462        459   DIFF -3
+  tryout_participants                       186,578    186,559   DIFF -19
+  tryouts                                       424        423   DIFF -1
+  user_blocks                                     0          0   same
+  TOTAL                                   2,234,959  2,234,919
+
+  Why the differences: the old project is live. Rows were created after the
+  Oct 20 export (new evaluations, players, tryouts). A few extra rows on the new
+  project are my test data (payment, analytics, test emails). A final sync with
+  writes stopped on old closes the gap at cutover.
+
+3. EDGE FUNCTIONS ON THE NEW PROJECT
+------------------------------------------------------------------------
+  function                      JWT check   
+  auth-send-email               off         
+  check-webhooks                on          
+  connect-account-status        on          
+  connect-return                off         
+  create-checkout-session       on          
+  create-connect-account        on          
+  create-portal-session         on          
+  create-registration-payment   off         
+  create-team-fee-payment       on          
+  create-user                   on          
+  delete-account                on          
+  founder-billing               on          
+  founder-support               on          
+  founder-user-admin            on          
+  generate-ai-insights          off         
+  generate-test-players         on          
+  manage-video-storage          on          
+  request-password-reset        off         
+  resend-invite                 off         
+  season-calendar-feed          off         
+  send-email                    off         
+  send-push-notification        on          
+  stripe-connect-webhook        off         
+  stripe-webhook                off         
+  support-inbound               off         
+  video-storage-maintenance     off         
+  Source: same as the old project. 4 were redeployed from old's source
+  (founder-billing, founder-support, request-password-reset, auth-send-email).
+
+4. SECRETS ON THE NEW PROJECT (names only)
+------------------------------------------------------------------------
+  ANTHROPIC_API_KEY
+  FIREBASE_SERVICE_ACCOUNT_KEY
+  ONESIGNAL_APP_ID
+  ONESIGNAL_REST_API_KEY
+  OPENAI_API_KEY
+  RESEND_API_KEY
+  SENDER_EMAIL
+  SENDGRID_API_KEY
+  SENDGRID_FROM_EMAIL
+  SENDGRID_FROM_NAME
+  SEND_EMAIL_HOOK_SECRET
+  SMTP_FROM_EMAIL
+  SMTP_FROM_NAME
+  SMTP_HOST
+  SMTP_PASS
+  SMTP_PORT
+  STRIPE_CONNECT_WEBHOOK_SECRET
+  STRIPE_PRICE_ID_ASSOCIATION
+  STRIPE_PRICE_ID_CLUB
+  STRIPE_PRICE_ID_CLUB_MONTHLY
+  STRIPE_PRICE_ID_CLUB_YEARLY
+  STRIPE_PRICE_ID_COACH
+  STRIPE_PRICE_ID_COACH_MONTHLY
+  STRIPE_PRICE_ID_COACH_PLUS_MONTHLY
+  STRIPE_PRICE_ID_COACH_PLUS_YEARLY
+  STRIPE_PRICE_ID_COACH_YEARLY
+  STRIPE_PRICE_ID_PRO
+  STRIPE_SECRET_KEY
+  STRIPE_WEBHOOK_SECRET
+  SUPABASE_ANON_KEY
+  SUPABASE_DB_URL
+  SUPABASE_JWKS
+  SUPABASE_PUBLISHABLE_KEYS
+  SUPABASE_SECRET_KEYS
+  SUPABASE_SERVICE_ROLE_KEY
+  SUPABASE_URL
+  SUPPORT_INBOUND_TOKEN
+  VIDEO_MAINTENANCE_SECRET
+  Values match old by checksum, except STRIPE_WEBHOOK_SECRET and
+  STRIPE_CONNECT_WEBHOOK_SECRET, which are new values for the new endpoints.
+
+5. STRIPE WEBHOOK AND PAYMENT INTEGRATION
+------------------------------------------------------------------------
+  Endpoints registered in Stripe (test mode, account 'AAS Tryout'):
+    Platform webhook : https://tqsgdizemlclkmsimxdo.supabase.co/functions/v1/stripe-webhook
+    Connect webhook  : https://tqsgdizemlclkmsimxdo.supabase.co/functions/v1/stripe-connect-webhook
+    Old project endpoints are still registered (left in place on request).
+  Both new endpoints subscribe to ALL events (256); intended set is 4 platform / 2 connect.
+  Checks done:
+    - Signed test event, valid signature     : HTTP 200 on both endpoints
+    - Wrong signature                        : HTTP 400 on both endpoints
+    - Real Stripe delivery (events resend)   : delivered, 0 pending on both endpoints
+    - create-checkout-session                : returned a checkout URL (cs_test_ = test mode)
+    - Real test payment (coach plan, CAD 39.99/yr) for account 'reachraza202':
+        Stripe events fired: checkout.session.completed, customer.subscription.updated,
+        invoice.payment_succeeded, invoice.paid, invoice.updated (all delivered)
+        New project recorded the payment row (3999 cents, paid), set plan=coach, status=active,
+        and sent the 'Welcome to Coach' email.
+  Known effect: Stripe sends every event to BOTH projects while both endpoints exist, so
+  each payment is processed twice (two emails, same change on both databases).
+  Open: not tested in live mode; no live-mode endpoints exist on either project.
+
+6. SMTP / EMAIL INTEGRATION
+------------------------------------------------------------------------
+  Provider        : SendGrid (smtp.sendgrid.net, port 587, user 'apikey')
+  Sender          : noreply@tryouthq.ca (domain authentication valid in SendGrid)
+  Auth SMTP       : pushed to the new project (custom SMTP on, sender name SquadOwl)
+  Checks done:
+    - SendGrid key valid, SMTP login succeeded
+    - SMTP test email                          : delivered
+    - Password reset via web form (function)   : delivered, 8-digit code
+    - Password reset via Supabase auth         : delivered (default template)
+    - App emails: assessor invite, team manager invite, RSVP invite, password reset : delivered
+    - Plan-upgrade email from the Stripe flow  : delivered
+  Open: the Send Email auth hook is NOT added, so auth emails use Supabase's default templates.
+        Add it in Authentication > Hooks > Send Email -> .../functions/v1/auth-send-email
+
+7. OTHER INTEGRATIONS
+------------------------------------------------------------------------
+  AI summaries      : generate-ai-insights returned a valid summary (Anthropic key works)
+  Push (FCM)        : 3 of 5 test devices accepted a push; 2 iOS tokens fail with 'Invalid APNs credential'
+                      (Firebase APNs key issue; same project as old; on hold)
+  Realtime          : evaluations, evaluation_scores, season_messages published; live event received
+  Storage           : upload, public link, delete verified; library upload verified
+
+8. WHAT IS STILL OPEN
+------------------------------------------------------------------------
+  1. Add the Send Email hook and check email templates (dashboard).
+  2. Vercel: set the new Supabase URL and anon key, then redeploy.
+  3. Mobile: make a build with the updated .env.
+  4. Reset the database password; roll the SendGrid key and both Stripe signing secrets
+     (they were pasted into the chat).
+  5. Cutover day: stop writes on old, final sync + compare, switch Vercel/apps,
+     remove old Stripe endpoints. Old project stays untouched as the rollback.
+  6. Known issues (same on old): Library delete leaves the file behind; send-email accepts
+     unauthenticated requests; uploads to other orgs' folders in the public avatars bucket allowed.
