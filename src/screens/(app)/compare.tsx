@@ -23,9 +23,11 @@ import {
   addToSelection,
   buildComparison,
   candidateName,
+  foldCompareCandidates,
   formatCompareDate,
   isTopPerformer,
   nextSort,
+  sharedEvaluations,
   type CompareAssessment,
   type CompareCandidate,
   type CompareFilters,
@@ -99,7 +101,11 @@ export default function CompareScreen() {
   const teamsQuery = useTeamsQuery();
   const yearsQuery = useCompareBirthYearsQuery();
   const candidatesQuery = useCompareCandidatesQuery(filters);
-  const pool = useMemo(() => candidatesQuery.data?.pages.flatMap((p) => p.rows) ?? [], [candidatesQuery.data]);
+  // One entry per person: the same child filed under several records shows once.
+  const pool = useMemo(
+    () => foldCompareCandidates(candidatesQuery.data?.pages.flatMap((p) => p.rows) ?? []),
+    [candidatesQuery.data],
+  );
   const selectedSet = useMemo(() => new Set(selected), [selected]);
   const atLimit = selected.length >= MAX_COMPARE_PLAYERS;
 
@@ -114,12 +120,13 @@ export default function CompareScreen() {
     try {
       // The filtered pool can be larger than what has scrolled in, so ask for the first 100.
       const page = await getDataSource().listCompareCandidates(filters, 0, MAX_COMPARE_PLAYERS);
+      const people = foldCompareCandidates(page.rows);
       setKnown((prev) => {
         const next = new Map(prev);
-        for (const c of page.rows) next.set(c.id, c);
+        for (const c of people) next.set(c.id, c);
         return next;
       });
-      setSelected((prev) => addToSelection(prev, page.rows.map((c) => c.id)));
+      setSelected((prev) => addToSelection(prev, people.map((c) => c.id)));
       if (page.next != null) {
         Alert.alert('Selection limit', `Added the first ${MAX_COMPARE_PLAYERS} players. Narrow the filters to pick the rest.`);
       }
@@ -132,6 +139,7 @@ export default function CompareScreen() {
   const clearAll = () => {
     setSelected([]);
     setChoices({});
+    setForAll(undefined);
     setOpenSaved(null);
   };
   const toggleTeam = (id: string) =>
@@ -139,13 +147,24 @@ export default function CompareScreen() {
 
   // Results
   const assessmentsQuery = useCompareAssessmentsQuery(tab === 'results' ? selected : []);
-  const candidates = useMemo(() => selected.map((id) => known.get(id)).filter((c): c is CompareCandidate => !!c), [selected, known]);
+  // Two copies of one child picked separately still make one row.
+  const candidates = useMemo(
+    () => foldCompareCandidates(selected.map((id) => known.get(id)).filter((c): c is CompareCandidate => !!c)),
+    [selected, known],
+  );
+  const rowIds = useMemo(() => candidates.map((c) => c.id), [candidates]);
+  const [forAll, setForAll] = useState<string | undefined>(undefined);
+  const [forAllOpen, setForAllOpen] = useState(false);
+  const shared = useMemo(
+    () => (assessmentsQuery.data ? sharedEvaluations(rowIds, assessmentsQuery.data) : []),
+    [assessmentsQuery.data, rowIds],
+  );
   const table = useMemo(
     () =>
       assessmentsQuery.data
-        ? buildComparison({ candidates, assessments: assessmentsQuery.data, selectedIds: selected, choices, sort })
+        ? buildComparison({ candidates, assessments: assessmentsQuery.data, selectedIds: rowIds, choices, evaluationForAll: forAll, sort })
         : null,
-    [assessmentsQuery.data, candidates, selected, choices, sort],
+    [assessmentsQuery.data, candidates, rowIds, choices, forAll, sort],
   );
   const [evalPicker, setEvalPicker] = useState<CompareRow | null>(null);
 
@@ -426,6 +445,21 @@ export default function CompareScreen() {
               <Button label="PDF" size="sm" loading={exporting === 'pdf'} onPress={() => exportAs('pdf')} />
               <Button label="Excel" size="sm" loading={exporting === 'xlsx'} onPress={() => exportAs('xlsx')} />
             </View>
+            {shared.length > 0 ? (
+              <Pressable
+                onPress={() => setForAllOpen(true)}
+                className="mx-4 mb-2 flex-row items-center justify-between rounded-xl border px-3 py-2"
+                style={{ borderColor: colors.border, backgroundColor: colors.tile }}
+                accessibilityLabel="Choose the evaluation shown for everyone"
+              >
+                <Text className="text-xs font-bold uppercase" style={{ color: colors.inkMuted }}>
+                  Evaluation for everyone
+                </Text>
+                <Text className="ml-3 flex-1 text-right text-sm font-bold" style={{ color: colors.ink }} numberOfLines={1}>
+                  {forAll ? shared.find((o) => o.tryoutId === forAll)?.label ?? 'Automatic' : `Automatic · ${shared[0].label}`} ▾
+                </Text>
+              </Pressable>
+            ) : null}
             <ResultsTable table={table} sort={sort} onSort={(key) => setSort((s) => nextSort(s, key))} onPickEval={setEvalPicker} />
           </View>
         )
@@ -474,6 +508,38 @@ export default function CompareScreen() {
         }
       >
         <Input label="Name" placeholder="U10 All Teams Oct 2026" value={saveName} onChangeText={setSaveName} maxLength={120} />
+      </Modal>
+
+      <Modal visible={forAllOpen} title="Evaluation for everyone" onClose={() => setForAllOpen(false)}>
+        <View className="gap-2">
+          <Text className="text-xs" style={{ color: colors.inkMuted }}>
+            Shows this evaluation for every player who was scored in it. Players who were not keep their own.
+          </Text>
+          {[{ tryoutId: '', label: `Automatic (${shared[0]?.label ?? 'most shared'})`, date: undefined, players: 0 }, ...shared].map((o) => {
+            const active = (forAll ?? '') === o.tryoutId;
+            return (
+              <Pressable
+                key={o.tryoutId || 'auto'}
+                onPress={() => {
+                  setForAll(o.tryoutId || undefined);
+                  setChoices({});
+                  setForAllOpen(false);
+                }}
+                className="rounded-xl border px-4 py-3"
+                style={{ backgroundColor: active ? 'rgba(255,107,43,0.12)' : colors.tile, borderColor: active ? colors.primary : colors.border }}
+              >
+                <Text className="text-base font-bold" style={{ color: colors.ink }}>
+                  {o.label}
+                </Text>
+                {o.tryoutId ? (
+                  <Text className="text-xs" style={{ color: colors.inkMuted }}>
+                    {o.date ? formatCompareDate(o.date) : 'No date'} · {o.players} {o.players === 1 ? 'player' : 'players'}
+                  </Text>
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
       </Modal>
 
       <EvaluationPicker
