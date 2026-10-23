@@ -2,11 +2,52 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { stripe } from '../_shared/stripe.ts';
 import { supabaseAdmin } from '../_shared/supabaseAdmin.ts';
 import { resolvePrimaryMembership } from '../_shared/membership.ts';
+import { resolveWebOrigin } from '../_shared/webOrigin.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+/**
+ * Stripe refuses POST /v1/accounts on newer platform accounts ("Create connected
+ * accounts with POST /v2/core/accounts instead"), at every API version. So the
+ * connected account is created through Accounts v2, set up the way a Standard
+ * account was: Stripe collects fees and covers losses, and the coach gets the
+ * full Stripe dashboard. Everything after creation is unchanged: v1 still reads
+ * such an account as type "standard" with charges_enabled / payouts_enabled,
+ * and v1 Account Links onboard it.
+ */
+async function createConnectedAccount(email: string | undefined, accountId: string): Promise<string> {
+  const res = await fetch('https://api.stripe.com/v2/core/accounts', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${Deno.env.get('STRIPE_SECRET_KEY')}`,
+      'Stripe-Version': '2026-09-30.endive',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      contact_email: email,
+      identity: { country: 'CA' },
+      dashboard: 'full',
+      defaults: {
+        responsibilities: { fees_collector: 'stripe', losses_collector: 'stripe' },
+      },
+      configuration: {
+        merchant: { capabilities: { card_payments: { requested: true } } },
+      },
+      metadata: { accountId },
+    }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || !body?.id) {
+    console.error('Stripe v2 account create failed:', JSON.stringify(body?.error ?? body));
+    throw new Error(
+      "We couldn't set up payouts with Stripe right now. Please try again in a moment, and contact support if it keeps happening.",
+    );
+  }
+  return body.id as string;
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -34,13 +75,7 @@ serve(async (req) => {
     let connectAccountId: string | null = membership.account?.stripe_connect_account_id ?? null;
 
     if (!connectAccountId) {
-      const connectAccount = await stripe.accounts.create({
-        type: 'standard',
-        country: 'CA',
-        email: user.email,
-        metadata: { accountId },
-      });
-      connectAccountId = connectAccount.id;
+      connectAccountId = await createConnectedAccount(user.email ?? undefined, accountId);
 
       // Must not fail silently. The Stripe account exists the moment create()
       // returns, but nothing links it to this org until this write lands — so a
@@ -85,16 +120,24 @@ serve(async (req) => {
     }
 
     // Account Links reject anything but a real http(s) URL for return_url/
-    // refresh_url — custom schemes like aastryout:// come back as "not a
-    // valid URL", in test mode too, so that's not usable here. aas-tryout.app
-    // also isn't hosted anywhere. connect-return is a tiny function on this
-    // same Supabase project (always resolvable, always https) that renders a
-    // page and immediately deep-links into aastryout://payments, which is
-    // what InAppBrowser.openAuth's redirect match in connectPayouts()
-    // (payments.tsx) is watching for.
+    // refresh_url, so the mobile app's aastryout:// scheme can't be used directly.
+    // The web client sends its own origin (allow-listed, see webOrigin.ts) and
+    // Stripe returns straight to its Payments page. Mobile has no origin, so it
+    // goes through connect-return, which redirects into the app's deep link.
+    let webOrigin: string | null = null;
+    try {
+      const body = await req.json();
+      webOrigin = resolveWebOrigin(body?.origin);
+    } catch {
+      // No JSON body (mobile): fall back to connect-return below.
+    }
     const functionsBase = `${(Deno.env.get('SUPABASE_URL') ?? '').replace(/\/$/, '')}/functions/v1`;
-    const refreshUrl = `${functionsBase}/connect-return?connect_refresh=true`;
-    const returnUrl = `${functionsBase}/connect-return?connect_return=true`;
+    const refreshUrl = webOrigin
+      ? `${webOrigin}/payments?connect_refresh=true`
+      : `${functionsBase}/connect-return?connect_refresh=true`;
+    const returnUrl = webOrigin
+      ? `${webOrigin}/payments?connect_return=true`
+      : `${functionsBase}/connect-return?connect_return=true`;
 
     const accountLink = await stripe.accountLinks.create({
       account: connectAccountId,

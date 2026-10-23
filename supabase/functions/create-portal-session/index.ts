@@ -190,8 +190,13 @@ serve(async (req) => {
       customerId = Array.isArray(membership.accounts) ? membership.accounts[0]?.stripe_customer_id : membership.accounts?.stripe_customer_id;
     }
 
+    // No customer means no billing profile yet: a free account, or a paid one whose
+    // Stripe records were cleared when billing moved to a new Stripe account. An
+    // empty portal would show nothing to manage, so say how to get one instead.
     if (!customerId) {
-      throw new Error('Could not find active Stripe customer for this user.');
+      throw new Error(
+        "You don't have a billing profile yet. Choose a plan on the Upgrade page to subscribe, and you'll be able to manage billing here afterwards.",
+      );
     }
 
     try {

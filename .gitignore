@@ -64,3 +64,6 @@ android/app/google-services.json
 GoogleService-Info.plist
 ios/AASTryout/GoogleService-Info.plist
 
+
+# local Stripe keys for account cutover
+scratch/.stripe-*
