@@ -34,6 +34,64 @@ async function resolveLineItemTotalCents(lineItem: any): Promise<number> {
   return 0;
 }
 
+/** Whether Stripe still knows this customer (it is gone if it was deleted, or lives on another Stripe account). */
+async function customerExists(customerId: string): Promise<boolean> {
+  try {
+    const customer = await stripe.customers.retrieve(customerId);
+    return !(customer as { deleted?: boolean }).deleted;
+  } catch (err: any) {
+    if (err?.code === 'resource_missing') return false;
+    throw err;
+  }
+}
+
+/**
+ * The account's Stripe customer, created at most once.
+ *
+ * Plans, team licenses and video storage all check out through this function, and
+ * two of them can start at the same moment (an upgrade and an add-on). Both would
+ * see no customer, both would create one, and the later write would win: the other
+ * customer could still complete a payment, and the webhook finds accounts by customer
+ * id, so it would not match. The id is therefore claimed with a conditional write
+ * (only while the column still holds the value that was read); the caller that loses
+ * deletes the extra customer it just made and uses the winner's.
+ *
+ * A saved id that Stripe no longer knows (deleted, or from a previous Stripe account)
+ * is replaced the same way, so one dead id cannot block every purchase.
+ */
+async function getOrCreateCustomer(accountId: string, email: string | undefined): Promise<string> {
+  const { data: existing } = await supabaseAdmin
+    .from('accounts')
+    .select('stripe_customer_id')
+    .eq('id', accountId)
+    .single();
+  const current: string | null = existing?.stripe_customer_id ?? null;
+  if (current && (await customerExists(current))) return current;
+
+  const customer = await stripe.customers.create({ email, metadata: { accountId } });
+
+  const update = supabaseAdmin.from('accounts').update({ stripe_customer_id: customer.id }).eq('id', accountId);
+  const { data: claimed, error: claimError } = await (current
+    ? update.eq('stripe_customer_id', current)
+    : update.is('stripe_customer_id', null)
+  ).select('stripe_customer_id');
+  if (claimError) {
+    await stripe.customers.del(customer.id).catch(() => {});
+    throw new Error(`Could not save the Stripe customer: ${claimError.message}`);
+  }
+  if (claimed && claimed.length > 0) return customer.id;
+
+  // Lost the race: another request saved a customer between the read above and the write.
+  await stripe.customers.del(customer.id).catch(() => {});
+  const { data: winner } = await supabaseAdmin
+    .from('accounts')
+    .select('stripe_customer_id')
+    .eq('id', accountId)
+    .single();
+  if (!winner?.stripe_customer_id) throw new Error('Could not find the Stripe customer for this account.');
+  return winner.stripe_customer_id;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -109,19 +167,7 @@ serve(async (req) => {
     }
 
     if (!customerId) {
-      // Create a stripe customer
-      const customer = await stripe.customers.create({
-        email: user.email,
-        metadata: {
-          accountId: accountId,
-        },
-      });
-      customerId = customer.id;
-      
-      await supabaseAdmin
-        .from('accounts')
-        .update({ stripe_customer_id: customerId })
-        .eq('id', accountId);
+      customerId = await getOrCreateCustomer(accountId, user.email ?? undefined);
     }
 
     // Price mapping for CAD currency fallback, used when no Stripe Dashboard price ID
