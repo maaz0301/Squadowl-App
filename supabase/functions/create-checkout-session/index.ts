@@ -166,9 +166,9 @@ serve(async (req) => {
       }
     }
 
-    if (!customerId) {
-      customerId = await getOrCreateCustomer(accountId, user.email ?? undefined);
-    }
+    // Always resolved, not only when the account has no customer saved: a saved id that
+    // Stripe no longer knows must be replaced here, or every purchase fails on it.
+    customerId = await getOrCreateCustomer(accountId, user.email ?? undefined);
 
     // Price mapping for CAD currency fallback, used when no Stripe Dashboard price ID
     // is configured for this tier/interval via env var (see below).
